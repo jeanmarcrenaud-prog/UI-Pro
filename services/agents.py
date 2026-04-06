@@ -63,14 +63,16 @@ class Agent:
     - State tracking
     """
     
-    def __init__(self, config: AgentConfig, llm_service=None, tool_registry=None):
+    def __init__(self, config: AgentConfig, llm_service=None, tool_registry=None, tool_manager=None):
         self.config = config
         self.llm_service = llm_service
         self.tool_registry = tool_registry
+        self.tool_manager = tool_manager  # NEW: ToolManager support
         
         self.status = AgentStatus.IDLE
         self.steps: List[AgentStep] = []
         self._current_step = 0
+        self._message_history: List[Dict] = []  # For multi-step reasoning
     
     async def run(self, task: str, context: Dict = None) -> Dict[str, Any]:
         """
@@ -100,16 +102,23 @@ class Agent:
         # Initial thought
         self._add_step(thought=f"Task: {task}")
         
+        # Initialize message history for multi-step reasoning
+        self._message_history = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": task}
+        ]
+        
         try:
-            # Main loop
-            for step_num in range(self.config.max_steps):
-                self._current_step = step_num + 1
+            # Main loop - proper ReAct cycle
+            step_num = 0
+            while step_num < self.config.max_steps:
+                step_num += 1
+                self._current_step = step_num
                 
-                # 1. Think - get next action from LLM
-                thought_response = await self._think(task, system_prompt)
+                # 1. THINK - Get next action from LLM with full context
+                thought_response = await self._think_with_context(task, system_prompt)
                 
                 if not thought_response.get("action"):
-                    # No action, we're done
                     break
                 
                 action = thought_response["action"]
@@ -118,20 +127,41 @@ class Agent:
                     action=action
                 )
                 
-                # 2. Act - execute action (tool or generate)
+                # 2. ACT - Execute action (tool or respond)
                 if self.config.use_tools and action.startswith("use_tool:"):
-                    # Tool use
-                    tool_name = action.replace("use_tool:", "").strip()
-                    tool_result = await self._execute_tool(tool_name, thought_response.get("tool_args", {}))
+                    # Extract tool name and arguments
+                    action_parts = action.replace("use_tool:", "").strip()
+                    tool_name = action_parts.split()[0] if action_parts else ""
+                    tool_args = thought_response.get("tool_args", {})
                     
+                    # Execute tool
+                    tool_result = await self._execute_tool(tool_name, tool_args)
+                    
+                    # Add observation to history
+                    observation_str = str(tool_result)
                     self._add_step(
                         action=f"Used tool: {tool_name}",
-                        observation=str(tool_result),
+                        observation=observation_str,
                         tool_used=tool_name
                     )
+                    
+                    # Add tool result to message history for next iteration
+                    self._message_history.append({
+                        "role": "assistant", 
+                        "content": f"Thought: {thought_response.get('thought', '')}\nAction: {action}\nObservation: {observation_str}"
+                    })
+                    
+                    # Check if tool execution was successful
+                    if tool_result.get("status") == "error":
+                        # Continue but note the error
+                        self.logger.warning(f"Tool {tool_name} failed: {tool_result.get('error')}")
                 else:
-                    # Just generate response
-                    self._add_step(action=action)
+                    # Just respond - we're done
+                    self._message_history.append({
+                        "role": "assistant",
+                        "content": thought_response.get("thought", "")
+                    })
+                    break
                 
                 # Check if done
                 if thought_response.get("done"):
@@ -181,28 +211,116 @@ Available tools:"""
     
     async def _think(self, task: str, system_prompt: str) -> Dict:
         """Get next thought/action from LLM"""
-        # Build context from previous steps
-        history = ""
+        # Build context from previous steps with proper format
+        history_lines = []
         for step in self.steps[-5:]:  # Last 5 steps
-            history += f"\nStep {step.step_number}: {step.thought}"
+            line = f"Step {step.step_number}: {step.thought}"
             if step.action:
-                history += f" → Action: {step.action}"
+                line += f" → Action: {step.action}"
             if step.observation:
-                history += f" → Observed: {step.observation}"
+                line += f" → Observation: {step.observation}"
+            history_lines.append(line)
         
+        history = "\n".join(history_lines) if history_lines else "No previous steps"
+        
+        # Check if we should use tools or respond
         prompt = f"""{system_prompt}
 
 Task: {task}
-Previous steps:{history}
+Context:
+{history}
 
-What do you think next? Respond in JSON:
+Think step by step. Choose your next action:
+
+Format your response as JSON:
 {{
-  "thought": "your reasoning",
-  "action": "use_tool:tool_name or 'respond'",
-  "tool_args": {{"arg1": "value1"}} (if using tool),
+  "thought": "Your reasoning about what to do next",
+  "action": "use_tool:<tool_name> or 'respond'",
+  "tool_args": {{"param": "value"}} (only if action starts with use_tool:),
   "done": true/false
 }}
-"""
+
+Important:
+- Use 'use_tool:tool_name' to use a tool
+- Use 'respond' when you have the answer
+- Only set done=true when you have a complete answer
+- If you need more information, use a tool first"""
+        
+        return await self._call_llm(prompt)
+    
+    async def _think_with_context(self, task: str, system_prompt: str) -> Dict:
+        """
+        Think with full message history for proper ReAct cycle.
+        
+        This method builds on the message history accumulated across steps.
+        """
+        # Build context from message history
+        context_messages = []
+        for msg in self._message_history[-10:]:  # Last 10 messages
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            context_messages.append(f"{role.upper()}: {content}")
+        
+        context_str = "\n".join(context_messages)
+        
+        prompt = f"""You are {self.config.name}, an AI assistant using ReAct reasoning.
+
+Available tools:
+{self._get_tool_descriptions()}
+
+Conversation so far:
+{context_str}
+
+Current task: {task}
+
+Analyze the conversation and decide your next action.
+Respond with JSON:
+{{
+  "thought": "Your reasoning about what to do next",
+  "action": "use_tool:<tool_name> or 'respond'", 
+  "tool_args": {{"param": "value"}} (only if using a tool),
+  "done": true/false
+}}
+
+Remember:
+- Use tools to gather information if needed
+- Set done=true only when you have the final answer
+- Each tool result becomes part of your reasoning context"""
+        
+        return await self._call_llm(prompt)
+    
+    def _get_tool_descriptions(self) -> str:
+        """Get formatted tool descriptions"""
+        if not self.tool_registry:
+            return "No tools available"
+        
+        lines = []
+        for tool_name in self.tool_registry.list_tools():
+            tool = self.tool_registry.get(tool_name)
+            if tool:
+                lines.append(f"- {tool.name}: {tool.description}")
+        return "\n".join(lines) if lines else "No tools available"
+    
+    async def _call_llm(self, prompt: str) -> Dict:
+        """Make LLM call with proper error handling"""
+        try:
+            from .model_service import get_model_service
+            llm = get_model_service()
+            response = llm.generate(prompt, mode="reasoning")
+            
+            # Try to parse JSON
+            try:
+                return json.loads(response)
+            except:
+                # Try to extract JSON from response
+                import re
+                json_match = re.search(r'\{[^{}]*\}', response)
+                if json_match:
+                    return json.loads(json_match.group())
+                return {"thought": response, "action": "respond", "done": True}
+        except Exception as e:
+            logger.error(f"LLM call error: {e}")
+            return {"thought": str(e), "action": "respond", "done": True}
         
         # Call LLM
         try:
