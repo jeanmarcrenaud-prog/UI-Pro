@@ -1,0 +1,307 @@
+# services/chat_service.py - Chat Orchestration Service
+#
+# Orchestration des conversations utilisant:
+# - ModelService pour génération LLM
+# - MemoryService pour contexte/rétrieval
+# - Pipeline Planner → Architect → Coder → Reviewer → Executor
+
+import asyncio
+import logging
+import time
+import json
+from typing import Optional, Dict, Any
+from datetime import datetime
+
+from .base import BaseService, ServiceMetrics
+from .model_service import get_model_service, ModelService
+from .memory_service import get_memory_service, MemoryService
+
+
+class ChatService(BaseService):
+    """
+    Service d'orchestration des conversations.
+    
+    Gère le pipeline complet:
+    1. Retrieval (memory context)
+    2. Planning (LLM)
+    3. Architecture (LLM)
+    4. Code (LLM)
+    5. Review (LLM)
+    6. Execute (sandbox)
+    """
+    
+    def __init__(self, model_service: ModelService = None, memory_service: MemoryService = None):
+        super().__init__("ChatService")
+        self.model_service = model_service or get_model_service()
+        self.memory_service = memory_service or get_memory_service()
+        self.service_metrics = ServiceMetrics()
+        
+        # Executor pour运行代码
+        self._executor = None
+    
+    async def initialize(self) -> None:
+        """Initialize chat service"""
+        # Initialize model service
+        await self.model_service.initialize()
+        
+        # Initialize memory service
+        await self.memory_service.initialize()
+        
+        # Lazy load executor
+        try:
+            from controllers.executor import CodeExecutor
+            self._executor = CodeExecutor()
+        except Exception as e:
+            self.logger.warning(f"Executor not available: {e}")
+        
+        self.logger.info("ChatService initialized")
+    
+    async def shutdown(self) -> None:
+        """Shutdown chat service"""
+        await self.model_service.shutdown()
+        await self.memory_service.shutdown()
+        self.logger.info("ChatService shutdown complete")
+    
+    async def execute(self, task: str) -> Dict[str, Any]:
+        """
+        Execute full pipeline for a task.
+        
+        Pipeline:
+        1. Retrieve context from memory
+        2. Plan → Architecture → Code → Review → Execute
+        
+        Args:
+            task: User task description
+            
+        Returns:
+            dict: Result with status, plan, architecture, code, tests, metrics
+        """
+        start_time = time.time()
+        
+        # Get context from memory
+        context = self.memory_service.get_context(task, k=3)
+        
+        # Build system prompt with context
+        system_context = f"Previous context:\n{context}\n\n" if context else ""
+        
+        try:
+            # ===== STEP 1: PLANNING =====
+            plan = await self._planner(task, system_context)
+            
+            # ===== STEP 2: ARCHITECTURE =====
+            architecture = await self._architect(task, plan, system_context)
+            
+            # ===== STEP 3: CODE =====
+            code = await self._coder(task, architecture, system_context)
+            
+            # ===== STEP 4: REVIEW =====
+            review = await self._reviewer(code, system_context)
+            
+            # ===== STEP 5: EXECUTE =====
+            execution = await self._execute(code)
+            
+            # Store successful execution in memory
+            if execution.get("success"):
+                memory_text = f"Task: {task[:100]}\nCode: {str(code)[:200]}"
+                self.memory_service.add(memory_text)
+            
+            # Calculate metrics
+            duration_ms = int((time.time() - start_time) * 1000)
+            self.service_metrics.record_call(duration_ms, success=True)
+            
+            return {
+                "status": "completed",
+                "plan": plan,
+                "architecture": architecture,
+                "code": code,
+                "review": review,
+                "tests": execution,
+                "metrics": {
+                    "duration_ms": duration_ms,
+                    "success": execution.get("success", False)
+                }
+            }
+            
+        except Exception as e:
+            duration_ms = int((time.time() - start_time) * 1000)
+            self.service_metrics.record_call(duration_ms, success=False)
+            self.logger.error(f"Pipeline failed: {e}")
+            
+            return {
+                "status": "failed",
+                "error": str(e),
+                "metrics": {
+                    "duration_ms": duration_ms,
+                    "success": False
+                }
+            }
+    
+    # ===== Pipeline Steps =====
+    
+    async def _planner(self, task: str, context: str = "") -> Dict:
+        """Generate plan for task"""
+        prompt = f"""{context}
+You are a senior planner.
+
+Return JSON:
+{{
+  "goal": "...",
+  "steps": ["...", "..."]
+}}
+
+Task:
+{task}
+"""
+        response = self.model_service.generate(prompt, mode="fast")
+        return self._parse_json(response)
+    
+    async def _architect(self, task: str, plan: Dict, context: str = "") -> Dict:
+        """Generate architecture from plan"""
+        prompt = f"""{context}
+You are a software architect.
+
+Plan:
+{json.dumps(plan)}
+
+Return JSON:
+{{
+  "files": [
+    {{"name": "main.py", "role": "..."}}
+  ]
+}}
+"""
+        response = self.model_service.generate(prompt, mode="reasoning")
+        return self._parse_json(response)
+    
+    async def _coder(self, task: str, architecture: Dict, context: str = "") -> Dict:
+        """Generate code from architecture"""
+        prompt = f"""{context}
+You are a senior Python engineer.
+
+Architecture:
+{json.dumps(architecture)}
+
+Return JSON:
+{{
+  "files": {{
+    "main.py": "code here"
+  }}
+}}
+"""
+        response = self.model_service.generate(prompt, mode="code")
+        return self._parse_json(response)
+    
+    async def _reviewer(self, code: Dict, context: str = "") -> Dict:
+        """Review generated code"""
+        prompt = f"""{context}
+Review this code and detect issues.
+
+Code:
+{json.dumps(code)}
+
+Return JSON:
+{{
+  "issues": ["..."],
+  "fixes": ["..."]
+}}
+"""
+        response = self.model_service.generate(prompt, mode="fast")
+        return self._parse_json(response)
+    
+    async def _execute(self, code: Dict) -> Dict:
+        """Execute code in sandbox"""
+        if not self._executor:
+            return {"success": False, "error": "Executor not available"}
+        
+        # Run in thread pool
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            self._executor.run,
+            code.get("files", {})
+        )
+        
+        # Auto-fix loop
+        if not result.get("success"):
+            result = await self._auto_fix(code, result)
+        
+        return result
+    
+    async def _auto_fix(self, code: Dict, execution_result: Dict) -> Dict:
+        """Auto-fix loop (max 3 attempts)"""
+        max_retry = 3
+        attempt = 0
+        current_code = code
+        
+        while attempt < max_retry:
+            attempt += 1
+            
+            # Generate fix prompt
+            error = execution_result.get("stderr", "")
+            code_content = current_code.get("files", {}).get("main.py", "")
+            
+            fix_prompt = f"""Fix this Python code.
+
+Error:
+{error}
+
+Current code:
+{code_content}
+
+Return ONLY JSON:
+{{
+  "files": {{
+    "main.py": "fixed code here"
+  }}
+}}
+
+Retry: {attempt}/{max_retry}
+"""
+            # Get fix from model
+            fixed = self.model_service.generate(fix_prompt, mode="code")
+            current_code = self._parse_json(fixed)
+            
+            # Try execution again
+            loop = asyncio.get_event_loop()
+            execution_result = await loop.run_in_executor(
+                None,
+                self._executor.run,
+                current_code.get("files", {})
+            )
+            
+            if execution_result.get("success"):
+                return execution_result
+        
+        return execution_result
+    
+    def _parse_json(self, text: str) -> Dict:
+        """Safely parse JSON from LLM response"""
+        try:
+            return json.loads(text)
+        except:
+            return {"raw": text, "error": "invalid_json"}
+    
+    def get_metrics(self) -> dict:
+        """Get service metrics"""
+        return {
+            "service": "ChatService",
+            "calls": self.service_metrics.total_calls,
+            "success_rate": self.service_metrics.success_rate,
+            "avg_latency_ms": self.service_metrics.avg_latency_ms,
+            "model_service": self.model_service.get_metrics(),
+            "memory_service": self.memory_service.get_metrics(),
+        }
+
+
+# Singleton instance
+_chat_service: Optional[ChatService] = None
+
+
+def get_chat_service() -> ChatService:
+    """Get singleton ChatService"""
+    global _chat_service
+    if _chat_service is None:
+        model_svc = get_model_service()
+        memory_svc = get_memory_service()
+        _chat_service = ChatService(model_svc, memory_svc)
+    return _chat_service
