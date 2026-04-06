@@ -5,10 +5,12 @@
 # - Multi-step reasoning (chain of thought)
 # - Tool use
 # - State management
+# - Strategic planning (Planner)
 
 import logging
 import asyncio
 import json
+import time
 from typing import Optional, Dict, Any, List, Callable
 from dataclasses import dataclass, field
 from enum import Enum
@@ -20,11 +22,163 @@ logger = logging.getLogger(__name__)
 class AgentStatus(Enum):
     """Agent execution status"""
     IDLE = "idle"
+    PLANNING = "planning"
     THINKING = "thinking"
     ACTING = "acting"
     WAITING_TOOL = "waiting_tool"
     COMPLETED = "completed"
     ERROR = "error"
+
+
+@dataclass
+class PlanStep:
+    """Single step in a plan"""
+    step_id: int
+    description: str
+    status: str = "pending"  # pending, in_progress, completed, failed
+    result: Optional[str] = None
+    error: Optional[str] = None
+
+
+@dataclass
+class Plan:
+    """Strategic plan with goal and steps"""
+    goal: str
+    steps: List[PlanStep]
+    created_at: datetime = field(default_factory=datetime.now)
+    completed_at: Optional[datetime] = None
+    
+    def mark_completed(self, step_id: int, result: str = None):
+        """Mark a step as completed"""
+        for step in self.steps:
+            if step.step_id == step_id:
+                step.status = "completed"
+                step.result = result
+                break
+    
+    def mark_failed(self, step_id: int, error: str):
+        """Mark a step as failed"""
+        for step in self.steps:
+            if step.step_id == step_id:
+                step.status = "failed"
+                step.error = error
+                break
+    
+    def get_pending_steps(self) -> List[PlanStep]:
+        """Get all pending steps"""
+        return [s for s in self.steps if s.status == "pending"]
+    
+    def is_complete(self) -> bool:
+        """Check if plan is complete"""
+        return all(s.status in ["completed", "failed"] for s in self.steps)
+
+
+class Planner:
+    """
+    Strategic planner that creates execution plans.
+    
+    Features:
+    - Goal decomposition
+    - Step planning with dependencies
+    - Plan validation
+    - Execution tracking
+    """
+    
+    def __init__(self, llm_service=None):
+        self.llm_service = llm_service
+    
+    async def create_plan(self, goal: str, context: Dict = None) -> Plan:
+        """
+        Create a strategic plan from a goal.
+        
+        Args:
+            goal: The high-level goal to achieve
+            context: Additional context for planning
+            
+        Returns:
+            Plan: Strategic plan with decomposed steps
+        """
+        context = context or {}
+        
+        # Build planning prompt
+        prompt = f"""You are a strategic planner. Break down this goal into clear, executable steps.
+
+Goal: {goal}
+
+Context:
+{json.dumps(context, indent=2) if context else "No additional context"}
+
+Respond with JSON:
+{{
+  "goal": "The main goal (same as input)",
+  "steps": [
+    {{"step_id": 1, "description": "First step description"}},
+    {{"step_id": 2, "description": "Second step description"}},
+    ...
+  ],
+  "estimated_steps": "Number of steps expected"
+}}
+
+Guidelines:
+- Break down into 3-8 steps
+- Each step should be actionable and specific
+- Steps should have a logical order
+- Later steps may depend on earlier ones"""
+        
+        try:
+            from .model_service import get_model_service
+            llm = get_model_service()
+            response = llm.generate(prompt, mode="reasoning")
+            
+            # Parse response
+            result = json.loads(response)
+            
+            steps = []
+            for step_data in result.get("steps", []):
+                steps.append(PlanStep(
+                    step_id=step_data.get("step_id", len(steps) + 1),
+                    description=step_data.get("description", ""),
+                    status="pending"
+                ))
+            
+            plan = Plan(
+                goal=result.get("goal", goal),
+                steps=steps
+            )
+            
+            logger.info(f"Created plan with {len(steps)} steps for goal: {goal}")
+            return plan
+            
+        except Exception as e:
+            logger.error(f"Plan creation failed: {e}")
+            # Return a simple single-step plan as fallback
+            return Plan(
+                goal=goal,
+                steps=[PlanStep(step_id=1, description=goal)]
+            )
+    
+    async def update_plan(self, plan: Plan, step_result: Dict) -> Plan:
+        """
+        Update plan based on step execution result.
+        
+        Args:
+            plan: Current plan
+            step_result: Result of executing a step
+            
+        Returns:
+            Updated plan
+        """
+        step_id = step_result.get("step_id")
+        success = step_result.get("success", False)
+        result = step_result.get("result")
+        error = step_result.get("error")
+        
+        if success:
+            plan.mark_completed(step_id, result)
+        else:
+            plan.mark_failed(step_id, error)
+        
+        return plan
 
 
 @dataclass
@@ -47,6 +201,7 @@ class AgentConfig:
     timeout_seconds: int = 120
     verbose: bool = True
     use_tools: bool = True
+    use_planning: bool = False  # NEW: Enable strategic planning
     system_prompt: Optional[str] = None
 
 
@@ -69,14 +224,20 @@ class Agent:
         self.tool_registry = tool_registry
         self.tool_manager = tool_manager  # NEW: ToolManager support
         
+        # Planning support
+        self._planner = None
+        if config.use_planning:
+            self._planner = Planner(llm_service)
+        
         self.status = AgentStatus.IDLE
         self.steps: List[AgentStep] = []
         self._current_step = 0
         self._message_history: List[Dict] = []  # For multi-step reasoning
+        self._execution_log: List[Dict] = []  # For observability
     
     async def run(self, task: str, context: Dict = None) -> Dict[str, Any]:
         """
-        Run agent on a task.
+        Run agent on a task with optional strategic planning.
         
         Args:
             task: Task description
@@ -87,12 +248,16 @@ class Agent:
                 "status": AgentStatus,
                 "result": str,
                 "steps": List[AgentStep],
+                "plan": Plan (if use_planning=True),
+                "execution_log": List[Dict],
                 "error": Optional[str]
             }
         """
-        self.status = AgentStatus.THINKING
-        self.steps = []
-        self._current_step = 0
+        start_time = time.time()
+        
+        # Initialize execution log for observability
+        self._execution_log = []
+        self._log_event("agent_start", {"task": task, "context": context})
         
         context = context or {}
         
@@ -108,6 +273,21 @@ class Agent:
             {"role": "user", "content": task}
         ]
         
+        current_plan = None
+        
+        # STRATEGIC PLANNING PHASE
+        if self.config.use_planning and self._planner:
+            self.status = AgentStatus.PLANNING
+            self._log_event("planning_start", {"goal": task})
+            
+            current_plan = await self._planner.create_plan(task, context)
+            self._log_event("plan_created", {
+                "goal": current_plan.goal,
+                "steps": [{"id": s.step_id, "desc": s.description} for s in current_plan.steps]
+            })
+            
+            self.status = AgentStatus.THINKING
+        
         try:
             # Main loop - proper ReAct cycle
             step_num = 0
@@ -115,11 +295,21 @@ class Agent:
                 step_num += 1
                 self._current_step = step_num
                 
+                # If we have a plan, get current step description
+                current_step_desc = None
+                if current_plan:
+                    pending = current_plan.get_pending_steps()
+                    if pending:
+                        current_step_desc = pending[0].description
+                        self._log_event("step_start", {"step_id": pending[0].step_id, "description": current_step_desc})
+                
                 # 1. THINK - Get next action from LLM with full context
-                thought_response = await self._think_with_context(task, system_prompt)
+                thought_response = await self._think_with_context(task, system_prompt, current_step_desc)
                 
                 if not thought_response.get("action"):
                     break
+                
+                step_start = time.time()
                 
                 action = thought_response["action"]
                 self._add_step(
@@ -171,13 +361,29 @@ class Agent:
             final_thought = self.steps[-1].thought if self.steps else ""
             result = final_thought or f"Completed {len(self.steps)} steps"
             
+            duration_ms = int((time.time() - start_time) * 1000)
+            
             self.status = AgentStatus.COMPLETED
-            return {
+            
+            response = {
                 "status": self.status.value,
                 "result": result,
                 "steps": [s.__dict__ for s in self.steps],
-                "step_count": len(self.steps)
+                "step_count": len(self.steps),
+                "duration_ms": duration_ms,
+                "execution_log": self._execution_log
             }
+            
+            # Add plan if available
+            if current_plan:
+                current_plan.completed_at = datetime.now()
+                response["plan"] = {
+                    "goal": current_plan.goal,
+                    "steps": [{"id": s.step_id, "description": s.description, "status": s.status} for s in current_plan.steps]
+                }
+            
+            self._log_event("agent_complete", {"duration_ms": duration_ms, "steps": len(self.steps)})
+            return response
             
         except Exception as e:
             self.status = AgentStatus.ERROR
@@ -248,11 +454,14 @@ Important:
         
         return await self._call_llm(prompt)
     
-    async def _think_with_context(self, task: str, system_prompt: str) -> Dict:
+    async def _think_with_context(self, task: str, system_prompt: str, current_step_desc: str = None) -> Dict:
         """
         Think with full message history for proper ReAct cycle.
         
-        This method builds on the message history accumulated across steps.
+        Args:
+            task: The current task
+            system_prompt: System prompt
+            current_step_desc: Current plan step description (if planning enabled)
         """
         # Build context from message history
         context_messages = []
@@ -263,7 +472,12 @@ Important:
         
         context_str = "\n".join(context_messages)
         
-        prompt = f"""You are {self.config.name}, an AI assistant using ReAct reasoning.
+        # Add plan context if available
+        plan_context = ""
+        if current_step_desc:
+            plan_context = f"\nCurrent plan step: {current_step_desc}\n"
+        
+        prompt = f"""You are {self.config.name}, an AI assistant using ReAct reasoning.{plan_context}
 
 Available tools:
 {self._get_tool_descriptions()}
@@ -362,17 +576,32 @@ Remember:
             tool_used=tool_used
         )
         self.steps.append(step)
+    
+    def _log_event(self, event_type: str, data: Dict = None) -> None:
+        """Log execution event for observability"""
+        event = {
+            "type": event_type,
+            "timestamp": datetime.now().isoformat(),
+            "step": self._current_step,
+            "data": data or {}
+        }
+        self._execution_log.append(event)
+        
+        # Also log via standard logger
+        if self.config.verbose:
+            self.logger.info(f"[{event_type}] {data}")
 
 
 # Predefined agents
 
-def create_coder_agent(llm_service=None, tool_registry=None) -> Agent:
+def create_coder_agent(llm_service=None, tool_registry=None, use_planning: bool = False) -> Agent:
     """Create a coding agent"""
     return Agent(
         config=AgentConfig(
             name="CoderAgent",
             description="Agent specialized in writing and debugging code",
             max_steps=15,
+            use_planning=use_planning,  # Enable strategic planning
             system_prompt="""You are an expert coding agent.
 
 You help write, debug, and improve code.
@@ -390,6 +619,15 @@ Use tools when helpful:
         llm_service=llm_service,
         tool_registry=tool_registry
     )
+
+
+def create_strategic_coder_agent(llm_service=None, tool_registry=None) -> Agent:
+    """
+    Create a strategic coding agent that uses planning.
+    
+    This agent first creates a plan, then executes step by step.
+    """
+    return create_coder_agent(llm_service, tool_registry, use_planning=True)
 
 
 def create_analyzer_agent(llm_service=None, tool_registry=None) -> Agent:
@@ -439,7 +677,11 @@ __all__ = [
     "AgentConfig",
     "AgentStep",
     "AgentStatus",
+    "Plan",
+    "PlanStep",
+    "Planner",
     "get_agent",
     "create_coder_agent",
+    "create_strategic_coder_agent",
     "create_analyzer_agent"
 ]
