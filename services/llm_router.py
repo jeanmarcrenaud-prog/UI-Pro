@@ -32,12 +32,18 @@ class RouterConfig:
     enable_load_balancing: bool = False
 
 
+# Import datetime for record_call
+from datetime import datetime
+import json
+
+
 class LLMRouter:
     """
     Advanced LLM Router with intelligent task matching.
     
     Features:
     - Task classification (code/reasoning/fast/creative)
+    - LLM-based routing (decision via small model)
     - Context-aware routing
     - Model capability matching
     - Fallback chains
@@ -261,6 +267,83 @@ class LLMRouter:
         # Keep last 100
         if len(self._call_history) > 100:
             self._call_history = self._call_history[-100:]
+    
+    # ===== LLM-based Routing =====
+    
+    def _llm_route(self, messages: List[Dict] = None, prompt: str = None) -> str:
+        """
+        Use LLM to decide which model to use.
+        
+        This is more accurate than keyword matching but slower.
+        Use for complex decisions.
+        """
+        # Build prompt for model selection
+        content = ""
+        if messages:
+            for msg in messages[-3:]:  # Last 3 messages
+                content += f"{msg.get('role')}: {msg.get('content', '')}\n"
+        elif prompt:
+            content = prompt
+        
+        selection_prompt = f"""You are a model routing system. Decide which model to use.
+
+Available models:
+- gemma4:latest: General purpose, good for code, reasoning, fast tasks
+- gemma4:e4b: Fast, lightweight, good for simple tasks  
+- lfm2:latest: Large context, good for complex reasoning
+
+Conversation:
+{content}
+
+Respond ONLY with JSON:
+{{"model": "model_name", "reasoning": "why you chose this"}}
+"""
+        
+        try:
+            # Use fast model for routing decision
+            from .model_service import get_model_service
+            llm = get_model_service()
+            response = llm.generate(selection_prompt, mode="fast")
+            
+            # Parse response
+            result = json.loads(response)
+            return result.get("model", self.config.default_model)
+            
+        except Exception as e:
+            logger.warning(f"LLM routing failed: {e}, falling back to keyword")
+            return None
+    
+    def route_with_llm(
+        self,
+        messages: List[Dict] = None,
+        prompt: str = None,
+        use_llm: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Route with optional LLM-based decision.
+        
+        Args:
+            messages: Chat messages
+            prompt: Direct prompt
+            use_llm: Force LLM-based routing
+            
+        Returns:
+            dict: Routing decision
+        """
+        # Use LLM if requested or for complex cases
+        if use_llm or (messages and len(messages) > 5):
+            model = self._llm_route(messages, prompt)
+            if model:
+                return {
+                    "model": model,
+                    "task_type": TaskType.FAST,  # LLM decides
+                    "fallback_chain": self.get_fallback_chain(TaskType.FAST),
+                    "estimated_tokens": self.estimate_tokens(prompt or ""),
+                    "routing_method": "llm"
+                }
+        
+        # Fall back to keyword-based
+        return self.route(messages=messages, prompt=prompt)
 
 
 # Import datetime for record_call
