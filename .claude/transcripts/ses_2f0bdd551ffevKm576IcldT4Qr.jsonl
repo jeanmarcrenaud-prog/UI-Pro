@@ -1,0 +1,1 @@
+{"type":"user","timestamp":"2026-03-21T07:18:08.010Z","content":"Find all test files related to ollama client. Look in tests/ directory for any files containing 'ollama' in filename or content. Return the exact file path and the test class/method names.\n<!-- OMO_INTERNAL_INITIATOR -->"}
