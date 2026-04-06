@@ -1,0 +1,34 @@
+[flake8]
+# Flake8 configuration
+
+# Maximum line length (should match black)
+max-line-length = 88
+
+# Ignore specific codes
+ignore = [
+    "E501",  # line too long (handled by black)
+    "W503",  # line break before binary operator (black default)
+    "W504",  # line break after binary operator (black default)
+]
+
+# Use future imports without warning
+future-underscore = 2
+
+# Exclude directories
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    ".tox",
+    "build",
+    "dist",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+]
+
+# Per-file ignores
+per-file-ignores = [
+    "**/tests/*.py": "E",  # Only errors in tests
+    "**/*_test.py": "E",
+]

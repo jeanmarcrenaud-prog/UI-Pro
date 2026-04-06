@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="bg-gray-900 text-white">
+
+<div class="flex h-screen">
+
+    <!-- Sidebar -->
+    <div class="w-64 bg-gray-800 p-4">
+        <h2 class="text-xl mb-4">🤖 AI Agent</h2>
+        <button onclick="newChat()" class="bg-blue-600 px-3 py-2 rounded">+ New</button>
+        <div id="history" class="mt-4"></div>
+    </div>
+
+    <!-- Main -->
+    <div class="flex-1 flex flex-col">
+
+        <!-- Chat -->
+        <div id="chat" class="flex-1 p-4 overflow-y-auto space-y-2"></div>
+
+        <!-- Input -->
+        <div class="p-4 bg-gray-800 flex gap-2">
+            <input id="input" class="flex-1 p-2 text-black rounded" placeholder="Ask your agent..." />
+            <button onclick="send()" class="bg-green-600 px-4 py-2 rounded">Send</button>
+        </div>
+
+    </div>
+</div>
+
+<script src="/static/app.js"></script>
+
+</body>
+</html>

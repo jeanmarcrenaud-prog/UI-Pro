@@ -1,0 +1,79 @@
+# UI-Pro Configuration File
+# All settings can be overridden via environment variables
+
+app:
+  name: "UI-Pro"
+  version: "1.0.0"
+  debug: false
+
+# LLM Settings
+llm:
+  ollama_url: "http://localhost:11434"
+  model_fast: "qwen2.5-coder:32b"
+  model_reasoning: "qwen-opus"
+  timeout: 30
+  # HuggingFace token - set via HF_TOKEN env var, never hardcode here
+
+# Executor Settings
+executor:
+  timeout: 60
+  workspace_dir: "workspace"
+  cleanup: true
+  max_fix_attempts: 3
+  # Security: dangerous patterns to block
+  blocked_patterns:
+    - "(eval("
+    - "(exec("
+    - "subprocess.Popen("
+
+# Memory Settings
+memory:
+  enabled: true
+  model: "all-MiniLM-L6-v2"
+  vector_dim: 384
+  persist_path: "data/memory.index"
+  top_k: 3
+
+# Logging Settings
+logging:
+  level: "INFO"
+  dir: "logs"
+  max_size_mb: 10
+  backup_count: 5
+  format: "json"  # or "text"
+
+# API Settings
+api:
+  host: "localhost"
+  port: 8000
+  api_key: ""  # Set via API_KEY env var for protection
+  enable_docs: true
+
+# Dashboard Settings
+dashboard:
+  host: "0.0.0.0"
+  port: 7860
+  share: false
+
+# Code Review Settings
+code_review:
+  enabled: false
+  tools:
+    - "bandit"
+    - "pylint"
+  fail_on: ["high", "medium"]  # severity levels to fail on
+
+# Metrics Settings
+metrics:
+  enabled: true
+  persist_path: "data/metrics.json"
+
+# Health Check
+health:
+  enabled: true
+  endpoint: "/health"
+
+# WebSocket Settings
+websocket:
+  enabled: true
+  ping_interval: 30

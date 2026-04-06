@@ -1,0 +1,1 @@
+# Core package - CodeExecutor, StateManager, OrchestratorAsync, Logger, Memory

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UI Pro - Dashboard</title>
+  <link rel="stylesheet" href="/assets/styles/dashboard.css" />
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, Roboto; background: #0b0f14; color: #eaeef2; }
+  </style>
+</head>
+<body>
+  <div id="dashboard-root"></div>
+  <script>
+    // Basic wiring example for WebSocket streaming in the dashboard template
+    (function(){
+      const ws = new WebSocket('ws://localhost:8765');
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ task_id: 'demo' }));
+      };
+      ws.onmessage = (ev) => {
+        const pre = document.getElementById('ws-stream') || document.body;
+      };
+      ws.onerror = () => console.error('WebSocket error');
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+# EditorConfig - editor  configuration for editors and IDEs
+# 
+# This defines editor settings like indentation, line endings, and file encoding
+# to ensure consistency across different editors and platforms.
+
+[*.py]
+indent_style = space
+indent_size = 4
+end_of_line = lf
+charset = utf-8
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.md]
+trim_trailing_whitespace = false
+
+# Root directory
+[*.{json,yaml,yml,toml}]
+indent_size = 2

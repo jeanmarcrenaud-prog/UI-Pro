@@ -1,0 +1,45 @@
+# Local env config
+.env
+.env.local
+.env.tests
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+.venv/
+env/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Coverage reports
+htmlcov/
+.coverage
+coverage.json
+coverage.xml
+.tox/
+.pytest_cache/
+
+# Logs
+*.log
+app.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Project specific
+workspace/
+*.zip
+test.txt
