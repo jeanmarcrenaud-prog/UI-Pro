@@ -320,7 +320,9 @@ class ModelService(BaseService):
         mode: str = "fast",
         system_prompt: Optional[str] = None,
         temperature: float = 0.7,
-        task_hint: Optional[str] = None
+        task_hint: Optional[str] = None,
+        timeout: int = 60,
+        max_retries: int = 2
     ) -> str:
         """
         Generate response with intelligent fallback.
@@ -331,6 +333,8 @@ class ModelService(BaseService):
             system_prompt: Optional system prompt
             temperature: Generation temperature
             task_hint: Optional task description for smart routing
+            timeout: Request timeout in seconds
+            max_retries: Number of retries per model
             
         Returns:
             str: Generated response or error message
@@ -346,6 +350,7 @@ class ModelService(BaseService):
             modes_to_try = ["fast"]  # Fallback
         
         last_error = None
+        
         for try_mode in modes_to_try:
             model_config = self.models.get(try_mode)
             if not model_config:
@@ -356,31 +361,50 @@ class ModelService(BaseService):
                 self.logger.debug(f"Skipping {try_mode} - recently failed")
                 continue
             
-            try:
-                self.logger.debug(f"Trying model {model_config.name} (mode: {try_mode})")
-                client = self._get_client_for_model(model_config)
-                response = client.generate(
-                    prompt, 
-                    model=model_config.name, 
-                    system_prompt=system_prompt, 
-                    temperature=temperature
-                )
-                
-                # Record success
-                latency_ms = (time.time() - start_time) * 1000
-                self.model_metrics[try_mode].record(latency_ms, success=True)
-                self.service_metrics.record_call(latency_ms, success=True)
-                
-                # Clear failure status on success
-                self.model_metrics[try_mode].reset_failure_status()
-                
-                return response
-                
-            except Exception as e:
-                last_error = str(e)
-                self.logger.warning(f"Model {model_config.name} failed: {e}")
-                # Record failure
-                self.model_metrics[try_mode].record(0, success=False)
+            # Try with retries
+            for attempt in range(max_retries):
+                try:
+                    self.logger.debug(f"Trying model {model_config.name} (attempt {attempt + 1})")
+                    client = self._get_client_for_model(model_config)
+                    
+                    # Use timeout in client
+                    original_timeout = getattr(client, 'timeout', 60)
+                    client.timeout = timeout
+                    
+                    response = client.generate(
+                        prompt, 
+                        model=model_config.name, 
+                        system_prompt=system_prompt, 
+                        temperature=temperature
+                    )
+                    
+                    # Restore timeout
+                    client.timeout = original_timeout
+                    
+                    # Check for error response
+                    if response.startswith("[ModelService Error") or response.startswith("[OllamaError"):
+                        if attempt < max_retries - 1:
+                            continue  # Retry
+                    
+                    # Record success
+                    latency_ms = (time.time() - start_time) * 1000
+                    self.model_metrics[try_mode].record(latency_ms, success=True)
+                    self.service_metrics.record_call(latency_ms, success=True)
+                    
+                    # Clear failure status on success
+                    self.model_metrics[try_mode].reset_failure_status()
+                    
+                    return response
+                    
+                except Exception as e:
+                    last_error = str(e)
+                    self.logger.warning(f"Model {model_config.name} attempt {attempt + 1} failed: {e}")
+                    # Record failure
+                    self.model_metrics[try_mode].record(0, success=False)
+                    
+                    # Don't retry on timeout
+                    if "timeout" in last_error.lower():
+                        break
         
         # All models failed
         latency_ms = (time.time() - start_time) * 1000
