@@ -28,15 +28,24 @@ class MemoryEntry:
 
 @dataclass
 class ContextWindow:
-    """Context window management"""
+    """Context window management with dynamic token budget"""
     max_tokens: int = 4096
     memory_decay: float = 0.95  # Older memories fade
     importance_threshold: float = 0.3
+    compression_threshold: float = 0.8  # Start compressing at 80% of max
+    
+    def __post_init__(self):
+        self._token_budget = int(self.max_tokens * self.compression_threshold)
     
     def estimate_tokens(self, text: str) -> int:
         return len(text) // 4
     
-    def fit_texts(self, texts: List[str]) -> List[str]:
+    def needs_compression(self, texts: List[str]) -> bool:
+        """Check if texts exceed token budget"""
+        total = sum(self.estimate_tokens(t) for t in texts)
+        return total > self._token_budget
+    
+    def fit_texts(self, texts: List[str], allow_compression: bool = True) -> List[str]:
         """Fit texts within token budget"""
         result = []
         total_tokens = 0
@@ -44,11 +53,18 @@ class ContextWindow:
         for text in texts:
             tokens = self.estimate_tokens(text)
             if total_tokens + tokens > self.max_tokens:
+                # If compression allowed and we have results, try to summarize
+                if allow_compression and result:
+                    break
                 break
             result.append(text)
             total_tokens += tokens
         
         return result
+    
+    def get_budget_remaining(self, current_tokens: int) -> int:
+        """Get remaining budget"""
+        return max(0, self._token_budget - current_tokens)
 
 
 class MemoryService(BaseService):
@@ -298,53 +314,174 @@ class MemoryService(BaseService):
             for session_id, entries in self._session_memories.items()
         }
     
-    # ===== Summarization & Context Optimization =====
+    # ===== LLM-based Summarization & Context Optimization =====
     
-    def _summarize_texts(self, texts: List[str]) -> str:
+    async def _llm_summarize(self, texts: List[str]) -> str:
         """
-        Summarize multiple texts into a short summary.
+        Summarize texts using LLM for better compression.
         
-        Uses LLM to compress information.
+        Args:
+            texts: List of texts to summarize
+            
+        Returns:
+            str: Compressed summary
         """
         if not texts:
             return ""
         
         if len(texts) == 1:
-            return texts[0][:500]  # Just truncate
+            return texts[0][:500]
         
-        # Simple extractive summarization (first sentences)
-        # For full LLM summarization, would call model_service
-        combined = "\n".join(texts[:3])  # Take first 3
-        return combined[:500] + "..." if len(combined) > 500 else combined
+        # Combine texts with numbering
+        combined = "\n\n".join([f"[{i+1}] {t[:300]}" for i, t in enumerate(texts[:5])])
+        
+        summary_prompt = f"""Summarize these conversation snippets into a concise summary (max 200 words):
+
+{combined}
+
+Respond with a summary that preserves the key information and patterns."""
+        
+        try:
+            from .model_service import get_model_service
+            llm = get_model_service()
+            summary = llm.generate(summary_prompt, mode="fast", max_retries=1)
+            return summary[:500] if summary else self._fallback_summarize(texts)
+        except Exception as e:
+            self.logger.warning(f"LLM summarization failed: {e}, using fallback")
+            return self._fallback_summarize(texts)
     
-    async def summarize_old_memories(self, session_id: str = None) -> None:
+    def _fallback_summarize(self, texts: List[str]) -> str:
+        """Fallback extractive summarization"""
+        if len(texts) <= 3:
+            return "\n".join(texts[:len(texts)])[:500]
+        
+        # Take first sentence from each
+        sentences = []
+        for text in texts[:3]:
+            first_period = text.find(".")
+            if first_period > 0:
+                sentences.append(text[:first_period + 1])
+            else:
+                sentences.append(text[:100])
+        
+        return " ".join(sentences)[:500]
+    
+    def _summarize_texts(self, texts: List[str]) -> str:
+        """
+        Summarize multiple texts into a short summary.
+        
+        Wrapper that decides between LLM and fallback.
+        """
+        # For short texts, use simple approach
+        if len(texts) <= 2:
+            return texts[0][:500] if texts else ""
+        
+        # Use async version for LLM-based
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # Can't await in sync context, use fallback
+                return self._fallback_summarize(texts)
+            return loop.run_until_complete(self._llm_summarize(texts))
+        except:
+            return self._fallback_summarize(texts)
+    
+    async def summarize_old_memories(self, session_id: str = None) -> int:
         """
         Summarize old memories to save context space.
         
-        Called when memory gets too large.
+        Args:
+            session_id: Optional session to summarize
+            
+        Returns:
+            int: Number of memories summarized
         """
+        summarized_count = 0
+        
         if session_id:
-            # Summarize specific session
             entries = self._session_memories.get(session_id, [])
             if len(entries) > 10:
                 # Keep last 5, summarize older ones
                 to_summarize = entries[:-5]
-                summary = self._summarize_texts([e.text for e in to_summarize])
+                summary = await self._llm_summarize([e.text for e in to_summarize])
                 
-                # Replace old entries with summary
-                from dataclasses import replace
                 new_entry = MemoryEntry(
-                    text=f"[Summary of {len(to_summarize)} messages]: {summary}",
+                    text=f"[Summary of {len(to_summarize)} past exchanges]: {summary}",
                     timestamp=datetime.now(),
                     session_id=session_id,
                     importance=0.5
                 )
                 
                 self._session_memories[session_id] = entries[-5:] + [new_entry]
+                summarized_count = len(to_summarize)
         else:
             # Summarize all sessions
             for sid in list(self._session_memories.keys()):
-                await self.summarize_old_memories(sid)
+                count = await self.summarize_old_memories(sid)
+                summarized_count += count
+        
+        if summarized_count > 0:
+            self.logger.info(f"Summarized {summarized_count} memories")
+        
+        return summarized_count
+    
+    def compress_session(self, session_id: str, target_tokens: int = None) -> bool:
+        """
+        Compress session memory to fit token budget.
+        
+        Args:
+            session_id: Session to compress
+            target_tokens: Target token budget (default: self.max_context_tokens)
+            
+        Returns:
+            bool: True if compression was needed and performed
+        """
+        target_tokens = target_tokens or self.max_context_tokens
+        entries = self._session_memories.get(session_id, [])
+        
+        if not entries:
+            return False
+        
+        # Calculate current tokens
+        current_tokens = sum(self._context_window.estimate_tokens(e.text) for e in entries)
+        
+        if current_tokens <= target_tokens:
+            return False  # No compression needed
+        
+        # Need to compress - keep high importance and recent
+        sorted_entries = sorted(
+            entries, 
+            key=lambda e: (e.importance, e.timestamp),
+            reverse=True
+        )
+        
+        # Keep entries that fit
+        kept = []
+        used_tokens = 0
+        for entry in sorted_entries:
+            tokens = self._context_window.estimate_tokens(entry.text)
+            if used_tokens + tokens > target_tokens:
+                break
+            kept.append(entry)
+            used_tokens += tokens
+        
+        # If we kept too few, summarize the rest and add as summary
+        if len(kept) < len(entries) * 0.5:
+            to_summarize = [e for e in sorted_entries if e not in kept]
+            summary = self._fallback_summarize([e.text for e in to_summarize])
+            
+            summary_entry = MemoryEntry(
+                text=f"[Compressed summary of {len(to_summarize)} exchanges]: {summary}",
+                timestamp=datetime.now(),
+                session_id=session_id,
+                importance=0.4
+            )
+            kept.append(summary_entry)
+        
+        self._session_memories[session_id] = kept
+        self.logger.info(f"Compressed session {session_id}: {len(entries)} -> {len(kept)} entries")
+        return True
     
     def get_optimized_context(
         self,
