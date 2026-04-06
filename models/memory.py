@@ -37,7 +37,8 @@ class MemoryManager:
         self.vectorizer = None
         
         # Persistence paths
-        self.persist_path = Path(persist_path or os.getenv("MEMORY_PERSIST_PATH", str(DEFAULT_PERSIST_PATH)))
+        path_val = persist_path if persist_path else os.getenv("MEMORY_PERSIST_PATH", str(DEFAULT_PERSIST_PATH))
+        self.persist_path = Path(path_val)
         self.docs_path = Path(os.getenv("MEMORY_DOCS_PATH", str(DEFAULT_DOCS_PATH)))
         
         # Load existing data if available

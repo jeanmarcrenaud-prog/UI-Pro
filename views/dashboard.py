@@ -11,7 +11,16 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-# Import real orchestrator components
+# ===== PHASE 3: Use Services Layer =====
+# Import from services layer (decoupled)
+try:
+    from services import get_chat, get_model, get_memory, get_service_api
+    SERVICES_AVAILABLE = True
+except Exception as e:
+    print(f"Services import error: {e}")
+    SERVICES_AVAILABLE = False
+
+# Legacy imports (for backward compat until full migration)
 from controllers.orchestrator import Orchestrator
 from models.state import StateManager
 from controllers.executor import CodeExecutor
@@ -25,7 +34,7 @@ except Exception as e:
     METRICS_AVAILABLE = False
     get_dashboard_data = None
 
-# Memory integration
+# Memory integration (legacy, for backward compat)
 try:
     from models.memory import MemoryManager
     MEMORY_AVAILABLE = True
@@ -34,24 +43,27 @@ except Exception as e:
     MEMORY_AVAILABLE = False
     MemoryManager = None
 
-# Global orchestrator instance
-_orchestrator = None
-_executor = None
-_memory_manager = None
+# Global service instances (Phase 3)
+_service_api = None
+_orchestrator = None  # Legacy fallback
+
+
+def get_service_api_instance():
+    """Get ServiceAPI singleton"""
+    global _service_api
+    if _service_api is None and SERVICES_AVAILABLE:
+        try:
+            _service_api = get_service_api()
+        except Exception as e:
+            print(f"ServiceAPI init error: {e}")
+    return _service_api
 
 
 def get_orchestrator():
-    global _orchestrator, _executor, _memory_manager
+    """Legacy: Get orchestrator for backward compatibility"""
+    global _orchestrator
     if _orchestrator is None:
         _orchestrator = Orchestrator()
-    if _executor is None:
-        _executor = CodeExecutor()
-    if _memory_manager is None and MEMORY_AVAILABLE:
-        try:
-            _memory_manager = MemoryManager()
-        except Exception as e:
-            print(f"MemoryManager init error: {e}")
-            _memory_manager = None
     return _orchestrator
 
 
@@ -167,7 +179,7 @@ def _build_main_ui():
                     else:
                         gr.Markdown("⚠️ Metrics not available")
 
-        # Submit handler - runs real pipeline
+        # Submit handler - PHASE 3: Uses services layer
         def _on_submit(text):
             if not text or not text.strip():
                 return "task-0", "Please enter a task", "No task entered", "**Status**: idle"
@@ -177,29 +189,53 @@ def _build_main_ui():
             log_lines = []
             
             try:
-                # Get orchestrator
-                orch = get_orchestrator()
-                
-                log_lines.append(f"[{tid}] Starting orchestrator...")
-                
-                # Run the async pipeline in a thread
-                def run_sync():
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    try:
-                        result = loop.run_until_complete(orch.run(text))
-                        return result
-                    finally:
-                        loop.close()
-                
-                # Execute with timeout
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as pool:
-                    future = pool.submit(run_sync)
-                    try:
-                        result = future.result(timeout=120)  # 2 min timeout
-                    except concurrent.futures.TimeoutError:
-                        result = {"status": "timeout", "error": "Execution timeout after 2 minutes"}
+                # ===== PHASE 3: Use ChatService =====
+                if SERVICES_AVAILABLE:
+                    api = get_service_api_instance()
+                    if api:
+                        log_lines.append(f"[{tid}] Starting ChatService...")
+                        
+                        # Run async pipeline in thread
+                        def run_sync():
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                            try:
+                                # Initialize services if needed
+                                if not api._initialized:
+                                    return loop.run_until_complete(api.initialize())
+                                return loop.run_until_complete(api.chat.execute(text))
+                            finally:
+                                loop.close()
+                        
+                        import concurrent.futures
+                        with concurrent.futures.ThreadPoolExecutor() as pool:
+                            future = pool.submit(run_sync)
+                            try:
+                                result = future.result(timeout=120)
+                            except concurrent.futures.TimeoutError:
+                                result = {"status": "timeout", "error": "Execution timeout after 2 minutes"}
+                    else:
+                        result = {"status": "error", "error": "ServiceAPI not available"}
+                else:
+                    # Fallback to legacy orchestrator
+                    orch = get_orchestrator()
+                    log_lines.append(f"[{tid}] Starting orchestrator (legacy)...")
+                    
+                    def run_sync():
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        try:
+                            return loop.run_until_complete(orch.run(text))
+                        finally:
+                            loop.close()
+                    
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as pool:
+                        future = pool.submit(run_sync)
+                        try:
+                            result = future.result(timeout=120)
+                        except concurrent.futures.TimeoutError:
+                            result = {"status": "timeout", "error": "Execution timeout after 2 minutes"}
                 
                 # Format output
                 output_lines.append("=" * 50)
@@ -288,9 +324,37 @@ def _build_main_ui():
             ]
         )
         
-        # Memory search - only if MEMORY_AVAILABLE and components exist
-        if MEMORY_AVAILABLE:
-            def _do_memory_search(q):
+        # ===== PHASE 3: Memory search via services =====
+        # Try services first, fallback to legacy
+        if SERVICES_AVAILABLE:
+            def _do_memory_search_services(q):
+                if q and q.strip():
+                    try:
+                        mem = get_memory()
+                        results = mem.search(q, k=5)
+                        if results:
+                            return "\n".join([f"{i+1}. {r.get('text', '')[:100]}" for i, r in enumerate(results)])
+                        return "No results found"
+                    except Exception as e:
+                        return f"Error: {str(e)}"
+                return "Enter a query"
+            
+            # Use services-based memory search if components exist
+            try:
+                mem_q.change(_do_memory_search_services, inputs=mem_q, outputs=mem_res)
+            except NameError:
+                pass  # Components don't exist
+        elif MEMORY_AVAILABLE:
+            # Legacy memory search
+            _memory_manager = None
+            def _do_memory_search_legacy(q):
+                global _memory_manager
+                if _memory_manager is None:
+                    try:
+                        from models.memory import MemoryManager
+                        _memory_manager = MemoryManager()
+                    except:
+                        pass
                 if _memory_manager and q:
                     try:
                         results = _memory_manager.search(q, k=5)
@@ -301,11 +365,10 @@ def _build_main_ui():
                         return f"Error: {str(e)}"
                 return "Memory not initialized"
             
-            # Only attach handler if components exist
             try:
-                mem_q.change(_do_memory_search, inputs=mem_q, outputs=mem_res)
+                mem_q.change(_do_memory_search_legacy, inputs=mem_q, outputs=mem_res)
             except NameError:
-                pass  # Components don't exist (MEMORY_AVAILABLE but no components created)
+                pass
     
     return ui
 
