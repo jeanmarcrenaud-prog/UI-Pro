@@ -42,7 +42,7 @@ class LLMRouter:
     Advanced LLM Router with intelligent task matching.
     
     Features:
-    - Task classification (code/reasoning/fast/creative)
+    - Scoring-based model selection (code/chat/reasoning)
     - LLM-based routing (decision via small model)
     - Context-aware routing
     - Model capability matching
@@ -99,6 +99,30 @@ class LLMRouter:
         TaskType.CREATIVE: ["gemma4:latest", "lfm2:latest"],
         TaskType.ANALYSIS: ["lfm2:latest", "gemma4:latest"],
         TaskType.FAST: ["gemma4:e4b", "gemma4:latest"],
+    }
+    
+    # Model scoring functions (for scoring-based routing)
+    MODEL_SCORING = {
+        "qwen2.5-coder:32b": {
+            "code_score": 1.0,
+            "chat_score": 0.7,
+            "reasoning_score": 0.6,
+        },
+        "gemma4:latest": {
+            "code_score": 0.9,
+            "chat_score": 0.85,
+            "reasoning_score": 0.9,
+        },
+        "gemma4:e4b": {
+            "code_score": 0.7,
+            "chat_score": 0.95,
+            "reasoning_score": 0.7,
+        },
+        "lfm2:latest": {
+            "code_score": 0.5,
+            "chat_score": 0.8,
+            "reasoning_score": 1.0,
+        },
     }
     
     def __init__(self, config: RouterConfig = None):
@@ -192,12 +216,136 @@ class LLMRouter:
         """Rough token estimation (~4 chars per token)"""
         return len(text) // 4
     
+    # ===== Scoring-Based Routing =====
+    
+    def _get_task_category(self, messages: List[Dict] = None, prompt: str = None) -> str:
+        """
+        Determine primary task category for scoring.
+        
+        Returns: "code", "chat", or "reasoning"
+        """
+        content = ""
+        if messages:
+            for msg in messages[-3:]:
+                if msg.get("content"):
+                    content += msg["content"].lower() + " "
+        elif prompt:
+            content = prompt.lower()
+        
+        # Code indicators
+        code_indicators = ["code", "implement", "function", "class", "def ", "import ",
+                          "api", "debug", "bug", "error", "sql", "query"]
+        # Reasoning indicators  
+        reasoning_indicators = ["why", "how", "explain", "think", "analyze", "architecture",
+                               "design", "plan", "strategy", "compare", "reason"]
+        
+        code_count = sum(1 for ind in code_indicators if ind in content)
+        reasoning_count = sum(1 for ind in reasoning_indicators if ind in content)
+        
+        if code_count > reasoning_count and code_count >= 2:
+            return "code"
+        elif reasoning_count > code_count and reasoning_count >= 2:
+            return "reasoning"
+        else:
+            return "chat"  # Default
+    
+    def score_models(self, messages: List[Dict] = None, prompt: str = None) -> Dict[str, float]:
+        """
+        Score all available models based on task.
+        
+        Args:
+            messages: Chat messages for context
+            prompt: Direct prompt
+            
+        Returns:
+            Dict mapping model name to score
+        """
+        category = self._get_task_category(messages, prompt)
+        
+        # Map category to score key
+        score_key_map = {
+            "code": "code_score",
+            "reasoning": "reasoning_score", 
+            "chat": "chat_score"
+        }
+        score_key = score_key_map.get(category, "chat_score")
+        
+        scores = {}
+        for model, scoring in self.MODEL_SCORING.items():
+            scores[model] = scoring.get(score_key, 0.5)
+        
+        return scores
+    
+    def route_by_score(
+        self,
+        messages: List[Dict] = None,
+        prompt: str = None,
+        mode: str = None
+    ) -> Dict[str, Any]:
+        """
+        Route using scoring system.
+        
+        This is a simpler alternative to LLM-based routing.
+        
+        Args:
+            messages: Chat messages
+            prompt: Direct prompt
+            mode: Explicit mode override
+            
+        Returns:
+            dict: Routing decision with scores
+        """
+        # Get scores
+        scores = self.score_models(messages, prompt)
+        
+        # Apply mode filter if specified
+        if mode:
+            mode_task_type = {
+                "code": TaskType.CODE,
+                "reasoning": TaskType.REASONING,
+                "fast": TaskType.FAST,
+                "creative": TaskType.CREATIVE,
+                "analysis": TaskType.ANALYSIS,
+            }.get(mode.lower(), TaskType.FAST)
+            
+            # Filter models by capability
+            filtered_scores = {}
+            for model, score in scores.items():
+                caps = self.MODEL_CAPABILITIES.get(model, {})
+                if mode_task_type in caps.get("strengths", []):
+                    filtered_scores[model] = score
+            
+            if filtered_scores:
+                scores = filtered_scores
+        
+        # Get best model
+        best_model = max(scores, key=scores.get)
+        best_score = scores[best_model]
+        
+        # Determine task type
+        category = self._get_task_category(messages, prompt)
+        task_type_map = {
+            "code": TaskType.CODE,
+            "reasoning": TaskType.REASONING,
+            "chat": TaskType.FAST,
+        }
+        
+        return {
+            "model": best_model,
+            "task_type": task_type_map.get(category, TaskType.FAST),
+            "fallback_chain": [best_model] + [m for m in scores.keys() if m != best_model],
+            "scores": scores,
+            "routing_method": "scoring",
+            "confidence": best_score,
+        }
+    
     def route(
         self,
         prompt: str = None,
         messages: List[Dict] = None,
         mode: str = None,
-        context_length: int = None
+        context_length: int = None,
+        use_scoring: bool = True
     ) -> Dict[str, Any]:
         """
         Full routing decision with metadata.
@@ -207,15 +355,22 @@ class LLMRouter:
             messages: Chat messages [{"role": "user", "content": "..."}]
             mode: Explicit mode override
             context_length: Required context length
+            use_scoring: Use scoring-based routing (default True)
         
         Returns:
             dict: {
                 "model": str,
                 "task_type": TaskType,
                 "fallback_chain": List[str],
-                "estimated_tokens": int
+                "estimated_tokens": int,
+                "routing_method": str,
+                "scores": Dict (if scoring)
             }
         """
+        # Use scoring-based routing by default
+        if use_scoring:
+            return self.route_by_score(messages=messages, prompt=prompt, mode=mode)
+        
         # Map mode to task type
         task_type = None
         if mode:
@@ -252,6 +407,7 @@ class LLMRouter:
             "fallback_chain": self.get_fallback_chain(task_type),
             "estimated_tokens": est_tokens,
             "context_needed": est_tokens > self.config.max_context_tokens,
+            "routing_method": "keyword",
         }
     
     def record_call(self, model: str, task_type: TaskType, latency_ms: float, success: bool):
@@ -287,10 +443,8 @@ class LLMRouter:
         
         selection_prompt = f"""You are a model routing system. Decide which model to use.
 
-Available models:
-- gemma4:latest: General purpose, good for code, reasoning, fast tasks
-- gemma4:e4b: Fast, lightweight, good for simple tasks  
-- lfm2:latest: Large context, good for complex reasoning
+Available models and their strengths:
+{self._format_model_descriptions()}
 
 Conversation:
 {content}
@@ -310,8 +464,22 @@ Respond ONLY with JSON:
             return result.get("model", self.config.default_model)
             
         except Exception as e:
-            logger.warning(f"LLM routing failed: {e}, falling back to keyword")
+            logger.warning(f"LLM routing failed: {e}, falling back to scoring")
             return None
+    
+    def _format_model_descriptions(self) -> str:
+        """Format model descriptions for LLM prompt"""
+        lines = []
+        for model, scoring in self.MODEL_SCORING.items():
+            strengths = []
+            if scoring.get("code_score", 0) > 0.7:
+                strengths.append("code")
+            if scoring.get("chat_score", 0) > 0.7:
+                strengths.append("chat")
+            if scoring.get("reasoning_score", 0) > 0.7:
+                strengths.append("reasoning")
+            lines.append(f"- {model}: {'/'.join(strengths) if strengths else 'general purpose'}")
+        return "\n".join(lines)
     
     def route_with_llm(
         self,
@@ -342,7 +510,7 @@ Respond ONLY with JSON:
                     "routing_method": "llm"
                 }
         
-        # Fall back to keyword-based
+        # Fall back to scoring-based
         return self.route(messages=messages, prompt=prompt)
 
 
