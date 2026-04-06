@@ -297,6 +297,98 @@ class MemoryService(BaseService):
             }
             for session_id, entries in self._session_memories.items()
         }
+    
+    # ===== Summarization & Context Optimization =====
+    
+    def _summarize_texts(self, texts: List[str]) -> str:
+        """
+        Summarize multiple texts into a short summary.
+        
+        Uses LLM to compress information.
+        """
+        if not texts:
+            return ""
+        
+        if len(texts) == 1:
+            return texts[0][:500]  # Just truncate
+        
+        # Simple extractive summarization (first sentences)
+        # For full LLM summarization, would call model_service
+        combined = "\n".join(texts[:3])  # Take first 3
+        return combined[:500] + "..." if len(combined) > 500 else combined
+    
+    async def summarize_old_memories(self, session_id: str = None) -> None:
+        """
+        Summarize old memories to save context space.
+        
+        Called when memory gets too large.
+        """
+        if session_id:
+            # Summarize specific session
+            entries = self._session_memories.get(session_id, [])
+            if len(entries) > 10:
+                # Keep last 5, summarize older ones
+                to_summarize = entries[:-5]
+                summary = self._summarize_texts([e.text for e in to_summarize])
+                
+                # Replace old entries with summary
+                from dataclasses import replace
+                new_entry = MemoryEntry(
+                    text=f"[Summary of {len(to_summarize)} messages]: {summary}",
+                    timestamp=datetime.now(),
+                    session_id=session_id,
+                    importance=0.5
+                )
+                
+                self._session_memories[session_id] = entries[-5:] + [new_entry]
+        else:
+            # Summarize all sessions
+            for sid in list(self._session_memories.keys()):
+                await self.summarize_old_memories(sid)
+    
+    def get_optimized_context(
+        self,
+        query: str,
+        max_tokens: int = None,
+        include_summary: bool = True
+    ) -> str:
+        """
+        Get context with automatic summarization for long histories.
+        
+        Args:
+            query: Query for retrieval
+            max_tokens: Max tokens to return
+            include_summary: Include summarized versions
+            
+        Returns:
+            str: Context string within token budget
+        """
+        max_tokens = max_tokens or self.max_context_tokens
+        
+        # Get recent memories
+        results = self.search(query, k=10)
+        
+        if not results:
+            return ""
+        
+        # Extract texts
+        texts = [r.get("text", "") for r in results]
+        
+        # Check if we need to summarize
+        total_chars = sum(len(t) for t in texts)
+        estimated_tokens = total_chars // 4
+        
+        if estimated_tokens > max_tokens:
+            # Need to compress
+            # Take fewer results
+            k = max(1, int(max_tokens * 4 / (total_chars / len(texts))))
+            texts = texts[:k]
+        
+        # Fit to token budget
+        window = ContextWindow(max_tokens=max_tokens)
+        fitted = window.fit_texts(texts)
+        
+        return "\n---\n".join(fitted)
 
 
 # Singleton instance
