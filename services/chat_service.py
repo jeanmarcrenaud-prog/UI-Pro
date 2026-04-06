@@ -10,7 +10,7 @@ import asyncio
 import logging
 import time
 import json
-from typing import Optional, Dict, Any, AsyncIterator
+from typing import Optional, Dict, Any, AsyncIterator, List
 from datetime import datetime
 
 from .base import BaseService, ServiceMetrics
@@ -18,6 +18,8 @@ from .model_service import get_model_service, ModelService
 from .memory_service import get_memory_service, MemoryService
 from .streaming import StreamChunk, StreamStatus
 from .error_handler import get_error_handler
+from .tools import get_tool_registry, ToolCall
+from .agents import get_agent, Agent
 
 
 class ChatService(BaseService):
@@ -43,7 +45,9 @@ class ChatService(BaseService):
         model_service: ModelService = None, 
         memory_service: MemoryService = None,
         max_retries: int = 3,
-        retry_delay: float = 1.0
+        retry_delay: float = 1.0,
+        tool_registry = None,
+        agent_name: str = None
     ):
         super().__init__("ChatService")
         self.model_service = model_service or get_model_service()
@@ -56,6 +60,14 @@ class ChatService(BaseService):
         
         # Error handler
         self._error_handler = get_error_handler()
+        
+        # Tool registry
+        self.tool_registry = tool_registry or get_tool_registry()
+        
+        # Agent support
+        self._agent = None
+        if agent_name:
+            self._agent = get_agent(agent_name, self.model_service, self.tool_registry)
         
         # Executor
         self._executor = None
@@ -430,6 +442,103 @@ Retry: {attempt}/{max_retry}
         
         # All retries failed
         raise last_error
+    
+    # ===== Tool & Agent Support =====
+    
+    async def execute_with_tools(
+        self,
+        task: str,
+        use_tools: bool = True,
+        max_tool_calls: int = 5
+    ) -> Dict[str, Any]:
+        """
+        Execute task with tool support.
+        
+        Args:
+            task: User task
+            use_tools: Enable tool usage
+            max_tool_calls: Maximum tool calls per execution
+            
+        Returns:
+            dict: Result with tool_calls history
+        """
+        tool_calls_history = []
+        
+        # Initial LLM call with tool schemas
+        prompt = f"""Task: {task}
+
+Available tools:
+{json.dumps(self.tool_registry.get_schemas(), indent=2)}
+
+Respond with JSON:
+{{
+  "response": "your response",
+  "tool_calls": [{{"name": "tool_name", "arguments": {{}}}}] (if needed)
+}}
+"""
+        response = self.model_service.generate(prompt, mode="reasoning")
+        
+        # Parse response
+        result = self._parse_json(response)
+        
+        # Execute tools if present
+        if use_tools and result.get("tool_calls"):
+            for tc in result["tool_calls"][:max_tool_calls]:
+                tool_call = ToolCall(
+                    id=f"call_{len(tool_calls_history)}",
+                    name=tc.get("name", ""),
+                    arguments=tc.get("arguments", {})
+                )
+                
+                tool_result = await self.tool_registry.execute_call(tool_call)
+                tool_calls_history.append({
+                    "call": tool_call.__dict__,
+                    "result": tool_result
+                })
+                
+                # Add tool result to context for next iteration
+                result["tool_results"] = tool_calls_history
+        
+        return {
+            "response": result.get("response", response[:200]),
+            "tool_calls": tool_calls_history,
+            "raw": result
+        }
+    
+    async def execute_with_agent(
+        self,
+        task: str,
+        agent_name: str = "coder"
+    ) -> Dict[str, Any]:
+        """
+        Execute task using an agent.
+        
+        Args:
+            task: User task
+            agent_name: Name of agent to use ("coder" or "analyzer")
+            
+        Returns:
+            dict: Agent execution result
+        """
+        if not self._agent:
+            # Create agent on-the-fly
+            self._agent = get_agent(agent_name, self.model_service, self.tool_registry)
+        
+        # Get context for the agent
+        context = self.memory_service.get_context(task, k=3)
+        
+        # Run agent
+        result = await self._agent.run(task, {"context": context})
+        
+        return result
+    
+    def register_tool(self, tool) -> None:
+        """Register a custom tool"""
+        self.tool_registry.register(tool)
+    
+    def list_tools(self) -> List[str]:
+        """List available tools"""
+        return self.tool_registry.list_tools()
 
 
 # Singleton instance
