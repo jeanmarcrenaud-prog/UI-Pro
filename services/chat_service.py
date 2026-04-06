@@ -3,18 +3,21 @@
 # Orchestration des conversations utilisant:
 # - ModelService pour génération LLM
 # - MemoryService pour contexte/rétrieval
-# - Pipeline Planner → Architect → Coder → Reviewer → Executor
+# - Streaming support throughout
+# - Fallback and retry logic
 
 import asyncio
 import logging
 import time
 import json
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, AsyncIterator
 from datetime import datetime
 
 from .base import BaseService, ServiceMetrics
 from .model_service import get_model_service, ModelService
 from .memory_service import get_memory_service, MemoryService
+from .streaming import StreamChunk, StreamStatus
+from .error_handler import get_error_handler
 
 
 class ChatService(BaseService):
@@ -28,15 +31,33 @@ class ChatService(BaseService):
     4. Code (LLM)
     5. Review (LLM)
     6. Execute (sandbox)
+    
+    Features:
+    - Streaming throughout the chain
+    - Automatic fallback on errors
+    - Retry logic
     """
     
-    def __init__(self, model_service: ModelService = None, memory_service: MemoryService = None):
+    def __init__(
+        self, 
+        model_service: ModelService = None, 
+        memory_service: MemoryService = None,
+        max_retries: int = 3,
+        retry_delay: float = 1.0
+    ):
         super().__init__("ChatService")
         self.model_service = model_service or get_model_service()
         self.memory_service = memory_service or get_memory_service()
         self.service_metrics = ServiceMetrics()
         
-        # Executor pour运行代码
+        # Retry configuration
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+        
+        # Error handler
+        self._error_handler = get_error_handler()
+        
+        # Executor
         self._executor = None
     
     async def initialize(self) -> None:
@@ -291,6 +312,124 @@ Retry: {attempt}/{max_retry}
             "model_service": self.model_service.get_metrics(),
             "memory_service": self.memory_service.get_metrics(),
         }
+    
+    # ===== Streaming Support =====
+    
+    async def execute_stream(
+        self, 
+        task: str,
+        on_chunk: callable = None
+    ) -> AsyncIterator[str]:
+        """
+        Execute pipeline with streaming response.
+        
+        Yields:
+            str: Chunks of the response as they're generated
+        """
+        start_time = time.time()
+        
+        # Get context from memory
+        context = self.memory_service.get_context(task, k=3)
+        system_context = f"Previous context:\n{context}\n\n" if context else ""
+        
+        try:
+            # Stream through pipeline steps
+            # Step 1: Planning
+            yield "📋 Planning...\n"
+            plan = await self._planner(task, system_context)
+            yield f"Plan: {json.dumps(plan, indent=2)}\n\n"
+            
+            # Step 2: Architecture  
+            yield "🏗️ Designing architecture...\n"
+            architecture = await self._architect(task, plan, system_context)
+            yield f"Architecture: {json.dumps(architecture, indent=2)}\n\n"
+            
+            # Step 3: Code
+            yield "💻 Writing code...\n"
+            code = await self._coder(task, architecture, system_context)
+            code_str = json.dumps(code, indent=2)[:500]
+            yield f"Code:\n{code_str}\n\n"
+            
+            # Step 4: Review
+            yield "🔍 Reviewing...\n"
+            review = await self._reviewer(code, system_context)
+            yield f"Review: {json.dumps(review, indent=2)}\n\n"
+            
+            # Step 5: Execute
+            yield "🧪 Executing...\n"
+            execution = await self._execute(code)
+            
+            if execution.get("success"):
+                yield f"✅ Success!\n"
+                yield f"Output: {execution.get('stdout', '')[:200]}\n"
+            else:
+                yield f"❌ Failed: {execution.get('stderr', '')[:200]}\n"
+            
+            # Save to memory
+            self.memory_service.add(f"Task: {task[:100]}\nCode: {str(code)[:200]}")
+            
+            duration_ms = int((time.time() - start_time) * 1000)
+            yield f"\n⏱️ Duration: {duration_ms}ms"
+            
+        except Exception as e:
+            yield f"\n❌ Error: {str(e)}"
+    
+    async def chat_stream(
+        self,
+        messages: list,
+        on_chunk: callable = None
+    ) -> AsyncIterator[str]:
+        """
+        Simple chat with streaming.
+        
+        Args:
+            messages: [{"role": "user", "content": "..."}]
+            on_chunk: Optional callback for each chunk
+            
+        Yields:
+            str: Response chunks
+        """
+        # Get last user message
+        last_msg = messages[-1] if messages else {}
+        user_input = last_msg.get("content", "")
+        
+        # Get context from memory
+        context = self.memory_service.get_context(user_input, k=5)
+        
+        # Build prompt
+        prompt = f"Context:\n{context}\n\n" if context else ""
+        prompt += f"User: {user_input}\n\nAssistant:"
+        
+        # Use streaming service
+        from .streaming import get_streaming_service
+        streaming = get_streaming_service()
+        
+        async for chunk in streaming.stream_generate(prompt, mode="fast"):
+            if chunk.status == StreamStatus.GENERATING:
+                if on_chunk:
+                    on_chunk(chunk)
+                yield chunk.text
+    
+    # ===== Retry Logic =====
+    
+    async def _with_retry(self, func, *args, **kwargs) -> Any:
+        """Execute function with retry logic"""
+        last_error = None
+        
+        for attempt in range(self.max_retries):
+            try:
+                return await func(*args, **kwargs)
+            except Exception as e:
+                last_error = e
+                self.logger.warning(f"Attempt {attempt + 1} failed: {e}")
+                
+                if attempt < self.max_retries - 1:
+                    delay = self.retry_delay * (2 ** attempt)  # Exponential backoff
+                    self.logger.info(f"Retrying in {delay}s...")
+                    await asyncio.sleep(delay)
+        
+        # All retries failed
+        raise last_error
 
 
 # Singleton instance
