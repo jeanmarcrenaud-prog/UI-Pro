@@ -99,17 +99,29 @@ class LLMRouter:
         self.config = config or RouterConfig()
         self._call_history: List[Dict] = []
     
-    def classify_task(self, prompt: str) -> TaskType:
+    def classify_task(self, prompt: str = None, messages: List[Dict] = None) -> TaskType:
         """
-        Classify task based on prompt content.
+        Classify task based on prompt OR full messages history.
         
         Args:
-            prompt: User prompt
+            prompt: Direct prompt string
+            messages: Chat messages [{"role": "user", "content": "..."}]
             
         Returns:
             TaskType: Classified task type
         """
-        prompt_lower = prompt.lower()
+        # Use messages if provided, otherwise use prompt
+        if messages:
+            # Combine all user messages for analysis
+            content_parts = []
+            for msg in messages:
+                if msg.get("role") == "user" and msg.get("content"):
+                    content_parts.append(msg["content"].lower())
+            prompt_lower = " ".join(content_parts)
+        elif prompt:
+            prompt_lower = prompt.lower()
+        else:
+            return TaskType.FAST
         
         # Score each task type
         scores = {tt: 0 for tt in TaskType}
@@ -134,6 +146,7 @@ class LLMRouter:
         self, 
         task_type: TaskType = None,
         prompt: str = None,
+        messages: List[Dict] = None,
         context_length: int = None
     ) -> str:
         """
@@ -142,16 +155,15 @@ class LLMRouter:
         Args:
             task_type: Task type (auto-detected if not provided)
             prompt: User prompt (used for auto-detection)
+            messages: Full messages history
             context_length: Required context length
             
         Returns:
             str: Selected model name
         """
         # Auto-detect task type if not provided
-        if task_type is None and prompt:
-            task_type = self.classify_task(prompt)
-        elif task_type is None:
-            task_type = TaskType.FAST
+        if task_type is None:
+            task_type = self.classify_task(prompt, messages)
         
         # Get fallback chain for task type
         chain = self.FALLBACK_CHAINS.get(task_type, [self.config.default_model])
@@ -176,12 +188,19 @@ class LLMRouter:
     
     def route(
         self,
-        prompt: str,
+        prompt: str = None,
+        messages: List[Dict] = None,
         mode: str = None,
         context_length: int = None
     ) -> Dict[str, Any]:
         """
         Full routing decision with metadata.
+        
+        Args:
+            prompt: Direct prompt string
+            messages: Chat messages [{"role": "user", "content": "..."}]
+            mode: Explicit mode override
+            context_length: Required context length
         
         Returns:
             dict: {
@@ -203,15 +222,23 @@ class LLMRouter:
             }
             task_type = mode_map.get(mode.lower())
         
-        # Detect task type from prompt
-        detected_type = self.classify_task(prompt) if prompt else TaskType.FAST
-        task_type = task_type or detected_type
+        # Detect task type from messages/prompt
+        if task_type is None:
+            task_type = self.classify_task(prompt, messages)
         
-        # Estimate tokens
-        est_tokens = self.estimate_tokens(prompt) if prompt else 0
+        # Calculate total content for token estimation
+        total_content = ""
+        if messages:
+            for msg in messages:
+                if msg.get("content"):
+                    total_content += msg["content"] + " "
+        elif prompt:
+            total_content = prompt
+        
+        est_tokens = self.estimate_tokens(total_content) if total_content else 0
         
         # Select model
-        model = self.select_model(task_type, context_length=context_length)
+        model = self.select_model(task_type, messages=messages, context_length=context_length)
         
         return {
             "model": model,
