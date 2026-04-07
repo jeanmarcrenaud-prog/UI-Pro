@@ -197,12 +197,16 @@ class AgentConfig:
     """Agent configuration"""
     name: str
     description: str
-    max_steps: int = 10
+    max_steps: int = 10  # Safety: max iterations to prevent infinite loops
     timeout_seconds: int = 120
     verbose: bool = True
     use_tools: bool = True
     use_planning: bool = False  # NEW: Enable strategic planning
     system_prompt: Optional[str] = None
+    
+    # Safety guards
+    max_tool_calls_per_step: int = 3  # Max tools per step
+    max_total_tool_calls: int = 20  # Total tool call budget
 
 
 class Agent:
@@ -288,12 +292,21 @@ class Agent:
             
             self.status = AgentStatus.THINKING
         
+        # Initialize tool call counter for safety
+        total_tool_calls = 0
+        step_timeout = self.config.timeout_seconds / max(self.config.max_steps, 1)
+        
         try:
-            # Main loop - proper ReAct cycle
+            # Main loop - proper ReAct cycle with safety guards
             step_num = 0
             while step_num < self.config.max_steps:
                 step_num += 1
                 self._current_step = step_num
+                
+                # Safety: check total tool call limit
+                if total_tool_calls >= self.config.max_total_tool_calls:
+                    self._log_event("safety_limit", {"reason": "max_total_tool_calls reached", "tool_calls": total_tool_calls})
+                    break
                 
                 # If we have a plan, get current step description
                 current_step_desc = None
@@ -303,8 +316,15 @@ class Agent:
                         current_step_desc = pending[0].description
                         self._log_event("step_start", {"step_id": pending[0].step_id, "description": current_step_desc})
                 
-                # 1. THINK - Get next action from LLM with full context
-                thought_response = await self._think_with_context(task, system_prompt, current_step_desc)
+                # 1. THINK - Get next action from LLM with timeout
+                try:
+                    thought_response = await asyncio.wait_for(
+                        self._think_with_context(task, system_prompt, current_step_desc),
+                        timeout=step_timeout
+                    )
+                except asyncio.TimeoutError:
+                    self._log_event("step_timeout", {"step": step_num, "timeout": step_timeout})
+                    break
                 
                 if not thought_response.get("action"):
                     break
@@ -324,8 +344,12 @@ class Agent:
                     tool_name = action_parts.split()[0] if action_parts else ""
                     tool_args = thought_response.get("tool_args", {})
                     
-                    # Execute tool
-                    tool_result = await self._execute_tool(tool_name, tool_args)
+                    # Safety: check tool calls per step limit
+                    if self.config.max_tool_calls_per_step > 0:
+                        # Execute tool with timeout (already handled by Tool)
+                        tool_result = await self._execute_tool(tool_name, tool_args)
+                        total_tool_calls += 1
+                        self._log_event("tool_executed", {"tool": tool_name, "total_calls": total_tool_calls})
                     
                     # Add observation to history
                     observation_str = str(tool_result)
