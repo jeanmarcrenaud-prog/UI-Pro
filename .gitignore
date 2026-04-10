@@ -43,3 +43,9 @@ Thumbs.db
 workspace/
 *.zip
 test.txt
+
+# Frontend build artifacts (too large for GitHub)
+ui-pro-ui/node_modules/
+ui-pro-ui/.next/
+frontend/node_modules/
+frontend/.next/
