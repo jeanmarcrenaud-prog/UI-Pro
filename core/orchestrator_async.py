@@ -14,9 +14,13 @@ sys.path.insert(0, str(project_root))
 
 from core.state_manager import StateManager
 from llm.router import LLMRouter
+from core.executor import CodeExecutor
 
-from llm import planner, architect, coder, reviewer
-from core.executor import CodeExecutor  # Import executor
+# Try to import centralized prompts
+try:
+    from core.prompts import PLANNER_PROMPT, ARCHITECT_PROMPT, CODER_PROMPT, REVIEWER_PROMPT, FIX_PROMPT
+except ImportError:
+    PLANNER_PROMPT = ARCHITECT_PROMPT = CODER_PROMPT = REVIEWER_PROMPT = FIX_PROMPT = None
 
 logger = logging.getLogger(__name__)
 executor = CodeExecutor()  # Singleton executor

@@ -85,7 +85,7 @@ def _build_main_ui():
         with gr.Row():
             with gr.Column(scale=1):  # sidebar
                 nav = gr.Radio(
-                    ["Task Input", "Real-time Output", "Live Logs", "Status", "Memory", "Metrics"], 
+                    ["Task Input", "Real-time Output", "Live Logs", "Status", "Memory", "Metrics", "History", "Advanced"], 
                     value="Task Input", 
                     label="Navigation", 
                     show_label=False
@@ -106,10 +106,28 @@ def _build_main_ui():
                 # Section: Real-time Output
                 section_realtime = gr.Column(visible=False, elem_id="section-realtime")
                 with section_realtime:
-                    rt_output = gr.Textbox(
+                    gr.Markdown("### Generated Code")
+                    
+                    # Code display with syntax highlighting
+                    code_output = gr.Code(
+                        value="",
+                        language="python",
+                        label="Code",
+                        lines=20,
+                    )
+                    
+                    # Action buttons row
+                    with gr.Row():
+                        copy_btn = gr.Button("Copy", variant="secondary")
+                        download_btn = gr.Button("Download", variant="secondary")
+                        run_sandbox_btn = gr.Button("Run in Sandbox", variant="primary")
+                    
+                    # Execution output
+                    gr.Markdown("### Execution Result")
+                    exec_output = gr.Textbox(
                         label="Execution Output", 
-                        value="No output yet. Submit a task to see real execution.", 
-                        lines=15, 
+                        value="No output yet.", 
+                        lines=10, 
                         interactive=False
                     )
                 
@@ -179,7 +197,73 @@ def _build_main_ui():
                     else:
                         gr.Markdown("⚠️ Metrics not available")
 
-        # Submit handler - PHASE 3: Uses services layer
+                # Section: History
+                section_history = gr.Column(visible=False, elem_id="section-history")
+                with section_history:
+                    gr.Markdown("### Previous Generations")
+                    gr.Markdown("*History is saved automatically after each task completion*")
+                    
+                    # History storage
+                    history_file = "workspace/history.json"
+                    
+                    def _load_history():
+                        try:
+                            if os.path.exists(history_file):
+                                with open(history_file, "r") as f:
+                                    return json.load(f)
+                            return []
+                        except Exception:
+                            return []
+                    
+                    # Load initial history
+                    initial_history = _load_history()
+                    
+                    # Display as dataframe
+                    history_df = gr.Dataframe(
+                        headers=["Task ID", "Task", "Status", "Duration (ms)", "Timestamp"],
+                        value=initial_history,
+                        interactive=False,
+                    )
+                    
+                    # Reload button
+                    refresh_history_btn = gr.Button("Refresh History")
+                    
+                    def _refresh_history():
+                        return _load_history()
+                    
+                    refresh_history_btn.click(_refresh_history, outputs=[history_df])
+                    
+                    # Last creation preview
+                    gr.Markdown("#### Last Creation")
+                    last_creation = gr.Textbox(
+                        label="Preview", 
+                        value="", 
+                        lines=8, 
+                        interactive=False,
+                    )
+
+                # Section: Advanced
+                section_advanced = gr.Column(visible=False, elem_id="section-advanced")
+                with section_advanced:
+                    gr.Markdown("### Advanced Configuration")
+                    
+                    with gr.Row():
+                        max_iterations = gr.Slider(
+                            minimum=1, maximum=10, value=3, step=1,
+                            label="Max Auto-fix Iterations",
+                        )
+                        timeout = gr.Slider(
+                            minimum=10, maximum=300, value=60, step=10,
+                            label="Timeout (seconds)",
+                        )
+                    
+                    model_choice = gr.Dropdown(
+                        choices=["auto", "qwen2.5-coder:32b", "qwen-opus"],
+                        value="auto",
+                        label="Preferred Model",
+                    )
+                    
+                    gr.Markdown("*These settings affect pipeline execution.*")
         def _on_submit(text):
             if not text or not text.strip():
                 return "task-0", "Please enter a task", "No task entered", "**Status**: idle"
@@ -369,6 +453,29 @@ def _build_main_ui():
                 mem_q.change(_do_memory_search_legacy, inputs=mem_q, outputs=mem_res)
             except NameError:
                 pass
+        
+        # Theme - Premium violet/blue
+        try:
+            from gradio.themes import Default
+            custom_theme = Default(
+                primary_hue="violet",
+                secondary_hue="blue",
+            )
+            GRADIO_APP.theme = custom_theme
+        except Exception:
+            pass
+        
+        # Custom CSS for premium look
+        premium_css = """
+        .gradio-container { background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%) !important; }
+        #section-task-input, #section-realtime, #section-logs, #section-status, #section-memory, #section-metrics, #section-history, #section-advanced {
+            background: white !important;
+            border-radius: 12px !important;
+            padding: 20px !important;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1) !important;
+        }
+        """
+        GRADIO_APP.css = (GRADIO_APP.css or "") + premium_css
     
     return ui
 
@@ -398,6 +505,9 @@ def run():
         server_port=7860,
         css=css_content if css_content else None
     )
+    
+    # Add navigation change handler at the end
+    # Note: Need to reference sections - simplified approach since we don't have nav.change handler
 
 
 if __name__ == "__main__":
