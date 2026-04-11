@@ -125,7 +125,7 @@ async def ws_endpoint(ws: WebSocket):
     """WebSocket endpoint for real-time streaming"""
     await ws.accept()
     
-    client_info = ws.client.host or "unknown"
+    client_info = str(ws.client.host) if ws.client.host else "unknown"
     session_id = f"{client_info}-{len(sessions)}"
     sessions[session_id] = []
     
