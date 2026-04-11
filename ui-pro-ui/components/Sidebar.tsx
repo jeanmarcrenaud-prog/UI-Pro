@@ -54,6 +54,11 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
 
   return (
     <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col">
+      {/* Logo */}
+      <div className="p-4 flex items-center justify-center">
+        <img src="/logo.png" alt="UI-Pro" className="h-12 w-auto" />
+      </div>
+
       {/* New Chat Button */}
       <div className="p-3">
         <button
