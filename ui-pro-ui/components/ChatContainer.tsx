@@ -5,7 +5,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import ReactMarkdown from 'react-markdown'
-import { Prism as SyntaxHighlighter } from 'react-markdown'
+import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter'
 
 interface Message {
   id: string
@@ -219,10 +219,9 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
                             const isInline = !match && !className
                             return !isInline && match ? (
                               <SyntaxHighlighter
-                                style={{ background: 'transparent' }}
+                                theme={oneDark}
                                 language={match[1]}
                                 PreTag="div"
-                                {...props}
                               >
                                 {String(children).replace(/\n$/, '')}
                               </SyntaxHighlighter>
