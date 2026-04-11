@@ -16,6 +16,7 @@ interface EventMap {
   
   // Model events
   modelChange: { model: string }
+  modelsDiscovered: { models: Array<{ id: string; name: string; provider: string }> }
   error: { message: string }
 }
 
