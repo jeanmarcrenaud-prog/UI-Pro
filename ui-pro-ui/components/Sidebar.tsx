@@ -1,8 +1,11 @@
 'use client'
 
-// UI-Pro Sidebar - ChatGPT quality
+// UI-Pro Sidebar - ChatGPT quality with dynamic models
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useUIStore } from '@/lib/stores/uiStore'
+import { modelDiscovery } from '@/services/modelDiscovery'
+import { motion } from 'framer-motion'
 
 interface SidebarProps {
   activeTab: string
@@ -16,19 +19,38 @@ const tabs = [
   { id: 'settings', label: 'Settings', icon: '⚙️' },
 ]
 
-const models = [
-  { id: 'gemma4', label: 'Gemma 4' },
-  { id: 'qwen-coder', label: 'Qwen Coder' },
-  { id: 'mistral', label: 'Mistral' },
-  { id: 'deepseek', label: 'DeepSeek' },
-]
-
 export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
-  const [selectedModel, setSelectedModel] = useState('gemma4')
+  const { 
+    availableModels, 
+    selectedModel, 
+    setSelectedModel 
+  } = useUIStore()
+  const [isLoadingModels, setIsLoadingModels] = useState(true)
   const [chats] = useState([
     { id: '1', title: 'Analysis project', time: '2h ago' },
     { id: '2', title: 'Code review', time: '5h ago' },
   ])
+
+  // Discover models on mount
+  useEffect(() => {
+    const loadModels = async () => {
+      setIsLoadingModels(true)
+      try {
+        await modelDiscovery.discover()
+      } catch (error) {
+        console.error('Failed to discover models:', error)
+      } finally {
+        setIsLoadingModels(false)
+      }
+    }
+    
+    loadModels()
+    
+    // Poll for model updates every 60s
+    modelDiscovery.startPolling(60000)
+    
+    return () => modelDiscovery.stopPolling()
+  }, [])
 
   return (
     <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col">
@@ -44,17 +66,40 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
 
       {/* Model Selector */}
       <div className="px-3 pb-3">
-        <select
-          value={selectedModel}
-          onChange={(e) => setSelectedModel(e.target.value)}
-          className="w-full bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
+        <div className="relative">
+          {isLoadingModels ? (
+            <div className="w-full bg-slate-800 border border-slate-700 text-slate-400 text-xs rounded-lg px-3 py-2 flex items-center gap-2">
+              <motion.span
+                animate={{ rotate: 360 }}
+                transition={{ repeat: Infinity, duration: 1 }}
+                className="w-3 h-3 border border-slate-400 border-t-transparent rounded-full"
+              />
+              Discovering models...
+            </div>
+          ) : (
+            <select
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value)}
+              className="w-full bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
+            >
+              {availableModels.length === 0 ? (
+                <option value="">No models found</option>
+              ) : (
+                availableModels.map((model) => (
+                  <option key={model} value={model}>
+                    {model}
+                  </option>
+                ))
+              )}
+            </select>
+          )}
+        </div>
+        <button
+          onClick={() => modelDiscovery.discover()}
+          className="text-xs text-slate-500 hover:text-slate-400 mt-1 flex items-center gap-1"
         >
-          {models.map((model) => (
-            <option key={model.id} value={model.id}>
-              {model.label}
-            </option>
-          ))}
-        </select>
+          <span>↻</span> Refresh models
+        </button>
       </div>
 
       {/* Navigation */}
@@ -92,7 +137,9 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
       {/* Footer */}
       <div className="p-4 border-t border-slate-800 text-xs text-slate-500">
         <div>UI-Pro v1.0</div>
-        <div className="text-slate-600 mt-1">Powered by Ollama</div>
+        <div className="text-slate-600 mt-1">
+          {availableModels.length} model{availableModels.length !== 1 ? 's' : ''} available
+        </div>
       </div>
     </aside>
   )
