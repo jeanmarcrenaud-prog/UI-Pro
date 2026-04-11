@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
 """
 🚀 UI-Pro Launcher
-==================
+=================
 
 Entry point for UI-Pro application.
 Handles:
-- Dashboard Gradio (port 7860)
-- FastAPI (port 8000)
-- Dependency verification
+- FastAPI backend (port 8000)
+- Next.js UI (port 3000) - via npm run dev
 
 Usage:
-    python run.py                    # Launch dashboard
-    python run.py --api              # Launch FastAPI
-    python run.py --all              # Launch both
-    python run.py --check            # Verify dependencies
+    python run.py --api           # Launch FastAPI backend only
+    python run.py --check         # Verify dependencies
+    python run.py --test          # Run tests
+
+Note: Next.js UI is now the primary interface.
+Run it separately: cd ui-pro-ui && npm run dev
 """
 
 import sys
@@ -27,8 +28,6 @@ if sys.platform == "win32":
 
 import argparse
 import subprocess
-import time
-import threading
 from pathlib import Path
 
 
@@ -65,7 +64,6 @@ def check_dependencies() -> bool:
     print_header("Vérification des dépendances")
     
     required = [
-        ("gradio", "Gradio (UI)"),
         ("fastapi", "FastAPI (Web)"),
         ("faiss", "FAISS (Memory)"),
         ("sentence_transformers", "SentenceTransformers"),
@@ -142,26 +140,12 @@ def check_environment() -> bool:
     return True
 
 
-def start_dashboard(block: bool = True):
-    """Lance le dashboard Gradio."""
-    print_header("Lancement Dashboard Gradio")
-    print(f"{Colors.GREEN}→ http://localhost:7860{Colors.RESET}")
-    print("(Ctrl+C pour arrêter)\n")
-    
-    # Get project root and add to path
-    project_root = Path(__file__).parent.parent
-    sys.path.insert(0, str(project_root))
-    
-    # Import and run directly
-    from views.dashboard import run
-    run()
-
-
-def start_api(block: bool = True):
+def start_api():
     """Lance FastAPI."""
     print_header("Lancement FastAPI")
     print(f"{Colors.GREEN}→ http://localhost:8000{Colors.RESET}")
     print(f"{Colors.GREEN}→ http://localhost:8000/docs{Colors.RESET}")
+    print(f"{Colors.YELLOW}→ http://localhost:3000 (Next.js UI){Colors.RESET}")
     print("(Ctrl+C pour arrêter)\n")
     
     # Get project root and add to path
@@ -172,22 +156,6 @@ def start_api(block: bool = True):
     from views.api import app
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
-
-def start_all():
-    """Lance dashboard et API en parallèle."""
-    print_header("Lancement de tous les services")
-    
-    # Démarrer l'API dans un thread
-    api_thread = threading.Thread(target=start_api, daemon=True)
-    api_thread.start()
-    
-    # Attendre un peu que l'API démarre
-    time.sleep(2)
-    
-    # Démarrer le dashboard (bloquant)
-    print(f"\n{Colors.GREEN}API démarrée sur port 8000{Colors.RESET}")
-    start_dashboard()
 
 
 def run_tests():
@@ -204,32 +172,23 @@ def run_tests():
 
 def main():
     parser = argparse.ArgumentParser(
-        description="UI-Pro Launcher - Supervise le lancement des modules",
+        description="UI-Pro Launcher",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Exemples:
-  python run.py                  Lance le dashboard
-  python run.py --api            Lance FastAPI uniquement
-  python run.py --all           Lance dashboard + API
+  python run.py --api           Lance FastAPI (Next.js UI separate)
   python run.py --check         Vérifie les dépendances
   python run.py --test          Lance les tests
+
+Note: Next.js UI runs separately:
+  cd ui-pro-ui && npm run dev
         """
     )
     
     parser.add_argument(
-        "--dashboard", 
-        action="store_true",
-        help="Lance le dashboard Gradio (défaut)"
-    )
-    parser.add_argument(
         "--api",
         action="store_true",
-        help="Lance FastAPI"
-    )
-    parser.add_argument(
-        "--all",
-        action="store_true",
-        help="Lance tous les services"
+        help="Lance FastAPI backend"
     )
     parser.add_argument(
         "--check",
@@ -244,9 +203,9 @@ Exemples:
     
     args = parser.parse_args()
     
-    # Si aucun argument, lancer le dashboard par défaut
-    if not any([args.dashboard, args.api, args.all, args.check, args.test]):
-        args.dashboard = True
+    # Default to API if no args
+    if not any([args.api, args.check, args.test]):
+        args.api = True
     
     # Vérification des dépendances (toujours sauf si --test)
     if not args.test:
@@ -264,14 +223,8 @@ Exemples:
     elif args.test:
         run_tests()
         
-    elif args.all:
-        start_all()
-        
     elif args.api:
         start_api()
-        
-    elif args.dashboard:
-        start_dashboard()
 
 
 if __name__ == "__main__":
