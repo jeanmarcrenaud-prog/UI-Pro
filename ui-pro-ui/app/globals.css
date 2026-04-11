@@ -33,16 +33,6 @@ body {
   @apply bg-slate-600;
 }
 
-/* Animations */
-@keyframes cursor-blink {
-  0%, 50% { opacity: 1; }
-  51%, 100% { opacity: 0; }
-}
-
-.animate-cursor-blink {
-  animation: cursor-blink 1s infinite;
-}
-
 /* Focus styles */
 input:focus, textarea:focus, button:focus, select:focus {
   @apply outline-none;
@@ -51,4 +41,45 @@ input:focus, textarea:focus, button:focus, select:focus {
 /* Smooth scrolling */
 html {
   scroll-behavior: smooth;
+}
+
+/* Prose/markdown styles */
+.prose {
+  @apply text-slate-100;
+}
+
+.prose pre {
+  @apply bg-slate-900 rounded-lg p-3 overflow-x-auto my-2;
+}
+
+.prose code {
+  @apply bg-slate-700 px-1 py-0.5 rounded text-sm;
+}
+
+.prose pre code {
+  @apply bg-transparent p-0;
+}
+
+.prose h1, .prose h2, .prose h3 {
+  @apply font-semibold text-white mt-4 mb-2;
+}
+
+.prose p {
+  @apply mb-2;
+}
+
+.prose ul, .prose ol {
+  @apply pl-5 my-2;
+}
+
+.prose li {
+  @apply my-1;
+}
+
+.prose a {
+  @apply text-violet-400 hover:underline;
+}
+
+.prose blockquote {
+  @apply border-l-4 border-slate-600 pl-4 italic text-slate-400 my-2;
 }
