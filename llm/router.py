@@ -124,6 +124,36 @@ class LLMRouter:
         # Try reasoning model first
         return f"[Error: Fallback tried {self.config.reasoner}]"
 
+    def generate(self, prompt: str, mode: str = "fast") -> str:
+        """
+        Generate response - convenience method.
+        
+        Args:
+            prompt: The prompt
+            mode: fast/code/reasoning
+            
+        Returns:
+            Response text
+        """
+        # Get client for mode
+        mode_to_model = {
+            "fast": getattr(self.config, 'fast', None) or "qwen2.5-coder:7b",
+            "code": getattr(self.config, 'code', None) or "deepseek-coder:33b",
+            "reasoning": getattr(self.config, 'reasoning', None) or "qwen2.5-coder:32b",
+            "reasoner": getattr(self.config, 'reasoner', None) or "qwen-opus",
+        }
+        model_name = mode_to_model.get(mode, mode_to_model.get("fast"))
+        
+        # Get client and generate
+        client = OllamaClient(self.config)
+        return client.generate(prompt)
+    
+    def get_for_mode(self, mode: str) -> "OllamaClient":
+        """
+        Get client by mode (fast/code/reasoning).
+        """
+        return OllamaClient(self.config)
+
 
 # ==================== **3. Test Routing** ====================
 
