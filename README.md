@@ -1,203 +1,182 @@
-# ui-pro - AI Agent Orchestration System
+# UI-Pro - AI Agent Orchestration System
 
-> **Système d'agents IA auto-hébergé** qui génère, debug et déploie des applications Python automatiquement.
+> **Système d'agents IA auto-hébergé** avec interface moderne comme ChatGPT.
 
 ![Status](https://img.shields.io/badge/status-beta-orange)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-green)
+![Next.js](https://img.shields.io/badge/Next.js-14-blue)
 
-## Qu'est-ce que c'est?
+## 🚀 Présentation
 
-`ui-pro` est un système multi-agents qui orchestre des agents spécialisés pour:
+`ui-pro` est un système d'orchestration d'agents IA moderne avec:
 
-1. **Planifier** des tâches complexes
-2. **Architecturer** des solutions
-3. **Coder** des applications Python propres
-4. **Reviewer** le code généré
-5. **Exécuter** avec sandbox et auto-correction (max 3 tentatives)
+- **Interface UI moderne** (type ChatGPT) avec streaming temps réel
+- **Agent intelligent** avec steps visibles en direct
+- **Multi-modèles** supportés (Ollama, LM Studio, llama.cpp)
+- **Tool calling** intégré
+- **Architecture event-driven** pour une expérience fluide
 
-TOUT EN LOCAL avec **Ollama** (pas de dépendance cloud!)
-
-## Architecture
+## 🏗️ Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    USER INPUT (Task)                        │
+│                    Next.js UI (port 3000)                   │
+│              Interface moderne avec Tailwind               │
+└────────────────────────────┬────────────────────────────────┘
+                             │
+                             ▼ WebSocket/SSE
+┌─────────────────────────────────────────────────────────────┐
+│                    FastAPI Backend (port 8000)              │
+│                  API + Streaming Events                       │
 └────────────────────────────┬────────────────────────────────┘
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                   Dashboard (Gradio)                         │
-│              Interface utilisateur (port 7860)              │
-└────────────────────────────┬────────────────────────────────┘
-                             │
-                             ▼
-┌─────────────────────────────────────────────────────────────┐
-│              OrchestratorAsync.run()                        │
-│         Pipeline async avec StateManager                    │
-└────────────────────────────┬────────────────────────────────┘
-                             │
-         ┌───────────────────┴───────────────────┐
-         ▼                                       ▼
-   _planner()                              _memory()
-   (LLM)                                    (FAISS)
-         │                                       │
-         └───────────────────┬───────────────────┘
-                             ▼
-                      _architect()
-                             ▼
-                        _coder()
-                             ▼
-                      _reviewer()
-                             ▼
-         ┌───────────────────┴───────────────────┐
-         ▼                                       ▼
-      SUCCESS                                 FAIL
-         │                                       │
-         ▼                               _runner() via CodeExecutor
-    _runner()                            (sandbox + auto-fix loop, max 3)
-    (sandbox)
-         │
-         ▼
-┌─────────────────────────────────────────────────────────────┐
-│                   DEPLOYMENT COMPLETE                        │
+│                    LLM Backends                             │
+│         Ollama / LM Studio / llama.cpp                      │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## Features
+## ✨ Features
 
-- **CodeExecutor**: Sandbox avec tempfile, timeout configurable, sanitization
-- **Auto-fix loop**: Max 3 tentatives avec correction LLM
-- **StateManager**: Typage complet, persistence JSON, metrics détaillées
-- **Memory**: FAISS + SentenceTransformer pour recherche vectorielle
-- **Logger**: Rotation logs (10MB, 5 backups), format JSON
-- **Dashboard**: Gradio connecté au pipeline OrchestratorAsync
-- **Multi-model**: LLM routing (fast/reasoning/code)
+- **Streaming temps réel** - Tokens affichés au fur et à mesure
+- **Agent visible** - Timeline des étapes en direct
+- **Tool calling** - Appels API visibles en temps réel
+- **Découverte automatique** des modèles depuis Ollama/LM Studio
+- **Settings** - Configuration des modèles et backends
+- **Markdown** - Code highlighting dans les responses
+- **Animations** - Transitions fluides avec Framer Motion
 
-## Stack Technique
+## 🛠️ Stack Technique
 
 | Couche | Technologie |
 |--------|-------------|
+| **Frontend** | Next.js 14, React 18, Tailwind, Zustand |
 | **Backend** | Python 3.10+, FastAPI |
-| **Interface** | Gradio |
-| **LLM** | Ollama (qwen2.5-coder:32b, qwen-opus) |
+| **LLM** | Ollama, LM Studio |
+| **Streaming** | WebSocket + SSE |
 | **Mémoire** | FAISS + SentenceTransformers |
-| **Testing** | pytest, pytest-mock |
-| **Linting** | black, isort, flake8, mypy |
 
-## Installation
+## 🚀 Installation
 
 ```bash
-# Clone et setup
-git clone https://github.com/username/ui-pro.git
-cd ui-pro
+# Clone
+git clone https://github.com/jeanmarcrenaud-prog/UI-Pro.git
+cd UI-Pro
 
-# Virtual env
+# Setup Python
 python -m venv .venv
 .venv\Scripts\activate  # Windows
-
-# Installer deps
 pip install -r requirements.txt
 
-# Configurer Ollama
-ollama pull qwen2.5-coder:32b
-ollama pull qwen-opus
+# Setup Node.js
+cd ui-pro-ui
+npm install
+cd ..
 
-# Configurer .env
-cp .env.example .env
+# Lancez Ollama (si pas encore lancé)
+ollama serve
 
-# Lancer avec le launcher (recommandé)
+# Lancez l'application
 python run.py
 ```
 
-## Environment Variables (.env)
-
-```env
-HF_TOKEN=your_huggingface_token_here
-OLLAMA_URL=http://localhost:11434
-MODEL_FAST=qwen2.5-coder:32b
-MODEL_REASONING=qwen-opus
-LLM_TIMEOUT=30
-EXECUTOR_TIMEOUT=60
-LOG_LEVEL=INFO
-```
-
-## Utilisation
-
-### Via le Launcher (recommandé)
+## 🎮 Utilisation
 
 ```bash
-# Vérifier les dépendances
-python run.py --check
+# Vérifier status des services
+python run.py --status
 
-# Lancer le dashboard Gradio
+# Lancer tous les services (recommandé)
 python run.py
 
-# Lancer FastAPI uniquement
+# FastAPI uniquement
 python run.py --api
 
-# Lancer les deux services
-python run.py --all
+# Next.js UI uniquement
+python run.py --ui
+
+# Vérifier les dépendances
+python run.py --check
 
 # Lancer les tests
 python run.py --test
 ```
 
-### Directement
+### URLs
 
-```bash
-# Dashboard Gradio
-python dashboard.py
-# → http://localhost:7860
+| Service | URL |
+|---------|-----|
+| **Next.js UI** | http://localhost:3000 |
+| **FastAPI** | http://localhost:8000 |
+| **API Docs** | http://localhost:8000/docs |
 
-# FastAPI
-uvicorn main:app --reload
-# → http://localhost:8000
+## 📁 Structure
+
+```
+ui-pro/
+├── app/
+│   └── launcher.py          # Point d'entrée
+├── api/
+│   ├── main.py             # FastAPI backend
+│   └── ...
+├── controllers/            # Logique métier
+├── models/                 # Types Python
+├── views/                  # API views
+├── ui-pro-ui/              # Next.js frontend
+│   ├── app/
+│   │   ├── page.tsx       # Page principale
+│   │   └── layout.tsx      # Layout
+│   ├── components/        # Composants React
+│   │   ├── ChatContainer.tsx
+│   │   ├── Sidebar.tsx
+│   │   ├── SettingsView.tsx
+│   │   └── ...
+│   ├── features/           # Logique métier (controllers)
+│   ├── services/           # Communication backend
+│   ├── stores/            # Zustand stores
+│   └── lib/               # Types, events
+└── run.py                  #Launcher
 ```
 
-## Testing
+## 🔧 Commandes
 
-```bash
-# Tous les tests
-pytest tests/ -v
+| Commande | Description |
+|---------|-------------|
+| `python run.py` | Lance FastAPI + Next.js |
+| `python run.py --status` | Vérifie les services actifs |
+| `python run.py --check` | Vérifie les dépendances |
+| `cd ui-pro-ui && npm run dev` | Lance Next.js seul |
 
-# Tests spécifiques
-pytest tests/test_execution.py -v
-# 13 passed
+## 🔐 Sécurité
 
-# Avec coverage
-pytest --cov=ui-pro --cov-report=html
-```
-
-## Configuration
-
-### CodeExecutor
-```python
-timeout=30           # secondes
-workspace_dir="workspace"
-cleanup=True
-max_fix_attempts=3
-```
-
-### State Metrics
-```python
-{
-    "total_duration_ms": 0,
-    "llm_calls": 0,
-    "tokens": 0,
-    "retry_count": 0,
-    "max_retry_count": 3,
-}
-```
-
-## Sécurité
-
-- **Sandbox**: tempfile.TemporaryDirectory isolation
+- **Sandbox**: Isolation par tempfile.TemporaryDirectory
 - **Sanitization**: Désactive eval, exec, subprocess.Popen
 - **Timeout**: Configurable pour éviter les boucles infinies
-- **HF_TOKEN**: Via os.getenv(), jamais hardcodé
 - **NE JAMAIS** commit le fichier `.env`
 
-## Licence
+## 🌟 Fonctionnalités Détaillées
+
+### Streaming en temps réel
+Les tokens sont affichés au fur et à mesure de la génération, avec un curseur Animation.
+
+### Agent visible
+Pendant le traitement, les étapes sont affichées:
+- 🧠 Analyzing
+- ⚙️ Planning  
+- 🔧 Executing
+- ✅ Reviewing
+
+### Découverte automatique des modèles
+Le système détecte automatiquement les modèles disponibles:
+- Ollama (localhost:11434)
+- LM Studio (localhost:1234)
+- llama.cpp (localhost:8080)
+
+### Tool calling UI
+Les appels outils sont affichés en temps réel avec indikator.
+
+## 📝 Licence
 
 MIT License
