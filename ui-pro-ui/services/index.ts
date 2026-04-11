@@ -1,2 +1,3 @@
 // Services index
-export { ApiService, apiService } from './api'
+export { chatService } from './chatService'
+export { agentService } from './agentService'
