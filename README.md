@@ -1,4 +1,6 @@
 # UI-Pro - AI Agent Orchestration System
+<img width="863" height="295" alt="image" src="https://github.com/user-attachments/assets/6d3f5ad0-1dee-4d03-80d3-da7281f66ebc" />
+
 
 > **Système d'agents IA auto-hébergé** avec interface moderne comme ChatGPT.
 
