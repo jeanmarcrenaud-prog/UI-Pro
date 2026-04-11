@@ -176,7 +176,7 @@ async def ws_endpoint(ws: WebSocket):
     await ws.accept()
     
     # Use client info safely
-    client_info = ws.client.host or "unknown"
+    client_info = str(ws.client.host) if ws.client.host else "unknown"
     session_id = f"{client_info}-{len(sessions)}"
     sessions[session_id] = []
     
