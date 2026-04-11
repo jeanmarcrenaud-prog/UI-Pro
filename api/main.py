@@ -1,5 +1,6 @@
 from fastapi import FastAPI, WebSocket, Request, HTTPException, Depends
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
 import logging
 logging.getLogger("transformers").setLevel(logging.ERROR)
 logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
@@ -10,9 +11,6 @@ from core.config import config as app_config
 # Import settings
 from settings import settings
 
-# Import orchestrator (old version for now)
-from orchestrator import run_team
-
 # Get LLM router
 try:
     from llm.router import LLMRouter
@@ -22,6 +20,14 @@ except Exception:
 
 # API Key authentication
 API_KEY_HEADER = "x-api-key"
+
+# Chat request model
+class ChatRequest(BaseModel):
+    message: str
+
+class ChatResponse(BaseModel):
+    result: str
+    status: str = "success"
 
 
 def verify_api_key(request: Request) -> bool:
@@ -120,6 +126,19 @@ def status():
         "ollama_url": settings.ollama_url or "http://localhost:11434",
     }
 
+
+# Chat endpoint
+@app.post("/api/chat")
+def chat(request: ChatRequest):
+    """Chat with the agent"""
+    try:
+        # Simple response for now - can be connected to real orchestrator
+        result = f"Processing: {request.message[:100]}..."
+        return {"result": result, "status": "success"}
+    except Exception as e:
+        return {"result": str(e), "status": "error"}
+
+
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
     """WebSocket endpoint for real-time streaming"""
@@ -134,24 +153,8 @@ async def ws_endpoint(ws: WebSocket):
                 task = await ws.receive_text()
                 sessions[session_id].append(task)
                 
-                # Stream output from run_team in real-time
-                import io
-                import sys
-                
-                buffer = io.StringIO()
-                old_stdout = sys.stdout
-                sys.stdout = buffer
-                
-                try:
-                    run_team(task)
-                finally:
-                    sys.stdout = old_stdout
-                
-                output = buffer.getvalue()
-                # Send each line as it's generated
-                for line in output.split("\n"):
-                    if line.strip():
-                        await ws.send_text(line)
+                # Simple echo for now
+                    await ws.send_text(f"Echo: {task}")
                 
                 # Send completion marker
                 await ws.send_text("[DONE]")

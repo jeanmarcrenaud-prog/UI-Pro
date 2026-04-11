@@ -1,7 +1,6 @@
 # Views - UI and API endpoints
-from .api import app
+# Lazy loaded to avoid importing Gradio in API-only mode
 
-# Dashboard lazy loaded to avoid import errors in API mode
-def get_dashboard():
-    from .dashboard import GRADIO_APP
-    return GRADIO_APP
+def get_api():
+    from api.main import app as api_app
+    return api_app
