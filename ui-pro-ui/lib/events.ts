@@ -2,9 +2,19 @@
 type EventHandler<T = unknown> = (data: T) => void
 
 interface EventMap {
+  // Chat events
   message: { role: 'user' | 'assistant'; content: string }
   status: { status: 'idle' | 'connecting' | 'streaming' | 'error' }
+  
+  // Agent events
   agentStep: { stepId: string; status: 'pending' | 'active' | 'done' }
+  agentPlan: { steps: string[] }
+  
+  // Tool events
+  toolCall: { tool: string; status: 'start' | 'done' }
+  toolResult: { tool: string; result: string }
+  
+  // Model events
   modelChange: { model: string }
   error: { message: string }
 }
@@ -25,6 +35,11 @@ class EventEmitter {
 
   emit<K extends keyof EventMap>(event: K, data: EventMap[K]): void {
     this.handlers.get(event)?.forEach((handler) => handler(data))
+  }
+
+  // Clear all handlers (for cleanup)
+  clear(): void {
+    this.handlers.clear()
   }
 }
 

@@ -1,7 +1,9 @@
 from fastapi import FastAPI, WebSocket, Request, HTTPException, Depends
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 import logging
+import json
+import time
 logging.getLogger("transformers").setLevel(logging.ERROR)
 logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
 
@@ -139,6 +141,35 @@ def chat(request: ChatRequest):
         return {"result": str(e), "status": "error"}
 
 
+@app.get("/stream/{prompt}")
+async def stream(prompt: str):
+    """SSE endpoint for streaming events"""
+    import asyncio
+    
+    async def event_generator():
+        # Send step start
+        yield f"data: {json.dumps({'type': 'step', 'stepId': '1', 'data': 'Analyzing'})}\n\n"
+        await asyncio.sleep(0.5)
+        
+        yield f"data: {json.dumps({'type': 'step', 'stepId': '1', 'data': 'done'})}\n\n"
+        
+        yield f"data: {json.dumps({'type': 'step', 'stepId': '2', 'data': 'active'})}\n\n"
+        await asyncio.sleep(0.3)
+        
+        # Stream tokens (simulate response)
+        response = f"Processing your request about: {prompt[:50]}... Let me analyze this and provide a helpful response. I'm currently thinking through the best approach to answer your question."
+        for char in response:
+            yield f"data: {json.dumps({'type': 'token', 'data': char})}\n\n"
+            await asyncio.sleep(0.02)
+        
+        # Done
+        yield f"data: {json.dumps({'type': 'step', 'stepId': '2', 'data': 'done'})}\n\n"
+        yield f"data: {json.dumps({'type': 'step', 'stepId': '3', 'data': 'done'})}\n\n"
+        yield f"data: {json.dumps({'type': 'done', 'data': ''})}\n\n"
+    
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
     """WebSocket endpoint for real-time streaming"""
@@ -154,7 +185,7 @@ async def ws_endpoint(ws: WebSocket):
                 sessions[session_id].append(task)
                 
                 # Simple echo for now
-                    await ws.send_text(f"Echo: {task}")
+                await ws.send_text(f"Echo: {task}")
                 
                 # Send completion marker
                 await ws.send_text("[DONE]")
