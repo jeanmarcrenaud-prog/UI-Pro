@@ -6,6 +6,7 @@ import { useState, useCallback } from 'react'
 import { ChatContainer } from '@/components/ChatContainer'
 import { Sidebar } from '@/components/Sidebar'
 import { DebugPanel } from '@/components/DebugPanel'
+import { SettingsView } from '@/components/SettingsView'
 
 interface AgentStep {
   id: string
@@ -57,31 +58,41 @@ export default function Home() {
             <p className="text-xs text-slate-500">AI Agent Orchestration</p>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowDebug(!showDebug)}
-              className={`px-3 py-1.5 rounded-lg text-xs transition-colors ${
-                showDebug 
-                  ? 'bg-violet-600 text-white' 
-                  : 'bg-slate-800 text-slate-400 hover:text-white'
-              }`}
-            >
-              🔧 Debug
-            </button>
+            {activeTab === 'chat' && (
+              <button
+                onClick={() => setShowDebug(!showDebug)}
+                className={`px-3 py-1.5 rounded-lg text-xs transition-colors ${
+                  showDebug 
+                    ? 'bg-violet-600 text-white' 
+                    : 'bg-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                🔧 Debug
+              </button>
+            )}
           </div>
         </header>
         
-        {/* Chat */}
-        <ChatContainer 
-          messages={messages}
-          setMessages={setMessages}
-          isLoading={isLoading}
-          setIsLoading={setIsLoading}
-          agentSteps={agentSteps}
-        />
+        {/* Content based on active tab */}
+        {activeTab === 'chat' ? (
+          <ChatContainer 
+            messages={messages}
+            setMessages={setMessages}
+            isLoading={isLoading}
+            setIsLoading={setIsLoading}
+            agentSteps={agentSteps}
+          />
+        ) : activeTab === 'settings' ? (
+          <SettingsView />
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-slate-400">
+            Coming soon...
+          </div>
+        )}
       </main>
 
       {/* Debug Panel */}
-      {showDebug && (
+      {activeTab === 'chat' && showDebug && (
         <DebugPanel 
           steps={agentSteps}
           isOpen={showDebug}
