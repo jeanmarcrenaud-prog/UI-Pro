@@ -266,7 +266,7 @@ def _build_main_ui():
                     gr.Markdown("*These settings affect pipeline execution.*")
         def _on_submit(text):
             if not text or not text.strip():
-                return "task-0", "Please enter a task", "No task entered", "**Status**: idle"
+                return "task-0", "Please enter a task", "No task entered", "**Status**: idle", {}, ""
             
             tid = f"task-{int(time.time())}"
             output_lines = []
@@ -372,16 +372,16 @@ def _build_main_ui():
                 
                 status = f"**Status**: {result.get('status', 'unknown')}"
                 
-                return tid, "\n".join(output_lines), "\n".join(log_lines), status, result
-                
+                return tid, "\n".join(output_lines), "\n".join(log_lines), status, result, ""
+
             except Exception as e:
                 log_lines.append(f"[{tid}] ERROR: {str(e)}")
-                return tid, f"Error: {str(e)}", "\n".join(log_lines), "**Status**: error", {}
+                return tid, f"Error: {str(e)}", "\n".join(log_lines), "**Status**: error", {}, "Error: {str(e)}"
         
         submit_btn.click(
             _on_submit, 
             inputs=task_input, 
-            outputs=[task_id_display, rt_output, logs, status_mark, state_json]
+            outputs=[task_id_display, code_output, logs, status_mark, state_json]
         )
         
         # Navigation visibility handler - use gr.update for Gradio 6
