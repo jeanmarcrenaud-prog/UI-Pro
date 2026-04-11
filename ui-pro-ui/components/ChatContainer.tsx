@@ -174,7 +174,34 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
             <div className="text-6xl mb-4">👋</div>
             <h2 className="text-xl font-semibold mb-2">Welcome to UI-Pro</h2>
             <p className="text-sm">Your AI Agent Orchestration System</p>
-            <p className="text-xs mt-4 text-slate-500">Describe the task you want to automate...</p>
+            
+            {/* Example prompts */}
+            <div className="mt-8 max-w-md mx-auto">
+              <p className="text-xs text-slate-500 mb-3">Try an example:</p>
+              <div className="grid gap-2">
+                {[
+                  { icon: '🐍', text: 'Create a Python script to fetch weather data', prompt: 'Create a Python script that fetches weather data from Open-Meteo API and displays it nicely' },
+                  { icon: '📊', text: 'Analyze my code for bugs', prompt: 'Analyze this code and identify any potential bugs or issues' },
+                  { icon: '🔧', text: 'Explain how async works in Python', prompt: 'Explain how async/await works in Python with examples' },
+                  { icon: '🌐', text: 'Help me write a REST API', prompt: 'Help me write a REST API with FastAPI for a todo list' },
+                ].map((example, i) => (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      setInput(example.prompt)
+                      sendMessage()
+                    }}
+                    disabled={isLoading}
+                    className="text-left p-3 bg-slate-800/50 hover:bg-slate-800 border border-slate-700 hover:border-violet-500 rounded-lg transition-colors text-sm"
+                  >
+                    <span className="mr-2">{example.icon}</span>
+                    {example.text}
+                  </button>
+                ))}
+              </div>
+            </div>
+            
+            <p className="text-xs mt-8 text-slate-500">Or type your own request below...</p>
           </motion.div>
         )}
         
