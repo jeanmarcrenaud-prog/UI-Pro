@@ -217,7 +217,7 @@ Return JSON:
         max_retry = 3
         attempt = 0
         files = code.get("files", {})
-        execution = {"success": False, "stdout": "", "stderr": "No execution attempted"}
+        execution: dict[str, Any] = {"success": False, "stdout": "", "stderr": "No execution attempted"}
 
         while attempt < max_retry:
             attempt += 1
@@ -301,14 +301,23 @@ Max retries: {max_retry}
 
         return execution
 
-    async def _memory(self, task: str) -> list[Any]:
+    async def _memory(self, task: str) -> list[dict[str, Any]]:
         """
-        Memory search (FAISS Integration).
+        Memory search using FAISS adapter.
 
-        TODO: Connect to core/memory.py FAISS adapter.
+        Searches for relevant context in the vector store.
+        Returns list of relevant documents with scores.
         """
-        # TODO: Connect to FAISS adapter (core/memory.py)
-        return []
+        try:
+            from core.memory import get_memory_manager
+
+            # Use singleton to avoid reloading model
+            memory = get_memory_manager()
+            results = memory.search(task, k=3)
+            return results  # Already returns [{"text": ..., "score": ...}]
+        except Exception as e:
+            logger.warning("⚠️ FAISS memory search failed: %s", e)
+            return []
 
     # ================= CORE =================
 
@@ -332,6 +341,7 @@ Max retries: {max_retry}
     def _safe_json(self, text: str) -> dict[str, Any]:
         """
         Safely parse JSON from LLM response.
+        Logs warning when falling back to raw response.
         """
         try:
             return json.loads(text)
@@ -350,6 +360,14 @@ Max retries: {max_retry}
                     return json.loads(cleaned)
                 except Exception:
                     pass
+
+            # Log warning for invalid JSON
+            logger.warning(
+                "⚠️ LLM returned invalid JSON (%s chars), falling back to raw. "
+                "Response: %s",
+                len(text),
+                text[:200],
+            )
 
             return {
                 "raw": text[:500],  # Truncate raw response
