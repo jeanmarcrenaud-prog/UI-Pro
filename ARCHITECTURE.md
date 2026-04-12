@@ -66,16 +66,33 @@ ui-pro/
 ## 🔄 Règles d'Import (Dependency Graph)
 
 ```
-api → controllers → services → adapters
-         ↓
-        core
-         
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     DEPENDENCY FLOW                            │
+├─────────────────────────────────────────────────────────────────────────┤
+│  views/api.py ──→ controllers/* ──→ services/* ──→ adapters/*  │
+│       │              │                 │               │          │
+│       └──────────────┴─────────────────┴───────────────┘      │
+│                         ↓                                   │
+│                      core/*                                  │
+│                         ↓                                   │
+│                    models/*                                 │
+└─────────────────────────────────────────────────────────────────────────┘
+
+# TEXTE DIAGRAM EQUIVALENT:
+
+views → controllers → services → adapters
+   ↓       ↓           ↓           ↓
+  core ←──────────────┼───────────┘
+   ↓
+models
+
 # RÈGLES:
-# - api N'importE PAS services
-# - controllers N'importE PAS api
-# - services N'importE PAS api
-# - adapters peut être importé par services seulement
-# - core peut être importé par tous
+# - views N'IMPORTE PAS services
+# - controllers N'IMPORTE PAS views
+# - services N'IMPORTE PAS views
+# - adapters importé PAR services SEULEMENT
+# - core importé PAR tous
+# - agents N'IMPORTE PAS views
 ```
 
 ### Import autorisées
@@ -87,6 +104,23 @@ api → controllers → services → adapters
 | `services/*` | `adapters/*`, `core/*`, `models/*` |
 | `adapters/*` | `core/*`, `models/*` |
 | `core/*` | `models/*` |
+| `agents/*` | `core/*`, `models/*` ( JAMAIS `views/*` ) |
+
+### Import INTERDITES
+
+```python
+# ❌ INTERDIT - agents ne doit pas importer views
+from views.api import app  # NON!
+
+# ❌ INTERDIT - views ne doit pas importer services
+from services.chat_service import ChatService  # NON!
+
+# ✅ AUTORISÉ - controllers importe services
+from services.chat_service import ChatService  # OUI!
+
+# ✅ AUTORISÉ - tout importe core
+from core.events import emit_agent_step  # OUI!
+```
 
 ## 🎯 Frontière controllers/ vs services/
 
@@ -188,6 +222,14 @@ async def llm_error_handler(request: Request, exc: LLMError):
 ```
 
 ## 📊 Configuration
+
+### Config YAML + .env (settings.py)
+
+> **config.yaml** est utilise par `settings.py` comme source principale. Les valeurs sont overridees via variables d'environnement (fichier `.env` gitignore).
+
+```
+config.yaml (base) ──→ .env (override) ──→ Settings class
+```
 
 ### settings.py (Pydantic BaseSettings)
 ```python
