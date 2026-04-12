@@ -1,144 +1,316 @@
-# 🏗️ **Architecture UI-Pro** (Stateful + Async + DI)
+# 🏗️ Architecture UI-Pro
 
-## 📁 **Structure Actuelle**
+## 📁 Structure du Projet
 
 ```
 ui-pro/
-├── run.py                   # Launcher (supervise tous les modules)
-├── executor.py              # CodeExecutor (sandbox, timeout, auto-fix)
-├── state_manager.py         # State + StateManager (typing complet)
-├── orchestrator_async.py    # Pipeline async avec auto-fix loop
-├── logger.py                # Logging + rotation + JSON
-├── memory.py                # FAISS + SentenceTransformer
-├── settings.py              # Configuration externalisée
-├── dashboard.py             # Gradio UI (INTÉGRÉ au pipeline)
-├── main.py                  # FastAPI entry point
-├── llm_client.py            # Interface LLMClient (DI)
-├── llm_router.py            # Multi-model routing
-├── agents.py                # Agents (planner, architect, coder...)
-├── requirements.txt         # + gradio, websockets
-├── tests/                   # Test suite (85+ tests)
-│   ├── test_execution.py    # 13 tests - TOUS PASSENT ✅
-│   └── ...
-└── workspace/               # Code généré
+├── run.py                      # Launcher principal
+├── settings.py                 # Configuration centralisée (Pydantic)
+├── app/
+│   └── launcher.py             # Démarrage des services
+├── core/                       # Services métier共享 (état, memoria, logging)
+│   ├── config.py
+│   ├── errors.py              # Hiérarchie d'exceptions métier
+│   ├── logging.py            # Logging standardisé
+│   ├── memory.py             # FAISS wrapper
+│   ├── metrics.py           # Métriques
+│   ├── orchestrator_async.py # Pipeline agent
+│   ├── prompts.py            # Prompts centralisés
+│   ├── state_manager.py      # Gestion d'état
+│   └── logger.py             # Logger partagé
+├── controllers/               # Coordination requête/réponse (canonical)
+│   ├── executor.py          # CodeExecutor (sandbox, auto-fix)
+│   ├── orchestrator.py       # Orchestrateur principal
+│   ├── team.py               # Équipe d'agents
+│   ├── llm_client.py        # Client LLM (legacy)
+│   └── code_review.py        # Code review
+├── services/                  # Orchestration dépendances/adapters (pur)
+│   ├── chat_service.py       # Service de chat
+│   ├── model_service.py    # Service modèle LLM
+│   ├── memory_service.py    # Service mémoire
+│   ├── streaming.py         # Streaming SSE/WS
+│   ├── tools.py             # Registre d'outils
+│   └── agents.py             # Définitions d'agents
+├── adapters/                  # Intégrations externes
+│   ├── executor/            # Adaptateur executor
+│   ├── llm/                 # Clients LLM (Ollama, LM Studio, llama.cpp)
+│   │   ├── client.py       # Canonical OllamaClient
+│   │   └── __init__.py
+│   └── memory/              # Adaptateurs mémoire
+│       └── faiss.py         # FAISS adapter
+├── models/                   # Schémas et types
+│   ├── config.py
+│   ├── settings.py          # Settings Pydantic
+│   ├── state.py
+│   ├── llm_router.py
+│   └── memory.py
+├── llm/                     # Appels LLM
+│   ├── __init__.py
+│   ├── models.py
+│   └── router.py
+├── views/                    # Couche API
+│   ├── api.py              # FastAPI app
+│   ├── dashboard.py        # Gradio UI
+│   └── logger.py
+├── api/
+│   └── main.py             # FastAPI alternatif
+└── ui-pro-ui/               # Frontend Next.js
+    ├── components/
+    ├── features/
+    ├── services/
+    ├── stores/
+    └── lib/
+        └── constants.ts
 ```
 
-## 🔄 **Flux Dashboard → Orchestrator**
+## 🔄 Règles d'Import (Dependency Graph)
 
 ```
-┌─────────────────┐
-│  Dashboard.py   │  Gradio UI (port 7860)
-│  (Task Input)   │
-└────────┬────────┘
-         │ Task Submit
-         ▼
-┌─────────────────────────────────────────┐
-│  OrchestratorAsync.run()                 │
-│  - StateManager.create(task_id)         │
-└────────┬─────────────────────────────────┘
-         │
-    ┌────┴────┐
-    ▼         ▼
-_planner()  _memory()  ← FAISS search
-    │         │
-    └────┬────┘
-         ▼
-   _architect()
-         ▼
-      _coder()
-         ▼
-     _reviewer()
-         ▼
- ┌────┴────┐
- ▼         ▼
-SUCCESS  FAIL (auto-fix loop, max 3)
-         │
-    _runner() via CodeExecutor
-         │
-    [Success/Fail]
+api → controllers → services → adapters
+         ↓
+        core
+         
+# RÈGLES:
+# - api N'importE PAS services
+# - controllers N'importE PAS api
+# - services N'importE PAS api
+# - adapters peut être importé par services seulement
+# - core peut être importé par tous
 ```
 
-## ✨ **Features**
+### Import autorisées
 
-| Feature | Implémentation |
-|---------|----------------|
-| **DI** | Settings injection via `settings.py` |
-| **Async pipeline** | `orchestrator_async.py` avec asyncio |
-| **Multi-model routing** | `llm_router.py` avec mode fast/reasoning/code |
-| **State management** | `StateManager` avec State dataclass |
-| **Dashboard** | `dashboard.py` connected to orchestrator_async |
-| **Auto-fix loop** | Max 3 attempts avec correction LLM |
-| **Memory** | FAISS + SentenceTransformer |
+| Module | Peut importer |
+|--------|---------------|
+| `views/api.py` | `controllers/*`, `core/*`, `models/*` |
+| `controllers/*` | `services/*`, `core/*`, `models/*`, `adapters/*` |
+| `services/*` | `adapters/*`, `core/*`, `models/*` |
+| `adapters/*` | `core/*`, `models/*` |
+| `core/*` | `models/*` |
 
----
+## 🎯 Frontière controllers/ vs services/
 
-## 🔧 **Configuration**
+### Controllers (coordination requête/réponse)
+- Reçoivent les requêtes HTTP/WS
+- Valident les entrées
+- appellent les services
+-_forment les réponses
 
-### Environment Variables (.env)
-```env
-HF_TOKEN=your_token
-OLLAMA_URL=http://localhost:11434
-MODEL_FAST=qwen2.5-coder:32b
-MODEL_REASONING=qwen-opus
-LLM_TIMEOUT=30
-EXECUTOR_TIMEOUT=60
-LOG_LEVEL=INFO
-```
+### Services (orchestration pur)
+- Contiennent la logique métier
+- Orchestrent les adapters
+- Ne font PAS d'I/O direct (sauf adapters)
+- stateless
 
-### CodeExecutor
+## 📦 Constants Centralisées
+
+### Backend (core/constants.py)
 ```python
-timeout=30           # secondes
-workspace_dir="workspace"
-cleanup=True
-max_fix_attempts=3
+# WebSocket event types
+class WSEvent:
+    TOKEN = "token"
+    STEP = "step"
+    TOOL = "tool"
+    DONE = "done"
+    ERROR = "error"
+
+# Agent steps
+class AgentStep:
+    ANALYZING = "analyzing"
+    PLANNING = "planning"
+    EXECUTING = "executing"
+    REVIEWING = "reviewing"
+
+# Error codes
+class ErrorCode:
+    INVALID_INPUT = "INVALID_INPUT"
+    LLM_ERROR = "LLM_ERROR"
+    TOOL_ERROR = "TOOL_ERROR"
+    MEMORY_ERROR = "MEMORY_ERROR"
 ```
 
-### State Metrics
+### Frontend (ui-pro-ui/lib/constants.ts)
+```typescript
+export const WS_EVENTS = {
+  TOKEN: 'token',
+  STEP: 'step',
+  TOOL: 'tool',
+  DONE: 'done',
+  ERROR: 'error',
+} as const;
+
+export const AGENT_STEPS = {
+  ANALYZING: 'analyzing',
+  PLANNING: 'planning', 
+  EXECUTING: 'executing',
+  REVIEWING: 'reviewing',
+} as const;
+
+export const ERROR_CODES = {
+  INVALID_INPUT: 'INVALID_INPUT',
+  LLM_ERROR: 'LLM_ERROR',
+  TOOL_ERROR: 'TOOL_ERROR',
+  MEMORY_ERROR: 'MEMORY_ERROR',
+} as const;
+```
+
+## 🛡️ Gestion d'Erreurs
+
+### core/errors.py
 ```python
-{
-    "total_duration_ms": 0,
-    "llm_calls": 0,
-    "tokens": 0,
-    "retry_count": 0,
-    "max_retry_count": 3,
-}
+class DomainError(Exception):
+    """Erreur métier de base"""
+    code: str
+
+class LLMError(DomainError):
+    """Erreur lors d'un appel LLM"""
+    
+class ToolExecutionError(DomainError):
+    """Erreur lors de l'exécution d'un outil"""
+    
+class MemoryError(DomainError):
+    """Erreur mémoire/FAISS"""
 ```
 
----
+### Mapper vers FastAPI
+```python
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
-## 🛡️ **Sécurité**
+app = FastAPI()
 
-- **Sandbox**: tempfile.TemporaryDirectory isolation
-- **Sanitization**: Désactive eval, exec, subprocess.Popen
-- **Timeout**: Configurable pour éviter les boucles infinies
-- **HF_TOKEN**: Via os.getenv(), jamais hardcodé
+@app.exception_handler(LLMError)
+async def llm_error_handler(request: Request, exc: LLMError):
+    return JSONResponse(
+        status_code=500,
+        content={"error": exc.code, "message": str(exc)}
+    )
+```
 
----
+## 📊 Configuration
 
-## 🧪 **Tests**
+### settings.py (Pydantic BaseSettings)
+```python
+from pydantic_settings import BaseSettings
 
+class Settings(BaseSettings):
+    # LLM
+    ollama_url: str = "http://localhost:11434/api/generate"
+    model_fast: str = "qwen3.5:9b"
+    model_reasoning: str = "qwen3.5:9b"
+    llm_timeout: int = 30
+    
+    # Executor
+    executor_timeout: int = 60
+    memory_limit_mb: int = 512
+    
+    # Logging
+    log_level: str = "INFO"
+    
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+```
+
+### settings.local.yaml (git ignoré)
+```yaml
+# Override pour développement local
+ollama_url: "http://localhost:11434/api/generate"
+log_level: "DEBUG"
+```
+
+## 🧪 Tests
+
+### Couverture cible
+| Module | Cible |
+|--------|-------|
+| controllers/executor | 80%+ |
+| services/chat_service | 70%+ |
+| adapters/llm | 70%+ |
+| adapters/faiss | 80%+ |
+
+### Commandes
 ```bash
-# Tous les tests passent
-pytest tests/ -v
-# 13 passed in 1.24s (test_execution.py)
+# Python
+pytest tests/ -v --cov=ui-pro --cov-report=html
 
-# Couverture
-pytest --cov=ui-pro --cov-report=html
+# Frontend  
+cd ui-pro-ui && npm run lint
 ```
 
+## 🔧 Outils Qualité
+
+### mypy.ini
+```ini
+[mypy]
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+
+[mypy-pytest.*]
+ignore_missing_imports = true
+
+[mypy-gradio.*]
+ignore_missing_imports = true
+```
+
+### .flake8
+```ini
+[flake8]
+max-line-length = 120
+exclude = .git,__pycache__,.venv
+ignore = E203,W503
+```
+
+## 📡 Routes API
+
+| Prefix | Router | Description |
+|--------|---------|-------------|
+| `/api/chat` | chat | Conversation |
+| `/api/models` | models | Liste des modèles |
+| `/api/tools` | tools | Outils disponibles |
+| `/api/history` | history | Historique |
+| `/ws` | ws | WebSocket streaming |
+
+## 🔄 Flux Backend
+
+```
+Request HTTP
+    ↓
+views/api.py (FastAPI)
+    ↓
+controllers/orchestrator.py
+    ↓
+services/chat_service.py
+    ↓
+adapters/llm/client.py (canonical)
+    ↓
+Ollama API
+```
+
+## 📱 Frontend Structure
+
+```
+ui-pro-ui/
+├── components/       # UI pure (boutons, inputs, etc.)
+├── features/         # Logique métier (ChatInput, AgentSteps)
+├── services/        # HTTP/WS/SSE (apiClient, streamService)
+├── stores/          # Zustand (chatStore, settingsStore)
+└── lib/
+    └── constants.ts # Constants centralisées
+```
+
+## 🛡️ Sécurité
+
+| Feature | Implementation |
+|---------|---------------|
+| Sandbox | tempfile.mkdtemp + subprocess |
+| Sanitization | AST-based (eval/exec/open bloqués) |
+| Memory limit | resource.setrlimit (512MB) |
+| API key | Depends(verify_api_key) sur /status |
+| CORS | Middleware configuré via env |
+
 ---
 
-## 📊 **Statut**
-
-| Module | Status | Tests |
-|--------|--------|-------|
-| executor.py | ✅ DONE | 9 tests |
-| state_manager.py | ✅ DONE | 3 tests |
-| orchestrator_async.py | ✅ DONE | - |
-| logger.py | ✅ DONE | 1 test |
-| memory.py | ✅ DONE | - |
-| dashboard.py | ✅ DONE | - |
-
----
-
-**Dernière mise à jour**: 2026-04-06
+**Dernière mise à jour**: 2026-04-12
