@@ -301,7 +301,16 @@ Retry: {attempt}/{max_retry}
 """
             # Get fix from model
             fixed = self.model_service.generate(fix_prompt, mode="code")
-            current_code = self._parse_json(fixed)
+            fixed_dict = self._parse_json(fixed)
+            
+            # Merge fixed files with existing code
+            new_files = fixed_dict.get("files", {})
+            if isinstance(new_files, dict):
+                existing_files = current_code.get("files", {})
+                current_code["files"] = {**existing_files, **new_files}
+                self.logger.info(f"Applied fix: {list(new_files.keys())}")
+            else:
+                self.logger.warning("Fix returned invalid format, keeping previous code")
             
             # Try execution again
             loop = asyncio.get_event_loop()
@@ -316,12 +325,26 @@ Retry: {attempt}/{max_retry}
         
         return execution_result
     
-    def _parse_json(self, text: str) -> Dict:
-        """Safely parse JSON from LLM response"""
+    def _parse_json(self, text: str) -> dict[str, Any]:
+        """Safely parse JSON from LLM response.
+        
+        Args:
+            text: Raw text from LLM
+            
+        Returns:
+            Parsed JSON as dict, or {"raw": ..., "error": "invalid_json"}
+        """
         try:
             return json.loads(text)
-        except:
-            return {"raw": text, "error": "invalid_json"}
+        except json.JSONDecodeError:
+            self.logger.warning(
+                "Invalid JSON from model",
+                extra={"preview": text[:200] if text else ""}
+            )
+            return {"raw": text[:500], "error": "invalid_json"}
+        except Exception as e:
+            self.logger.warning(f"JSON parse error: {e}")
+            return {"raw": text[:500], "error": "parse_error"}
     
     def get_metrics(self) -> dict:
         """Get service metrics"""
