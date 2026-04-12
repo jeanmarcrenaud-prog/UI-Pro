@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import ReactMarkdown from 'react-markdown'
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/cjs/styles/prism'
-import { useChatStore } from '@/lib/stores/chatStore'
+
 
 interface Message {
   id: string
@@ -38,6 +38,7 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
   const [input, setInput] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const wsRef = useRef<WebSocket | null>(null)
+  const hasStreamedRef = useRef(false)
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -49,20 +50,20 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
     }
   }, [])
 
-  const sendMessage = useCallback(async () => {
-    if (!input.trim() || isLoading) return
+  const sendMessage = useCallback(async (forcedInput?: string) => {
+    const text = forcedInput ?? input
+    if (!text.trim() || isLoading) return
+
+    setInput('')
+    hasStreamedRef.current = false
+    setIsLoading(true)
 
     const userMessage: Message = {
       id: `msg-${Date.now()}`,
       role: 'user',
-      content: input,
+      content: text,
       timestamp: new Date().toISOString(),
     }
-
-    setMessages(prev => [...prev, userMessage])
-    const userInput = input
-    setInput('')
-    setIsLoading(true)
 
     const assistantMessage: Message = {
       id: `msg-${Date.now()}-assistant`,
@@ -71,7 +72,11 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
       status: 'thinking',
       timestamp: new Date().toISOString(),
     }
-    setMessages(prev => [...prev, assistantMessage])
+
+    // ✅ insertion propre (1 seul setState)
+    setMessages(prev => [...prev, userMessage, assistantMessage])
+
+    const userInput = text
 
     try {
       const wsUrl = `ws://${window.location.hostname}:8000/ws`
@@ -84,10 +89,9 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
 
       ws.onmessage = (event) => {
         const raw = event.data
-
+        hasStreamedRef.current = true
         if (!raw) return
 
-        // FIN STREAM
         if (raw === '[DONE]') {
           setIsLoading(false)
           ws.close()
@@ -99,15 +103,8 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
         try {
           const parsed = JSON.parse(raw)
 
-          // support multi-formats backend
-          delta =
-            parsed.delta ||
-            parsed.text ||
-            parsed.content ||
-            parsed.result ||
-            ''
+          delta = parsed.delta || parsed.text || parsed.content || parsed.result || ''
 
-          // support tool/code output
           if (parsed.code) {
             delta = '```python\n' + JSON.stringify(parsed.code, null, 2) + '\n```'
           }
@@ -115,9 +112,7 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
           if (parsed.type === 'token') {
             delta = parsed.data || ''
           }
-
         } catch {
-          // fallback raw text streaming
           delta = raw
         }
 
@@ -138,14 +133,16 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
           return msgs
         })
       }
+
       ws.onerror = (event) => {
         console.error('WebSocket error:', event)
-        fetchChatREST()
+        if (!hasStreamedRef.current) fetchChatREST()
       }
 
       ws.onclose = (event) => {
         console.log('WebSocket closed:', event)
         setIsLoading(false)
+        wsRef.current = null
       }
     } catch (error) {
       console.error('WebSocket connection error:', error)
@@ -201,7 +198,7 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
           if (lastIdx >= 0 && msgs[lastIdx].role === 'assistant') {
             msgs[lastIdx] = {
               ...msgs[lastIdx],
-              content: `Failed to connect to backend: ${error.message}`,
+              content: `Failed to connect to backend: ${error instanceof Error ? error.message : String(error)}`,
               status: 'error',
             }
           }
@@ -239,10 +236,7 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
                 ].map((example, i) => (
                   <button
                     key={i}
-                    onClick={() => {
-                      setInput(example.prompt)
-                      sendMessage()
-                    }}
+                    onClick={() => sendMessage(example.prompt)}
                     disabled={isLoading}
                     className="text-left p-3 bg-slate-900/50 hover:bg-slate-900 border border-slate-700 hover:border-violet-500 rounded-lg transition-colors text-sm"
                   >
@@ -275,8 +269,20 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
                 {msg.role === 'user' ? '👤' : '🤖'}
               </div>
 
-                  {/* Message with markdown */}
-                  <div className="rounded-2xl px-4 py-3 max-h-[60vh] overflow-y-auto custom-scrollbar">
+              {/* Message with markdown */}
+              <div className={`flex flex-col max-w-[70%] ${
+                msg.role === 'user' ? 'items-end' : 'items-start'
+              }`}>
+                <div className="text-xs text-slate-500 mb-1">
+                  {msg.role === 'user' ? 'You' : 'UI-Pro'}
+                </div>
+                <div
+                  className={`rounded-2xl px-4 py-3 max-h-[60vh] overflow-y-auto custom-scrollbar ${
+                    msg.role === 'user'
+                      ? 'bg-violet-600 text-white rounded-br-md'
+                      : 'bg-slate-800 text-slate-100 rounded-bl-md'
+                  }`}
+                >
                   {msg.role === 'assistant' && msg.content ? (
                     <div className="prose prose-invert prose-sm max-w-none">
                       <ReactMarkdown
@@ -284,28 +290,57 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
                           code({ node, className, children, ...props }) {
                             const match = /language-(\w+)/.exec(className || '');
                             const isInline = !match && !className;
-                      return !isInline && match ? (
-                        <SyntaxHighlighter
-                          theme={oneDark}
-                          language={match[1]}
-                          PreTag="div"
-                          wrapLines={match[1].toLowerCase() === 'python'}
-                          wrapLongLines={true}
-                          customStyle={{
-                            maxWidth: '100%',
-                            backgroundColor: match[1].toLowerCase() === 'python' 
-                              ? '#1e293b'  // slate-800 for Python
-                              : undefined
-                          }}
-                        >
-                          {String(children).replace(/\n$/, '')}
-                        </SyntaxHighlighter>
-                      ) : (
-                        <pre className="overflow-x-auto rounded bg-slate-900/80 p-3 text-xs text-slate-300 border border-slate-700">
-                          <code className={className} {...props}>{children}</code>
-                        </pre>
-                      );
-                          }
+
+                            if (!isInline && match) {
+                              return (
+                                <div className="my-3 rounded-lg overflow-hidden border border-slate-700">
+                                  <SyntaxHighlighter
+                                    theme={oneDark}
+                                    language={match[1]}
+                                    PreTag="div"
+                                    customStyle={{
+                                      backgroundColor: '#0f172a',
+                                      padding: '1rem',
+                                      borderRadius: '0.5rem',
+                                      fontSize: '0.875rem',
+                                      lineHeight: '1.5',
+                                      margin: 0,
+                                      overflowX: 'auto',
+                                    }}
+                                  >
+                                    {String(children).replace(/\n$/, '')}
+                                  </SyntaxHighlighter>
+                                </div>
+                              );
+                            } else {
+                              return (
+                                <code className={`bg-slate-900/50 px-1.5 py-0.5 rounded text-sm ${className || ''}`} {...props}>
+                                  {children}
+                                </code>
+                              );
+                            }
+                          },
+                          h1({ node, ...props }) {
+                            return <h1 className="text-xl font-bold text-white mt-4 mb-2" {...props} />;
+                          },
+                          h2({ node, ...props }) {
+                            return <h2 className="text-lg font-bold text-white mt-3 mb-2" {...props} />;
+                          },
+                          h3({ node, ...props }) {
+                            return <h3 className="text-base font-bold text-white mt-2 mb-2" {...props} />;
+                          },
+                          ul({ node, ...props }) {
+                            return <ul className="list-disc list-inside my-2 pl-4" {...props} />;
+                          },
+                          ol({ node, ...props }) {
+                            return <ol className="list-decimal list-inside my-2 pl-4" {...props} />;
+                          },
+                          p({ node, ...props }) {
+                            return <p className="my-2" {...props} />;
+                          },
+                          inlineCode({ node, ...props }) {
+                            return <code className="bg-slate-900/50 px-1.5 py-0.5 rounded text-sm" {...props} />;
+                          },
                         }}
                       >
                         {msg.content}

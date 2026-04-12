@@ -1,7 +1,6 @@
-// useChat - Chat functionality hook
 'use client'
 
-import { useCallback, useRef } from 'react'
+import { useCallback } from 'react'
 import { useChatStore } from '@/lib/stores/chatStore'
 import { useAgentStore } from '@/lib/stores/agentStore'
 import { apiService } from '@/services/api'
@@ -12,21 +11,35 @@ function generateId(): string {
 }
 
 export function useChat() {
-  const { messages, isLoading, error, addMessage, updateMessage, clearMessages, setLoading, setError } = useChatStore()
-  const { isActive, steps, start, updateStep, reset } = useAgentStore()
-  const wsRef = useRef<WebSocket | null>(null)
+  const {
+    messages,
+    isLoading,
+    error,
+    addMessage,
+    updateMessage,
+    clearMessages,
+    setLoading,
+    setError,
+  } = useChatStore()
+
+  const {
+    isActive,
+    steps,
+    start,
+    updateStep,
+    reset,
+  } = useAgentStore()
 
   const sendMessage = useCallback(async (content: string) => {
-    // Add user message
+    if (!content.trim() || isLoading) return
+
     const userMsg: Message = {
       id: generateId(),
       role: 'user',
       content,
       timestamp: new Date().toISOString(),
     }
-    addMessage(userMsg)
 
-    // Add thinking response
     const assistantMsg: Message = {
       id: generateId(),
       role: 'assistant',
@@ -34,43 +47,52 @@ export function useChat() {
       status: 'thinking',
       timestamp: new Date().toISOString(),
     }
+
+    addMessage(userMsg)
     addMessage(assistantMsg)
 
     setLoading(true)
-    start([])
+
+    const stepsData: AgentStep[] = [
+      { id: generateId(), title: 'Analyzing request', status: 'active' },
+      { id: generateId(), title: 'Planning solution', status: 'pending' },
+      { id: generateId(), title: 'Executing', status: 'pending' },
+      { id: generateId(), title: 'Reviewing', status: 'pending' },
+    ]
+
+    start(stepsData)
 
     try {
-      // Initial agent steps
-      const initialSteps: AgentStep[] = [
-        { id: generateId(), title: 'Analyzing request', status: 'active' },
-        { id: generateId(), title: 'Planning solution', status: 'pending' },
-        { id: generateId(), title: 'Executing', status: 'pending' },
-        { id: generateId(), title: 'Reviewing', status: 'pending' },
-      ]
-      start(initialSteps)
+      // Simulation progression
+      setTimeout(() => {
+        updateStep(stepsData[0].id, 'done')
+        updateStep(stepsData[1].id, 'active')
+      }, 300)
 
       const response = await apiService.chat(content)
-      
-      // Update message with response
+
       updateMessage(assistantMsg.id, response.result, 'done')
-      
-      // Mark all steps done
-      initialSteps.forEach((step) => updateStep(step.id, 'done'))
+
+      stepsData.forEach(step => updateStep(step.id, 'done'))
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : 'Unknown error'
       updateMessage(assistantMsg.id, errMsg, 'error')
       setError(errMsg)
     } finally {
       setLoading(false)
-      reset()
+
+      // Delay pour UX propre
+      setTimeout(() => reset(), 1200)
     }
-  }, [addMessage, updateMessage, setLoading, setError, start, updateStep, reset])
+  }, [isLoading, addMessage, updateMessage, setLoading, setError, start, updateStep, reset])
 
   const clear = useCallback(() => {
     clearMessages()
-    clearSteps()
+    reset()
     setError(null)
-  }, [clearMessages, clearSteps, setError])
+  }, [clearMessages, reset, setError])
+
+  const currentStep = steps.find(s => s.status === 'active')
 
   return {
     messages,
