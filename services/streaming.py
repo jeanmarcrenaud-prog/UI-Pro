@@ -85,15 +85,38 @@ class StreamingService:
     Features:
     - Single completion event per stream (no duplicates)
     - Proper cancellation tracking
-    - Retry logic for network issues
+    - Network error handling
+    - JSON-formatted event dispatch
     """
     
     def __init__(self, config: StreamConfig = None):
         self.config = config or StreamConfig()
         self._active_streams: Dict[str, asyncio.Task] = {}
         self._callbacks: Dict[str, Callable] = {}
-        # Monotonic counter for unique stream IDs
         self._stream_counter = 0
+    
+    TO_DICT_MAP = {
+        StreamStatus.STARTING: "starting",
+        StreamStatus.GENERATING: "generating",
+        StreamStatus.COMPLETED: "completed",
+        StreamStatus.ERROR: "error",
+        StreamStatus.CANCELLED: "cancelled",
+    }
+    
+    def to_dict(self, chunk: StreamChunk) -> dict[str, Any]:
+        """Convert chunk to SSE format"""
+        return {
+            "type": self.TO_DICT_MAP.get(chunk.status, "token"),
+            "status": chunk.status.value,
+            "stream_id": chunk.stream_id,
+            "index": chunk.chunk_index,
+            "data": chunk.text,
+            "content": chunk.text,
+            "tokens": chunk.tokens_generated,
+            "latency_ms": chunk.latency_ms,
+            "error": chunk.error,
+            "timestamp": chunk.timestamp.isoformat(),
+        }
     
     async def stream_generate(
         self,
