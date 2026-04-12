@@ -3,7 +3,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from views.logger import get_logger
-from unittest.mock import MagicMock, Mock
 from pathlib import Path
 
 from models.settings import settings
@@ -11,20 +10,27 @@ WORKSPACE = settings.workspace
 
 logger = get_logger(__name__)
 
-# Mock des agents pour les tests
-def mock_agent_factory(name):
-    agent_fn = MagicMock()
-    agent_fn.return_value = f"[{name}] Mock response"
-    return agent_fn
-
-planner = mock_agent_factory("planner")
-architect = mock_agent_factory("architect")
-coder = mock_agent_factory("coder")
-debugger = mock_agent_factory("debugger")
-reviewer = mock_agent_factory("reviewer")
-tester = mock_agent_factory("tester")
-devops = mock_agent_factory("devops")
-researcher = mock_agent_factory("researcher")
+# Import real agents from llm package
+try:
+    from llm import planner, architect, coder, debugger, reviewer, tester, devops, research as researcher
+except ImportError as e:
+    logger.warning(f"Failed to import real agents, using fallback: {e}")
+    # Fallback to mock agents if llm import fails
+    from unittest.mock import MagicMock
+    
+    def mock_agent_factory(name):
+        agent_fn = MagicMock()
+        agent_fn.return_value = f"[{name}] Mock response"
+        return agent_fn
+    
+    planner = mock_agent_factory("planner")
+    architect = mock_agent_factory("architect")
+    coder = mock_agent_factory("coder")
+    debugger = mock_agent_factory("debugger")
+    reviewer = mock_agent_factory("reviewer")
+    tester = mock_agent_factory("tester")
+    devops = mock_agent_factory("devops")
+    researcher = mock_agent_factory("researcher")
 
 def save_file(name, content):
     with open(f"{WORKSPACE}/{name}", "w", encoding="utf-8") as f:
