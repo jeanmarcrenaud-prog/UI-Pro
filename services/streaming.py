@@ -39,13 +39,26 @@ class StreamChunk:
     timestamp: datetime = field(default_factory=datetime.now)
     
     def to_dict(self) -> dict[str, Any]:
-        """Serialize to JSON-serializable dict for WebSocket/SSE"""
+        """Serialize to JSON-serializable dict for WebSocket/SSE
+        
+        Frontend expects: type: 'token' | 'step' | 'tool' | 'done' | 'error'
+        """
+        # Map status to frontend event type
+        type_map = {
+            StreamStatus.STARTING: "token",
+            StreamStatus.GENERATING: "token",
+            StreamStatus.COMPLETED: "done",
+            StreamStatus.ERROR: "error",
+            StreamStatus.CANCELLED: "error",
+        }
+        
         return {
-            "type": "chunk",
+            "type": type_map.get(self.status, "token"),
             "status": self.status.value,
             "stream_id": self.stream_id,
             "index": self.chunk_index,
-            "text": self.text,
+            "data": self.text,  # frontend expects 'data' not 'text'
+            "content": self.text,  # also available as 'content'
             "tokens": self.tokens_generated,
             "latency_ms": self.latency_ms,
             "error": self.error,
