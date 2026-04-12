@@ -29,12 +29,13 @@ interface Props {
   setMessages: (msgs: Message[]) => void
   isLoading: boolean
   setIsLoading: (loading: boolean) => void
-  agentSteps?: AgentStep[]
+  agentSteps?: AgentStep[];  // Changé de agentSteps? en agentSteps
+  setAgentSteps: (steps: AgentStep[]) => void;  // Ajouté
   status?: AgentStatus
   onToggleDebug?: () => void
 }
 
-export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, agentSteps = [] }: Props) {
+export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, agentSteps = [], setAgentSteps}: Props) {
   const [input, setInput] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -53,7 +54,7 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
   const sendMessage = useCallback(async (forcedInput?: string) => {
     const text = forcedInput ?? input
     if (!text.trim() || isLoading) return
-
+    wsRef.current?.close()
     setInput('')
     hasStreamedRef.current = false
     setIsLoading(true)
@@ -102,6 +103,36 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
 
         try {
           const parsed = JSON.parse(raw)
+
+          // Gestion des messages de type "step" pour les étapes de l'agent
+          if (parsed.type === 'step') {
+            // Mettre à jour les étapes de l'agent
+            setAgentSteps(prevSteps => {
+              const existingStepIndex = prevSteps.findIndex(s => s.id === parsed.step_id);
+
+              if (existingStepIndex >= 0) {
+                // Mettre à jour une étape existante
+                const updatedSteps = [...prevSteps];
+                updatedSteps[existingStepIndex] = {
+                  ...updatedSteps[existingStepIndex],
+                  status: parsed.status,
+                  detail: parsed.detail
+                };
+                return updatedSteps;
+              } else {
+                // Ajouter une nouvelle étape
+                return [...prevSteps, {
+                  id: parsed.step_id,
+                  title: parsed.title,
+                  detail: parsed.detail,
+                  status: parsed.status
+                }];
+              }
+            });
+            if (!parsed.delta && !parsed.content) return
+          }
+
+          // Gestion normale des messages de texte
 
           delta = parsed.delta || parsed.text || parsed.content || parsed.result || ''
 
