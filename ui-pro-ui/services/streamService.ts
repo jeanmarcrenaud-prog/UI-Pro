@@ -41,6 +41,11 @@ class StreamService {
 
       this.ws.onmessage = (event) => {
         const data = event.data
+        // Debug: log all incoming messages
+        console.log('[STREAM] Received:', data.substring(0, 100))
+
+        // Skip empty
+        if (!data || !data.trim()) return
 
         // Parse stream events
         if (data.startsWith('[STEP]')) {
@@ -72,8 +77,22 @@ class StreamService {
           return
         }
 
+        // Handle plain text (from backend using print())
+        // Try JSON parse first, if fail use as plain token
+        let tokenData = data
+        try {
+          const parsed = JSON.parse(data)
+          if (parsed.content) tokenData = parsed.content
+          else if (parsed.message) tokenData = parsed.message
+          else if (parsed.text) tokenData = parsed.text
+          else if (parsed.result) tokenData = parsed.result
+        } catch {
+          // Plain text - use as-is
+          tokenData = data
+        }
+
         // Regular token
-        this.emit({ type: 'token', data })
+        this.emit({ type: 'token', data: tokenData })
       }
 
       this.ws.onerror = () => {
@@ -102,7 +121,12 @@ class StreamService {
       if (!reader) {
         // No streaming - just get full response
         const data = await response.json()
-        this.emit({ type: 'token', data: data.result || '' })
+        // Try JSON parse first
+        let tokenData = data.result || ''
+        if (data.content) tokenData = data.content
+        else if (data.message) tokenData = data.message
+        else if (data.text) tokenData = data.text
+        this.emit({ type: 'token', data: tokenData })
         this.emit({ type: 'done', data: '' })
         events.emit('status', { status: 'idle' })
         return
@@ -121,7 +145,19 @@ class StreamService {
         // Split by newlines for individual tokens
         text.split('\n').forEach(line => {
           if (line.trim()) {
-            this.emit({ type: 'token', data: line })
+            // Try JSON parse first
+            let tokenData = line
+            try {
+              const parsed = JSON.parse(line)
+              if (parsed.content) tokenData = parsed.content
+              else if (parsed.message) tokenData = parsed.message
+              else if (parsed.text) tokenData = parsed.text
+              else if (parsed.result) tokenData = parsed.result
+            } catch {
+              // Plain text - use as-is
+              tokenData = line
+            }
+            this.emit({ type: 'token', data: tokenData })
           }
         })
       }
