@@ -29,6 +29,10 @@ except Exception as e:
 # API Key authentication
 API_KEY_HEADER = "x-api-key"
 
+# Create FastAPI app FIRST (before middleware)
+app = FastAPI()
+sessions = {}
+
 
 # ==================== Observability Middleware ====================
 
@@ -85,10 +89,6 @@ def verify_api_key(request: Request) -> bool:
 
 
 # Health check import
-
-# 🚀 Charger tout depuis .env via settings
-app = FastAPI()
-sessions = {}
 
 
 @app.get("/")
