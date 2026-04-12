@@ -1,5 +1,12 @@
 # services/agents.py - Agent System with Multi-step Reasoning
-#
+"""
+DEPRECATED: Use agents/agent.py instead.
+
+Legacy agent system kept for backward compatibility.
+If you're starting new work, use:
+    from agents.agent import Agent, AgentConfig, create_coder_agent
+"""
+
 # Agent system with:
 # - Agent definitions
 # - Multi-step reasoning (chain of thought)
