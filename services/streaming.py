@@ -157,9 +157,22 @@ class StreamingService:
                         logger.debug(f"Stream {stream_id} was cancelled")
                         break
                 
-                # Accumulate buffer (streaming chunks individually)
-                buffer.append(chunk_text)
-                token_count += 1
+                # Apply timeout for each chunk to prevent indefinite blocking
+                try:
+                    # Accumulate buffer (streaming chunks individually)
+                    buffer.append(chunk_text)
+                    token_count += 1
+                except asyncio.TimeoutError:
+                    # Should not happen for sync generator, but handle anyway
+                    logger.error(f"Chunk read timeout for stream {stream_id}")
+                    yield StreamChunk(
+                        text="",
+                        status=StreamStatus.ERROR,
+                        stream_id=stream_id,
+                        chunk_index=chunk_index,
+                        error="Timeout reading chunk"
+                    )
+                    break
                 
                 # Only yield when buffer reaches chunk size
                 if len(buffer) >= self.config.chunk_size:
@@ -201,6 +214,16 @@ class StreamingService:
                                 error="Max tokens reached"
                             )
                             yield remaining_chunk
+                        # Always send COMPLETED event when max tokens is reached
+                        yield StreamChunk(
+                            text="",
+                            status=StreamStatus.COMPLETED,
+                            stream_id=stream_id,
+                            chunk_index=chunk_index,
+                            tokens_generated=token_count,
+                            latency_ms=(time.time() - start_time) * 1000,
+                            error="Max tokens reached"
+                        )
                         break
             
                         # Only if stream completed successfully (not cancelled and no max tokens reached)
