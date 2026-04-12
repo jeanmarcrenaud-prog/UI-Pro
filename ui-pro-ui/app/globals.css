@@ -43,6 +43,12 @@ html {
   scroll-behavior: smooth;
 }
 
+.pre {
+  background-color: #1e293b !important;
+  padding: 1rem !important;
+  border-radius: 0.5rem !important;
+}
+
 /* Prose/markdown styles */
 .prose {
   @apply text-slate-100;
@@ -82,4 +88,34 @@ html {
 
 .prose blockquote {
   @apply border-l-4 border-slate-600 pl-4 italic text-slate-400 my-2;
+}
+
+/* Custom scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #1e293b;
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #3b82f6;
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #2563eb;
+}
+
+/* Code blocks */
+pre[class*="language-"] {
+  background-color: #0f172a !important;
+  padding: 1rem !important;
+  border-radius: 0.375rem !important;
+  font-size: 0.875rem !important;
+  line-height: 1.5 !important;
+  margin: 0 !important;
+  overflow-x: auto !important;
 }
