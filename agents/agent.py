@@ -53,11 +53,16 @@ class Agent:
     Pattern: Thought → Action → Observation → ...
     """
     
-    def __init__(self, config: AgentConfig, llm_service=None, tool_manager=None):
+    def __init__(
+        self, 
+        config: AgentConfig, 
+        llm_service: object = None, 
+        tool_manager: object = None
+    ):
         self.config = config
         self.llm_service = llm_service
         self.tool_manager = tool_manager
-        self._planner = None
+        self._planner: Planner | None = None
         
         if config.use_planning:
             from .planner import Planner
@@ -66,8 +71,8 @@ class Agent:
         self.status = AgentStatus.IDLE
         self.steps: List[AgentStep] = []
         self._current_step = 0
-        self._message_history: List[Dict] = []
-        self._execution_log: List[Dict] = []
+        self._message_history: list[dict[str, str]] = []
+        self._execution_log: list[dict[str, Any]] = []
     
     def _log_event(self, event_type: str, data: Dict):
         self._execution_log.append({
