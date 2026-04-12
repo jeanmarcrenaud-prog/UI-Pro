@@ -31,11 +31,26 @@ class StreamChunk:
     """Single chunk of streamed response"""
     text: str
     status: StreamStatus
+    stream_id: str = ""
     chunk_index: int = 0
     tokens_generated: int = 0
     latency_ms: float = 0.0
     error: Optional[str] = None
     timestamp: datetime = field(default_factory=datetime.now)
+    
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to JSON-serializable dict for WebSocket/SSE"""
+        return {
+            "type": "chunk",
+            "status": self.status.value,
+            "stream_id": self.stream_id,
+            "index": self.chunk_index,
+            "text": self.text,
+            "tokens": self.tokens_generated,
+            "latency_ms": self.latency_ms,
+            "error": self.error,
+            "timestamp": self.timestamp.isoformat(),
+        }
 
 
 @dataclass
@@ -107,6 +122,7 @@ class StreamingService:
             yield StreamChunk(
                 text="",
                 status=StreamStatus.STARTING,
+                stream_id=stream_id,
                 chunk_index=0,
                 latency_ms=0
             )
@@ -139,6 +155,7 @@ class StreamingService:
                     chunk = StreamChunk(
                         text=full_text,
                         status=StreamStatus.GENERATING,
+                        stream_id=stream_id,
                         chunk_index=chunk_index,
                         tokens_generated=token_count,
                         latency_ms=(time.time() - start_time) * 1000
@@ -167,6 +184,7 @@ class StreamingService:
                 yield StreamChunk(
                     text=full_text,
                     status=StreamStatus.COMPLETED,
+                    stream_id=stream_id,
                     chunk_index=chunk_index,
                     tokens_generated=token_count,
                     latency_ms=(time.time() - start_time) * 1000
@@ -177,6 +195,7 @@ class StreamingService:
             yield StreamChunk(
                 text="",
                 status=StreamStatus.ERROR,
+                stream_id=stream_id,
                 chunk_index=chunk_index,
                 error=str(e)
             )
