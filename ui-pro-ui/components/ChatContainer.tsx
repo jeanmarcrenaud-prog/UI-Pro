@@ -2,7 +2,7 @@
 
 // UI-Pro Chat Container - Premium with streaming & markdown
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import ReactMarkdown from 'react-markdown'
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter'
@@ -23,12 +23,60 @@ interface AgentStep {
   status: 'pending' | 'active' | 'done'
 }
 
+type AgentStatus = 'idle' | 'running' | 'error'
+
 interface Props {
   messages: Message[]
   setMessages: (msgs: Message[]) => void
   isLoading: boolean
   setIsLoading: (loading: boolean) => void
   agentSteps?: AgentStep[]
+  status?: AgentStatus
+  onToggleDebug?: () => void
+}
+
+// Parse and format incoming messages
+function formatMessage(msg: string): { type: string; content: string; error?: string } {
+  try {
+    if (msg.startsWith('data: ')) {
+      // SSE format
+      const data = JSON.parse(msg.slice(6))
+      return {
+        type: data.type || 'token',
+        content: data.content || data.data || data.text || '',
+        error: data.error
+      }
+    }
+    // Plain text
+    return {
+      type: 'token',
+      content: msg
+    }
+  } catch {
+    return {
+      type: 'token',
+      content: msg
+    }
+  }
+}
+
+interface AgentStep {
+  id: string
+  title: string
+  detail?: string
+  status: 'pending' | 'active' | 'done'
+}
+
+type AgentStatus = 'idle' | 'running' | 'error'
+
+interface Props {
+  messages: Message[]
+  setMessages: (msgs: Message[]) => void
+  isLoading: boolean
+  setIsLoading: (loading: boolean) => void
+  agentSteps?: AgentStep[]
+  status?: AgentStatus
+  onToggleDebug?: () => void
 }
 
 export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, agentSteps = [] }: Props) {
