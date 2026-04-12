@@ -1,5 +1,6 @@
 from fastapi import FastAPI, WebSocket, Request, HTTPException, Depends
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
 import logging
 logging.getLogger("transformers").setLevel(logging.ERROR)
 logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
@@ -85,7 +86,16 @@ def home(request: Request):
 def health_check():
     """Health check endpoint for container orchestration"""
     import time
-    import psutil
+    
+    # Get system info if psutil available
+    try:
+        import psutil
+        system_info = {
+            "cpu_percent": psutil.cpu_percent(),
+            "memory_percent": psutil.virtual_memory().percent,
+        }
+    except ImportError:
+        system_info = {"cpu_percent": None, "memory_percent": None}
     
     return {
         "status": "healthy",
@@ -95,10 +105,7 @@ def health_check():
             "api": "ok",
             "llm": _check_ollama(),
         },
-        "system": {
-            "cpu_percent": psutil.cpu_percent(),
-            "memory_percent": psutil.virtual_memory().percent,
-        }
+        "system": system_info
     }
 
 
