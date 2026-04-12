@@ -203,7 +203,7 @@ class StreamingService:
                             yield remaining_chunk
                         break
             
-                  # Only if stream completed successfully (not cancelled and no max tokens reached)
+                        # Only if stream completed successfully (not cancelled and no max tokens reached)
             if not is_cancelled and token_count < self.config.max_tokens:
                 yield StreamChunk(
                     text="",
@@ -215,9 +215,23 @@ class StreamingService:
                     error="Stream completed successfully"
                 )
             elif is_cancelled and buffer:
-                logger.warning(
-                    f"Stream {stream_id} cancelled with {len(buffer)} tokens remaining in buffer"
+                # Send remaining buffer on cancellation
+                full_text = "".join(buffer)
+                yield StreamChunk(
+                    text=full_text,
+                    status=StreamStatus.CANCELLED,
+                    stream_id=stream_id,
+                    chunk_index=chunk_index,
+                    tokens_generated=token_count,
+                    latency_ms=(time.time() - start_time) * 1000,
+                    error=f"Stream cancelled with {len(buffer)} remaining tokens"
                 )
+                logger.warning(
+                    f"Stream {stream_id} cancelled: sent {len(buffer)} tokens in final chunk"
+                )
+            elif is_cancelled:
+                # Cancelled but no buffer - just log
+                logger.info(f"Stream {stream_id} cancelled cleanly, no remaining tokens")
             # Note: Don't send any event if max tokens reached (cleanup handled by COMPLETED or ERROR)
                 
         except Exception as e:
