@@ -13,18 +13,8 @@ from models.config import config as app_config
 # Import settings
 from models.settings import settings
 
-# Import orchestrator (old version for now)
-from controllers.team import run_team
-
-# Get LLM router
-import logging
+# Get logger
 logger = logging.getLogger(__name__)
-try:
-    from models.llm_router import LLMRouter
-    llm_router = LLMRouter()
-except Exception as e:
-    logger.warning("Failed to import LLMRouter: %s - running without LLM router", e)
-    llm_router = None
 
 # API Key authentication
 API_KEY_HEADER = "x-api-key"
@@ -119,7 +109,7 @@ def home(request: Request):
     ))
 
 
-@app.get("/health")
+@app.get("/health", response_model=HealthResponse)
 def health_check():
     """Health check endpoint for container orchestration"""
     import time
@@ -159,7 +149,7 @@ def _check_ollama() -> str:
         return "unreachable"
 
 
-@app.get("/status", dependencies=[Depends(verify_api_key)])
+@app.get("/status", response_model=StatusResponse, dependencies=[Depends(verify_api_key)])
 def status():
     return {
         "model_fast": settings.model_fast or "N/A",
@@ -185,8 +175,8 @@ async def ws_endpoint(ws: WebSocket):
         while True:
             task = await ws.receive_text()
             await controller.handle_message(ws, session_id, task)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error("WebSocket error: %s", e, exc_info=True)
     finally:
         await controller.handle_disconnect(session_id)
 
