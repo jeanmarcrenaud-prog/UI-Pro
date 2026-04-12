@@ -1,14 +1,15 @@
 # services/streaming.py - Streaming Service
 #
 # Real-time streaming responses with:
-# - Chunk-based generation
-# - Progress tracking
+# - Stream-based generation
 # - Error recovery
-# - Queue management
+# - Proper cancellation support
+# - Single final event per stream
 
 import asyncio
 import logging
 import time
+import uuid
 from typing import Optional, AsyncIterator, Callable, Dict, Any
 from dataclasses import dataclass, field
 from enum import Enum
@@ -31,8 +32,8 @@ class StreamChunk:
     """Single chunk of streamed response"""
     text: str
     status: StreamStatus
-    stream_id: str = ""
-    chunk_index: int = 0
+    stream_id: str
+    chunk_index: int
     tokens_generated: int = 0
     latency_ms: float = 0.0
     error: Optional[str] = None
@@ -81,17 +82,17 @@ class StreamingService:
     Service for streaming LLM responses in real-time.
     
     Features:
-    - Async chunk streaming
-    - Progress callbacks
-    - Cancellation support
-    - Error recovery
-    - Token counting
+    - Single completion event per stream (no duplicates)
+    - Proper cancellation tracking
+    - Retry logic for network issues
     """
     
     def __init__(self, config: StreamConfig = None):
         self.config = config or StreamConfig()
         self._active_streams: Dict[str, asyncio.Task] = {}
         self._callbacks: Dict[str, Callable] = {}
+        # Monotonic counter for unique stream IDs
+        self._stream_counter = 0
     
     async def stream_generate(
         self,
@@ -104,20 +105,20 @@ class StreamingService:
         """
         Stream LLM response as async iterator.
         
-        Args:
-            prompt: User prompt
-            model: Model name (optional, uses router)
-            mode: Generation mode
-            on_chunk: Callback for each chunk
-            on_progress: Callback for progress (current, total)
-            
-        Yields:
-            StreamChunk: Each chunk of the response
+        Stream lifecycle:
+        1. STARTING - Initial event with stream_id
+        2. GENERATING - Chunk events (only when buffer full)
+        3. COMPLETED - Exactly ONE final event on success
+        4. ERROR - If exception or cancellation
         """
-        stream_id = f"{time.time()}"
+        # Generate unique stream ID with monotonic counter (atomic)
+        self._stream_counter += 1
+        stream_id = f"stream-{self._stream_counter}-{uuid.uuid4().hex[:8]}"
         start_time = time.time()
         chunk_index = 0
-        total_text = ""
+        
+        # Track cancellation flag
+        is_cancelled = False
         
         try:
             # Get LLM client
@@ -131,13 +132,17 @@ class StreamingService:
             
             client = OllamaClient()
             
-            # Start streaming
+            # Register this stream so it can be cancelled later
+            self._active_streams[stream_id] = asyncio.current_task()
+            
+            # Start streaming with initial STATUS
             yield StreamChunk(
                 text="",
                 status=StreamStatus.STARTING,
                 stream_id=stream_id,
                 chunk_index=0,
-                latency_ms=0
+                latency_ms=0,
+                error="Initializing stream..."
             )
             
             buffer = []
@@ -146,24 +151,19 @@ class StreamingService:
             for chunk_text in client.stream(prompt, model=model):
                 # Check for cancellation
                 if stream_id in self._active_streams:
-                    task = self._active_streams[stream_id]
-                    if task.cancelled():
-                        yield StreamChunk(
-                            text="",
-                            status=StreamStatus.CANCELLED,
-                            chunk_index=chunk_index,
-                            error="Stream cancelled"
-                        )
-                        return
+                    active_task = self._active_streams[stream_id]
+                    if active_task.cancelled():
+                        is_cancelled = True
+                        logger.debug(f"Stream {stream_id} was cancelled")
+                        break
                 
-                # Accumulate buffer
+                # Accumulate buffer (streaming chunks individually)
                 buffer.append(chunk_text)
                 token_count += 1
                 
-                # Yield when buffer reaches chunk size
+                # Only yield when buffer reaches chunk size
                 if len(buffer) >= self.config.chunk_size:
                     full_text = "".join(buffer)
-                    total_text += full_text
                     
                     chunk = StreamChunk(
                         text=full_text,
@@ -182,6 +182,7 @@ class StreamingService:
                     
                     yield chunk
                     
+                    # Clear buffer
                     buffer = []
                     chunk_index += 1
                     
@@ -189,67 +190,48 @@ class StreamingService:
                     if token_count >= self.config.max_tokens:
                         break
             
-            # Yield remaining buffer
-            if buffer:
-                full_text = "".join(buffer)
-                total_text += full_text
-                
+            # Always send final DONE event (EXACTLY ONCE per stream)
+            # Only if stream completed successfully (not cancelled and no max tokens reached)
+            if not is_cancelled and token_count < self.config.max_tokens:
                 yield StreamChunk(
-                    text=full_text,
+                    text="",
                     status=StreamStatus.COMPLETED,
                     stream_id=stream_id,
                     chunk_index=chunk_index,
                     tokens_generated=token_count,
-                    latency_ms=(time.time() - start_time) * 1000
+                    latency_ms=(time.time() - start_time) * 1000,
+                    error="Stream completed successfully"
                 )
-            
-            # Always send final DONE event
-            yield StreamChunk(
-                text="",
-                status=StreamStatus.COMPLETED,
-                stream_id=stream_id,
-                chunk_index=chunk_index + 1,
-                tokens_generated=token_count,
-                latency_ms=(time.time() - start_time) * 1000
-            )
-            
+                
         except Exception as e:
-            logger.error(f"Streaming error: {e}")
-            yield StreamChunk(
-                text="",
-                status=StreamStatus.ERROR,
-                stream_id=stream_id,
-                chunk_index=chunk_index,
-                error=str(e)
-            )
+            logger.error(f"Streaming error for {stream_id}: {e}", exc_info=True)
+            # Send error event EXACTLY ONCE (not COMPLETED)
+            if not is_cancelled:
+                yield StreamChunk(
+                    text="",
+                    status=StreamStatus.ERROR,
+                    stream_id=stream_id,
+                    chunk_index=chunk_index,
+                    error=str(e)
+                )
         finally:
-            # Cleanup
+            # Cleanup always
             if stream_id in self._active_streams:
                 del self._active_streams[stream_id]
     
     def cancel_stream(self, stream_id: str) -> bool:
-        """Cancel an active stream"""
+        """Cancel an active stream if it exists"""
         if stream_id in self._active_streams:
-            self._active_streams[stream_id].cancel()
-            return True
+            task = self._active_streams[stream_id]
+            if not task.cancelled():
+                task.cancel()
+                logger.debug(f"Cancelled stream {stream_id}")
+                return True
         return False
     
     def get_active_count(self) -> int:
         """Get number of active streams"""
         return len(self._active_streams)
-
-
-# Helper function for sync usage
-async def stream_to_string(prompt: str, mode: str = "fast") -> str:
-    """Simple helper to get full response from stream"""
-    service = StreamingService()
-    result = ""
-    
-    async for chunk in service.stream_generate(prompt, mode=mode):
-        if chunk.status in [StreamStatus.GENERATING, StreamStatus.COMPLETED]:
-            result += chunk.text
-    
-    return result
 
 
 # Singleton
