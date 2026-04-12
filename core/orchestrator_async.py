@@ -1,40 +1,74 @@
 # 🚀 Async Orchestrator - PRO VERSION + Auto-Fix
+"""
+Refactored async orchestrator with proper typing and robust error handling.
+"""
 
-from typing import Dict, Any
-from datetime import datetime
-import asyncio
-import time
+from __future__ import annotations
+
+import json
 import logging
-import sys
-from pathlib import Path
+import time
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any
 
-# Add project root to path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+import asyncio
 
 from core.state_manager import StateManager
-from llm.router import LLMRouter
 from core.executor import CodeExecutor
+from models.llm_router import LLMRouter
 
 # Try to import centralized prompts
 try:
-    from core.prompts import PLANNER_PROMPT, ARCHITECT_PROMPT, CODER_PROMPT, REVIEWER_PROMPT, FIX_PROMPT
+    from core.prompts import (
+        PLANNER_PROMPT,
+        ARCHITECT_PROMPT,
+        CODER_PROMPT,
+        REVIEWER_PROMPT,
+        FIX_PROMPT,
+    )
 except ImportError:
-    PLANNER_PROMPT = ARCHITECT_PROMPT = CODER_PROMPT = REVIEWER_PROMPT = FIX_PROMPT = None
+    PLANNER_PROMPT = None
+    ARCHITECT_PROMPT = None
+    CODER_PROMPT = None
+    REVIEWER_PROMPT = None
+    FIX_PROMPT = None
 
 logger = logging.getLogger(__name__)
-executor = CodeExecutor()  # Singleton executor
 
-logger = logging.getLogger(__name__)
+
+@dataclass
+class OrchestratorResult:
+    """Result dataclass for orchestrator output."""
+    status: str
+    data: dict[str, Any] = field(default_factory=dict)
+    errors: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "status": self.status,
+            **self.data,
+            "errors": self.errors,
+        }
 
 
 class Orchestrator:
-    def __init__(self):
-        self.state_manager = StateManager()
-        self.router = LLMRouter()
+    """Async orchestrator with clean pipeline and auto-fix loop."""
+
+    def __init__(
+        self,
+        state_manager: StateManager | None = None,
+        router: LLMRouter | None = None,
+        code_executor: CodeExecutor | None = None,
+    ) -> None:
+        self.state_manager = state_manager or StateManager()
+        self.router = router or LLMRouter()
+        self.executor = code_executor or CodeExecutor()
         self.state = None
 
-    async def run(self, task: str) -> Dict[str, Any]:
+    async def run(self, task: str) -> dict[str, Any]:
+        """Main entry point for the orchestrator pipeline."""
         start_time = time.time()
 
         try:
@@ -43,14 +77,14 @@ class Orchestrator:
             self.state.task = task
             self.state.status = "running"
 
-            logger.info(f"🚀 Starting pipeline: {task}")
+            logger.info("🚀 Starting pipeline: %s", task)
 
             # ================= STEP 1: PARALLEL =================
             logger.info("Step 1: Planning + Memory")
 
             plan, memory = await asyncio.gather(
                 self._planner(task),
-                self._memory(task)
+                self._memory(task),
             )
 
             self.state.plan = plan
@@ -87,12 +121,12 @@ class Orchestrator:
             self.state.status = "completed"
             self.state.completed_at = datetime.now()
 
-            logger.info(f"✅ Done in {duration}ms")
+            logger.info("✅ Done in %dms", duration)
 
             return self.state.to_dict()
 
         except Exception as e:
-            logger.error(f"❌ Pipeline error: {e}", exc_info=True)
+            logger.error("❌ Pipeline error: %s", e, exc_info=True)
 
             if self.state:
                 self.state.status = "failed"
@@ -105,26 +139,24 @@ class Orchestrator:
 
     # ================= AGENTS =================
 
-    async def _planner(self, task: str) -> Dict:
-        prompt = f"""
-You are a senior planner.
-
+    async def _planner(self, task: str) -> dict[str, Any]:
+        """Planning agent - uses centralized prompts if available."""
+        base_prompt = PLANNER_PROMPT or """You are a senior planner.
 Return JSON:
-{{
+{
   "goal": "...",
   "steps": ["...", "..."]
-}}
+}
 
 Task:
 {task}
 """
+        prompt = base_prompt.replace("{task}", task)
+        return await self._llm_call(prompt, mode="fast")
 
-        return await self._llm_call(prompt, "fast")
-
-    async def _architect(self, task: str, plan: Dict) -> Dict:
-        prompt = f"""
-You are a software architect.
-
+    async def _architect(self, task: str, plan: dict[str, Any]) -> dict[str, Any]:
+        """Architecture agent - uses centralized prompts if available."""
+        base_prompt = ARCHITECT_PROMPT or """You are a software architect.
 Plan:
 {plan}
 
@@ -135,13 +167,12 @@ Return JSON:
   ]
 }}
 """
+        prompt = base_prompt.replace("{plan}", str(plan))
+        return await self._llm_call(prompt, mode="reasoning")
 
-        return await self._llm_call(prompt, "reasoning")
-
-    async def _coder(self, task: str, architecture: Dict) -> Dict:
-        prompt = f"""
-You are a senior Python engineer.
-
+    async def _coder(self, task: str, architecture: dict[str, Any]) -> dict[str, Any]:
+        """Code generation agent - uses centralized prompts if available."""
+        base_prompt = CODER_PROMPT or """You are a senior Python engineer.
 Architecture:
 {architecture}
 
@@ -152,13 +183,12 @@ Return JSON:
   }}
 }}
 """
+        prompt = base_prompt.replace("{architecture}", str(architecture))
+        return await self._llm_call(prompt, mode="code")
 
-        return await self._llm_call(prompt, "code")
-
-    async def _reviewer(self, code: Dict) -> Dict:
-        prompt = f"""
-Review this code and detect issues.
-
+    async def _reviewer(self, code: dict[str, Any]) -> dict[str, Any]:
+        """Code review agent - uses centralized prompts if available."""
+        base_prompt = REVIEWER_PROMPT or """Review this code and detect issues.
 Code:
 {code}
 
@@ -168,115 +198,160 @@ Return JSON:
   "fixes": ["..."]
 }}
 """
-        return await self._llm_call(prompt, "fast")
+        prompt = base_prompt.replace("{code}", str(code))
+        return await self._llm_call(prompt, mode="fast")
 
-    async def _runner(self, code: Dict) -> Dict:
+    async def _runner(self, code: dict[str, Any]) -> dict[str, Any]:
         """
-        Exécuter code avec sandbox.
-        
-        Auto-fix loop:
-          1. Exécuter code
-          2. Si échec → Générer fix prompt
-          3. Appeller LLM pour corrigé
-          4. Re-exécuter
+        Execute code in sandbox with auto-fix loop.
+
+        Flow:
+          1. Execute code
+          2. If failure → Generate fix prompt
+          3. Call LLM for correction
+          4. Re-execute
           5. Max retry = 3
         """
         logger.info("🔨 Starting code execution + auto-fix loop")
-        
+
         max_retry = 3
         attempt = 0
-        
+        files = code.get("files", {})
+        execution = {"success": False, "stdout": "", "stderr": "No execution attempted"}
+
         while attempt < max_retry:
             attempt += 1
-            logger.info(f"[Auto-Fix] Attempt {attempt}/{max_retry}")
-            
-            # Execution sandboxed
-            execution = await asyncio.to_thread(
-                executor.run,
-                code.get("files", {})
-            )
-            
-            self.state.tests = execution
-            
-            # Vérifie succès
-            if execution.get("success"):
-                logger.info(f"✅ Execution success (attempt {attempt})")
-                return execution
-            
-            # Échec → Auto-fix
-            logger.warning(f"❌ Execution failed (attempt {attempt})")
-            logger.warning("🔧 Auto-fix triggered")
-            
-            try:
-                # Générer fix prompt
-                error = execution.get("stderr", "")
-                code_content = code.get("files", {}).get("main.py", "")
-                
-                fix_prompt = f"""Fix this Python code.
+            logger.info("[Auto-Fix] Attempt %d/%d", attempt, max_retry)
 
+            # Execute sandboxed
+            execution = await asyncio.to_thread(
+                self.executor.run,
+                files,
+            )
+
+            self.state.tests = execution
+
+            # Check success
+            if execution.get("success"):
+                logger.info("✅ Execution success (attempt %d)", attempt)
+                return execution
+
+            # Failure → Auto-fix
+            logger.warning("❌ Execution failed (attempt %d)", attempt)
+            logger.warning("🔧 Auto-fix triggered")
+
+            try:
+                # Generate fix prompt
+                error = execution.get("stderr", "") or execution.get("stdout", "")
+                main_file = next(iter(files.keys()), "main.py")
+                current_code = files.get(main_file, "")
+
+                base_fix = FIX_PROMPT or """Fix this Python code.
 Error:
 {error}
 
 Current code:
-{code_content}
+{current_code}
 
 Return ONLY JSON:
 {{
   "files": {{
-    "main.py": "fixed code here"
+    "{main_file}": "fixed code here"
   }}
 }}
 
 Retry count: {attempt}
 Max retries: {max_retry}
 """
-                
-                # Corriger code
-                fixed_code = await self._llm_call(fix_prompt, "code")
-                logger.info(f"🔧 Applied fix: {fixed_code}")  # TODO: Log full fix
-                code = {"files": {"main.py": fixed_code}}
-                
-                # Continue loop
-                continue
-                
+                fix_prompt = base_fix.format(
+                    error=error,
+                    current_code=current_code,
+                    main_file=main_file,
+                    attempt=attempt,
+                    max_retry=max_retry,
+                )
+
+                # Fix code
+                fixed = await self._llm_call(fix_prompt, mode="code")
+                new_files = fixed.get("files")
+
+                # Handle different response formats
+                if isinstance(new_files, dict):
+                    files.update(new_files)
+                    logger.info("🔧 Applied fix for %s", main_file)
+                elif isinstance(fixed, dict):
+                    # Try to extract files from response
+                    if "files" in fixed:
+                        files.update(fixed["files"])
+                    elif "main.py" in fixed:
+                        files = {"main.py": fixed["main.py"]}
+                    else:
+                        logger.warning("⚠️ Invalid fix format, keeping previous files")
+                else:
+                    logger.warning("⚠️ Invalid fix response, keeping previous files")
+
             except Exception as fix_error:
-                logger.error(f"❌ Auto-fix failed: {fix_error}", exc_info=True)
+                logger.error("❌ Auto-fix failed: %s", fix_error, exc_info=True)
                 break
-        
-        # Échec après max_retry
-        logger.error(f"❌ Exhausted max retry attempts ({max_retry})")
+
+        # Failure after max_retry
+        logger.error("❌ Exhausted max retry attempts (%d)", max_retry)
         if self.state:
             self.state.errors.append(f"Auto-fix failed after {max_retry} attempts")
-        
+
         return execution
 
-    async def _memory(self, task: str):
-        # TODO FAISS
+    async def _memory(self, task: str) -> list[Any]:
+        """
+        Memory search (FAISS Integration).
+
+        TODO: Connect to core/memory.py FAISS adapter.
+        """
+        # TODO: Connect to FAISS adapter (core/memory.py)
         return []
 
     # ================= CORE =================
 
-    async def _llm_call(self, prompt: str, mode: str) -> Dict:
+    async def _llm_call(
+        self,
+        prompt: str,
+        mode: str,
+    ) -> dict[str, Any]:
         """
-        Call LLM via router + safe JSON
+        Call LLM via router + safe JSON parsing.
         """
-
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         response = await loop.run_in_executor(
             None,
-            lambda: self.router.generate(prompt, mode)
+            lambda: self.router.generate(prompt, mode),
         )
 
         return self._safe_json(response)
 
-    def _safe_json(self, text: str) -> Dict:
-        import json
-
+    def _safe_json(self, text: str) -> dict[str, Any]:
+        """
+        Safely parse JSON from LLM response.
+        """
         try:
             return json.loads(text)
         except Exception:
+            # Try to extract JSON from markdown blocks
+            cleaned = text.strip()
+            if cleaned.startswith("```"):
+                # Handle markdown code blocks
+                lines = cleaned.split("\n")
+                json_lines = [
+                    line for line in lines
+                    if not line.startswith("```") and not line.startswith("json")
+                ]
+                cleaned = "\n".join(json_lines)
+                try:
+                    return json.loads(cleaned)
+                except Exception:
+                    pass
+
             return {
-                "raw": text,
-                "error": "invalid_json"
+                "raw": text[:500],  # Truncate raw response
+                "error": "invalid_json",
             }
