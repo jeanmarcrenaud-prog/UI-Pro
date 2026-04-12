@@ -2,6 +2,8 @@ from fastapi import FastAPI, WebSocket, Request, HTTPException, Depends
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 import logging
+import time
+from typing import Callable
 logging.getLogger("transformers").setLevel(logging.ERROR)
 logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
 
@@ -26,6 +28,41 @@ except Exception as e:
 
 # API Key authentication
 API_KEY_HEADER = "x-api-key"
+
+
+# ==================== Observability Middleware ====================
+
+@app.middleware("http")
+async def add_observability(request: Request, call_next: Callable):
+    """Request logging and tracing middleware"""
+    start_time = time.perf_counter()
+    request_id = request.headers.get("x-request-id", f"req-{int(time.time() * 1000)}")
+    
+    # Log request start
+    logger.info(f"[{request_id}] {request.method} {request.url.path} - started")
+    
+    try:
+        response = await call_next(request)
+        duration_ms = (time.perf_counter() - start_time) * 1000
+        
+        # Log response
+        logger.info(
+            f"[{request_id}] {request.method} {request.url.path} - "
+            f"status={response.status_code} duration={duration_ms:.2f}ms"
+        )
+        
+        # Add headers
+        response.headers["x-request-id"] = request_id
+        response.headers["x-duration-ms"] = f"{duration_ms:.2f}"
+        
+        return response
+    except Exception as e:
+        duration_ms = (time.perf_counter() - start_time) * 1000
+        logger.error(
+            f"[{request_id}] {request.method} {request.url.path} - "
+            f"error={type(e).__name__} duration={duration_ms:.2f}ms"
+        )
+        raise
 
 
 def verify_api_key(request: Request) -> bool:
@@ -153,41 +190,36 @@ async def ws_endpoint(ws: WebSocket):
     finally:
         await controller.handle_disconnect(session_id)
 
-# WebSocket endpoint
-@app.websocket("/ws")
-async def ws_endpoint(ws: WebSocket):
-    """WebSocket endpoint for real-time streaming
-    
-    Delegates to WebSocketController (no business logic here)
-    """
-    from controllers.websocket import get_websocket_controller
-    
-    controller = get_websocket_controller()
-    
-    client_info = str(ws.client.host) if ws.client.host else "unknown"
-    await ws.accept()
-    session_id = await controller.handle_connection(ws, client_info)
-    
-    try:
-        while True:
-            task = await ws.receive_text()
-            await controller.handle_message(ws, session_id, task)
-    except Exception:
-        pass
-    finally:
-        await controller.handle_disconnect(session_id)
-
 
 class ChatRequest(BaseModel):
+    """Request schema for /api/chat"""
     message: str
 
 
 class ChatResponse(BaseModel):
+    """Response schema for /api/chat"""
     result: str
     status: str = "success"
+    error: str | None = None
 
 
-@app.post("/api/chat")
+class StatusResponse(BaseModel):
+    """Response schema for /status endpoint"""
+    model_fast: str
+    model_reasoning: str
+    ollama_url: str
+
+
+class HealthResponse(BaseModel):
+    """Response schema for /health endpoint"""
+    status: str
+    timestamp: float
+    version: str
+    services: dict
+    system: dict | None = None
+
+
+@app.post("/api/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
     """Chat endpoint for REST API"""
     try:
@@ -217,7 +249,7 @@ async def chat_endpoint(request: ChatRequest):
             return ChatResponse(result=output)
     except Exception as e:
         logger.error(f"Chat error: {e}")
-        return ChatResponse(result=f"Error: {str(e)}", status="error")
+        return ChatResponse(result=f"Error: {str(e)}", status="error", error=str(e))
 
 
 if __name__ == "__main__":
