@@ -1,10 +1,22 @@
 # services/tools.py - Tools / Function Calling
-#
-# Tool system similar to OpenAI function calling:
-# - Tool definitions with schemas
-# - Tool execution with validation
-# - Tool result handling
-# - ToolManager for centralized management
+"""
+ToolManager - Validate, execute and log tool calls.
+
+Contract:
+    async run_tool(name: str, args: dict) -> ToolResult
+    
+    - Validates tool call against registered tools
+    - Executes with timeout (default 30s)
+    - Returns structured ToolResult
+    
+Registered tools:
+    - calculator
+    - search_memory
+    - get_time
+    
+Dependencies:
+    - core/executor.py for sandboxed code execution
+"""
 
 import logging
 import json

@@ -1,11 +1,16 @@
 # services/memory_service.py - Memory Service (Enhanced)
-#
-# Encapsulation de la mémoire FAISS avec:
-# - Interface unifiée
-# - Auto-save
-# - Recherche contextuelle avancée
-# - Gestion de contexte (conversations, sessions)
-# - Semantic grouping
+"""
+MemoryService - Read/write/compress conversational context via FAISS.
+
+Contract:
+    async get_context(query: str, k: int = 3) -> list[MemoryItem]
+    async save(text: str, session_id?: str) -> None
+    async compress() -> int  # Returns compressed count
+    
+Dependencies:
+    - FAISS via core/memory.py
+    - LLM for semantic compression
+"""
 
 import logging
 from typing import Optional, List, Dict, Any

@@ -1,10 +1,19 @@
 # services/chat_service.py - Chat Orchestration Service
-#
-# Orchestration des conversations utilisant:
-# - ModelService pour génération LLM
-# - MemoryService pour contexte/rétrieval
-# - Streaming support throughout
-# - Fallback and retry logic
+"""
+ChatService - Orchestrate LLM + memory + tools for a chat turn.
+
+Contract:
+    async run_chat(message: str, context?: dict) -> AsyncIterator[ChatEvent] | ChatResponse
+    
+    - Orchestrates LLM generation, memory retrieval, tool calls
+    - Returns streaming events or final response
+    - Handles retry on failure (max 3)
+    
+Dependencies:
+    - LLM via llm/router.py
+    - Memory via services/memory_service.py
+    - Tools via services/tools.py
+"""
 
 import asyncio
 import logging

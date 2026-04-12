@@ -1,10 +1,19 @@
 # services/llm_router.py - Advanced LLM Router
-#
-# Intelligent routing with:
-# - Task-based model selection
-# - Context window awareness
-# - Load balancing across models
-# - Cost optimization
+"""
+AdvancedLLMRouter - Task-based model selection with cost/window optimization.
+
+Contract:
+    async select_model(task: TaskType, context_window?: int) -> ModelInfo
+    async route(prompt: str, options?: RouteOptions) -> LLMResponse
+    
+DIFFERENT from llm/router.py (basic routing):
+    - Task-based classification (CODE vs REASONING)
+    - Context window awareness
+    - Cost optimization
+    
+Dependencies:
+    - llm/router.py for basic LLM calls
+"""
 
 import logging
 from typing import Optional, Dict, List, Any
