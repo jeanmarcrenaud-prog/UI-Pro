@@ -228,7 +228,15 @@ Max retries: {max_retry}
                 # Corriger code
                 fixed_code = await self._llm_call(fix_prompt, "code")
                 logger.info(f"🔧 Applied fix (length=%d)", len(fixed_code.get("raw", "")) if isinstance(fixed_code, dict) else len(str(fixed_code)))
-                code = {"files": {"main.py": fixed_code}}
+                
+                # Normalize code format - handle both dict and string fixes
+                if isinstance(fixed_code, dict):
+                    # If already a dict structure, pass through as-is
+                    # executor._prepare_code will normalize it
+                    code = fixed_code
+                else:
+                    # Wrap string fix in files structure
+                    code = {"files": {"main.py": fixed_code}}
                 
                 # Continue loop
                 continue
