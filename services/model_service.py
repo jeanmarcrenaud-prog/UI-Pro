@@ -268,7 +268,7 @@ class ModelService(BaseService):
     async def initialize(self) -> None:
         """Initialize model service"""
         try:
-            from controllers.llm_client import OllamaClient
+            from adapters.llm import OllamaClient
             self._llm_client = OllamaClient()
             self.logger.info(f"ModelService initialized with models: {list(self.models.keys())}")
             
@@ -305,7 +305,7 @@ class ModelService(BaseService):
     
     def _get_client_for_model(self, model_config: ModelConfig):
         """Create LLM client for specific model"""
-        from controllers.llm_client import OllamaClient
+        from adapters.llm import OllamaClient
         
         class ModelConfigWrapper:
             def __init__(self, url: str, model: str):
