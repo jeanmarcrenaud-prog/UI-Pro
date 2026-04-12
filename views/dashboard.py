@@ -27,18 +27,26 @@ def _build_main_ui():
     """Construction de l'interface principale"""
     
     # Get CSS
+    import logging
+    logger = logging.getLogger(__name__)
     css_file = Path("assets/styles/dashboard.css")
     css = ""
     try:
         css = css_file.read_text(encoding="utf-8")
-    except Exception:
-        pass
+    except FileNotFoundError:
+        logger.warning("CSS file not found: %s", css_file)
+    except Exception as e:
+        logger.warning("Failed to load CSS: %s", e)
     
     # Premium theme
     try:
         from gradio.themes import Default
         theme = Default(primary_hue="violet", secondary_hue="blue")
-    except Exception:
+    except ImportError:
+        logger.warning("Gradio themes not available, using default theme")
+        theme = None
+    except Exception as e:
+        logger.warning("Failed to load theme: %s", e)
         theme = None
     
     with gr.Blocks(title="UI-Pro - AI Agent Orchestration", css=css, theme=theme) as demo:

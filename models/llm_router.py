@@ -37,7 +37,7 @@ class ModelsConfig:
 try:
     from models.settings import Settings
     _settings = Settings()
-except:
+except ImportError:
     _settings = ModelsConfig()
 
 
