@@ -21,8 +21,6 @@ from controllers.executor import CodeExecutor  # Import executor
 logger = logging.getLogger(__name__)
 executor = CodeExecutor()  # Singleton executor
 
-logger = logging.getLogger(__name__)
-
 
 class Orchestrator:
     def __init__(self):
@@ -229,7 +227,7 @@ Max retries: {max_retry}
                 
                 # Corriger code
                 fixed_code = await self._llm_call(fix_prompt, "code")
-                logger.info(f"🔧 Applied fix: {fixed_code}")  # TODO: Log full fix
+                logger.info(f"🔧 Applied fix (length=%d)", len(fixed_code.get("raw", "")) if isinstance(fixed_code, dict) else len(str(fixed_code)))
                 code = {"files": {"main.py": fixed_code}}
                 
                 # Continue loop
@@ -247,8 +245,31 @@ Max retries: {max_retry}
         return execution
 
     async def _memory(self, task: str):
-        # TODO FAISS
-        return []
+        """Retrieve memory context using FAISS"""
+        # Import FAISS memory lazily to avoid import overhead
+        try:
+            from models.memory import MemoryManager
+            
+            # Get or create singleton memory manager
+            if not hasattr(self, '_memory_manager'):
+                self._memory_manager = MemoryManager()
+            
+            # Search for relevant context
+            results = self._memory_manager.search(task, k=3)
+            
+            if results:
+                logger.info(f"Found {len(results)} memory results for task: {task[:50]}...")
+                return results
+            
+            logger.debug(f"No memory results found for task: {task[:50]}...")
+            return []
+            
+        except ImportError as e:
+            logger.warning(f"Memory module not available: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"Memory search failed: {e}")
+            return []
 
     # ================= CORE =================
 

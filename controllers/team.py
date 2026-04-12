@@ -3,7 +3,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from views.logger import get_logger
-import os
 from unittest.mock import MagicMock, Mock
 from pathlib import Path
 
@@ -36,10 +35,13 @@ def run():
         return f.read(), ""
 
 def search_memory(task):
+    """Search memory for context - placeholder for FAISS integration"""
     return []
 
 def add_memory(*args):
-    pass
+    """Add to memory - placeholder for FAISS integration"""
+    # TODO: Implement FAISS memory integration
+    pass  # noqa: TODO
 
 def run_team(task):
     try:

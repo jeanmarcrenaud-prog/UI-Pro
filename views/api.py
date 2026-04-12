@@ -14,10 +14,13 @@ from models.settings import settings
 from controllers.team import run_team
 
 # Get LLM router
+import logging
+logger = logging.getLogger(__name__)
 try:
     from models.llm_router import LLMRouter
     llm_router = LLMRouter()
-except Exception:
+except Exception as e:
+    logger.warning("Failed to import LLMRouter: %s - running without LLM router", e)
     llm_router = None
 
 # API Key authentication
