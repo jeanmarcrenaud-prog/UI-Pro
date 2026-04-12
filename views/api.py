@@ -125,45 +125,50 @@ def status():
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
-    """WebSocket endpoint for real-time streaming"""
-    await ws.accept()
+    """WebSocket endpoint for real-time streaming
+    
+    Delegates to WebSocketController (no business logic here)
+    """
+    from controllers.websocket import get_websocket_controller
+    
+    controller = get_websocket_controller()
     
     client_info = str(ws.client.host) if ws.client.host else "unknown"
-    session_id = f"{client_info}-{len(sessions)}"
-    sessions[session_id] = []
+    await ws.accept()
+    session_id = await controller.handle_connection(ws, client_info)
     
     try:
         while True:
-            if session_id in sessions:
-                task = await ws.receive_text()
-                sessions[session_id].append(task)
-                
-                # Stream output from run_team in real-time
-                import io
-                import sys
-                
-                buffer = io.StringIO()
-                old_stdout = sys.stdout
-                sys.stdout = buffer
-                
-                try:
-                    run_team(task)
-                finally:
-                    sys.stdout = old_stdout
-                
-                output = buffer.getvalue()
-                # Send each line as it's generated
-                for line in output.split("\n"):
-                    if line.strip():
-                        await ws.send_text(line)
-                
-                # Send completion marker
-                await ws.send_text("[DONE]")
+            task = await ws.receive_text()
+            await controller.handle_message(ws, session_id, task)
     except Exception:
         pass
+    finally:
+        await controller.handle_disconnect(session_id)
 
-# Chat request model
-from pydantic import BaseModel
+# WebSocket endpoint
+@app.websocket("/ws")
+async def ws_endpoint(ws: WebSocket):
+    """WebSocket endpoint for real-time streaming
+    
+    Delegates to WebSocketController (no business logic here)
+    """
+    from controllers.websocket import get_websocket_controller
+    
+    controller = get_websocket_controller()
+    
+    client_info = str(ws.client.host) if ws.client.host else "unknown"
+    await ws.accept()
+    session_id = await controller.handle_connection(ws, client_info)
+    
+    try:
+        while True:
+            task = await ws.receive_text()
+            await controller.handle_message(ws, session_id, task)
+    except Exception:
+        pass
+    finally:
+        await controller.handle_disconnect(session_id)
 
 
 class ChatRequest(BaseModel):
