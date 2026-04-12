@@ -14,6 +14,7 @@ from typing import Optional, AsyncIterator, Callable, Dict, Any
 from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime
+from urllib.error import URLError as ConnectionError
 
 logger = logging.getLogger(__name__)
 
@@ -263,11 +264,37 @@ class StreamingService:
             elif is_cancelled:
                 # Cancelled but no buffer - just log
                 logger.info(f"Stream {stream_id} cancelled cleanly, no remaining tokens")
-            # Note: Don't send any event if max tokens reached (cleanup handled by COMPLETED or ERROR)
-                
+        except ConnectionError as e:
+            logger.error(f"Network error for stream {stream_id}: {e}", exc_info=True)
+            if not is_cancelled:
+                yield StreamChunk(
+                    text="",
+                    status=StreamStatus.ERROR,
+                    stream_id=stream_id,
+                    chunk_index=chunk_index,
+                    error=f"Network error: {e}"
+                )
+                # Call error callback
+                if on_chunk:
+                    on_chunk(StreamChunk(
+                        text="",
+                        status=StreamStatus.ERROR,
+                        stream_id=stream_id,
+                        chunk_index=chunk_index,
+                        error=f"Network error: {e}"
+                    ))
+        except ConnectionError as e:
+            logger.error(f"Network error for stream {stream_id}: {e}", exc_info=True)
+            if not is_cancelled:
+                yield StreamChunk(
+                    text="",
+                    status=StreamStatus.ERROR,
+                    stream_id=stream_id,
+                    chunk_index=chunk_index,
+                    error=f"Network error: {e}"
+                )
         except Exception as e:
             logger.error(f"Streaming error for {stream_id}: {e}", exc_info=True)
-            # Send error event EXACTLY ONCE (not COMPLETED)
             if not is_cancelled:
                 yield StreamChunk(
                     text="",
