@@ -208,21 +208,21 @@ def start_api(block: bool = True):
         return
     
     print_header("Lancement FastAPI")
-    print(f"{Colors.GREEN}→ http://localhost:8000{Colors.RESET}")
-    print(f"{Colors.GREEN}→ http://localhost:8000/docs{Colors.RESET}")
+    print(f"{Colors.GREEN}→ http://localhost:{API_PORT}{Colors.RESET}")
+    print(f"{Colors.GREEN}→ http://localhost:{API_PORT}/docs{Colors.RESET}")
     
-    project_root = Path(__file__).parent.parent
-    sys.path.insert(0, str(project_root))
-    
-    from views.api import app
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Launch via uvicorn module (cleaner than sys.path manipulation)
+    subprocess.run([
+        "uvicorn", "views.api:app", 
+        "--host", "0.0.0.0", 
+        "--port", str(API_PORT)
+    ])
 
 
 def start_ui():
     """Lance Next.js UI."""
-    if check_port(3000):
-        print_warning("Next.js UI already running on port 3000")
+    if check_port(UI_PORT):
+        print_warning(f"Next.js UI already running on port {UI_PORT}")
         return
     
     if not check_npm_available():
@@ -230,7 +230,7 @@ def start_ui():
         return
     
     print_header("Lancement Next.js UI")
-    print(f"{Colors.GREEN}→ http://localhost:3000{Colors.RESET}")
+    print(f"{Colors.GREEN}→ http://localhost:{UI_PORT}{Colors.RESET}")
     
     project_root = Path(__file__).parent.parent
     ui_dir = project_root / "ui-pro-ui"
@@ -246,7 +246,8 @@ def start_ui():
         print_error("npm not found. Install Node.js to run UI.")
         return
     
-    subprocess.run([npm_path, "run", "dev"], cwd=str(ui_dir))
+    # Start npm dev in background (non-blocking)
+    subprocess.Popen([npm_path, "run", "dev"], cwd=str(ui_dir))
 
 
 def start_all(auto_open: bool = True):
