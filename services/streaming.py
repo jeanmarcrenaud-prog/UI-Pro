@@ -203,6 +203,16 @@ class StreamingService:
                     latency_ms=(time.time() - start_time) * 1000
                 )
             
+            # Always send final DONE event
+            yield StreamChunk(
+                text="",
+                status=StreamStatus.COMPLETED,
+                stream_id=stream_id,
+                chunk_index=chunk_index + 1,
+                tokens_generated=token_count,
+                latency_ms=(time.time() - start_time) * 1000
+            )
+            
         except Exception as e:
             logger.error(f"Streaming error: {e}")
             yield StreamChunk(
