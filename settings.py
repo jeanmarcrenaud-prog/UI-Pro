@@ -1,50 +1,91 @@
 """
-settings.py
-
-Configuration externalisée pour le projet ui-pro.
-Charge depuis .env file ou environnement variables.
+settings.py - Configuration centralisée pour UI-Pro
+Source de vérité: lit config.yaml, puis override via .env
 """
 
 import os
+import sys
 from pathlib import Path
+from typing import Optional, Dict, Any
 from dotenv import load_dotenv
+import yaml
 
 # Load .env file
 LOAD_DOTENV = Path(".env").exists()
 if LOAD_DOTENV:
     load_dotenv(".env")
 
-# Paths
 PROJECT_ROOT = Path(__file__).parent
 WORKSPACE = Path(os.getenv("WORKSPACE", "workspace"))
 TEMPLATES = Path("templates")
 
-# LLM Settings
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
-MODEL_FAST = os.getenv("MODEL_FAST", "qwen3.5:9b")
-MODEL_REASONING = os.getenv("MODEL_REASONING", "qwen3.5:9b")
-LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", 30))
 
-# Executor Settings
-EXECUTOR_TIMEOUT = int(os.getenv("EXECUTOR_TIMEOUT", 60))
+def _load_yaml_config() -> Dict[str, Any]:
+    """Load config from YAML file"""
+    config_file = PROJECT_ROOT / "config.yaml"
+    if config_file.exists():
+        try:
+            with open(config_file, "r", encoding="utf-8") as f:
+                return yaml.safe_load(f) or {}
+        except Exception as e:
+            print(f"Warning: Failed to load config.yaml: {e}")
+            return {}
+    return {}
 
-# Logging
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-
-# HF_TOKEN should be loaded carefully (see memory.py or .env)
-# DO NOT hardcode in this file!
 
 class Settings:
-    """Configuration dictionary."""
-    ollama_url = OLLAMA_URL
-    model_fast = MODEL_FAST
-    model_reasoning = MODEL_REASONING
-    llm_timeout = LLM_TIMEOUT
-    executor_timeout = EXECUTOR_TIMEOUT
-    log_level = LOG_LEVEL
-    workspace = str(WORKSPACE)
-    load_dotenv = LOAD_DOTENV
-
+    """Configuration centralisée - lit config.yaml + override .env"""
+    
+    def __init__(self):
+        # Load base config from YAML
+        config = _load_yaml_config()
+        app_config = config.get("app", {})
+        llm_config = config.get("llm", {})
+        executor_config = config.get("executor", {})
+        memory_config = config.get("memory", {})
+        logging_config = config.get("logging", {})
+        api_config = config.get("api", {})
+        dashboard_config = config.get("dashboard", {})
+        
+        # App
+        self.app_name = app_config.get("name", "UI-Pro")
+        self.version = app_config.get("version", "1.0.0")
+        self.debug = app_config.get("debug", False)
+        
+        # LLM - env override yaml
+        self.ollama_url = os.getenv("OLLAMA_URL", llm_config.get("ollama_url", "http://localhost:11434"))
+        self.model_fast = os.getenv("MODEL_FAST", llm_config.get("model_fast", "qwen3.5:9b"))
+        self.model_reasoning = os.getenv("MODEL_REASONING", llm_config.get("model_reasoning", "qwen3.5:9b"))
+        self.llm_timeout = int(os.getenv("LLM_TIMEOUT", llm_config.get("timeout", 30)))
+        
+        # Executor - env override yaml
+        self.executor_timeout = int(os.getenv("EXECUTOR_TIMEOUT", executor_config.get("timeout", 60)))
+        self.executor_workspace = executor_config.get("workspace_dir", "workspace")
+        self.executor_cleanup = executor_config.get("cleanup", True)
+        self.executor_max_fix = executor_config.get("max_fix_attempts", 3)
+        self.memory_limit_mb = int(os.getenv("MEMORY_LIMIT_MB", 512))
+        
+        # Memory - env override yaml
+        self.memory_enabled = memory_config.get("enabled", True)
+        self.memory_model = memory_config.get("model", "all-MiniLM-L6-v2")
+        self.memory_vector_dim = memory_config.get("vector_dim", 384)
+        
+        # Logging - env override yaml
+        self.log_level = os.getenv("LOG_LEVEL", logging_config.get("level", "INFO"))
+        self.log_dir = logging_config.get("dir", "logs")
+        
+        # API - env override yaml
+        self.api_host = os.getenv("API_HOST", api_config.get("host", "localhost"))
+        self.api_port = int(os.getenv("API_PORT", api_config.get("port", 8000)))
+        self.api_key = os.getenv("API_KEY", api_config.get("api_key", ""))
+        
+        # Dashboard - env override yaml
+        self.dashboard_port = int(os.getenv("DASHBOARD_PORT", dashboard_config.get("port", 7860)))
+        
+        # Workspace path
+        self.workspace = str(WORKSPACE)
+        self.load_dotenv = LOAD_DOTENV
+    
     def get_model_for_task(self, task_type: str) -> str:
         """Smart model selection based on task type."""
         if task_type.lower() == "fast":
@@ -55,8 +96,10 @@ class Settings:
             return self.model_reasoning
         return self.model_fast
 
-# Singleton instance
-_settings: Settings = None
+
+# Singleton
+_settings: Optional[Settings] = None
+
 
 def get_settings() -> Settings:
     """Get singleton settings instance."""
@@ -65,13 +108,10 @@ def get_settings() -> Settings:
         _settings = Settings()
     return _settings
 
+
 settings = get_settings()
+
 
 def get_model_for_task(task_type: str) -> str:
     """Smart model selection based on task type."""
-    reasoning_keywords = ["error", "debug", "optimize", "architecture", "complex", "plan", "architect"]
-    task_lower = task_type.lower()
-    
-    if any(keyword in task_lower for keyword in reasoning_keywords):
-        return _settings.model_reasoning
-    return _settings.model_fast
+    return settings.get_model_for_task(task_type)
