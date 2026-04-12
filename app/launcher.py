@@ -225,8 +225,10 @@ def start_ui():
         print_error("ui-pro-ui directory not found")
         return
     
-    # Start npm dev
-    subprocess.run(["npm", "run", "dev"], cwd=str(ui_dir))
+    # Start npm dev - use full path from shutil.which
+    import shutil
+    npm_path = shutil.which("npm")
+    subprocess.run([npm_path, "run", "dev"], cwd=str(ui_dir))
 
 
 def start_all(auto_open: bool = True):
