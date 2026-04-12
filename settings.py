@@ -88,16 +88,22 @@ class Settings:
     
     def get_model_for_task(self, task_type: str) -> str:
         """Smart model selection based on task type."""
-        if task_type.lower() == "fast":
+        reasoning_keywords = [
+            "error", "debug", "optimize", "architecture",
+            "complex", "plan", "architect", "reason",
+        ]
+        task_lower = task_type.lower()
+        
+        if task_lower == "fast":
             return self.model_fast
-        elif task_type.lower() == "reasoning":
+        if task_lower == "reasoning":
             return self.model_reasoning
-        elif task_type.lower() in ["error", "debug", "optimize", "architecture", "complex", "plan", "architect"]:
+        if any(keyword in task_lower for keyword in reasoning_keywords):
             return self.model_reasoning
         return self.model_fast
 
 
-# Singleton
+# Singleton with explicit typing
 _settings: Optional[Settings] = None
 
 
