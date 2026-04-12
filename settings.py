@@ -21,8 +21,8 @@ TEMPLATES = Path("templates")
 
 # LLM Settings
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
-MODEL_FAST = os.getenv("MODEL_FAST", "qwen2.5-coder:32b")
-MODEL_REASONING = os.getenv("MODEL_REASONING", "qwen-opus")
+MODEL_FAST = os.getenv("MODEL_FAST", "qwen3.5:9b")
+MODEL_REASONING = os.getenv("MODEL_REASONING", "qwen3.5:9b")
 LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", 30))
 
 # Executor Settings

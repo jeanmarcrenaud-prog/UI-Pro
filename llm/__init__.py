@@ -6,8 +6,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from llm.models import call, smart_call, research_and_call, OLLAMA_URL, MODELS
 
 MODELS = MODELS or {
-    "fast": "qwen2.5-coder:32b",
-    "reasoning": "qwen-opus"
+    "fast": "qwen3.5:9b",
+    "reasoning": "qwen3.5:9b"
 }
 
 def planner(task):
