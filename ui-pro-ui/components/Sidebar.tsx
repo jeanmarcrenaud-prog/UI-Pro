@@ -4,6 +4,7 @@
 
 import { useState, useEffect } from 'react'
 import { useUIStore } from '@/lib/stores/uiStore'
+import { useChatStore } from '@/lib/stores/chatStore'
 import { modelDiscovery } from '@/services/modelDiscovery'
 import { motion } from 'framer-motion'
 
@@ -25,11 +26,8 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
     selectedModel, 
     setSelectedModel 
   } = useUIStore()
+  const { history, loadChat, deleteChat } = useChatStore()
   const [isLoadingModels, setIsLoadingModels] = useState(true)
-  const [chats] = useState([
-    { id: '1', title: 'Analysis project', time: '2h ago' },
-    { id: '2', title: 'Code review', time: '5h ago' },
-  ])
 
   // Discover models on mount
   useEffect(() => {
@@ -128,15 +126,25 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
       {/* Chat History */}
       <div className="flex-1 overflow-y-auto mt-4 px-2">
         <div className="text-xs text-slate-500 px-3 py-2">Recent Chats</div>
-        {chats.map((chat) => (
-          <button
-            key={chat.id}
-            className="w-full text-left px-3 py-2 rounded-lg text-sm text-slate-400 hover:bg-slate-800/50 hover:text-white transition-colors"
-          >
-            <div className="truncate">{chat.title}</div>
-            <div className="text-xs text-slate-600">{chat.time}</div>
-          </button>
-        ))}
+        {history.length === 0 ? (
+          <div className="text-xs text-slate-600 px-3 py-2">No chats yet</div>
+        ) : (
+          history.slice(0, 10).map((chat) => (
+            <button
+              key={chat.id}
+              onClick={() => {
+                loadChat(chat.id)
+                onTabChange('chat')
+              }}
+              className="w-full text-left px-3 py-2 rounded-lg text-sm text-slate-400 hover:bg-slate-800/50 hover:text-white transition-colors"
+            >
+              <div className="truncate">{chat.title}</div>
+              <div className="text-xs text-slate-600">
+                {new Date(chat.updatedAt).toLocaleDateString()}
+              </div>
+            </button>
+          ))
+        )}
       </div>
 
       {/* Footer */}

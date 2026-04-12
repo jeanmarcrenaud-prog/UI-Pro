@@ -9,36 +9,33 @@ interface ChatInputProps {
   isLoading?: boolean
 }
 
-export function ChatInput({ onSend, isLoading = false }: ChatInputProps) {
-  const [input, setInput] = useState('')
-
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault()
-    if (!input.trim() || isLoading) return
-    onSend(input.trim())
-    setInput('')
-  }
+export default function ChatInput({ onSend }) {
+  const [value, setValue] = useState("")
 
   return (
-    <form onSubmit={handleSubmit} className="flex w-full gap-2">
+    <div className="flex items-center gap-2 bg-[#0f172a] p-2 rounded-xl border border-gray-700">
       <input
-        type="text"
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        placeholder={isLoading ? 'Processing...' : 'Type your message...'}
-        disabled={isLoading}
-        className="flex-1 rounded-lg border border-gray-300 px-4 py-2 
-          dark:border-gray-700 dark:bg-gray-800
-          focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        className="flex-1 bg-transparent outline-none text-white px-3"
+        placeholder="Describe your task..."
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            onSend(value)
+            setValue("")
+          }
+        }}
       />
+
       <button
-        type="submit"
-        disabled={isLoading || !input.trim()}
-        className="rounded-lg bg-blue-600 px-4 py-2 font-medium text-white
-          hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+        className="bg-purple-600 hover:bg-purple-700 transition px-4 py-2 rounded-lg"
+        onClick={() => {
+          onSend(value)
+          setValue("")
+        }}
       >
-        {isLoading ? '...' : 'Send'}
+        ➤
       </button>
-    </form>
+    </div>
   )
 }
