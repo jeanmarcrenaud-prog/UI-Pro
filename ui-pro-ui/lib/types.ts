@@ -47,3 +47,12 @@ export interface AgentState {
   currentStep: number
   steps: AgentStep[]
 }
+
+// History Types
+export interface ChatHistoryItem {
+  id: string
+  title: string
+  messages: Message[]
+  createdAt: string
+  updatedAt: string
+}

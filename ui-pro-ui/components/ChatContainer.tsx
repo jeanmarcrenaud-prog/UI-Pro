@@ -6,6 +6,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import ReactMarkdown from 'react-markdown'
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter'
+import { useChatStore } from '@/lib/stores/chatStore'
 
 interface Message {
   id: string
@@ -88,6 +89,7 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
         if (data === '[DONE]') {
           setIsLoading(false)
           ws.close()
+          // Save to history (will be added in next update)
           return
         }
         
@@ -281,30 +283,60 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
           ))}
         </AnimatePresence>
         
-        {/* Agent Steps Timeline */}
+        {/* Agent Steps Timeline - Detailed */}
         {agentSteps.length > 0 && isLoading && (
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="flex gap-2 flex-wrap justify-center"
+            className="bg-slate-900/80 border border-slate-700 rounded-xl p-4 max-w-lg mx-auto"
           >
-            {agentSteps.map((step, index) => (
-              <div
-                key={step.id}
-                className={`px-3 py-1 rounded-full text-xs flex items-center gap-1 ${
-                  step.status === 'done'
-                    ? 'bg-green-900/50 text-green-400'
-                    : step.status === 'active'
-                    ? 'bg-blue-900/50 text-blue-400'
-                    : 'bg-slate-800 text-slate-500'
-                }`}
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-lg">🤖</span>
+              <span className="text-sm font-medium text-white">Agent Working</span>
+              <motion.span
+                animate={{ rotate: 360 }}
+                transition={{ repeat: Infinity, duration: 2 }}
+                className="ml-auto text-xs"
               >
-                <span>{step.status === 'done' ? '✓' : index + 1}</span>
-                <span className={step.status === 'active' ? 'animate-pulse' : ''}>
-                  {step.title}
-                </span>
-              </div>
-            ))}
+                ⚡
+              </motion.span>
+            </div>
+            
+            <div className="space-y-2">
+              {agentSteps.map((step, index) => (
+                <div
+                  key={step.id}
+                  className={`flex items-center gap-3 text-sm ${
+                    step.status === 'done'
+                      ? 'text-green-400'
+                      : step.status === 'active'
+                      ? 'text-blue-400'
+                      : 'text-slate-500'
+                  }`}
+                >
+                  {/* Step icon */}
+                  <span className="w-6 text-center">
+                    {step.status === 'done' ? '✅' : step.status === 'active' ? '⚙️' : '⏳'}
+                  </span>
+                  
+                  {/* Step name */}
+                  <span className={step.status === 'active' ? 'animate-pulse' : ''}>
+                    {step.title}
+                  </span>
+                  
+                  {/* Status indicator */}
+                  {step.status === 'active' && (
+                    <motion.span
+                      initial={{ width: 0 }}
+                      animate={{ width: 'auto' }}
+                      className="ml-auto text-xs bg-blue-500/20 px-2 py-0.5 rounded-full"
+                    >
+                      running...
+                    </motion.span>
+                  )}
+                </div>
+              ))}
+            </div>
           </motion.div>
         )}
         

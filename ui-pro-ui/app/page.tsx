@@ -7,6 +7,7 @@ import { ChatContainer } from '@/components/ChatContainer'
 import { Sidebar } from '@/components/Sidebar'
 import { DebugPanel } from '@/components/DebugPanel'
 import { SettingsView } from '@/components/SettingsView'
+import { HistoryView } from '@/components/HistoryView'
 
 interface AgentStep {
   id: string
@@ -27,9 +28,9 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false)
   const [showDebug, setShowDebug] = useState(true)
   const [agentSteps, setAgentSteps] = useState<AgentStep[]>([
-    { id: '1', title: 'Analyzing request', status: 'done' },
-    { id: '2', title: 'Planning solution', status: 'done' },
-    { id: '3', title: 'Executing', status: 'active' },
+    { id: '1', title: 'Analyzing request', status: 'pending' },
+    { id: '2', title: 'Planning solution', status: 'pending' },
+    { id: '3', title: 'Executing', status: 'pending' },
     { id: '4', title: 'Reviewing', status: 'pending' },
   ])
 
@@ -84,6 +85,13 @@ export default function Home() {
             isLoading={isLoading}
             setIsLoading={setIsLoading}
             agentSteps={agentSteps}
+          />
+        ) : activeTab === 'history' ? (
+          <HistoryView 
+            onSelectChat={(id) => {
+              // Load chat and switch to chat tab
+              setActiveTab('chat')
+            }} 
           />
         ) : activeTab === 'settings' ? (
           <SettingsView />
