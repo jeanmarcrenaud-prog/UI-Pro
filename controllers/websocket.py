@@ -1,8 +1,7 @@
 # controllers/websocket.py - WebSocket Controller
 
 import asyncio
-import io
-import sys
+import json
 from typing import Dict, List
 
 from views.logger import get_logger
@@ -26,39 +25,21 @@ class WebSocketController:
     
     async def handle_message(self, ws, session_id: str, task: str):
         """Handle incoming task message"""
+        import json
+        from services.streaming import get_streaming_service
+        
         if session_id in self.sessions:
             self.sessions[session_id].append(task)
         
-        # Process task with streaming
-        result = await self._process_task(task)
+        # Use StreamingService for proper JSON streaming
+        stream_service = get_streaming_service()
         
-        # Send streaming results
-        for line in result.split("\n"):
-            if line.strip():
-                await ws.send_text(line)
+        # Stream with proper JSON format
+        async for chunk in stream_service.stream_generate(task):
+            # Send as JSON
+            await ws.send_text(json.dumps(chunk.to_dict()))
         
-        # Send completion marker
-        await ws.send_text("[DONE]")
-        
-        return result
-    
-    async def _process_task(self, task: str) -> str:
-        """Process task with stream capture"""
-        # Import here to avoid circular imports
-        from controllers.team import run_team
-        
-        # Capture stdout
-        buffer = io.StringIO()
-        old_stdout = sys.stdout
-        sys.stdout = buffer
-        
-        try:
-            # Run the task
-            result = run_team(task)
-        finally:
-            sys.stdout = old_stdout
-        
-        return buffer.getvalue()
+        return ""
     
     async def handle_disconnect(self, session_id: str):
         """Handle disconnection"""
