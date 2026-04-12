@@ -106,8 +106,13 @@ class FAISSAdapter:
         except Exception as e:
             logger.error(f"Failed to save memory: {e}")
     
-    def add(self, text: str):
-        """Add text to memory"""
+    def add(self, text: str, auto_save: bool = False):
+        """Add text to memory
+        
+        Args:
+            text: Text to add
+            auto_save: If True, save immediately. If False (default), batch save every 10 items.
+        """
         if not text or not text.strip():
             return
         
@@ -121,7 +126,12 @@ class FAISSAdapter:
         
         self.index.add(vec)
         self.documents.append(text)
-        self.save()
+        
+        # Batch save: only save if auto_save=True or every 10 items
+        if auto_save or len(self.documents) % 10 == 0:
+            self.save()
+        else:
+            logger.debug(f"Batch save: skipping, will save at 10 (current: {len(self.documents)})")
     
     def search(self, query: str, k: int = 3) -> List[Dict]:
         """Search memory for similar texts"""
