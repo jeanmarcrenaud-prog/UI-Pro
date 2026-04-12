@@ -16,6 +16,10 @@ interface UIState {
   debugPanelOpen: boolean
   toggleDebugPanel: () => void
   
+  // Compact mode (dense message history)
+  compactMode: boolean
+  toggleCompactMode: () => void
+  
   // Model
   selectedModel: string
   setSelectedModel: (model: string) => void
@@ -37,6 +41,10 @@ export const useUIStore = create<UIState>((set) => ({
   // Debug panel
   debugPanelOpen: true,
   toggleDebugPanel: () => set((state) => ({ debugPanelOpen: !state.debugPanelOpen })),
+  
+  // Compact mode
+  compactMode: false,
+  toggleCompactMode: () => set((state) => ({ compactMode: !state.compactMode })),
   
   // Model
   selectedModel: 'gemma4',
