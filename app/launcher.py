@@ -5,8 +5,8 @@
 
 Entry point for UI-Pro application.
 Handles:
-- FastAPI backend (port 8000)
-- Next.js UI (port 3000)
+- FastAPI backend (API_PORT)
+- Next.js UI (UI_PORT)
 - Auto-discovery of running services
 
 Usage:
@@ -26,6 +26,10 @@ import threading
 import time
 import webbrowser
 from pathlib import Path
+
+# Port constants
+API_PORT = 8000
+UI_PORT = 3000
 
 # Fix Windows encoding
 if sys.platform == "win32":
@@ -48,9 +52,15 @@ class Colors:
 
 
 def print_header(text: str):
-    print(f"\n{Colors.BOLD}{Colors.BLUE}{'=' * 50}{Colors.RESET}")
-    print(f"{Colors.BOLD}{Colors.BLUE}{text.center(50)}{Colors.RESET}")
-    print(f"{Colors.BOLD}{Colors.BLUE}{'=' * 50}{Colors.RESET}\n")
+    """Print header with colors."""
+    print(f"\n{Colors.BOLD}{'=' * 50}{Colors.RESET}")
+    print(f"{Colors.BOLD}{text}{Colors.RESET}")
+    print(f"{Colors.BOLD}{'=' * 50}{Colors.RESET}\n")
+
+
+def print_hint(text: str):
+    """Print hint/suggestion."""
+    print(f"{Colors.CYAN}💡 {text}{Colors.RESET}")
 
 
 def print_success(text: str):
@@ -173,6 +183,7 @@ def check_dependencies() -> bool:
         ("uvicorn", "Uvicorn"),
         ("faiss", "FAISS"),
         ("sentence_transformers", "SentenceTransformers"),
+        ("requests", "requests"),
     ]
     
     all_ok = True
@@ -181,8 +192,11 @@ def check_dependencies() -> bool:
             __import__(module)
             print_success(f"{name} installé")
         except ImportError:
-            print_error(f"{name} manquant")
+            print_error(f"{name} manquant - pip install {module}")
             all_ok = False
+    
+    if not all_ok:
+        print_hint("Run: pip install -r requirements.txt")
     
     return all_ok
 
@@ -228,6 +242,10 @@ def start_ui():
     # Start npm dev - use full path from shutil.which
     import shutil
     npm_path = shutil.which("npm")
+    if not npm_path:
+        print_error("npm not found. Install Node.js to run UI.")
+        return
+    
     subprocess.run([npm_path, "run", "dev"], cwd=str(ui_dir))
 
 
