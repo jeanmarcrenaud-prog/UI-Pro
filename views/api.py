@@ -228,7 +228,11 @@ async def chat_endpoint(request: ChatRequest):
             from services.chat_service import get_chat_service
             chat_service = get_chat_service()
             result = await chat_service.execute(request.message)
-            return ChatResponse(result=result.get("code", str(result)))
+            # Handle result - could be dict or string
+            result_code = result.get("code") if isinstance(result, dict) else str(result)
+            if isinstance(result_code, dict):
+                result_code = str(result_code)
+            return ChatResponse(result=result_code)
         except ImportError:
             # Fallback to run_team if ChatService not available
             logger.info(f"Chat request: {request.message[:50]}...")
