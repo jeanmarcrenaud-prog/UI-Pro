@@ -260,14 +260,14 @@ def _build_main_ui():
         
         # Navigation visibility handler
         def _on_nav_change(tab_name):
-            return {
-                "section-task-input": tab_name == "Task Input",
-                "section-realtime": tab_name == "Real-time Output",
-                "section-logs": tab_name == "Live Logs",
-                "section-status": tab_name == "Status",
-                "section-memory": tab_name == "Memory",
-                "section-metrics": tab_name == "Metrics",
-            }
+            return [
+                gr.update(visible=tab_name == "Task Input"),
+                gr.update(visible=tab_name == "Real-time Output"),
+                gr.update(visible=tab_name == "Live Logs"),
+                gr.update(visible=tab_name == "Status"),
+                gr.update(visible=tab_name == "Memory"),
+                gr.update(visible=tab_name == "Metrics"),
+            ]
         
         nav.change(
             _on_nav_change,

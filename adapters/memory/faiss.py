@@ -67,11 +67,11 @@ class FAISSAdapter:
     def model(self):
         """Lazy load embedding model"""
         if self._model is None:
-            _, _, st = _lazy_imports()
+            f, _, st = _lazy_imports()
             self._model = st.SentenceTransformer("all-MiniLM-L6-v2")
             self.d = self._model.get_sentence_embedding_dimension()
             if self.index is None:
-                self.index = faiss.IndexFlatL2(self.d)
+                self.index = f.IndexFlatL2(self.d)
         return self._model
     
     def _load(self):
