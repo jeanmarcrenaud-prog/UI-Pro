@@ -130,6 +130,14 @@ class StreamingService:
             route_result = router.route(prompt, mode=mode)
             model = model or route_result["model"]
             
+            # Validate model
+            if not model:
+                from fastapi import HTTPException
+                raise HTTPException(
+                    status_code=400,
+                    detail="No model specified and router did not return a valid model"
+                )
+            
             client = OllamaClient()
             
             # Register this stream so it can be cancelled later
