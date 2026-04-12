@@ -82,9 +82,14 @@ def check_port(port: int) -> bool:
 
 def check_npm_available() -> bool:
     """Check if npm is available."""
+    import shutil
+    # Use shutil.which to find npm in PATH
+    npm_path = shutil.which("npm")
+    if not npm_path:
+        return False
     try:
         result = subprocess.run(
-            ["npm", "--version"],
+            [npm_path, "--version"],
             capture_output=True,
             timeout=5,
         )
@@ -95,9 +100,14 @@ def check_npm_available() -> bool:
 
 def check_node_available() -> bool:
     """Check if node is available."""
+    import shutil
+    # Use shutil.which to find node in PATH
+    node_path = shutil.which("node")
+    if not node_path:
+        return False
     try:
         result = subprocess.run(
-            ["node", "--version"],
+            [node_path, "--version"],
             capture_output=True,
             timeout=5,
         )
