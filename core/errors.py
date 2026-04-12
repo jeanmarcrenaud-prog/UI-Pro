@@ -15,15 +15,44 @@ class DomainError(Exception):
 class LLMError(DomainError):
     """Erreur lors d'un appel LLM"""
     
-    def __init__(self, message: str, model: Optional[str] = None):
+    def __init__(self, message: str, model: Optional[str] = None, backend: Optional[str] = None):
         self.model = model
+        self.backend = backend
         super().__init__(message, code="LLM_ERROR")
     
     def __str__(self):
         base = super().__str__()
+        parts = []
         if self.model:
-            return f"{base} (model: {self.model})"
+            parts.append(f"model: {self.model}")
+        if self.backend:
+            parts.append(f"backend: {self.backend}")
+        if parts:
+            return f"{base} ({', '.join(parts)})"
         return base
+
+
+class LLMBackendError(LLMError):
+    """Erreur de backend (connexion, timeout, etc.)"""
+    
+    def __init__(self, message: str, backend: str, model: Optional[str] = None):
+        super().__init__(message, model=model)
+        self.code = "LLM_BACKEND_ERROR"
+    
+    def __str__(self):
+        return f"Backend error: {self.message} (backend: {self.backend})"
+
+
+class LLMTimeoutError(LLMError):
+    """Timeout lors de l'appel LLM"""
+    
+    def __init__(self, message: str, model: str, timeout: int):
+        super().__init__(message, model=model)
+        self.code = "LLM_TIMEOUT"
+        self.timeout = timeout
+    
+    def __str__(self):
+        return f"Timeout after {self.timeout}s: {self.message}"
 
 
 class ToolExecutionError(DomainError):
