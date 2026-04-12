@@ -160,38 +160,22 @@ class StreamingService:
             for chunk_text in client.stream(prompt, model=model):
                 # Check for cancellation
                 if stream_id in self._active_streams:
-                    active_task = self._active_streams[stream_id]
-                    if active_task.cancelled():
+                    task = self._active_streams[stream_id]
+                    if task.cancelled():
                         is_cancelled = True
                         logger.debug(f"Stream {stream_id} was cancelled")
                         break
                 
-                # Apply timeout for each chunk to prevent indefinite blocking
-                try:
-                    # Accumulate buffer (streaming chunks individually)
-                    buffer.append(chunk_text)
-                    token_count += 1
-                except asyncio.TimeoutError:
-                    # Should not happen for sync generator, but handle anyway
-                    logger.error(f"Chunk read timeout for stream {stream_id}")
-                    yield StreamChunk(
-                        text="",
-                        status=StreamStatus.ERROR,
-                        stream_id=stream_id,
-                        chunk_index=chunk_index,
-                        error="Timeout reading chunk"
-                    )
-                    break
+                buffer.append(chunk_text)
+                token_count += 1
                 
                 # Only yield when buffer reaches chunk size
                 if len(buffer) >= self.config.chunk_size:
                     full_text = "".join(buffer)
                     
                     chunk = StreamChunk(
-                        text=full_text,
-                        status=StreamStatus.GENERATING,
-                        stream_id=stream_id,
-                        chunk_index=chunk_index,
+                        text=full_text, status=StreamStatus.GENERATING,
+                        stream_id=stream_id, chunk_index=chunk_index,
                         tokens_generated=token_count,
                         latency_ms=(time.time() - start_time) * 1000
                     )
@@ -213,57 +197,18 @@ class StreamingService:
                         # Send remaining buffer before stopping
                         if buffer:
                             full_text = "".join(buffer)
-                            remaining_chunk = StreamChunk(
-                                text=full_text,
-                                status=StreamStatus.GENERATING,
-                                stream_id=stream_id,
-                                chunk_index=chunk_index,
-                                tokens_generated=token_count,
-                                latency_ms=(time.time() - start_time) * 1000,
+                            yield StreamChunk(
+                                text=full_text, status=StreamStatus.GENERATING,
+                                stream_id=stream_id, chunk_index=chunk_index,
                                 error="Max tokens reached"
                             )
-                            yield remaining_chunk
-                        # Always send COMPLETED event when max tokens is reached
+                        # Send COMPLETED event
                         yield StreamChunk(
-                            text="",
-                            status=StreamStatus.COMPLETED,
-                            stream_id=stream_id,
-                            chunk_index=chunk_index,
-                            tokens_generated=token_count,
-                            latency_ms=(time.time() - start_time) * 1000,
+                            text="", status=StreamStatus.COMPLETED,
+                            stream_id=stream_id, chunk_index=chunk_index,
                             error="Max tokens reached"
                         )
                         break
-            
-                        # Only if stream completed successfully (not cancelled and no max tokens reached)
-            if not is_cancelled and token_count < self.config.max_tokens:
-                yield StreamChunk(
-                    text="",
-                    status=StreamStatus.COMPLETED,
-                    stream_id=stream_id,
-                    chunk_index=chunk_index,
-                    tokens_generated=token_count,
-                    latency_ms=(time.time() - start_time) * 1000,
-                    error="Stream completed successfully"
-                )
-            elif is_cancelled and buffer:
-                # Send remaining buffer on cancellation
-                full_text = "".join(buffer)
-                yield StreamChunk(
-                    text=full_text,
-                    status=StreamStatus.CANCELLED,
-                    stream_id=stream_id,
-                    chunk_index=chunk_index,
-                    tokens_generated=token_count,
-                    latency_ms=(time.time() - start_time) * 1000,
-                    error=f"Stream cancelled with {len(buffer)} remaining tokens"
-                )
-                logger.warning(
-                    f"Stream {stream_id} cancelled: sent {len(buffer)} tokens in final chunk"
-                )
-            elif is_cancelled:
-                # Cancelled but no buffer - just log
-                logger.info(f"Stream {stream_id} cancelled cleanly, no remaining tokens")
         except ConnectionError as e:
             logger.error(f"Network error for stream {stream_id}: {e}", exc_info=True)
             if not is_cancelled:
