@@ -6,7 +6,7 @@ Provides structured logging with rotation, multiple levels, and JSON formatting.
 import logging
 import os
 from typing import Optional
-from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 import datetime
 import json
@@ -45,9 +45,16 @@ class JSONFormatter(logging.Formatter):
         if record.exc_info:
             log_data["exception"] = self.formatException(record.exc_info)
         
-        # Add extra data if present
-        if hasattr(record, "extra_data"):
-            log_data["extra"] = record.extra_data
+        # Collect extra fields (non-standard attributes)
+        extra_keys = (
+            "name", "msg", "args", "levelname", "levelno", "pathname",
+            "filename", "module", "exc_info", "exc_text", "stack_info",
+            "lineno", "funcName", "created", "msecs", "relativeCreated",
+            "thread", "threadName", "processName", "process",
+        )
+        extras = {k: v for k, v in record.__dict__.items() if k not in extra_keys}
+        if extras:
+            log_data["extra"] = extras
         
         return json.dumps(log_data)
 
@@ -79,6 +86,10 @@ class LoggerManager:
         # Root logger configuration
         root_logger = logging.getLogger()
         root_logger.setLevel(logging.INFO)
+        
+        # Check if handlers already exist to avoid duplicates
+        if root_logger.handlers:
+            return
         
         # Console handler with color-coded output
         console_handler = logging.StreamHandler()
