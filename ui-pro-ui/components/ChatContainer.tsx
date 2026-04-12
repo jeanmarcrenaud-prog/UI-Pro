@@ -1,11 +1,10 @@
 'use client'
 
-// UI-Pro Chat Container - Premium with streaming & markdown
-
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import ReactMarkdown from 'react-markdown'
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter'
+import { oneDark } from 'react-syntax-highlighter/dist/cjs/styles/prism'
 import { useChatStore } from '@/lib/stores/chatStore'
 
 interface Message {
@@ -35,61 +34,15 @@ interface Props {
   onToggleDebug?: () => void
 }
 
-// Parse and format incoming messages
-function formatMessage(msg: string): { type: string; content: string; error?: string } {
-  try {
-    if (msg.startsWith('data: ')) {
-      // SSE format
-      const data = JSON.parse(msg.slice(6))
-      return {
-        type: data.type || 'token',
-        content: data.content || data.data || data.text || '',
-        error: data.error
-      }
-    }
-    // Plain text
-    return {
-      type: 'token',
-      content: msg
-    }
-  } catch {
-    return {
-      type: 'token',
-      content: msg
-    }
-  }
-}
-
-interface AgentStep {
-  id: string
-  title: string
-  detail?: string
-  status: 'pending' | 'active' | 'done'
-}
-
-type AgentStatus = 'idle' | 'running' | 'error'
-
-interface Props {
-  messages: Message[]
-  setMessages: (msgs: Message[]) => void
-  isLoading: boolean
-  setIsLoading: (loading: boolean) => void
-  agentSteps?: AgentStep[]
-  status?: AgentStatus
-  onToggleDebug?: () => void
-}
-
 export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, agentSteps = [] }: Props) {
   const [input, setInput] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const wsRef = useRef<WebSocket | null>(null)
 
-  // Auto scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // Close WebSocket on unmount
   useEffect(() => {
     return () => {
       wsRef.current?.close()
@@ -98,20 +51,19 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
 
   const sendMessage = useCallback(async () => {
     if (!input.trim() || isLoading) return
-    
+
     const userMessage: Message = {
       id: `msg-${Date.now()}`,
       role: 'user',
       content: input,
       timestamp: new Date().toISOString(),
     }
-    
+
     setMessages(prev => [...prev, userMessage])
     const userInput = input
     setInput('')
     setIsLoading(true)
-    
-    // Add thinking placeholder
+
     const assistantMessage: Message = {
       id: `msg-${Date.now()}-assistant`,
       role: 'assistant',
@@ -120,9 +72,8 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
       timestamp: new Date().toISOString(),
     }
     setMessages(prev => [...prev, assistantMessage])
-    
+
     try {
-      // Try WebSocket first for streaming
       const wsUrl = `ws://${window.location.hostname}:8000/ws`
       const ws = new WebSocket(wsUrl)
       wsRef.current = ws
@@ -132,40 +83,72 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
       }
 
       ws.onmessage = (event) => {
-        const data = event.data
-        
-        if (data === '[DONE]') {
+        const raw = event.data
+
+        if (!raw) return
+
+        // FIN STREAM
+        if (raw === '[DONE]') {
           setIsLoading(false)
           ws.close()
-          // Save to history (will be added in next update)
           return
         }
-        
-        // Update last message with streaming content
+
+        let delta = ''
+
+        try {
+          const parsed = JSON.parse(raw)
+
+          // support multi-formats backend
+          delta =
+            parsed.delta ||
+            parsed.text ||
+            parsed.content ||
+            parsed.result ||
+            ''
+
+          // support tool/code output
+          if (parsed.code) {
+            delta = '```python\n' + JSON.stringify(parsed.code, null, 2) + '\n```'
+          }
+
+          if (parsed.type === 'token') {
+            delta = parsed.data || ''
+          }
+
+        } catch {
+          // fallback raw text streaming
+          delta = raw
+        }
+
+        if (!delta) return
+
         setMessages(prev => {
           const msgs = [...prev]
           const lastIdx = msgs.length - 1
+
           if (lastIdx >= 0 && msgs[lastIdx].role === 'assistant') {
             msgs[lastIdx] = {
               ...msgs[lastIdx],
-              content: msgs[lastIdx].content + data,
+              content: (msgs[lastIdx].content || '') + delta,
               status: 'streaming',
             }
           }
+
           return msgs
         })
       }
-
-      ws.onerror = () => {
-        // Fallback to REST
+      ws.onerror = (event) => {
+        console.error('WebSocket error:', event)
         fetchChatREST()
       }
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
+        console.log('WebSocket closed:', event)
         setIsLoading(false)
       }
-    } catch {
-      // Fallback to REST
+    } catch (error) {
+      console.error('WebSocket connection error:', error)
       fetchChatREST()
     }
 
@@ -176,16 +159,35 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message: userInput }),
         })
-        
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+
         const data = await response.json()
-        
+
+        let content = ''
+        if (data.result) {
+          content = data.result
+        } else if (data.error) {
+          content = data.error
+        } else if (data.text) {
+          content = data.text
+        } else if (data.code) {
+          content = '```python\n' + JSON.stringify(data.code, null, 2) + '\n```'
+        } else if (data.files) {
+          content = 'Files: ' + JSON.stringify(data.files, null, 2)
+        } else {
+          content = 'No response'
+        }
+
         setMessages(prev => {
           const msgs = [...prev]
           const lastIdx = msgs.length - 1
           if (lastIdx >= 0 && msgs[lastIdx].role === 'assistant') {
             msgs[lastIdx] = {
               ...msgs[lastIdx],
-              content: data.result || data.error || 'No response',
+              content: content,
               status: data.status === 'error' ? 'error' : 'done',
             }
           }
@@ -199,7 +201,7 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
           if (lastIdx >= 0 && msgs[lastIdx].role === 'assistant') {
             msgs[lastIdx] = {
               ...msgs[lastIdx],
-              content: 'Failed to connect to backend',
+              content: `Failed to connect to backend: ${error.message}`,
               status: 'error',
             }
           }
@@ -216,7 +218,7 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
         {messages.length === 0 && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             className="text-center text-slate-400 mt-8"
@@ -224,7 +226,7 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
             <div className="text-6xl mb-4">👋</div>
             <h2 className="text-xl font-semibold mb-2">Welcome to UI-Pro</h2>
             <p className="text-sm">Your AI Agent Orchestration System</p>
-            
+
             {/* Example prompts */}
             <div className="mt-8 max-w-md mx-auto">
               <p className="text-xs text-slate-500 mb-3">Try an example:</p>
@@ -242,7 +244,7 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
                       sendMessage()
                     }}
                     disabled={isLoading}
-                    className="text-left p-3 bg-slate-800/50 hover:bg-slate-800 border border-slate-700 hover:border-violet-500 rounded-lg transition-colors text-sm"
+                    className="text-left p-3 bg-slate-900/50 hover:bg-slate-900 border border-slate-700 hover:border-violet-500 rounded-lg transition-colors text-sm"
                   >
                     <span className="mr-2">{example.icon}</span>
                     {example.text}
@@ -250,11 +252,11 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
                 ))}
               </div>
             </div>
-            
+
             <p className="text-xs mt-8 text-slate-500">Or type your own request below...</p>
           </motion.div>
         )}
-        
+
         <AnimatePresence mode="popLayout">
           {messages.map((msg) => (
             <motion.div
@@ -266,57 +268,53 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
             >
               {/* Avatar */}
               <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0 ${
-                msg.role === 'user' 
-                  ? 'bg-violet-600' 
+                msg.role === 'user'
+                  ? 'bg-violet-600'
                   : 'bg-emerald-600'
               }`}>
                 {msg.role === 'user' ? '👤' : '🤖'}
               </div>
-              
-              {/* Message with markdown */}
-              <div className={`flex flex-col max-w-[70%] ${
-                msg.role === 'user' ? 'items-end' : 'items-start'
-              }`}>
-                <div className="text-xs text-slate-500 mb-1">
-                  {msg.role === 'user' ? 'You' : 'UI-Pro'}
-                </div>
-                <div
-                  className={`rounded-2xl px-4 py-3 ${
-                    msg.role === 'user'
-                      ? 'bg-violet-600 text-white rounded-br-md'
-                      : 'bg-slate-800 text-slate-100 rounded-bl-md'
-                  }`}
-                >
-                  {msg.role === 'assistant' ? (
+
+                  {/* Message with markdown */}
+                  <div className="rounded-2xl px-4 py-3 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                  {msg.role === 'assistant' && msg.content ? (
                     <div className="prose prose-invert prose-sm max-w-none">
                       <ReactMarkdown
                         components={{
                           code({ node, className, children, ...props }) {
-                            const match = /language-(\w+)/.exec(className || '')
-                            const isInline = !match && !className
-                            return !isInline && match ? (
-                              <SyntaxHighlighter
-                                theme={oneDark}
-                                language={match[1]}
-                                PreTag="div"
-                              >
-                                {String(children).replace(/\n$/, '')}
-                              </SyntaxHighlighter>
-                            ) : (
-                              <code className={className} {...props}>
-                                {children}
-                              </code>
-                            )
+                            const match = /language-(\w+)/.exec(className || '');
+                            const isInline = !match && !className;
+                      return !isInline && match ? (
+                        <SyntaxHighlighter
+                          theme={oneDark}
+                          language={match[1]}
+                          PreTag="div"
+                          wrapLines={match[1].toLowerCase() === 'python'}
+                          wrapLongLines={true}
+                          customStyle={{
+                            maxWidth: '100%',
+                            backgroundColor: match[1].toLowerCase() === 'python' 
+                              ? '#1e293b'  // slate-800 for Python
+                              : undefined
+                          }}
+                        >
+                          {String(children).replace(/\n$/, '')}
+                        </SyntaxHighlighter>
+                      ) : (
+                        <pre className="overflow-x-auto rounded bg-slate-900/80 p-3 text-xs text-slate-300 border border-slate-700">
+                          <code className={className} {...props}>{children}</code>
+                        </pre>
+                      );
                           }
                         }}
                       >
-                        {msg.content || '...'}
+                        {msg.content}
                       </ReactMarkdown>
                     </div>
                   ) : (
                     <p className="whitespace-pre-wrap">{msg.content}</p>
                   )}
-                  
+
                   {/* Streaming cursor */}
                   {msg.status === 'streaming' && (
                     <motion.span
@@ -330,7 +328,7 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
             </motion.div>
           ))}
         </AnimatePresence>
-        
+
         {/* Agent Steps Timeline - Detailed */}
         {agentSteps.length > 0 && isLoading && (
           <motion.div
@@ -349,7 +347,7 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
                 ⚡
               </motion.span>
             </div>
-            
+
             <div className="space-y-2">
               {agentSteps.map((step, index) => (
                 <div
@@ -366,12 +364,12 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
                   <span className="w-6 text-center">
                     {step.status === 'done' ? '✅' : step.status === 'active' ? '⚙️' : '⏳'}
                   </span>
-                  
+
                   {/* Step name */}
                   <span className={step.status === 'active' ? 'animate-pulse' : ''}>
                     {step.title}
                   </span>
-                  
+
                   {/* Status indicator */}
                   {step.status === 'active' && (
                     <motion.span
@@ -387,7 +385,7 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
             </div>
           </motion.div>
         )}
-        
+
         {/* Loading dots */}
         {isLoading && !messages.find(m => m.status === 'streaming') && (
           <motion.div
@@ -408,13 +406,13 @@ export function ChatContainer({ messages, setMessages, isLoading, setIsLoading, 
             </div>
           </motion.div>
         )}
-        
+
         <div ref={messagesEndRef} />
       </div>
-      
+
       {/* Input */}
       <div className="p-4 border-t border-slate-700">
-        <motion.div 
+        <motion.div
           className="flex gap-2 max-w-3xl mx-auto"
           whileFocus={{ scale: 1.01 }}
         >
