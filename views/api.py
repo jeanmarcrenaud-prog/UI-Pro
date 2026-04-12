@@ -162,6 +162,52 @@ async def ws_endpoint(ws: WebSocket):
     except Exception:
         pass
 
+# Chat request model
+from pydantic import BaseModel
+
+
+class ChatRequest(BaseModel):
+    message: str
+
+
+class ChatResponse(BaseModel):
+    result: str
+    status: str = "success"
+
+
+@app.post("/api/chat")
+async def chat_endpoint(request: ChatRequest):
+    """Chat endpoint for REST API"""
+    try:
+        # Import ChatService for real LLM calls
+        try:
+            from services.chat_service import get_chat_service
+            chat_service = get_chat_service()
+            result = await chat_service.execute(request.message)
+            return ChatResponse(result=result.get("code", str(result)))
+        except ImportError:
+            # Fallback to run_team if ChatService not available
+            logger.info(f"Chat request: {request.message[:50]}...")
+            # This runs synchronously - might take a while
+            import io
+            import sys
+            buffer = io.StringIO()
+            old_stdout = sys.stdout
+            sys.stdout = buffer
+            try:
+                from controllers.team import run_team
+                run_team(request.message)
+            finally:
+                sys.stdout = old_stdout
+            output = buffer.getvalue()
+            if not output:
+                output = f"Executed task: {request.message[:30]}... [no output]"
+            return ChatResponse(result=output)
+    except Exception as e:
+        logger.error(f"Chat error: {e}")
+        return ChatResponse(result=f"Error: {str(e)}", status="error")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="localhost", port=8000)
