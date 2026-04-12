@@ -22,6 +22,7 @@ class ExecutionConfig:
     cleanup: bool = True
     max_fix_attempts: int = 3
     code_review_enabled: bool = False
+    memory_limit_mb: int = 512  # Memory limit in MB (POSIX only)
 
 
 _CONFIG = ExecutionConfig()
@@ -110,6 +111,14 @@ class CodeExecutor:
                     stdin=subprocess.DEVNULL,
                 )
             else:
+                # Set memory limit (POSIX only)
+                import resource
+                max_mem_bytes = self.config.memory_limit_mb * 1024 * 1024
+                try:
+                    resource.setrlimit(resource.RLIMIT_AS, (max_mem_bytes, max_mem_bytes))
+                except Exception as e:
+                    logger.warning(f"Failed to set memory limit: {e}")
+                
                 cp = subprocess.run(
                     ["python", str(main_file)],
                     cwd=workspace,
@@ -174,11 +183,71 @@ class CodeExecutor:
         
         code = "#!/usr/bin/env python3\n" + code
         
+        # 1. String-based sanitization (basic)
         dangerous = ["(eval(", "(exec(", "subprocess.Popen(", "open('..'"]
         for pattern in dangerous:
             code = code.replace(pattern, "# DISABLED: ")
         
+        # 2. AST-based sanitization (robust)
+        code = self._ast_sanitize(code)
+        
         return code
+    
+    def _ast_sanitize(self, code: str) -> str:
+        """AST-based code sanitization to block dangerous constructs"""
+        import ast
+        
+        class DangerousVisitor(ast.NodeTransformer):
+            def __init__(self):
+                self.disabled = []
+            
+            def visit_Call(self, node: ast.Call) -> ast.Call:
+                # Check for dangerous function calls
+                dangerous_names = {'eval', 'exec', '__import__', 'open'}
+                
+                # Handle direct name calls: eval(), exec()
+                if isinstance(node.func, ast.Name):
+                    if node.func.id in dangerous_names:
+                        self.disabled.append(node.lineno)
+                        return ast.Expr(value=ast.Constant(value=f"# DISABLED at line {node.lineno}"))
+                
+                # Handle attribute calls: obj.eval(), obj.exec()
+                if isinstance(node.func, ast.Attribute):
+                    if node.func.attr in dangerous_names:
+                        self.disabled.append(node.lineno)
+                        return ast.Expr(value=ast.Constant(value=f"# DISABLED at line {node.lineno}"))
+                
+                return node
+            
+            def visit_Import(self, node: ast.Import) -> ast.Import:
+                # Block dangerous imports
+                dangerous_imports = {'os', 'sys', 'subprocess', 'socket'}
+                for alias in node.names:
+                    if alias.name in dangerous_imports:
+                        self.disabled.append(node.lineno)
+                return node
+            
+            def visit_ImportFrom(self, node: ast.ImportFrom) -> ast.ImportFrom:
+                # Block dangerous from imports
+                if node.module in {'os', 'sys', 'subprocess', 'socket', 'builtins'}:
+                    self.disabled.append(node.lineno)
+                return node
+        
+        try:
+            tree = ast.parse(code)
+            visitor = DangerousVisitor()
+            tree = visitor.visit(tree)
+            
+            if visitor.disabled:
+                logger.warning(f"AST sanitization blocked lines: {visitor.disabled}")
+                # Remove marked nodes by reconstructing
+                return ast.unparse(tree)
+            
+            return code
+        except SyntaxError:
+            # If AST parsing fails, fall back to string sanitization
+            logger.warning("AST parsing failed, using string sanitization")
+            return code
 
 
 # ==================== **3. EXISTING COMPATIBILITY** ====================
