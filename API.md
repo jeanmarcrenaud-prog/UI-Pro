@@ -1,5 +1,7 @@
 # API Documentation
 
+> UI-Pro REST API et WebSocket endpoints.
+
 ## Base URL
 ```
 http://localhost:8000
@@ -7,11 +9,13 @@ http://localhost:8000
 
 ## Endpoints
 
-### 1. Chat
+---
+
+### 1. Chat (REST)
 
 #### POST /api/chat
 
-Send a chat message to the agent orchestrator.
+Envoyer un message à l'agent orchestrator.
 
 **Request:**
 ```json
@@ -44,7 +48,7 @@ Send a chat message to the agent orchestrator.
 
 #### GET /health
 
-Check API health status.
+Vérifier le statut de santé de l'API.
 
 **Response (200):**
 ```json
@@ -69,7 +73,7 @@ Check API health status.
 
 #### GET /status
 
-Get current model configuration. Requires API key.
+Obtenir la configuration des modèles. Requiert API key.
 
 **Headers:**
 ```
@@ -87,22 +91,120 @@ x-api-key: <your-api-key>
 
 ---
 
-### 4. WebSocket
+### 4. WebSocket Streaming
 
 #### WS /ws
 
-Real-time streaming WebSocket endpoint.
+Streaming temps réel avec events.
 
-**Client sends:**
+**Client → Server:**
 ```json
-{"message": "Create a file"}
+{"message": "Create a hello world file"}
 ```
 
-**Server sends (streaming):**
+**Server → Client (streaming events):**
+
 ```
-[STEP]planning:Planning the task
+[STEP]analyzing:Analyzing the task
+[STEP]planning:Planning the implementation
 [TOOL]write_file:Writing hello.py
-Hello World!
+[TOKEN]print("Hello World")
+[TOKEN]print("Hello World!")
+[DONE]
+```
+
+#### Format des Events WebSocket
+
+| Event | Format | Description |
+|-------|--------|------------|
+| `[STEP]<step>:<message>` | Step agent | Étape en cours |
+| `[TOOL]<tool_name>:<message>` | Tool call | Outil appelé |
+| `[TOKEN]<text>` | Token | Token LLM streamé |
+| `[ERROR]<code>:<message>` | Error | Erreur |
+| `[DONE]` | Completion | Fin du stream |
+
+#### Exemples d'Events
+
+```python
+# Step events
+"[STEP]analyzing:Analyzing requirements..."
+"[STEP]planning:Creating file structure..."
+
+# Tool events
+"[TOOL]write_file:Creating hello.py"
+"[TOOL]run_code:Executing hello.py"
+
+# Token stream
+"[TOKEN]p" -> "[TOKEN]pr" -> "[TOKEN]pri" -> "[TOKEN]print"
+```
+
+---
+
+### 5. Tool Calls
+
+#### Format d'un tool call
+
+Les tool calls sont encapsulés dans les réponses LLM:
+
+```json
+{
+  "message": "I'll create that file for you.",
+  "tool_calls": [
+    {
+      "id": "call_abc123",
+      "type": "function",
+      "function": {
+        "name": "write_file",
+        "arguments": "{\"filename\": \"hello.py\", \"content\": \"print('Hello World')\"}"
+      }
+    }
+  ]
+}
+```
+
+#### Tools disponibles
+
+| Tool | Arguments | Description |
+|------|-----------|-------------|
+| `write_file` | `filename`, `content` | Écrire un fichier |
+| `read_file` | `filename` | Lire un fichier |
+| `run_code` | `filename`, `args?` | Exécuter du code |
+| `list_files` | `path?` | Lister fichiers |
+
+#### Exemple tool call complet
+
+```python
+# Request
+{
+  "message": "Create a test file and run it"
+}
+
+# LLM response with tool call
+{
+  "message": "I'll create test.py and run it.",
+  "tool_calls": [
+    {
+      "id": "call_1",
+      "type": "function", 
+      "function": {
+        "name": "write_file",
+        "arguments": "{\"filename\": \"test.py\", \"content\": \"print('test')\"}"
+      }
+    },
+    {
+      "id": "call_2", 
+      "type": "function",
+      "function": {
+        "name": "run_code",
+        "arguments": "{\"filename\": \"test.py\"}"
+      }
+    }
+  ]
+}
+
+# Tool results (returned as tokens)
+[TOOL]write_file:test.py created
+[TOOL]ran test.py: test
 [DONE]
 ```
 
@@ -117,3 +219,14 @@ Hello World!
 | 422 | Validation error |
 | 500 | Internal server error |
 | 504 | Timeout |
+
+---
+
+## Headers de response
+
+L'API ajoute des headers pour le debugging:
+
+```
+x-request-id: req-1234567890      # Request ID unique
+x-duration-ms: 1234.56          # Durée en ms
+```
