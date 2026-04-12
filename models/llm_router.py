@@ -1,4 +1,7 @@
-# 🔄 **Multi-Model Router**
+# 🔄 **Multi-Model Router** [LEGACY - utiliser llm/router.py]
+#
+# DEPRECATED: Ce fichier est un doublon de llm/router.py.
+# Utiliser: from llm.router import LLMRouter
 #
 # Route queries vers les meilleurs modèles :
 # - fast → qwen2.5:7b (exposé <300ms)
