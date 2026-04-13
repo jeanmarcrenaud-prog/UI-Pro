@@ -79,13 +79,7 @@ export default function Home() {
         
         {/* Content based on active tab */}
         {activeTab === 'chat' ? (
-          <ChatContainer 
-            messages={messages}
-            setMessages={setMessages}
-            isLoading={isLoading}
-            setIsLoading={setIsLoading}
-            agentSteps={agentSteps}
-          />
+          <ChatContainer />
         ) : activeTab === 'history' ? (
           <HistoryView 
             onSelectChat={(id) => {
