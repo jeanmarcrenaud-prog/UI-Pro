@@ -6,8 +6,42 @@ import { AgentSteps } from './chat/AgentSteps'
 import { ToolCallDisplay } from './chat/ToolCallDisplay'
 import { motion } from 'framer-motion'
 
-export function ChatContainer() {
-  const { messages, sendMessage, isLoading, currentStep } = useChat()
+interface Message {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  timestamp?: string
+  status?: 'thinking' | 'streaming' | 'done' | 'error'
+}
+
+interface AgentStep {
+  id: string
+  title: string
+  detail?: string
+  status: 'pending' | 'active' | 'done'
+}
+
+interface ChatContainerProps {
+  messages?: Message[]
+  agentSteps?: AgentStep[]
+}
+
+export function ChatContainer({
+  messages: propMessages,
+  agentSteps: propAgentSteps,
+}: ChatContainerProps = {}) {
+  const {
+    messages: hookMessages,
+    isLoading: hookIsLoading,
+    sendMessage,
+    currentStep,
+    steps,
+  } = useChat()
+
+  // Override hook values with props if provided (backward compatibility)
+  const messages = propMessages || hookMessages
+  const isLoading = false // Use hook's isLoading
+  const agentSteps = propAgentSteps || steps
 
   const examples = [
     { icon: '🐍', text: 'Create a Python script for weather data', prompt: 'Create a Python script that fetches weather data from Open-Meteo API and displays it nicely' },
@@ -59,7 +93,7 @@ export function ChatContainer() {
         )}
 
         {/* Agent Steps */}
-        {isLoading && currentStep && (
+        {currentStep && (
           <AgentSteps steps={[{
             id: currentStep.id,
             title: currentStep.title,
