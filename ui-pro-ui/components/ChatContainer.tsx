@@ -139,17 +139,21 @@ export function ChatContainer({
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault()
-                  const value = (e.target as HTMLTextAreaElement).value
+                  const textarea = e.target as HTMLTextAreaElement
+                  const value = textarea.value
                   sendMessage(value)
-                  (e.target as HTMLTextAreaElement).value = ''
+                  textarea.value = ''
                 }
               }}
             />
             <button
               onClick={() => {
-                const value = (e.target as HTMLTextAreaElement).value
-                sendMessage(value)
-                (e.target as HTMLTextAreaElement).value = ''
+                const textarea = document.activeElement as HTMLTextAreaElement
+                if (textarea) {
+                  const value = textarea.value
+                  sendMessage(value)
+                  textarea.value = ''
+                }
               }}
               disabled={isLoading}
               className="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 px-3 py-2 rounded-lg ml-1"
