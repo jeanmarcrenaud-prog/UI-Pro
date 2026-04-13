@@ -69,15 +69,6 @@ API_KEY_HEADER = "x-api-key"
 # Create FastAPI app FIRST (before middleware)
 app = FastAPI()
 
-# API Error handling
-app.add_exception_handler(Exception, custom_exceptions)
-sessions = {}
-
-# Error tracking storage
-errors: list[Dict[str, Any]] = []
-MAX_ERRORS_TO_STORE = 100
-
-
 def custom_exceptions(request, exc):
     """Custom exception handler for detailed errors"""
     error_info = {
@@ -115,6 +106,15 @@ def custom_exceptions(request, exc):
         },
         headers={"x-stacktrace": error_info['traceback'][:500]}  # Truncated for debugging
     )
+
+# API Error handling
+app.add_exception_handler(Exception, custom_exceptions)
+sessions = {}
+
+# Error tracking storage
+errors: list[Dict[str, Any]] = []
+MAX_ERRORS_TO_STORE = 100
+
 
 # Response models (must be defined before endpoints use them)
 class HealthResponse(BaseModel):

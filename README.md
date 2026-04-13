@@ -179,6 +179,9 @@ Le système détecte automatiquement les modèles disponibles:
 ### Tool calling UI
 Les appels outils sont affichés en temps réel avec indikator.
 
+### Téléchargement de code généré
+Les blocs de code Python générés incluent un bouton de téléchargement (💾) permettant de sauvegarder facilement le script généré.
+
 ## 📝 Licence
 
 MIT License

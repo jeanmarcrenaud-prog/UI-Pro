@@ -8,12 +8,12 @@ interface ChatInputProps {
 }
 
 export default function ChatInput({ onSend, isLoading }: ChatInputProps) {
-  const [value, setValue] = useState("")
+  const [value, setValue] = useState('')
 
   const handleSend = () => {
     if (!value.trim() || isLoading) return
     onSend(value)
-    setValue("")
+    setValue('')
   }
 
   return (

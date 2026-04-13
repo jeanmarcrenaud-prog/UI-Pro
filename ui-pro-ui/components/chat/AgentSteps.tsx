@@ -1,39 +1,69 @@
 'use client'
 
-// components/agent/AgentSteps.tsx
+import { motion } from 'framer-motion'
 
-type Step = {
+interface Step {
   id: string
   title: string
-  status: "pending" | "active" | "done"
+  status: 'pending' | 'active' | 'done'
 }
 
-export default function AgentSteps({ steps }: { steps: Step[] }) {
+interface AgentStepsProps {
+  steps: Step[]
+}
+
+export function AgentSteps({ steps }: AgentStepsProps) {
   return (
-    <div className="bg-[#1e293b] p-4 rounded-xl shadow w-fit">
-      <div className="text-sm text-gray-400 mb-2">⚡ Iteration 1</div>
+    <div className="bg-slate-900/80 border border-slate-700 rounded-xl p-4 max-w-lg mx-auto">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-lg">🤖</span>
+        <span className="text-sm font-medium text-white">Agent Working</span>
+        <motion.span
+          animate={{ rotate: 360 }}
+          transition={{ repeat: Infinity, duration: 2 }}
+          className="ml-auto text-xs"
+        >
+          ⚡
+        </motion.span>
+      </div>
 
-      {steps.map((step) => (
-        <div key={step.id} className="flex items-center gap-2 text-sm mb-1">
-          {step.status === "done" && <span className="text-green-400">✔</span>}
-          {step.status === "active" && (
-            <span className="animate-spin text-blue-400">⚙</span>
-          )}
-          {step.status === "pending" && <span className="text-gray-500">⏳</span>}
-
-          <span
-            className={
-              step.status === "done"
-                ? "text-green-300"
-                : step.status === "active"
-                ? "text-blue-300"
-                : "text-gray-400"
-            }
+      <div className="space-y-2">
+        {steps.map((step) => (
+          <div
+            key={step.id}
+            className={`flex items-center gap-3 text-sm ${
+              step.status === 'done'
+                ? 'text-green-400'
+                : step.status === 'active'
+                ? 'text-blue-400'
+                : 'text-slate-500'
+            }`}
           >
-            {step.title}
-          </span>
-        </div>
-      ))}
+            {/* Step icon */}
+            <span className="w-6 text-center">
+              {step.status === 'done' ? '✅' : step.status === 'active' ? '⚙️' : '⏳'}
+            </span>
+
+            {/* Step name */}
+            <span
+              className={step.status === 'active' ? 'animate-pulse' : ''}
+            >
+              {step.title}
+            </span>
+
+            {/* Status indicator */}
+            {step.status === 'active' && (
+              <motion.span
+                initial={{ width: 0 }}
+                animate={{ width: 'auto' }}
+                className="ml-auto text-xs bg-blue-500/20 px-2 py-0.5 rounded-full"
+              >
+                running...
+              </motion.span>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
