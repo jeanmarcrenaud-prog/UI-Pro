@@ -3,7 +3,7 @@
 import { useCallback } from 'react'
 import { useChatStore } from '@/lib/stores/chatStore'
 import { useAgentStore } from '@/lib/stores/agentStore'
-import { apiService } from '@/services/api'
+import { chatService } from '@/services/chatService'
 import type { Message, AgentStep } from '@/lib/types'
 
 function generateId(): string {
@@ -63,17 +63,22 @@ export function useChat() {
     start(stepsData)
 
     try {
-      // Simulation progression
+      // Simulate step progression for UX
       setTimeout(() => {
         updateStep(stepsData[0].id, 'done')
         updateStep(stepsData[1].id, 'active')
       }, 300)
 
-      const response = await apiService.chat(content)
+      chatService.sendMessage(content)
 
-      updateMessage(assistantMsg.id, response.result, 'done')
-
-      stepsData.forEach(step => updateStep(step.id, 'done'))
+      // Get response from store
+      setTimeout(() => {
+        const lastMsg = messages[messages.length - 1]
+        if (lastMsg?.role === 'assistant') {
+          updateMessage(lastMsg.id, lastMsg.content || 'Response received', 'done')
+        }
+        stepsData.forEach((step) => updateStep(step.id, 'done'))
+      }, 1000)
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : 'Unknown error'
       updateMessage(assistantMsg.id, errMsg, 'error')
@@ -84,7 +89,7 @@ export function useChat() {
       // Delay pour UX propre
       setTimeout(() => reset(), 1200)
     }
-  }, [isLoading, addMessage, updateMessage, setLoading, setError, start, updateStep, reset])
+  }, [isLoading, messages, addMessage, updateMessage, setLoading, setError, start, updateStep, reset])
 
   const clear = useCallback(() => {
     clearMessages()
