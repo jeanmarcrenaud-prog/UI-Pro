@@ -20,6 +20,7 @@ export function useChat() {
     clearMessages,
     setLoading,
     setError,
+    saveToHistory,
   } = useChatStore()
 
   const {
@@ -97,9 +98,11 @@ export function useChat() {
       setError(errMsg)
     } finally {
       setLoading(false)
-      // Note: reset() is NOT called here - steps stay visible until user sends new message
+      // Save chat to history when response is received
+      const currentMessages = [...messages, userMsg, assistantMsg]
+      useChatStore.getState().saveToHistory()
     }
-  }, [isLoading, messages, addMessage, updateMessage, setLoading, setError, start, updateStep, reset])
+  }, [isLoading, messages, addMessage, updateMessage, setLoading, setError, start, updateStep, reset, saveToHistory])
 
   const clear = useCallback(() => {
     clearMessages()
