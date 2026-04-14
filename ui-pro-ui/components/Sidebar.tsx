@@ -86,10 +86,10 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
               className="w-full bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
             >
               {availableModels.length === 0 ? (
-                <option value="">No models found</option>
+                <option key="no-models" value="">No models found</option>
               ) : (
                 availableModels.map((model) => (
-                  <option key={model} value={model}>
+                  <option key={model || 'empty'} value={model}>
                     {model}
                   </option>
                 ))

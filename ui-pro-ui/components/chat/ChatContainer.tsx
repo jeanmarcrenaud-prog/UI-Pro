@@ -37,9 +37,9 @@ export default function ChatContainer() {
             <div className="mt-8 max-w-md mx-auto">
               <p className="text-xs text-slate-500 mb-3">Try an example:</p>
               <div className="grid gap-2">
-                {examples.map((example, i) => (
+                {examples.map((example) => (
                   <button
-                    key={i}
+                    key={example.prompt}
                     onClick={() => sendMessage(example.prompt)}
                     disabled={isLoading}
                     className="text-left p-3 bg-slate-900/50 hover:bg-slate-900 border border-slate-700 hover:border-violet-500 rounded-lg transition-colors text-sm"
@@ -59,8 +59,8 @@ export default function ChatContainer() {
         )}
 
         {/* Agent Steps */}
-        {isLoading && currentStep && (
-          <AgentSteps steps={({ title }) => ({ title, status: 'pending' }))} />
+        {isLoading && (
+          <AgentSteps steps={[{ id: currentStep?.id || '1', title: currentStep?.title || 'Processing', status: 'pending' }]} />
         )}
 
         {/* Loading dots */}
@@ -72,9 +72,9 @@ export default function ChatContainer() {
           >
             <div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center">🤖</div>
             <div className="bg-slate-800 rounded-2xl rounded-bl-md px-4 py-3 flex items-center gap-1">
-              {[0, 150, 300].map((delay) => (
+              {[0, 150, 300].map((delay, i) => (
                 <motion.span
-                  key={delay}
+                  key={`dot-${i}`}
                   animate={{ y: [0, -4, 0] }}
                   transition={{ repeat: Infinity, duration: 0.6, delay: delay / 1000 }}
                   className="w-2 h-2 bg-slate-400 rounded-full"

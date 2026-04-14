@@ -33,6 +33,9 @@ export function useChat() {
   const sendMessage = useCallback(async (content: string) => {
     if (!content.trim() || isLoading) return
 
+    // Reset previous steps before starting new conversation
+    reset()
+
     const userMsg: Message = {
       id: generateId(),
       role: 'user',
@@ -54,40 +57,47 @@ export function useChat() {
     setLoading(true)
 
     const stepsData: AgentStep[] = [
-      { id: generateId(), title: 'Analyzing request', status: 'active' },
-      { id: generateId(), title: 'Planning solution', status: 'pending' },
-      { id: generateId(), title: 'Executing', status: 'pending' },
-      { id: generateId(), title: 'Reviewing', status: 'pending' },
+      { id: 'step-analyzing', title: 'Analyzing request', status: 'active' },
+      { id: 'step-planning', title: 'Planning solution', status: 'pending' },
+      { id: 'step-executing', title: 'Executing', status: 'pending' },
+      { id: 'step-reviewing', title: 'Reviewing', status: 'pending' },
     ]
 
     start(stepsData)
 
     try {
-      // Simulate step progression for UX
-      setTimeout(() => {
-        updateStep(stepsData[0].id, 'done')
-        updateStep(stepsData[1].id, 'active')
-      }, 300)
+      // Register message handler BEFORE sending - to catch streaming events
+      chatService.onMessage((msg) => {
+        // When we receive the first response chunk, move to Planning
+        if (msg.status === 'streaming') {
+          const currentActive = steps.find(s => s.status === 'active')
+          if (currentActive?.id === 'step-analyzing') {
+            updateStep('step-analyzing', 'done')
+            updateStep('step-planning', 'active')
+          } else if (currentActive?.id === 'step-planning') {
+            updateStep('step-planning', 'done')
+            updateStep('step-executing', 'active')
+          }
+        }
+        // When response is done, move to Reviewing
+        if (msg.status === 'done') {
+          updateStep('step-executing', 'done')
+          updateStep('step-reviewing', 'active')
+          // After review, mark all done
+          setTimeout(() => {
+            steps.forEach((step) => updateStep(step.id, 'done'))
+          }, 500)
+        }
+      })
 
       chatService.sendMessage(content)
-
-      // Get response from store
-      setTimeout(() => {
-        const lastMsg = messages[messages.length - 1]
-        if (lastMsg?.role === 'assistant') {
-          updateMessage(lastMsg.id, lastMsg.content || 'Response received', 'done')
-        }
-        stepsData.forEach((step) => updateStep(step.id, 'done'))
-      }, 1000)
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : 'Unknown error'
       updateMessage(assistantMsg.id, errMsg, 'error')
       setError(errMsg)
     } finally {
       setLoading(false)
-
-      // Delay pour UX propre
-      setTimeout(() => reset(), 1200)
+      // Note: reset() is NOT called here - steps stay visible until user sends new message
     }
   }, [isLoading, messages, addMessage, updateMessage, setLoading, setError, start, updateStep, reset])
 

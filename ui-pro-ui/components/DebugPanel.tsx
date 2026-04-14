@@ -15,9 +15,25 @@ interface DebugPanelProps {
   isOpen?: boolean
   onToggle?: () => void
   status?: 'idle' | 'running' | 'error'
+  // NEW: Additional debug info props
+  modelName?: string
+  connectionStatus?: 'connected' | 'disconnected' | 'connecting' | 'error'
+  messageCount?: number
+  lastError?: string
+  startTime?: number  // timestamp when request started
 }
 
-export function DebugPanel({ steps = [], isOpen = true, onToggle, status = 'idle' }: DebugPanelProps) {
+export function DebugPanel({ 
+  steps = [], 
+  isOpen = true, 
+  onToggle, 
+  status = 'idle',
+  modelName = 'gemma',
+  connectionStatus = 'connected',
+  messageCount = 0,
+  lastError,
+  startTime
+}: DebugPanelProps) {
   const [expanded, setExpanded] = useState(true)
 
   // Truncate long details
@@ -33,6 +49,12 @@ export function DebugPanel({ steps = [], isOpen = true, onToggle, status = 'idle
   const completed = steps.filter(s => s.status === 'done').length
   const total = steps.length
   const percent = total > 0 ? Math.round((completed / total) * 100) : 0
+
+  // Calculate elapsed time if startTime provided
+  const elapsed = useMemo(() => {
+    if (!startTime) return null
+    return Math.round((Date.now() - startTime) / 1000)
+  }, [startTime])
 
   // Si le panneau n'est pas ouvert, afficher uniquement le bouton
   if (!isOpen) {
@@ -92,13 +114,65 @@ export function DebugPanel({ steps = [], isOpen = true, onToggle, status = 'idle
 
       {/* Collapsible content */}
       <AnimatePresence>
+        {/* NEW: Debug Info Section */}
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="px-4 py-3 border-b border-slate-800 bg-slate-900/20"
+        >
+          {/* Connection Status */}
+          <div className="flex items-center justify-between text-xs mb-2">
+            <span className="text-slate-500">Connection</span>
+            <span className={`flex items-center gap-1.5 ${
+              connectionStatus === 'connected' ? 'text-green-400' :
+              connectionStatus === 'connecting' ? 'text-yellow-400' :
+              connectionStatus === 'error' ? 'text-red-400' :
+              'text-slate-400'
+            }`}>
+              <span className="w-1.5 h-1.5 rounded-full bg-current" />
+              {connectionStatus === 'connected' ? 'Connected' :
+               connectionStatus === 'connecting' ? 'Connecting...' :
+               connectionStatus === 'error' ? 'Error' :
+               'Disconnected'}
+            </span>
+          </div>
+
+          {/* Model Name */}
+          <div className="flex items-center justify-between text-xs mb-2">
+            <span className="text-slate-500">Model</span>
+            <span className="text-slate-300 font-mono">{modelName}</span>
+          </div>
+
+          {/* Messages */}
+          <div className="flex items-center justify-between text-xs mb-2">
+            <span className="text-slate-500">Messages</span>
+            <span className="text-slate-300">{messageCount}</span>
+          </div>
+
+          {/* Elapsed Time */}
+          {elapsed !== null && (
+            <div className="flex items-center justify-between text-xs mb-2">
+              <span className="text-slate-500">Elapsed</span>
+              <span className="text-slate-300">{elapsed}s</span>
+            </div>
+          )}
+
+          {/* Error Display */}
+          {lastError && (
+            <div className="mt-2 p-2 bg-red-900/30 border border-red-800 rounded text-xs text-red-300">
+              <span className="font-medium">Error: </span>{lastError}
+            </div>
+          )}
+        </motion.div>
+
+        {/* Steps Section */}
         {expanded && (
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 10 }}
           >
-            {/* Steps */}
+            {/* Steps Section */}
             <div className="flex-1 overflow-y-auto p-4 space-y-2">
               {total === 0 ? (
                 // Placeholder
