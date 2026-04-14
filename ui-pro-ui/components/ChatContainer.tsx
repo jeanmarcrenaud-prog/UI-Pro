@@ -1,25 +1,13 @@
 'use client'
 
+import type { Message, AgentStep } from '@/lib/types'
 import { useChat } from '@/hooks/useChat'
 import { ChatMessages } from './chat/ChatMessages'
 import { AgentSteps } from './chat/AgentSteps'
-import { ToolCallDisplay } from './chat/ToolCallDisplay'
+
+// ToolCallDisplay unused - removing to avoid lint warnings
+// import { ToolCallDisplay } from './chat/ToolCallDisplay'
 import { motion } from 'framer-motion'
-
-interface Message {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  timestamp?: string
-  status?: 'thinking' | 'streaming' | 'done' | 'error'
-}
-
-interface AgentStep {
-  id: string
-  title: string
-  detail?: string
-  status: 'pending' | 'active' | 'done'
-}
 
 interface ChatContainerProps {
   messages?: Message[]
@@ -40,7 +28,7 @@ export function ChatContainer({
 
   // Override hook values with props if provided (backward compatibility)
   const messages = propMessages || hookMessages
-  const isLoading = false // Use hook's isLoading
+  const isLoading = hookIsLoading  // FIXED: Was incorrectly set to false
   const agentSteps = propAgentSteps || steps
 
   const examples = [
@@ -71,9 +59,9 @@ export function ChatContainer({
             <div className="mt-8 max-w-md mx-auto">
               <p className="text-xs text-slate-500 mb-3">Try an example:</p>
               <div className="grid gap-2">
-                {examples.map((example, i) => (
+                {examples.map((example) => (
                   <button
-                    key={i}
+                    key={example.prompt}
                     onClick={() => sendMessage(example.prompt)}
                     disabled={isLoading}
                     className="text-left p-3 bg-slate-900/50 hover:bg-slate-900 border border-slate-700 hover:border-violet-500 rounded-lg transition-colors text-sm"
@@ -92,13 +80,9 @@ export function ChatContainer({
           <ChatMessages messages={messages} />
         )}
 
-        {/* Agent Steps */}
-        {currentStep && (
-          <AgentSteps steps={[{
-            id: currentStep.id,
-            title: currentStep.title,
-            status: 'pending',
-          }]} />
+        {/* Agent Steps - show all steps with their real status */}
+        {isLoading && agentSteps.length > 0 && (
+          <AgentSteps steps={agentSteps} />
         )}
 
         {/* Loading dots */}
@@ -110,9 +94,9 @@ export function ChatContainer({
           >
             <div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center">🤖</div>
             <div className="bg-slate-800 rounded-2xl rounded-bl-md px-4 py-3 flex items-center gap-1">
-              {[0, 150, 300].map((delay) => (
+              {[0, 150, 300].map((delay, i) => (
                 <motion.span
-                  key={delay}
+                  key={`dot-${i}`}
                   animate={{ y: [0, -4, 0] }}
                   transition={{ repeat: Infinity, duration: 0.6, delay: delay / 1000 }}
                   className="w-2 h-2 bg-slate-400 rounded-full"

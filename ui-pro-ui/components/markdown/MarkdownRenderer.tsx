@@ -17,6 +17,7 @@ export function MarkdownRenderer({ content }: { content: string }) {
             )
           }
 
+          // Use pre wrapper for unique key instead
           return <code className="bg-slate-800 px-1 rounded">{children}</code>
         },
       }}
