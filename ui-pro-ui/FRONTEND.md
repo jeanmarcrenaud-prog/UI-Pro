@@ -229,15 +229,41 @@ const { compactMode, toggleCompact } = useStore(uiStore)
 | zustand | ^4 | State management |
 | tailwind | ^3 | Styling |
 | framer-motion | ^11 | Animations |
-| @tanstack/react-query | ^5 | Data fetching |
+| react-markdown | ^10 | Markdown rendering |
+| react-syntax-highlighter | ^16 | Code syntax highlighting |
 
 ---
 
 ## Scripts
 
 ```bash
-npm run dev      # Development server
+npm run dev      # Development server (port 3000)
 npm run build   # Production build
 npm run start   # Production server
 npm run lint    # ESLint
 ```
+
+---
+
+## Recent Fixes (2026)
+
+### Loading State Fix
+The chat was showing "Generating..." then stopping. Fixed by:
+- Waiting for `msg.status === 'done'` before calling `setLoading(false)`
+- Saving history only after response is complete
+
+### React Key Warnings
+Fixed duplicate keys in several components:
+- `ChatContainer.tsx`: `key={example.prompt}` instead of `key={i}`
+- `ChatMessages.tsx`: `key={msg.id || \`msg-${index}\`}`
+- `DebugPanel.tsx`: Added `key="debug-info"` for AnimatePresence
+- `Sidebar.tsx`: Fixed model option keys
+
+### History Persistence
+Chat history now auto-saves to localStorage via Zustand persist middleware.
+
+### Download Improvements
+Intelligent filename extraction from code content:
+- Looks for `class`, `def`, `function`, `const`, etc.
+- Falls back to timestamp-based name
+- Supports 20+ languages with proper extensions
