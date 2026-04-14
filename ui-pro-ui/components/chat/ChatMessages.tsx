@@ -11,8 +11,8 @@ interface Message {
 export function ChatMessages({ messages }: { messages: Message[] }) {
   return (
     <div className="flex-1 overflow-y-auto space-y-4 p-4">
-      {messages.map((msg) => (
-        <ChatMessage key={msg.id} msg={msg} />
+      {messages.map((msg, index) => (
+        <ChatMessage key={msg.id || `msg-${index}`} msg={msg} />
       ))}
     </div>
   )
