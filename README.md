@@ -182,6 +182,24 @@ Les appels outils sont affichés en temps réel avec indikator.
 ### Téléchargement de code généré
 Les blocs de code Python générés incluent un bouton de téléchargement (💾) permettant de sauvegarder facilement le script généré.
 
+### Historique des conversations
+L'historique des conversations est automatiquement sauvegardé dans localStorage et persists entre les sessions. Accessible via l'onglet History.
+
+### Debug Panel
+Panneau de débogage affichant:
+- Statut de connexion (Connected/Disconnected/Error)
+- Modèle actif
+-Nombre de messages
+- Temps écoulé
+- Erreurs si présentes
+
+### Étapes de l'agent visibles
+Pendant le traitement, les étapes sont affichées:
+- 🧠 Analyzing request
+- ⚙️ Planning solution
+- 🔧 Executing
+- ✅ Reviewing
+
 ## 📝 Licence
 
 MIT License
