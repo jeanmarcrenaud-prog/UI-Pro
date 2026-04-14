@@ -88,19 +88,20 @@ export function useChat() {
           setTimeout(() => {
             steps.forEach((step) => updateStep(step.id, 'done'))
           }, 500)
+          // Now loading is complete - save to history
+          useChatStore.getState().saveToHistory()
         }
       })
 
       chatService.sendMessage(content)
+
+      // Note: setLoading(false) and saveToHistory are called in the message handler
+      // when the response is fully received (status === 'done')
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : 'Unknown error'
       updateMessage(assistantMsg.id, errMsg, 'error')
       setError(errMsg)
-    } finally {
       setLoading(false)
-      // Save chat to history when response is received
-      const currentMessages = [...messages, userMsg, assistantMsg]
-      useChatStore.getState().saveToHistory()
     }
   }, [isLoading, messages, addMessage, updateMessage, setLoading, setError, start, updateStep, reset, saveToHistory])
 
