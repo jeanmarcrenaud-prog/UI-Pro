@@ -116,6 +116,7 @@ export function DebugPanel({
       <AnimatePresence>
         {/* NEW: Debug Info Section */}
         <motion.div
+          key="debug-info"
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           className="px-4 py-3 border-b border-slate-800 bg-slate-900/20"
