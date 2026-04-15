@@ -106,9 +106,15 @@ export default function ChatContainer() {
               }}
             />
             <button
-              onClick={() => sendMessage((e.target as HTMLTextAreaElement).value)}
+              onClick={() => {
+                const textarea = document.activeElement as HTMLTextAreaElement
+                if (textarea) {
+                  sendMessage(textarea.value)
+                  textarea.value = ''
+                }
+              }}
               disabled={isLoading}
-              className="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 px-3 py-2 rounded-lg ml-1"
+              className="bg-violet-600 hover:bg-violet-700 disabled:opacity-50 px-3 py-2 rounded-lg ml-1"
             >
               ➤
             </button>

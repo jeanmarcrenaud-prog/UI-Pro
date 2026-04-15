@@ -28,8 +28,12 @@ export function ChatContainer({
 
   // Override hook values with props if provided (backward compatibility)
   const messages = propMessages || hookMessages
-  const isLoading = hookIsLoading  // FIXED: Was incorrectly set to false
+  const isLoading = hookIsLoading
   const agentSteps = propAgentSteps || steps
+  // Wrap agentSteps in a message context
+  const stepsMessage: { steps: AgentStep[] } | null = agentSteps?.length > 0 
+    ? { steps: agentSteps } 
+    : null
 
   const examples = [
     { icon: '🐍', text: 'Create a Python script for weather data', prompt: 'Create a Python script that fetches weather data from Open-Meteo API and displays it nicely' },
@@ -40,9 +44,12 @@ export function ChatContainer({
     { icon: '🧪', text: 'Write unit tests', prompt: 'Write comprehensive unit tests for this function with edge case coverage' },
   ]
 
+  // Step progress indicator - properly typed
+  const currentStepNumber = typeof currentStep === 'number' ? currentStep + 1 : 1
+
   return (
     <div className="flex-1 flex flex-col">
-      {/* Messages */}
+      {/* Messages with timeline */}
       <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
         {messages.length === 0 ? (
           /* Welcome screen */
@@ -76,17 +83,29 @@ export function ChatContainer({
             <p className="text-xs mt-8 text-slate-500">Or type your own request below...</p>
           </motion.div>
         ) : (
-          /* Messages */
+          /* Messages timeline */
           <ChatMessages messages={messages} />
         )}
 
-        {/* Agent Steps - show all steps with their real status */}
-        {isLoading && agentSteps.length > 0 && (
-          <AgentSteps steps={agentSteps} />
+        {/* Agent Steps - INTEGRATED into assistant message */}
+        {stepsMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex gap-3"
+          >
+            <div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-xs">
+              🤖
+            </div>
+            <div className="bg-slate-800 text-slate-200 rounded-2xl rounded-bl-md px-4 py-3 flex items-center gap-2 whitespace-nowrap">
+              <span className="text-sm">{currentStepNumber}</span>
+              <span className="text-sm font-medium">⚙️ {stepsMessage.steps.find(s => s.status === 'active')?.title || 'Processing'}</span>
+            </div>
+          </motion.div>
         )}
 
-        {/* Loading dots */}
-        {isLoading && !messages.find(m => m.status === 'streaming') && !messages.find(m => m.status === 'thinking') && (
+        {/* Loading dots when no message is streaming */}
+        {isLoading && !messages.find(m => m.status === 'streaming') && !messages.find(m => m.status === 'thinking') && stepsMessage === null && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -108,17 +127,14 @@ export function ChatContainer({
 
       </div>
 
-      {/* Input */}
-      <div className="p-4 border-t border-slate-700">
-        <motion.div
-          className="flex gap-2 max-w-3xl mx-auto"
-          whileFocus={{ scale: 1.01 }}
-        >
-          <div className="bg-[#0f172a] rounded-xl p-2">
+      {/* Input - STICKY + IMPROVED */}
+      <div className="sticky bottom-0 w-full bg-slate-950/80 backdrop-blur border-t border-slate-800 p-4">
+        <div className="max-w-3xl mx-auto flex gap-2">
+          <div className="flex-1 bg-[#0f172a] rounded-xl p-2 border border-slate-700 focus-within:border-violet-500 transition-colors">
             <textarea
               placeholder="Describe your task..."
               disabled={isLoading}
-              className="w-full bg-transparent outline-none text-white px-3 resize-none"
+              className="w-full bg-transparent outline-none text-white px-3 resize-none placeholder:text-slate-500"
               rows={1}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
@@ -140,12 +156,13 @@ export function ChatContainer({
                 }
               }}
               disabled={isLoading}
-              className="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 px-3 py-2 rounded-lg ml-1"
+              className="bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white px-4 py-1.5 rounded-lg ml-1 font-medium transition-colors flex items-center gap-2"
             >
-              ➤
+              {isLoading && <motion.span animate={{ rotate: 360 }} transition={{ duration: 1 }} className="w-4 h-4 border border-white/20 border-t-white rounded-full" />}
+              <span className={isLoading ? '' : 'font-medium'}>➤</span>
             </button>
           </div>
-        </motion.div>
+        </div>
       </div>
     </div>
   )
