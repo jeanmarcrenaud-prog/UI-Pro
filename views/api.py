@@ -1,4 +1,5 @@
 from fastapi import FastAPI, WebSocket, Request, HTTPException, Depends
+from fastapi.websockets import WebSocketDisconnect
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from pydantic import BaseModel
 import logging
@@ -297,6 +298,8 @@ async def ws_endpoint(ws: WebSocket):
             while True:
                 task = await ws.receive_text()
                 await controller.handle_message(ws, session_id, task)
+        except WebSocketDisconnect:
+            logger.info(f"WebSocket disconnected normally")
         except Exception as e:
             logger.error("WebSocket error: %s", e, exc_info=True)
             # Send error event to client if possible
@@ -320,32 +323,6 @@ async def sse_stream(generator):
     import json
     async for chunk in generator:
         yield f"data: {json.dumps(chunk.to_dict())}\n\n"
-
-
-# SSE error handling
-class SSEContext:
-    """Context for SSE streaming with error handling"""
-    def __init__(self, stream_id: str):
-        self.stream_id = stream_id
-        self.errors = []
-        self._error_count = 0
-    
-    def record_error(self, error: str):
-        """Record an error and send to client"""
-        self._error_count += 1
-        self.errors.append({
-            "timestamp": time.time(),
-            "error": error,
-            "count": self._error_count
-        })
-        
-        # Only send on first error to prevent spam
-        if self._error_count == 1:
-            try:
-                yield f"data: {json.dumps({'type': 'error', 'content': error})}\n\n"
-            except Exception as e:
-                logging.error(f"Failed to send error event: {e}")
-
 
 
 # Streaming endpoint
