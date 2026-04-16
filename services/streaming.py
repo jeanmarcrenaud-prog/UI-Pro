@@ -146,7 +146,7 @@ class StreamingService:
         
         try:
             # Get LLM client
-            from adapters.llm import OllamaClient
+            from adapters.llm import OllamaClient, ModelConfig
             from services.llm_router import get_llm_router
             
             # Get model from router
@@ -154,15 +154,15 @@ class StreamingService:
             route_result = router.route(prompt, mode=mode)
             model = model or route_result["model"]
             
-            # Validate model
-            if not model:
-                from fastapi import HTTPException
-                raise HTTPException(
-                    status_code=400,
-                    detail="No model specified and router did not return a valid model"
-                )
+            # Detect backend based on model name
+            backend = 'ollama'
+            if model and ('GGUF' in model or model.startswith('user.') or model in ['Whisper-Base']):
+                backend = 'lemonade'
+                logger.info(f"Using Lemonade backend for model: {model}")
             
-            client = OllamaClient()
+            # Create client with appropriate backend
+            config = ModelConfig(backend=backend)
+            client = OllamaClient(config)
             
             # Register this stream so it can be cancelled later
             self._active_streams[stream_id] = asyncio.current_task()
