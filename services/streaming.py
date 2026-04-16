@@ -154,15 +154,36 @@ class StreamingService:
             route_result = router.route(prompt, mode=mode)
             model = model or route_result["model"]
             
+            logger.info(f"Using model: {model} (from router)")
+            
             # Detect backend based on model name
             backend = 'ollama'
             if model and ('GGUF' in model or model.startswith('user.') or model in ['Whisper-Base']):
                 backend = 'lemonade'
                 logger.info(f"Using Lemonade backend for model: {model}")
             
-            # Create client with appropriate backend
-            config = ModelConfig(backend=backend)
-            client = OllamaClient(config)
+            # Try Ollama first, fallback to Lemonade if fails
+            config_ollama = ModelConfig(backend='ollama')
+            client = OllamaClient(config_ollama)
+            
+            # Test if Ollama is working, otherwise use Lemonade
+            try:
+                import requests
+                test_resp = requests.get("http://localhost:11434/api/tags", timeout=2)
+                if test_resp.ok and test_resp.json().get('models'):
+                    logger.info("Ollama backend is available")
+                else:
+                    logger.warning("Ollama has no models, trying Lemonade")
+                    backend = 'lemonade'
+                    model = "Gemma-4-E2B-it-GGUF"  # Use available Lemonade model
+                    config_ollama = ModelConfig(backend='lemonade')
+                    client = OllamaClient(config_ollama)
+            except Exception as e:
+                logger.warning(f"Ollama not available ({e}), trying Lemonade")
+                backend = 'lemonade'
+                model = "Gemma-4-E2B-it-GGUF"  # Use available Lemonade model
+                config_ollama = ModelConfig(backend='lemonade')
+                client = OllamaClient(config_ollama)
             
             # Register this stream so it can be cancelled later
             self._active_streams[stream_id] = asyncio.current_task()
