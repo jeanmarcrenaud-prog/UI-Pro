@@ -5,7 +5,7 @@ import { events } from '@/lib/events'
 interface Model {
   id: string
   name: string
-  provider: 'ollama' | 'lmstudio' | 'llama.cpp'
+  provider: 'ollama' | 'lmstudio' | 'llama.cpp' | 'lemonade'
 }
 
 interface BackendConfig {
@@ -17,6 +17,7 @@ const defaultBackends: Record<string, BackendConfig> = {
   ollama: { url: 'http://localhost:11434', enabled: true },
   lmstudio: { url: 'http://localhost:1234', enabled: true },
   llamacpp: { url: 'http://localhost:8080', enabled: false },
+  lemonade: { url: 'http://localhost:13305', enabled: true },
 }
 
 class ModelDiscoveryService {
@@ -69,6 +70,8 @@ class ModelDiscoveryService {
           return await this.fetchLMStudio(url)
         case 'llamacpp':
           return await this.fetchLlamaCpp(url)
+        case 'lemonade':
+          return await this.fetchLemonade(url)
         default:
           return []
       }
@@ -125,6 +128,22 @@ class ModelDiscoveryService {
       id: m.id,
       name: m.id,
       provider: 'llama.cpp' as const,
+    }))
+  }
+
+  private async fetchLemonade(url: string): Promise<Model[]> {
+    const response = await fetch(`${url}/api/v1/models`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(5000),
+    })
+    
+    if (!response.ok) return []
+    
+    const data = await response.json()
+    return (data.models || []).map((m: { name: string }) => ({
+      id: m.name,
+      name: m.name,
+      provider: 'lemonade' as const,
     }))
   }
 
