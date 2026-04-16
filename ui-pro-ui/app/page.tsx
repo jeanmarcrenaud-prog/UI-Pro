@@ -2,12 +2,14 @@
 
 // UI-Pro Dashboard - ChatGPT quality
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { ChatContainer } from '@/components/ChatContainer'
 import { Sidebar } from '@/components/Sidebar'
 import { DebugPanel } from '@/components/DebugPanel'
 import { SettingsView } from '@/components/SettingsView'
 import { HistoryView } from '@/components/HistoryView'
+import { useUIStore } from '@/lib/stores/uiStore'
+import { useChatStore } from '@/lib/stores/chatStore'
 
 interface AgentStep {
   id: string
@@ -25,7 +27,6 @@ export default function Home() {
     timestamp?: string
     status?: 'thinking' | 'streaming' | 'done' | 'error'
   }>>([])
-  const [isLoading, setIsLoading] = useState(false)
   const [showDebug, setShowDebug] = useState(true)
   const [agentSteps, setAgentSteps] = useState<AgentStep[]>([
     { id: '1', title: 'Analyzing request', status: 'pending' },
@@ -33,6 +34,11 @@ export default function Home() {
     { id: '3', title: 'Executing', status: 'pending' },
     { id: '4', title: 'Reviewing', status: 'pending' },
   ])
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
+  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'connecting' | 'error'>('connecting')
+  
+  const { selectedModel, availableModels } = useUIStore()
+  const { isLoading } = useChatStore()
 
   const handleNewChat = useCallback(() => {
     setMessages([])
@@ -42,7 +48,37 @@ export default function Home() {
       { id: '3', title: 'Executing', status: 'pending' },
       { id: '4', title: 'Reviewing', status: 'pending' },
     ])
+    setElapsedSeconds(0)
   }, [])
+
+  // Timer for elapsed time when loading
+  useEffect(() => {
+    let interval: NodeJS.Timeout
+    if (isLoading) {
+      interval = setInterval(() => {
+        setElapsedSeconds(s => s + 1)
+      }, 1000)
+    } else {
+      setElapsedSeconds(0)
+    }
+    return () => clearInterval(interval)
+  }, [isLoading])
+
+  // Track connection status via WebSocket
+  useEffect(() => {
+    const ws = new WebSocket(`ws://${typeof window !== 'undefined' ? window.location.hostname : 'localhost'}:8000/ws`)
+    
+    ws.onopen = () => setConnectionStatus('connected')
+    ws.onerror = () => setConnectionStatus('error')
+    ws.onclose = () => setConnectionStatus('error')
+    
+    return () => ws.close()
+  }, [])
+
+  const currentStepIdx = agentSteps.findIndex(s => s.status === 'active')
+  const modelName = selectedModel || availableModels[0] || 'gemma4'
+  
+  const debugStatus: 'idle' | 'running' | 'error' = isLoading ? 'running' : 'error' in messages.map(m => m.status) ? 'error' : 'idle'
 
   return (
     <div className="flex h-screen bg-gradient-to-br from-slate-950 to-slate-900">
@@ -102,6 +138,12 @@ export default function Home() {
           steps={agentSteps}
           isOpen={showDebug}
           onToggle={() => setShowDebug(false)}
+          status={debugStatus}
+          modelName={modelName}
+          currentStep={currentStepIdx >= 0 ? currentStepIdx : 0}
+          elapsedSeconds={elapsedSeconds}
+          tokenCount={0}
+          connectionStatus={connectionStatus}
         />
       )}
     </div>
