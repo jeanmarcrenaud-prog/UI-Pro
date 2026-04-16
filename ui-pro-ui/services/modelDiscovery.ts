@@ -140,9 +140,9 @@ class ModelDiscoveryService {
     if (!response.ok) return []
     
     const data = await response.json()
-    return (data.models || []).map((m: { name: string }) => ({
-      id: m.name,
-      name: m.name,
+    return (data.data || []).map((m: { id: string; labels?: string[] }) => ({
+      id: m.id,
+      name: m.id,
       provider: 'lemonade' as const,
     }))
   }
