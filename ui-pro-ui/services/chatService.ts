@@ -1,5 +1,6 @@
 // Chat Service - Business logic for chat
 import type { Message } from '@/lib/types'
+import { useUIStore } from '@/lib/stores/uiStore'
 
 type MessageHandler = (message: Message) => void
 type StatusHandler = (status: 'idle' | 'connecting' | 'streaming' | 'error') => void
@@ -25,6 +26,10 @@ class ChatService {
   async sendMessage(content: string): Promise<void> {
     this.setStatus('connecting')
 
+    // Get selected model from store
+    const selectedModel = useUIStore.getState().selectedModel
+    console.log('[ChatService] Using model:', selectedModel)
+
     // Try WebSocket first
     try {
       const wsUrl = `ws://${window.location.hostname}:8000/ws`
@@ -32,7 +37,8 @@ class ChatService {
 
       this.ws.onopen = () => {
         this.setStatus('streaming')
-        this.ws?.send(JSON.stringify({ message: content }))
+        // Send message with selected model
+        this.ws?.send(JSON.stringify({ message: content, model: selectedModel }))
       }
 
       this.ws.onmessage = (event) => {
@@ -65,11 +71,14 @@ class ChatService {
   private async fetchREST(content: string): Promise<void> {
     this.setStatus('connecting')
 
+    // Get selected model from store
+    const selectedModel = useUIStore.getState().selectedModel
+
     try {
       const response = await fetch(`${this.baseUrl}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: content }),
+        body: JSON.stringify({ message: content, model: selectedModel }),
       })
 
       const data = await response.json()

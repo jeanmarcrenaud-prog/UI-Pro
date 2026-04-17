@@ -1,8 +1,20 @@
 // API Service - WebSocket + REST fallback
 import { events } from '@/lib/events'
+import { useUIStore } from '@/lib/stores/uiStore'
+
+// Event types for type safety
+export const LogEvents = {
+  LOG: 'log',
+  STEP: 'step',
+  TOOL: 'tool',
+  TOKEN: 'token',
+  DONE: 'done',
+  ERROR: 'error',
+} as const
 
 export interface ChatRequest {
   message: string
+  model?: string
 }
 
 export interface ChatResponse {
@@ -47,7 +59,39 @@ export async function apiService() {
         return
       }
       
-      events.emit('message', { data: raw })
+      // Parse and detect log events from backend
+      try {
+        const parsed = JSON.parse(raw)
+        const type = parsed.type || parsed.status || 'unknown'
+        
+        // Emit log events for debugging
+        if (type === 'step' || type === 'tool') {
+          events.emit(LogEvents.STEP, { 
+            stepId: parsed.step_id || parsed.stepId,
+            data: parsed.data || parsed.title,
+            status: parsed.status 
+          })
+          // Also emit general log
+          events.emit(LogEvents.LOG, { 
+            message: `[${type.toUpperCase()}] ${parsed.data || parsed.title}`,
+            type 
+          })
+        } else if (type === 'token') {
+          events.emit(LogEvents.TOKEN, { data: parsed.data })
+        } else if (type === 'error') {
+          events.emit(LogEvents.ERROR, { error: parsed.error })
+          events.emit(LogEvents.LOG, { 
+            message: `[ERROR] ${parsed.error}`,
+            type: 'error'
+          })
+        } else if (type === 'done') {
+          events.emit(LogEvents.DONE, { data: parsed.data })
+        }
+      } catch {
+        // Not JSON - emit as message
+        events.emit('message', { data: raw })
+      }
+      
       events.emit('status', { data: raw })
     }
     
@@ -72,12 +116,18 @@ export async function apiService() {
 }
 
 export async function chat(message: string): Promise<ChatResponse> {
+  // Get selected model from store
+  const selectedModel = useUIStore.getState().selectedModel
+  console.log('[Frontend] Sending with model:', selectedModel)
+  
   // Try WebSocket first
   const wsService = await apiService()
   
   if (wsService && wsService.ws) {
-    // Send via WebSocket
-    wsService.ws.send(JSON.stringify({ message }))
+    // Send via WebSocket with model
+    const payload = { message, model: selectedModel }
+    console.log('[Frontend] Sending JSON:', JSON.stringify(payload))
+    wsService.ws.send(JSON.stringify(payload))
     
     // Wait for response
     return new Promise((resolve) => {
