@@ -33,8 +33,18 @@ except ImportError as e:
     researcher = mock_agent_factory("researcher")
 
 def save_file(name, content):
-    with open(f"{WORKSPACE}/{name}", "w", encoding="utf-8") as f:
-        f.write(content)
+    """DEPRECATED - Legacy file save function. Use executor instead."""
+    import tempfile
+    from pathlib import Path
+    
+    workspace = Path(WORKSPACE)
+    # Create temp file in workspace
+    tmp_file = workspace / f"{name}.tmp"
+    tmp_file.parent.mkdir(parents=True, exist_ok=True)
+    tmp_file.write_text(content, encoding="utf-8")
+    
+    logger.warning("Legacy save_file called - consider migrating to CodeExecutor")
+    return str(tmp_file)
 
 def run():
     with open(f"{WORKSPACE}/app.py", "r", encoding="utf-8") as f:
