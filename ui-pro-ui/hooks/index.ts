@@ -1,3 +1,5 @@
 // Hooks index
 export { useChat } from './useChat'
-export { useStream } from './useStream'
+
+// DEPRECATED - use useChat and chatService instead:
+// export { useStream } from './useStream'
