@@ -16,9 +16,30 @@ function generateId(): string {
 let _ws: WebSocket | null = null
 let _isConnected = false
 let _messageHandlers: Set<MessageHandler> = new Set()
+let _messageQueue: string[] = [] // Queue for rapid messages
 
 class ChatService {
   private currentContent = ''
+
+  // Process queued messages
+  private flushQueue() {
+    while (_messageQueue.length > 0 && _ws?.readyState === WebSocket.OPEN) {
+      const msg = _messageQueue.shift()
+      if (msg) _ws.send(msg)
+    }
+  }
+
+  // Queue message for delivery
+  private queueOrSend(content: string) {
+    const selectedModel = useUIStore.getState().selectedModel
+    const payload = JSON.stringify({ message: content, model: selectedModel })
+    
+    if (_ws && _ws.readyState === WebSocket.OPEN) {
+      _ws.send(payload)
+    } else {
+      _messageQueue.push(payload) // Queue for later
+    }
+  }
 
   // Support multiple handlers (no overwrite!)
   onMessage(handler: MessageHandler) {
@@ -61,7 +82,8 @@ class ChatService {
     _ws.onopen = () => {
       _isConnected = true
       events.emit('status', { status: 'streaming' })
-      _ws?.send(JSON.stringify({ message: content, model: selectedModel }))
+      this.queueOrSend(content) // Use queue (will flush any queued messages)
+      this.flushQueue() // Flush any pending messages
     }
 
     _ws.onmessage = (event) => {
@@ -74,7 +96,7 @@ class ChatService {
         // DONE - response complete
         if (parsed.type === 'done') {
           this.emitToHandlers({
-            id: `generateId()`,
+            id: generateId(),
             role: 'assistant',
             content: this.currentContent,
             status: 'done',
@@ -92,27 +114,27 @@ class ChatService {
           return
         }
         
-        // TOKEN - streaming content
-        const text = parsed.data || parsed.content || parsed.message || parsed.text || ''
-        if (text) {
-          this.currentContent += text
-          this.emitToHandlers({
-            id: `generateId()`,
-            role: 'assistant',
-            content: text,
-            status: 'streaming',
-          })
-        }
-      } catch {
-        // Plain text fallback
-        this.currentContent += data
-        this.emitToHandlers({
-          id: `generateId()`,
-          role: 'assistant',
-          content: data,
-          status: 'streaming',
-        })
-      }
+         // TOKEN - streaming content
+         const text = parsed.data || parsed.content || parsed.message || parsed.text || ''
+         if (text) {
+           this.currentContent += text
+           this.emitToHandlers({
+             id: generateId(),
+             role: 'assistant',
+             content: text,
+             status: 'streaming',
+           })
+         }
+       } catch {
+         // Plain text fallback
+         this.currentContent += data
+         this.emitToHandlers({
+           id: generateId(),
+           role: 'assistant',
+           content: data,
+           status: 'streaming',
+         })
+       }
     }
 
     _ws.onerror = () => {
@@ -138,12 +160,12 @@ class ChatService {
       })
       const data = await response.json()
       
-      this.emitToHandlers({
-        id: `generateId()`,
-        role: 'assistant',
-        content: data.result || 'No response',
-        status: data.status === 'error' ? 'error' : 'done',
-      })
+       this.emitToHandlers({
+         id: generateId(),
+         role: 'assistant',
+         content: data.result || 'No response',
+         status: data.status === 'error' ? 'error' : 'done',
+       })
     } catch (error) {
       this.emitToHandlers({
         id: `generateId()`,

@@ -128,19 +128,21 @@ headers = {"Content-Type": "application/json"}
                 for line in r.iter_lines():
                     if line:
                         chunk = line.decode().strip()
-                        # Parse JSON from Ollama stream
+                        # Parse JSON from Ollama stream - extract only "response" field
                         try:
                             data = json.loads(chunk)
+                            # Ollama stream returns {"response": "...", "done": false, ...}
                             response_text = data.get("response", "")
-                            # Yield only if there's actual output
+                            # Only yield actual response text, not full JSON
                             if response_text:
                                 yield response_text
                             if data.get("done", False):
-                                yield "\n[Stream complete]"
+                                # End of stream
+                                break
                         except json.JSONDecodeError:
-                            # If JSON parsing fails, yield raw chunk (for debugging)
-                            if chunk.strip():
-                                yield chunk[:100] + "..."[malformed]
+                            # If JSON parsing fails, skip or yield raw chunk
+                            # This handles malformed JSON chunks
+                            pass
         except requests.RequestException as e:
             yield f"[Error: {e}]"
 
@@ -157,9 +159,19 @@ class LLMFactory:
       llm = factory.create("OLLAMA_URL=http://...")
     """
     
-    def __init__(self):
-        import settings
-        self.settings = settings
+    def __init__(self, settings_instance: Settings = None):
+        """
+        Initialize factory with settings instance.
+        
+        Args:
+            settings_instance: Settings instance (from models.settings or loaded from .env)
+        """
+        self.settings = settings_instance
+        
+        # If no settings instance provided, load default
+        if self.settings is None:
+            from models.settings import settings
+            self.settings = settings
     
     def create(self, llm_type: str = None) -> LLMClient:
         """
@@ -177,12 +189,15 @@ class LLMFactory:
         if not llm_type:
             llm_type = getattr(self.settings, 'BACKEND', "ollama")
         
+        # Get model from settings
+        model = getattr(self.settings, 'MODEL_FAST', "qwen2.5-coder:32b")
+        
         if llm_type == "ollama":
-            return OllamaClient(self.settings)
+            return OllamaClient(self.settings, model=model)
         elif llm_type == "http":
-            return OllamaClient(self.settings)  # Fallback for HTTP mode
+            return OllamaClient(self.settings, model=model)  # Fallback for HTTP mode
         else:
-            return OllamaClient(self.settings)  # Default to Ollama
+            return OllamaClient(self.settings, model=model)  # Default to Ollama
 
 
 # ==================== **5. Mock pour Tests** ====================
@@ -191,6 +206,37 @@ class LLMFactory:
 class MockLLMResponse:
     response: str
     tokens: int = 100
+
+    class MockLLMClient(_LLMClient):
+        """
+        Mock LLM pour tests.
+        
+        Usage :
+          from llm_client import MockLLMClient
+          with MockLLMClient() as mock:
+              llm = factory.create()
+        """
+        
+        def __init__(self, responses: list[str] = None):
+            self.responses = responses or [
+                "Ceci est une réponse mock",
+                "Ceci est la deuxième réponse",  
+                "Fin de la réponse mock"
+            ]
+            self.call_count = 0
+        
+        def generate(self, prompt: str, model: str,
+                     **kwargs) -> str:
+            self.call_count += 1
+            return self.responses[self.call_count % len(self.responses)]
+        
+        def stream(self, prompt: str, model: str, **kwargs) -> Iterator[str]:
+            yield self.generate(prompt, model)
+        
+        @classmethod
+        def make(cls, responses: list[str] = None) -> "MockLLMClient":
+            """Factory method to create instance"""
+            return cls(responses)
     
 class MockLLMClient(LLMClient):
     """
