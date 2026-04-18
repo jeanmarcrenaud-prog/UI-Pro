@@ -4,14 +4,9 @@ import { persist } from 'zustand/middleware'
 import type { Message, ChatState, ChatHistoryItem } from '@/lib/types'
 import { events } from '@/lib/events'
 
-// Log event types
+// Log event types (only what's actually used)
 const LogEvents = {
   LOG: 'log',
-  STEP: 'step',
-  TOOL: 'tool',
-  TOKEN: 'token',
-  DONE: 'done',
-  ERROR: 'error',
   TOKENS: 'tokens',
 } as const
 
@@ -37,24 +32,31 @@ interface ChatStore extends ChatState {
   setError: (error: string | null) => void
 }
 
-// Initialize event listeners (chatService now handles WebSocket)
-events.on('status', (data) => {
-  useChatStore.getState().setLoading(data.status === 'streaming')
-})
+// Lazy-initialize event listeners (prevent duplication on hot-reload)
+let _initialized = false
+function _initEventListeners() {
+  if (_initialized) return
+  _initialized = true
 
-// Log event listener - capture logs from WebSocket stream
-events.on(LogEvents.LOG, (data: { message?: string }) => {
-  if (data.message) {
-    useChatStore.getState().addLog(data.message)
-  }
-})
+  events.on('status', (data) => {
+    useChatStore.getState().setLoading(data.status === 'streaming')
+  })
 
-// Tokens event listener - capture token count from stream
-events.on(LogEvents.TOKENS, (data: { tokenCount?: number }) => {
-  if (data.tokenCount !== undefined) {
-    useChatStore.getState().setTokenCount(data.tokenCount)
-  }
-})
+  events.on(LogEvents.LOG, (data: { message?: string }) => {
+    if (data.message) {
+      useChatStore.getState().addLog(data.message)
+    }
+  })
+
+  events.on(LogEvents.TOKENS, (data: { tokenCount?: number }) => {
+    if (data.tokenCount !== undefined) {
+      useChatStore.getState().setTokenCount(data.tokenCount)
+    }
+  })
+}
+
+// Initialize on first use (call once)
+_initEventListeners()
 
 export const useChatStore = create<ChatStore>()(
   persist(
