@@ -110,9 +110,10 @@ class OllamaClient(LLMClient):
                temperature: float = 0.7) -> Iterator[str]:
         """Streamer réponse Ollama chunk par chunk"""
         import requests
+        import json
         import time
         
-        headers = {"Content-Type": "application/json"}
+headers = {"Content-Type": "application/json"}
         payload = {
             "model": model or self.model,
             "prompt": prompt,
@@ -127,9 +128,19 @@ class OllamaClient(LLMClient):
                 for line in r.iter_lines():
                     if line:
                         chunk = line.decode().strip()
-                        # Ollama stream: {"response": "...", "done": false}
-                        if '"response"' in chunk:
-                            yield chunk
+                        # Parse JSON from Ollama stream
+                        try:
+                            data = json.loads(chunk)
+                            response_text = data.get("response", "")
+                            # Yield only if there's actual output
+                            if response_text:
+                                yield response_text
+                            if data.get("done", False):
+                                yield "\n[Stream complete]"
+                        except json.JSONDecodeError:
+                            # If JSON parsing fails, yield raw chunk (for debugging)
+                            if chunk.strip():
+                                yield chunk[:100] + "..."[malformed]
         except requests.RequestException as e:
             yield f"[Error: {e}]"
 
@@ -159,16 +170,19 @@ class LLMFactory:
         
         Returns:
             LLMClient adapté au type
+        
+        Example:
+            llm = factory.create("OLLAMA_URL=http://...")
         """
         if not llm_type:
-            llm_type = self.settings.get("BACKEND", "ollama")
+            llm_type = getattr(self.settings, 'BACKEND', "ollama")
         
         if llm_type == "ollama":
             return OllamaClient(self.settings)
         elif llm_type == "http":
-            return OllamaClient(self.settings)  # Fallback
+            return OllamaClient(self.settings)  # Fallback for HTTP mode
         else:
-            return OllamaClient(self.settings)  # Default
+            return OllamaClient(self.settings)  # Default to Ollama
 
 
 # ==================== **5. Mock pour Tests** ====================
