@@ -398,22 +398,23 @@ async def chat_endpoint(request: ChatRequest):
             sys.stdout = buffer
             sys.stderr = buffer
             try:
-                # Use CodeRunner with executor (not legacy team.py)
-                from models.memory import add_memory as memory_add
-                from models.state import StateManager
-
+                # Use CodeRunner with executor
+                from core.executor import CodeExecutor
+                from core.state_manager import StateManager
+                from core.prompts import PLANNER_PROMPT, ARCHITECT_PROMPT, CODER_PROMPT, REVIEWER_PROMPT, FIX_PROMPT
+                
                 logger.info(f"Executing LLM task: {request.message[:40]}...")
 
+                # Create executor
+                executor = CodeExecutor(timeout=60)
+                
                 # Execute using executor
                 result = executor.run(request.message)
                 output = result.get("stdout", "")
-                if not output:
-                    output = f"Executed task: {request.message[:30]}... [no output]"
-
+                
             finally:
                 sys.stdout = old_stdout
                 sys.stderr = old_stderr
-            output = buffer.getvalue()
             
             if not output:
                 output = f"Executed task: {request.message[:30]}... [no output]"
