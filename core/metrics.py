@@ -158,6 +158,12 @@ class MetricsManager:
             for r in reversed(records)
         ]
     
+    def rotate(self, max_records: int = 100):
+        """Rotate logs, keeping only recent records"""
+        if len(self.records) > max_records:
+            self.records = self.records[-max_records:]
+            self._save()
+    
     def clear(self):
         """Clear all metrics"""
         self.records = []

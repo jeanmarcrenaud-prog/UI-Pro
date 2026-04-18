@@ -1,4 +1,6 @@
 # 🚀 Async Orchestrator - PRO VERSION + Auto-Fix
+# ⚠️ DEPRECATED: Use orchestrator_async.py instead (core/orchestrator_async.py)
+# This file is legacy and may conflict with new architecture
 
 from typing import Dict, Any
 from datetime import datetime
@@ -13,13 +15,15 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from models.state import StateManager
-from models.llm_router import LLMRouter
+from controllers.executor import CodeExecutor  # Use CodeExecutor
+from core.prompts import PLANNER_PROMPT, ARCHITECT_PROMPT, CODER_PROMPT, REVIEWER_PROMPT, FIX_PROMPT
 
-from llm import planner, architect, coder, reviewer
-from controllers.executor import CodeExecutor  # Import executor
-
-logger = logging.getLogger(__name__)
-executor = CodeExecutor()  # Singleton executor
+# Import agents from llm package
+try:
+    from llm import planner, architect, coder, reviewer
+except ImportError as e:
+    logger.warning(f"Agents not available from llm package: {e}")
+    # Will use _planner() instead
 
 
 class Orchestrator:

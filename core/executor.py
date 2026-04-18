@@ -91,8 +91,10 @@ class CodeExecutor:
         tmpdir = None
         
         try:
-            tmpdir = tempfile.mkdtemp()
-            workspace = Path(tmpdir)
+            # Use TemporaryDirectory for automatic cleanup
+            import tempfile
+            tmpdir = tempfile.TemporaryDirectory()
+            workspace = Path(tmpdir.name)
             
             # Write code to temp file
             main_file = workspace / "main.py"
@@ -149,21 +151,28 @@ class CodeExecutor:
             return {"success": False, "error": str(e)}
         
         finally:
-            # Cleanup manually
+            # Cleanup - TemporaryDirectory auto-cleans on context exit
             if tmpdir:
-                import shutil
                 try:
-                    shutil.rmtree(tmpdir, ignore_errors=True)
+                    tmpdir.cleanup()
                 except Exception:
-                    pass
+                    pass  # Best effort
     
     def _prepare_code(self, code: str) -> str:
-        """Sanitize code"""
-        code = "#!/usr/bin/env python3\n" + code
+        """Sanitize code - remove dangerous patterns"""
+        # Remove shebang (not needed, can cause issues on Windows)
+        if code.startswith("#!"):
+            code = code[code.find("\n") + 1:]
         
-        dangerous = ["(eval(", "(exec(", "subprocess.Popen(", "open('..'"]
+        # Block dangerous imports/calls
+        dangerous = [
+            "eval(", "exec(", "subprocess.Popen", "__import__",
+            "shutil.rmtree", "os.remove", "os.unlink",
+            "open('../", 'open("..",', "open('..',",
+        ]
         for pattern in dangerous:
-            code = code.replace(pattern, "# DISABLED: ")
+            if pattern in code:
+                code = code.replace(pattern, "# BLOCKED: " + pattern)
         
         return code
 

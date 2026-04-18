@@ -60,12 +60,12 @@ Error:
 {error}
 
 Current code:
-{code_content}
+{current_code}
 
 Return ONLY JSON:
 {{
   "files": {{
-    "main.py": "fixed code here"
+    "{main_file}": "fixed code here"
   }}
 }}
 

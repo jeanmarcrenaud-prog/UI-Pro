@@ -85,27 +85,38 @@ class MemoryManager:
         except Exception as e:
             logger.error(f"Failed to save memory: {e}")
     
-    def add_memory(self, text: str) -> None:
-        """Add memory to index"""
+def add_memory(self, text: str, auto_save: bool = False) -> None:
+        """Add memory to index
+        
+        Args:
+            text: Text to add
+            auto_save: If False, caller manages saving (for batch operations)
+        """
         if not text or len(text.strip()) == 0:
             logger.warning("add_memory called with empty text")
             return
         
         vec = model.encode([text])
-        vec = vec[0].flatten()  # Ensure 1D array
+        # Ensure 2D array (N, D) for FAISS
+        if vec.ndim == 1:
+            vec = vec.reshape(1, -1)
         
-        # Resize index if needed
-        if self.index.ntotal == 0:
-            self.index = faiss.IndexFlatL2(vec.shape[0])
-            self.d = vec.shape[0]
+        # Resize index if dimension changed
+        if self.index.ntotal == 0 and vec.shape[1] != self.d:
+            self.index = faiss.IndexFlatL2(vec.shape[1])
+            self.d = vec.shape[1]
+        
+        if vec.shape[1] != self.d:
+            logger.warning(f"Dimension mismatch: {vec.shape[1]} vs {self.d}, skipping")
+            return
         
         self.index.add(vec)
         self.documents.append(text)
         
         logger.debug(f"FAISS index ntotal after add: {self.index.ntotal}")
         
-        # Auto-save after adding
-        self.save()
+        if auto_save:
+            self.save()
     
     def search(self, query: str, k: int = 3) -> list:
         """Search in memory"""
@@ -118,24 +129,25 @@ class MemoryManager:
             return []
         
         vec = model.encode([query])
+        if vec.ndim == 1:
+            vec = vec.reshape(1, -1)
         
-        # Ensure vector dimension matches
         if vec.shape[1] != self.d:
             logger.warning(f"Vector dimension mismatch: {vec.shape[1]} vs {self.d}")
             return []
         
         try:
-            D, I = self.index.search(vec.flatten().reshape(1, -1), min(k, self.index.ntotal))
-        except IndexError as e:
+            D, I = self.index.search(vec, min(k, self.index.ntotal))
+        except Exception as e:
             logger.error(f"Search error: {e}")
             return []
         
         results = []
-        for i in I[0]:
+        for idx, i in enumerate(I[0]):
             if i >= 0 and i < len(self.documents):
                 results.append({
                     "text": self.documents[i],
-                    "score": float(np.sqrt(D[0][list(I[0]).index(i)]))
+                    "score": float(D[0][idx])
                 })
         
         logger.debug(f"FAISS search results: count={len(results)}")
@@ -153,15 +165,20 @@ class MemoryManager:
         return self.index.ntotal
 
 
-# Singleton instance
+# Singleton instance - thread-safe
+import threading
+
 _memory_manager: MemoryManager = None
+_memory_lock = threading.Lock()
 
 
 def get_memory_manager() -> MemoryManager:
-    """Get singleton memory manager"""
+    """Get singleton memory manager (thread-safe)"""
     global _memory_manager
     if _memory_manager is None:
-        _memory_manager = MemoryManager()
+        with _memory_lock:
+            if _memory_manager is None:
+                _memory_manager = MemoryManager()
     return _memory_manager
 
 
