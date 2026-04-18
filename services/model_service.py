@@ -221,19 +221,19 @@ class ModelService(BaseService):
         # Modèles disponibles
         self.models: dict[str, ModelConfig] = {
             "fast": ModelConfig(
-                name=self.config.get("MODEL_FAST", "gemma4:latest"),
+                name=self.config.get("MODEL_FAST", "qwen3.5:0.8b"),
                 endpoint=self._build_endpoint(),
                 max_latency_ms=self.config.get("MAX_LATENCY_MS", 30000),
                 min_success_rate=self.config.get("MIN_SUCCESS_RATE", 0.5),
             ),
             "reasoning": ModelConfig(
-                name=self.config.get("MODEL_REASONING", "gemma4:latest"),
+                name=self.config.get("MODEL_REASONING", "qwen3.5:0.8b"),
                 endpoint=self._build_endpoint(),
                 max_latency_ms=self.config.get("MAX_LATENCY_MS", 60000),
                 min_success_rate=self.config.get("MIN_SUCCESS_RATE", 0.5),
             ),
             "code": ModelConfig(
-                name=self.config.get("MODEL_CODE", "gemma4:latest"),
+                name=self.config.get("MODEL_CODE", "qwen3.5:0.8b"),
                 endpoint=self._build_endpoint(),
                 max_latency_ms=self.config.get("MAX_LATENCY_MS", 45000),
                 min_success_rate=self.config.get("MIN_SUCCESS_RATE", 0.5),

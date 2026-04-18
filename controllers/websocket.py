@@ -5,7 +5,6 @@ import json
 from typing import Dict, List
 
 from views.logger import get_logger
-from models.settings import settings
 
 logger = get_logger(__name__)
 
@@ -23,20 +22,22 @@ class WebSocketController:
         logger.info(f"WebSocket connected: {session_id}")
         return session_id
     
-    async def handle_message(self, ws, session_id: str, task: str):
+    async def handle_message(self, ws, session_id: str, task: str, model: str = None):
         """Handle incoming task message"""
-        import json
         from services.streaming import get_streaming_service
+        from settings import settings
         
         if session_id in self.sessions:
             self.sessions[session_id].append(task)
         
-        # Use StreamingService for proper JSON streaming
-        stream_service = get_streaming_service()
+        # Get model from message, settings, or default
+        selected_model = model or settings.model_fast or 'qwen3.5:0.8b'
         
-        # Stream with proper JSON format
-        async for chunk in stream_service.stream_generate(task):
-            # Send as JSON
+        logger.info(f"Using model: {selected_model} (from {'user' if model else 'settings'})")
+        
+        # Stream with proper JSON format - pass model to streaming service
+        stream_service = get_streaming_service()
+        async for chunk in stream_service.stream_generate(task, model=selected_model):
             await ws.send_text(json.dumps(chunk.to_dict()))
         
         return ""

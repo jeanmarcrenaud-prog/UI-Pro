@@ -1,10 +1,8 @@
 // UI Component barrel exports
 // All components use design system tokens
 
-export {
-  ButtonComponent as Button,
-  type ButtonComponentVariant as ButtonVariant,
-} from './Button'
+// Button removed - no implementation
+export { type ButtonComponentVariant as ButtonVariant } from './Button'
 
 export { Card } from './Card'
 

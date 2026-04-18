@@ -279,6 +279,15 @@ def status():
         "ollama_url": settings.ollama_url or "http://localhost:11434",
     }
 
+
+@app.get("/api/settings/default-model")
+def get_default_model():
+    """Return the default model from settings (.env)"""
+    return {
+        "model_fast": settings.model_fast or "qwen3.5:0.8b",
+        "model_reasoning": settings.model_reasoning or "qwen3.5:0.8b",
+    }
+
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
     """WebSocket endpoint for real-time streaming

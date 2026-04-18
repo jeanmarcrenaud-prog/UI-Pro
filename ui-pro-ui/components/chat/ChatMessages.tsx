@@ -12,7 +12,7 @@ export function ChatMessages({ messages }: { messages: Message[] }) {
   return (
     <div className="flex-1 overflow-y-auto space-y-4 p-4">
       {displayMessages.map((msg, i) => (
-        <MessageBubble key={msg.id || `msg-${i}`} role={msg.role as 'user' | 'assistant'} content={msg.content} />
+        <MessageBubble key={msg.id || `msg-${i}`} message={msg} />
       ))}
     </div>
   )

@@ -16,7 +16,7 @@ interface BackendConfig {
 const defaultBackends: Record<string, BackendConfig> = {
   ollama: { url: 'http://localhost:11434', enabled: true },
   lmstudio: { url: 'http://localhost:1234', enabled: true },
-  llamacpp: { url: 'http://localhost:8080', enabled: false },
+  llamacpp: { url: 'http://localhost:8080', enabled: true },
   lemonade: { url: 'http://localhost:13305', enabled: true },
 }
 
@@ -31,29 +31,54 @@ class ModelDiscoveryService {
 
   async discover(): Promise<Model[]> {
     const allModels: Model[] = []
+    const errors: string[] = []
 
-    // Discover from each backend in parallel
-    const promises = Object.entries(this.backends)
-      .filter(([_, config]) => config.enabled)
-      .map(([provider, config]) => this.fetchFromBackend(provider, config.url))
+    // Discover from each enabled backend in parallel
+    const entries = Object.entries(this.backends).filter(([_, config]) => config.enabled)
+    const promises = entries.map(([provider, config]) => 
+      this.fetchFromBackend(provider, config.url).catch(e => {
+        errors.push(`${provider}: ${e?.message || e}`)
+        return []
+      })
+    )
 
     const results = await Promise.allSettled(promises)
     
     results.forEach((result, index) => {
-      if (result.status === 'fulfilled') {
+      if (result.status === 'fulfilled' && result.value.length > 0) {
         allModels.push(...result.value)
       }
     })
 
     this.models = allModels
     
-    // Update UI store
-    const modelIds = allModels.map(m => m.id)
+    // Update UI store - use store defaults if no models found
+    const modelIds = allModels.length > 0 
+      ? allModels.map(m => m.id)
+      : useUIStore.getState().availableModels // Keep defaults
+    
     useUIStore.getState().setAvailableModels(modelIds)
-    useUIStore.getState().setSelectedModel(modelIds[0] || 'gemma4')
+    
+    // Fetch default model from backend settings and use as initial selection
+    try {
+      const response = await fetch('/api/settings/default-model')
+      if (response.ok) {
+        const data = await response.json()
+        const defaultModel = data.model_fast
+        // Only set if no model is currently selected
+        if (!useUIStore.getState().selectedModel && defaultModel) {
+          useUIStore.getState().setSelectedModel(defaultModel)
+        }
+      }
+    } catch {
+      // Fallback: use first available model
+      if (modelIds.length > 0 && !useUIStore.getState().selectedModel) {
+        useUIStore.getState().setSelectedModel(modelIds[0])
+      }
+    }
     
     // Emit event
-    events.emit('modelsDiscovered', { models: allModels })
+    events.emit('modelsDiscovered', { models: allModels, errors })
     
     return allModels
   }
@@ -76,21 +101,37 @@ class ModelDiscoveryService {
           return []
       }
     } catch {
-      console.warn(`Failed to fetch models from ${provider}: ${url}`)
+      // Silently fail - backend not available
       return []
     }
   }
 
   private async fetchOllama(url: string): Promise<Model[]> {
-    const response = await fetch(`${url}/api/tags`, {
-      method: 'GET',
-      signal: AbortSignal.timeout(5000),
-    })
+    let response: Response
+    
+    try {
+      // Try direct first
+      response = await fetch(`${url}/api/tags`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(3000),
+      })
+    } catch {
+      // Fallback to proxy if direct fails (CORS)
+      try {
+        response = await fetch('/api/models', {
+          method: 'GET',
+          signal: AbortSignal.timeout(3000),
+        })
+      } catch {
+        return [] // Silently fail
+      }
+    }
     
     if (!response.ok) return []
     
     const data = await response.json()
-    return (data.models || []).map((m: { name: string }) => ({
+    const models = data.models || []
+    return models.map((m: { name: string }) => ({
       id: m.name,
       name: m.name,
       provider: 'ollama' as const,

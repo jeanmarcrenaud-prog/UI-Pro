@@ -2,10 +2,11 @@
 import { events } from '@/lib/events'
 
 type StreamEvent = {
-  type: 'token' | 'step' | 'tool' | 'done' | 'error'
+  type: 'token' | 'step' | 'tool' | 'done' | 'error' | 'tokens'
   data: string
   stepId?: string
   toolName?: string
+  tokenCount?: number
 }
 
 type StreamHandler = (event: StreamEvent) => void
@@ -80,8 +81,26 @@ class StreamService {
         // Handle plain text (from backend using print())
         // Try JSON parse first, if fail use as plain token
         let tokenData = data
+        let tokenCount: number | undefined
         try {
           const parsed = JSON.parse(data)
+          
+          // Handle step events
+          if (parsed.type === 'step') {
+            const streamEvent: StreamEvent = {
+              type: 'step',
+              data: parsed.status || 'pending',
+              stepId: parsed.step_id,
+            }
+            this.emit(streamEvent)
+            return
+          }
+          
+          // Extract tokens count if present
+          if (parsed.tokens !== undefined) {
+            tokenCount = parsed.tokens
+            this.emit({ type: 'tokens', data: '', tokenCount })
+          }
           if (parsed.content) tokenData = parsed.content
           else if (parsed.message) tokenData = parsed.message
           else if (parsed.text) tokenData = parsed.text

@@ -35,7 +35,7 @@ class TaskType(Enum):
 @dataclass
 class RouterConfig:
     """Router configuration"""
-    default_model: str = "gemma4:latest"
+    default_model: str = "qwen3.5:0.8b"
     max_context_tokens: int = 8192
     enable_cost_optimization: bool = True
     enable_load_balancing: bool = False
@@ -84,6 +84,11 @@ class LLMRouter:
     
     # Model capabilities mapping
     MODEL_CAPABILITIES = {
+        "qwen3.5:0.8b": {
+            "strengths": [TaskType.CODE, TaskType.REASONING, TaskType.FAST],
+            "max_context": 4096,
+            "speed": "fast",
+        },
         "gemma4:latest": {
             "strengths": [TaskType.CODE, TaskType.REASONING, TaskType.FAST],
             "max_context": 8192,
@@ -103,15 +108,20 @@ class LLMRouter:
     
     # Default fallback chains
     FALLBACK_CHAINS = {
-        TaskType.CODE: ["gemma4:latest", "gemma4:e4b"],
-        TaskType.REASONING: ["gemma4:latest", "lfm2:latest"],
-        TaskType.CREATIVE: ["gemma4:latest", "lfm2:latest"],
+        TaskType.CODE: ["qwen3.5:0.8b", "gemma4:latest", "gemma4:e4b"],
+        TaskType.REASONING: ["qwen3.5:0.8b", "gemma4:latest", "lfm2:latest"],
+        TaskType.CREATIVE: ["qwen3.5:0.8b", "gemma4:latest", "lfm2:latest"],
         TaskType.ANALYSIS: ["lfm2:latest", "gemma4:latest"],
-        TaskType.FAST: ["gemma4:e4b", "gemma4:latest"],
+        TaskType.FAST: ["qwen3.5:0.8b", "gemma4:e4b", "gemma4:latest"],
     }
     
     # Model scoring functions (for scoring-based routing)
     MODEL_SCORING = {
+        "qwen3.5:0.8b": {
+            "code_score": 0.95,
+            "chat_score": 0.9,
+            "reasoning_score": 0.85,
+        },
         "qwen2.5-coder:32b": {
             "code_score": 1.0,
             "chat_score": 0.7,

@@ -4,7 +4,25 @@ import { persist } from 'zustand/middleware'
 import type { Message, ChatState, ChatHistoryItem } from '@/lib/types'
 import { events } from '@/lib/events'
 
+// Log event types
+const LogEvents = {
+  LOG: 'log',
+  STEP: 'step',
+  TOOL: 'tool',
+  TOKEN: 'token',
+  DONE: 'done',
+  ERROR: 'error',
+  TOKENS: 'tokens',
+} as const
+
 interface ChatStore extends ChatState {
+  // Logs
+  logs: string[]
+  addLog: (message: string) => void
+  clearLogs: () => void
+  // Tokens
+  tokenCount: number
+  setTokenCount: (count: number) => void
   // History
   history: ChatHistoryItem[]
   currentChatId: string | null
@@ -19,26 +37,41 @@ interface ChatStore extends ChatState {
   setError: (error: string | null) => void
 }
 
-// Initialize event listeners
-events.on('message', (data) => {
-  const store = useChatStore.getState()
-  if (data.role === 'assistant') {
-    store.addMessage({
-      id: `msg-${Date.now()}`,
-      role: data.role,
-      content: data.content,
-      status: 'streaming',
-    })
+// Initialize event listeners (chatService now handles WebSocket)
+events.on('status', (data) => {
+  useChatStore.getState().setLoading(data.status === 'streaming')
+})
+
+// Log event listener - capture logs from WebSocket stream
+events.on(LogEvents.LOG, (data: { message?: string }) => {
+  if (data.message) {
+    useChatStore.getState().addLog(data.message)
   }
 })
 
-events.on('status', (data) => {
-  useChatStore.getState().setLoading(data.status === 'streaming')
+// Tokens event listener - capture token count from stream
+events.on(LogEvents.TOKENS, (data: { tokenCount?: number }) => {
+  if (data.tokenCount !== undefined) {
+    useChatStore.getState().setTokenCount(data.tokenCount)
+  }
 })
 
 export const useChatStore = create<ChatStore>()(
   persist(
     (set, get) => ({
+      // Logs
+      logs: [],
+      addLog: (message) =>
+        set((state) => ({
+          logs: [...state.logs, message],
+        })),
+      clearLogs: () => set({ logs: [] }),
+      
+      // Tokens
+      tokenCount: 0,
+      setTokenCount: (tokenCount) => set({ tokenCount }),
+      
+      // Messages
       messages: [],
       isLoading: false,
       error: null,
