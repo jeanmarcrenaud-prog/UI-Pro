@@ -5,6 +5,8 @@ export type MessageRole = "user" | "assistant" | "system" | "agent"
 
 export type MessageStatus = "thinking" | "streaming" | "done" | "error"
 
+export type AgentStepStatus = "pending" | "active" | "done" | "error"
+
 export interface Message {
   id: string
   role: MessageRole
@@ -17,7 +19,7 @@ export interface AgentStep {
   id: string
   title: string
   detail?: string
-  status: "pending" | "active" | "done"
+  status: AgentStepStatus
 }
 
 export interface AgentMessage extends Message {
@@ -44,8 +46,9 @@ export interface ChatState {
 
 export interface AgentState {
   isActive: boolean
-  currentStep: number
   steps: AgentStep[]
+  currentStepId?: string // Current step ID (for lookup)
+  currentStep?: number   // Current step index (for progress)
 }
 
 // History Types
