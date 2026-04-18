@@ -47,6 +47,13 @@
 - **Tool calling** - Appels API visibles en temps réel
 - **Découverte automatique** des modèles depuis Ollama/LM Studio
 - **Settings** - Configuration des modèles et backends
+- **FAISS memory** - Vector search avec dimension sync automatique
+- **Thread-safe events** - Pub/sub avec lock pour concurrence
+- **Lazy config** - Evite circular imports
+- **Safe executor** - TempDirectory cleanup, import sanitization
+- **Auto log rotation** - Seuils conditionnels
+
+###
 - **Markdown** - Code highlighting dans les responses
 - **Animations** - Transitions fluides avec Framer Motion
 

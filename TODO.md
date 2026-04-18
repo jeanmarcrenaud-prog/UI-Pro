@@ -27,9 +27,12 @@ Statut: **COMPLÉTÉ** - Toutes les améliorations prioritaires ont été implé
 - ✅ **Auto-fix loop**: Max 3 tentatives avec génération prompt LLM
 - ✅ **State typing**: Complete annotations, task_id, metrics
 - ✅ **JSON serialization**: to_dict(), to_json(), save_json(), load_state()
-- ✅ **Log rotation**: 10MB max, 5 backups
+- ✅ **Log rotation**: 10MB max, 3 backups, seuil 1MB
 - ✅ **Windows compatibility**: subprocess.DEVNULL pour éviter handle errors
 - ✅ **Dashboard integrated**: Gradio → OrchestratorAsync → CodeExecutor
+- ✅ **FAISS dimension sync**: Auto-resize on first add, sync on load
+- ✅ **Thread-safe events**: Lock pour pub/concurrence
+- ✅ **Lazy config**: _LazyConfig évite circular imports
 
 ---
 
