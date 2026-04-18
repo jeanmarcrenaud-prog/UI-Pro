@@ -265,5 +265,19 @@ def get_config() -> Config:
     return _config
 
 
-# For convenience - expose common settings
-config = get_config()
+# Lazy property for convenience (avoid circular imports)
+# Access via: config.llm.model_fast
+class _LazyConfig:
+    """Lazy config accessor"""
+    _instance: Optional[Config] = None
+    
+    def __getattr__(self, name: str):
+        if self._instance is None:
+            self._instance = load_config()
+        return getattr(self._instance, name)
+    
+    def __getitem__(self, name: str):
+        return self.__getattr__(name)
+
+
+config = _LazyConfig()

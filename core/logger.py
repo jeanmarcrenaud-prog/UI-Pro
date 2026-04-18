@@ -15,7 +15,8 @@ import json
 # Log file configuration
 LOGS_DIR = Path("logs")
 MAX_LOG_SIZE = 10 * 1024 * 1024  # 10 MB per file
-BACKUP_COUNT = 5  # Keep 5 backup files
+BACKUP_COUNT = 3  # Keep fewer backup files
+LOG_ROTATE_THRESHOLD = 1 * 1024 * 1024  # Only backup if > 1MB
 
 # Log levels
 LOG_LEVELS = {
@@ -44,6 +45,9 @@ class JSONFormatter(logging.Formatter):
         # Add exception info if present
         if record.exc_info:
             log_data["exception"] = self.formatException(record.exc_info)
+        elif record.exc_text:
+            # Use exc_text if available (handles some edge cases)
+            log_data["exception"] = record.exc_text
         
         # Collect extra fields (non-standard attributes)
         extra_keys = (
@@ -103,15 +107,14 @@ class LoggerManager:
         # File handler with rotation and JSON formatting
         log_file = LOGS_DIR / "app.log"
         
-        if log_file.exists():
-            # Backup existing log with timestamp
+        # Only backup if file is large (>1MB threshold)
+        if log_file.exists() and log_file.stat().st_size > LOG_ROTATE_THRESHOLD:
             timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
             backup_name = log_file.with_name(f"app_{timestamp}.log")
             try:
                 os.rename(str(log_file), str(backup_name))
             except OSError:
-                # If rename fails, keep original
-                pass
+                pass  # Keep original if rename fails
         
         file_handler = RotatingFileHandler(
             log_file,

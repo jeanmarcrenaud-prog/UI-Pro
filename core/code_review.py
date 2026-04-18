@@ -26,8 +26,8 @@ class CodeReviewer:
     
     def __init__(
         self,
-        tools: list = None,
-        fail_on: list = None
+        tools: list[str] | None = None,
+        fail_on: list[str] | None = None
     ):
         """
         Initialize code reviewer.
@@ -51,24 +51,18 @@ class CodeReviewer:
         """
         all_issues = []
         
-        # Write code to temp file for analysis
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            suffix=".py",
-            delete=False,
-            encoding="utf-8"
-        ) as f:
-            f.write(code)
-            temp_path = f.name
-        
-        try:
+        # Use TemporaryDirectory for automatic cleanup
+        with tempfile.TemporaryDirectory(suffix=".py") as tmpdir:
+            temp_path = Path(tmpdir) / "code.py"
+            temp_path.write_text(code, encoding="utf-8")
+            
             # Run each tool
             for tool in self.tools:
                 if tool == "bandit":
-                    result = self._run_bandit(temp_path)
+                    result = self._run_bandit(str(temp_path))
                     all_issues.extend(result.get("issues", []))
                 elif tool == "pylint":
-                    result = self._run_pylint(temp_path)
+                    result = self._run_pylint(str(temp_path))
                     all_issues.extend(result.get("issues", []))
             
             # Check if any issues should fail the build
@@ -83,16 +77,11 @@ class CodeReviewer:
                 tool=", ".join(self.tools),
                 output=f"Found {len(all_issues)} issues"
             )
-            
-        finally:
-            # Cleanup temp file
-            try:
-                Path(temp_path).unlink(missing_ok=True)
-            except Exception:
-                pass
     
     def _run_bandit(self, filepath: str) -> dict:
         """Run bandit static analysis"""
+        issues = []
+        
         try:
             result = subprocess.run(
                 ["bandit", "-f", "json", filepath],
@@ -101,9 +90,7 @@ class CodeReviewer:
                 timeout=30
             )
             
-            issues = []
-            
-            # Parse bandit JSON output
+            # Bandit returns non-zero if issues found - that's not an error
             if result.stdout:
                 import json
                 try:
@@ -116,12 +103,17 @@ class CodeReviewer:
                             "line": finding.get("line_number", 0),
                         })
                 except json.JSONDecodeError:
-                    pass
+                    # Non-JSON output - may be error message
+                    if result.stderr:
+                        logger.warning(f"Bandit error: {result.stderr}")
             
             return {"issues": issues}
             
         except FileNotFoundError:
             logger.warning("bandit not installed - skipping")
+            return {"issues": []}
+        except subprocess.TimeoutExpired:
+            logger.warning("Bandit timed out")
             return {"issues": []}
         except Exception as e:
             logger.warning(f"Bandit error: {e}")
@@ -129,6 +121,8 @@ class CodeReviewer:
     
     def _run_pylint(self, filepath: str) -> dict:
         """Run pylint static analysis"""
+        issues = []
+        
         try:
             result = subprocess.run(
                 ["pylint", "--output-format=json", filepath],
@@ -137,9 +131,7 @@ class CodeReviewer:
                 timeout=30
             )
             
-            issues = []
-            
-            # Parse pylint JSON output
+            # Pylint returns non-zero if issues found - that's not an error
             if result.stdout:
                 import json
                 try:
@@ -158,12 +150,17 @@ class CodeReviewer:
                             "line": msg.get("line", 0),
                         })
                 except json.JSONDecodeError:
-                    pass
+                    # Non-JSON output - may be error message
+                    if result.stderr:
+                        logger.warning(f"Pylint error: {result.stderr}")
             
             return {"issues": issues}
             
         except FileNotFoundError:
             logger.warning("pylint not installed - skipping")
+            return {"issues": []}
+        except subprocess.TimeoutExpired:
+            logger.warning("Pylint timed out")
             return {"issues": []}
         except Exception as e:
             logger.warning(f"Pylint error: {e}")
@@ -175,8 +172,8 @@ _reviewer: Optional[CodeReviewer] = None
 
 
 def get_reviewer(
-    tools: list = None,
-    fail_on: list = None
+    tools: list[str] | None = None,
+    fail_on: list[str] | None = None
 ) -> CodeReviewer:
     """Get singleton code reviewer"""
     global _reviewer
