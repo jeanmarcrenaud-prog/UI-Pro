@@ -7,6 +7,11 @@ import { events } from '@/lib/events'
 
 type MessageHandler = (message: Message) => void
 
+// Generate unique IDs (collision-free)
+function generateId(): string {
+  return crypto.randomUUID()
+}
+
 // SINGLETON - one WebSocket for all connections
 let _ws: WebSocket | null = null
 let _isConnected = false
@@ -69,7 +74,7 @@ class ChatService {
         // DONE - response complete
         if (parsed.type === 'done') {
           this.emitToHandlers({
-            id: `msg-${Date.now()}`,
+            id: `generateId()`,
             role: 'assistant',
             content: this.currentContent,
             status: 'done',
@@ -92,7 +97,7 @@ class ChatService {
         if (text) {
           this.currentContent += text
           this.emitToHandlers({
-            id: `msg-${Date.now()}`,
+            id: `generateId()`,
             role: 'assistant',
             content: text,
             status: 'streaming',
@@ -102,7 +107,7 @@ class ChatService {
         // Plain text fallback
         this.currentContent += data
         this.emitToHandlers({
-          id: `msg-${Date.now()}`,
+          id: `generateId()`,
           role: 'assistant',
           content: data,
           status: 'streaming',
@@ -134,14 +139,14 @@ class ChatService {
       const data = await response.json()
       
       this.emitToHandlers({
-        id: `msg-${Date.now()}`,
+        id: `generateId()`,
         role: 'assistant',
         content: data.result || 'No response',
         status: data.status === 'error' ? 'error' : 'done',
       })
     } catch (error) {
       this.emitToHandlers({
-        id: `msg-${Date.now()}`,
+        id: `generateId()`,
         role: 'assistant',
         content: error instanceof Error ? error.message : 'Connection failed',
         status: 'error',
