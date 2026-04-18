@@ -35,8 +35,17 @@ class EventEmitter {
   }
 
   emit<K extends keyof EventMap>(event: K, data: EventMap[K]): void {
-    console.log('[events.emit]', event, data)
-    this.handlers.get(event)?.forEach((handler) => handler(data))
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[events.emit]', event, data)
+    }
+    
+    this.handlers.get(event)?.forEach((handler) => {
+      try {
+        handler(data)
+      } catch (err) {
+        console.error(`[events] Handler error on ${String(event)}:`, err)
+      }
+    })
   }
 
   // Clear all handlers (for cleanup)
