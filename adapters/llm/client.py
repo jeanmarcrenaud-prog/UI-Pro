@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class ModelConfig:
     """Configuration for LLM backend"""
     url: str = "http://localhost:11434/api/generate"
-    model: str = "gemma4:latest"
+    model: str = "qwen3.5:0.8b"
     timeout: int = 60
     backend: str = "ollama"  # "ollama" or "lemonade"
 
@@ -32,7 +32,7 @@ class OllamaClient:
     
     def __init__(self, config: ModelConfig = None):
         self.url = getattr(config, 'url', 'http://localhost:11434/api/generate') if config else "http://localhost:11434/api/generate"
-        self.model = getattr(config, 'model', 'gemma4:latest') if config else "gemma4:latest"
+        self.model = getattr(config, 'model', 'qwen3.5:0.8b') if config else "qwen3.5:0.8b"
         self.timeout = getattr(config, 'timeout', 60) if config else 60
         self.backend = getattr(config, 'backend', 'ollama') if config else 'ollama'
     

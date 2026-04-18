@@ -2,7 +2,7 @@
 
 // UI-Pro Dashboard - ChatGPT quality
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { ChatContainer } from '@/components/ChatContainer'
 import { Sidebar } from '@/components/Sidebar'
 import { DebugPanel } from '@/components/DebugPanel'
@@ -10,75 +10,54 @@ import { SettingsView } from '@/components/SettingsView'
 import { HistoryView } from '@/components/HistoryView'
 import { useUIStore } from '@/lib/stores/uiStore'
 import { useChatStore } from '@/lib/stores/chatStore'
-
-interface AgentStep {
-  id: string
-  title: string
-  detail?: string
-  status: 'pending' | 'active' | 'done'
-}
+import { useAgentStore } from '@/lib/stores/agentStore'
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState('chat')
-  const [messages, setMessages] = useState<Array<{
-    id: string
-    role: 'user' | 'assistant'
-    content: string
-    timestamp?: string
-    status?: 'thinking' | 'streaming' | 'done' | 'error'
-  }>>([])
   const [showDebug, setShowDebug] = useState(true)
-  const [agentSteps, setAgentSteps] = useState<AgentStep[]>([
-    { id: '1', title: 'Analyzing request', status: 'pending' },
-    { id: '2', title: 'Planning solution', status: 'pending' },
-    { id: '3', title: 'Executing', status: 'pending' },
-    { id: '4', title: 'Reviewing', status: 'pending' },
-  ])
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
-  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'connecting' | 'error'>('connecting')
+  const hasLoggedModel = useRef(false) // Stable ref - persists across renders
   
+  // Stores (MUST come first - isLoading is used below)
   const { selectedModel, availableModels } = useUIStore()
-  const { isLoading } = useChatStore()
+  const { isLoading, logs, tokenCount, clearMessages, messages } = useChatStore()
+  const { steps: storeSteps } = useAgentStore()
 
   const handleNewChat = useCallback(() => {
-    setMessages([])
-    setAgentSteps([
-      { id: '1', title: 'Analyzing request', status: 'pending' },
-      { id: '2', title: 'Planning solution', status: 'pending' },
-      { id: '3', title: 'Executing', status: 'pending' },
-      { id: '4', title: 'Reviewing', status: 'pending' },
-    ])
+    clearMessages()
     setElapsedSeconds(0)
-  }, [])
+  }, [clearMessages])
 
   // Timer for elapsed time when loading
   useEffect(() => {
-    let interval: NodeJS.Timeout
+    let interval: NodeJS.Timeout | null = null
+    
     if (isLoading) {
+      // Log model on first call only
+      if (!hasLoggedModel.current) {
+        hasLoggedModel.current = true
+        const currentModel = selectedModel || availableModels[0] || 'gemma4'
+        useChatStore.getState().addLog(`🤖 Using model: ${currentModel}`)
+      }
+      
       interval = setInterval(() => {
         setElapsedSeconds(s => s + 1)
       }, 1000)
     } else {
+      hasLoggedModel.current = false // Reset for next time
       setElapsedSeconds(0)
     }
-    return () => clearInterval(interval)
-  }, [isLoading])
-
-  // Track connection status via WebSocket
-  useEffect(() => {
-    const ws = new WebSocket(`ws://${typeof window !== 'undefined' ? window.location.hostname : 'localhost'}:8000/ws`)
     
-    ws.onopen = () => setConnectionStatus('connected')
-    ws.onerror = () => setConnectionStatus('error')
-    ws.onclose = () => setConnectionStatus('error')
-    
-    return () => ws.close()
-  }, [])
+    // ALWAYS cleanup - runs on unmount OR deps change
+    return () => {
+      if (interval) clearInterval(interval)
+    }
+  }, [isLoading, selectedModel, availableModels])
 
-  const currentStepIdx = agentSteps.findIndex(s => s.status === 'active')
   const modelName = selectedModel || availableModels[0] || 'gemma4'
   
-  const debugStatus: 'idle' | 'running' | 'error' = isLoading ? 'running' : 'error' in messages.map(m => m.status) ? 'error' : 'idle'
+  const hasError = messages.some(m => m.status === 'error')
+  const debugStatus: 'idle' | 'running' | 'error' = isLoading ? 'running' : hasError? 'error' : 'idle'
 
   return (
     <div className="flex h-screen bg-gradient-to-br from-slate-950 to-slate-900">
@@ -135,15 +114,16 @@ export default function Home() {
       {/* Debug Panel */}
       {activeTab === 'chat' && showDebug && (
         <DebugPanel 
-          steps={agentSteps}
+          steps={storeSteps}
           isOpen={showDebug}
           onToggle={() => setShowDebug(false)}
+          onClearLogs={() => useChatStore.getState().clearLogs()}
           status={debugStatus}
           modelName={modelName}
-          currentStep={currentStepIdx >= 0 ? currentStepIdx : 0}
           elapsedSeconds={elapsedSeconds}
-          tokenCount={0}
-          connectionStatus={connectionStatus}
+          tokenCount={tokenCount}
+          connectionStatus={isLoading ? 'connecting' : 'connected'}
+          logs={logs}
         />
       )}
     </div>

@@ -1,13 +1,14 @@
 'use client'
 
-import { useCallback } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { useChatStore } from '@/lib/stores/chatStore'
 import { useAgentStore } from '@/lib/stores/agentStore'
 import { chatService } from '@/services/chatService'
+import { events } from '@/lib/events'
 import type { Message, AgentStep } from '@/lib/types'
 
 function generateId(): string {
-  return Math.random().toString(36).substring(2, 15)
+  return crypto.randomUUID()
 }
 
 export function useChat() {
@@ -16,7 +17,6 @@ export function useChat() {
     isLoading,
     error,
     addMessage,
-    updateMessage,
     clearMessages,
     setLoading,
     setError,
@@ -31,30 +31,29 @@ export function useChat() {
     reset,
   } = useAgentStore()
 
-  const sendMessage = useCallback(async (content: string) => {
+  // Listen for step events from backend - keep ref fresh
+  const updateStepRef = useRef(updateStep)
+  updateStepRef.current = updateStep
+  
+  useEffect(() => {
+    const handleStep = (data: { stepId: string; status: 'pending' | 'active' | 'done' }) => {
+      useChatStore.getState().addLog(`🔄 Step: ${data.stepId} → ${data.status}`)
+      updateStepRef.current(data.stepId, data.status)
+    }
+    events.on('agentStep', handleStep)
+    return () => events.off('agentStep', handleStep)
+  }, []) // Stable - one listener only
+
+const sendMessage = useCallback(async (content: string) => {
     if (!content.trim() || isLoading) return
 
-    // Reset previous steps before starting new conversation
+    // Reset and start fresh
     reset()
-
-    const userMsg: Message = {
-      id: generateId(),
-      role: 'user',
-      content,
-      timestamp: new Date().toISOString(),
-    }
-
-    const assistantMsg: Message = {
-      id: generateId(),
-      role: 'assistant',
-      content: '',
-      status: 'thinking',
-      timestamp: new Date().toISOString(),
-    }
-
-    addMessage(userMsg)
-    addMessage(assistantMsg)
-
+    
+    // User message
+    addMessage({ role: 'user', content, id: generateId() })
+    // Placeholder for assistant (will be replaced by streaming)
+    addMessage({ role: 'assistant', content: '', status: 'thinking', id: generateId() })
     setLoading(true)
 
     const stepsData: AgentStep[] = [
@@ -63,47 +62,47 @@ export function useChat() {
       { id: 'step-executing', title: 'Executing', status: 'pending' },
       { id: 'step-reviewing', title: 'Reviewing', status: 'pending' },
     ]
-
     start(stepsData)
+    useChatStore.getState().addLog(`🚀 Starting: ${content.substring(0, 30)}...`)
 
+    let cleanup: (() => void) | null = null
+    
     try {
-      // Register message handler BEFORE sending - to catch streaming events
-      chatService.onMessage((msg) => {
-        // When we receive the first response chunk, move to Planning
-        if (msg.status === 'streaming') {
-          const currentActive = steps.find(s => s.status === 'active')
-          if (currentActive?.id === 'step-analyzing') {
+      let tokenCount = 0
+      const stepsRef = useRef({ ...steps }) // Capture current steps at start
+      
+      // Register handler and get cleanup
+      cleanup = chatService.onMessage((msg) => {
+        const currentSteps = [...stepsRef.current]
+        
+        if (msg.content && msg.content.length > 0) {
+          tokenCount++
+          
+          // Advance step when first token arrives
+          const currentActive = currentSteps.find(s => s.status === 'active')
+          if (currentActive?.id === 'step-analyzing' && tokenCount === 1) {
             updateStep('step-analyzing', 'done')
             updateStep('step-planning', 'active')
-          } else if (currentActive?.id === 'step-planning') {
-            updateStep('step-planning', 'done')
-            updateStep('step-executing', 'active')
           }
         }
-        // When response is done, move to Reviewing
+        
+        // Done - mark all steps complete
         if (msg.status === 'done') {
-          updateStep('step-executing', 'done')
-          updateStep('step-reviewing', 'active')
-          // After review, mark all done
-          setTimeout(() => {
-            steps.forEach((step) => updateStep(step.id, 'done'))
-          }, 500)
-          // Now loading is complete - save to history
+          if (cleanup) cleanup() // Clean handler when done
+          currentSteps.forEach(s => updateStep(s.id, 'done'))
           useChatStore.getState().saveToHistory()
+          useChatStore.getState().addLog(`✅ Done! ${tokenCount} tokens`)
+          setLoading(false)
         }
       })
 
       chatService.sendMessage(content)
-
-      // Note: setLoading(false) and saveToHistory are called in the message handler
-      // when the response is fully received (status === 'done')
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : 'Unknown error'
-      updateMessage(assistantMsg.id, errMsg, 'error')
-      setError(errMsg)
+      if (cleanup) cleanup() // Cleanup handler on error
+      setError(err instanceof Error ? err.message : 'Error')
       setLoading(false)
     }
-  }, [isLoading, messages, addMessage, updateMessage, setLoading, setError, start, updateStep, reset, saveToHistory])
+  }, [isLoading, addMessage, setLoading, setError, start, updateStep, reset]) // No steps dep
 
   const clear = useCallback(() => {
     clearMessages()

@@ -1,5 +1,6 @@
-// UI Store - Unified UI state management
+// UI Store - Unified UI state management with persistence
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 
 type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error'
 
@@ -29,28 +30,48 @@ interface UIState {
   setAvailableModels: (models: string[]) => void
 }
 
-export const useUIStore = create<UIState>((set) => ({
-  // Connection
-  connectionStatus: 'disconnected',
-  setConnectionStatus: (connectionStatus) => set({ connectionStatus }),
-  
-  // Sidebar
-  sidebarOpen: true,
-  toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
-  
-  // Debug panel
-  debugPanelOpen: true,
-  toggleDebugPanel: () => set((state) => ({ debugPanelOpen: !state.debugPanelOpen })),
-  
-  // Compact mode
-  compactMode: false,
-  toggleCompactMode: () => set((state) => ({ compactMode: !state.compactMode })),
-  
-  // Model
-  selectedModel: 'gemma4',
+export const useUIStore = create<UIState>()(
+  persist(
+    (set) => ({
+      // Connection
+      connectionStatus: 'disconnected',
+      setConnectionStatus: (connectionStatus) => set({ connectionStatus }),
+      
+      // Sidebar
+      sidebarOpen: true,
+      toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
+      
+      // Debug panel
+      debugPanelOpen: true,
+      toggleDebugPanel: () => set((state) => ({ debugPanelOpen: !state.debugPanelOpen })),
+      
+      // Compact mode
+      compactMode: false,
+      toggleCompactMode: () => set((state) => ({ compactMode: !state.compactMode })),
+      
+// Model - initialized empty, will be set from API on mount
+  selectedModel: '',
   setSelectedModel: (selectedModel) => set({ selectedModel }),
   
-  // Available models
-  availableModels: ['gemma4', 'qwen-coder', 'mistral', 'deepseek'],
-  setAvailableModels: (availableModels) => set({ availableModels }),
-}))
+  // Available models - defaults (will be refreshed from API)
+  availableModels: [
+    'qwen3.5:0.8b',
+    'gemma4:latest',
+    'gemma4:e4b', 
+    'lfm2:latest',
+    'nemotron-cascade-2:latest',
+    'qwen3.5:9b'
+  ],
+      setAvailableModels: (availableModels) => set({ availableModels }),
+    }),
+    {
+      name: 'ui-pro-storage', // localStorage key
+      partialize: (state) => ({ 
+        selectedModel: state.selectedModel,
+        sidebarOpen: state.sidebarOpen,
+        debugPanelOpen: state.debugPanelOpen,
+        compactMode: state.compactMode,
+      }), // Only persist these
+    }
+  )
+)

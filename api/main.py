@@ -4,6 +4,8 @@ from pydantic import BaseModel
 import logging
 import json
 import time
+import asyncio
+
 logging.getLogger("transformers").setLevel(logging.ERROR)
 logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
 
@@ -51,8 +53,6 @@ def verify_api_key(request: Request) -> bool:
     return True
 
 
-# Health check import
-
 # 🚀 Charger tout depuis .env via settings
 app = FastAPI()
 sessions = {}
@@ -89,7 +89,6 @@ def home(request: Request):
 @app.get("/health")
 def health_check():
     """Health check endpoint for container orchestration"""
-    import time
     import psutil
     
     return {
@@ -129,6 +128,34 @@ def status():
     }
 
 
+@app.get("/api/models")
+def get_models():
+    """Proxy endpoint to fetch models from Ollama (avoids CORS issues)"""
+    import requests
+    try:
+        ollama_url = settings.ollama_url or "http://localhost:11434"
+        resp = requests.get(f"{ollama_url}/api/tags", timeout=5)
+        if resp.status_code == 200:
+            data = resp.json()
+            models = data.get("models", [])
+            return {
+                "models": [{"id": m["name"], "name": m["name"], "provider": "ollama"} for m in models],
+                "status": "ok"
+            }
+        return {"models": [], "status": "error", "message": "Failed to fetch models"}
+    except Exception as e:
+        return {"models": [], "status": "error", "message": str(e)}
+
+
+@app.get("/api/settings/default-model")
+def get_default_model():
+    """Return the default model from settings (.env)"""
+    return {
+        "model_fast": settings.model_fast or "qwen3.5:0.8b",
+        "model_reasoning": settings.model_reasoning or "qwen3.5:0.8b",
+    }
+
+
 # Chat endpoint
 @app.post("/api/chat")
 def chat(request: ChatRequest):
@@ -144,7 +171,6 @@ def chat(request: ChatRequest):
 @app.get("/stream/{prompt}")
 async def stream(prompt: str):
     """SSE endpoint for streaming events"""
-    import asyncio
     
     async def event_generator():
         # Send step start
@@ -170,9 +196,22 @@ async def stream(prompt: str):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
+# Log subscriptions - track connected WebSocket clients for log streaming
+_log_subscriptions: set = set()
+
+
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
-    """WebSocket endpoint for real-time streaming"""
+    """WebSocket endpoint for real-time streaming with log events
+    
+    Accepts: JSON {message: "...", model?: "..."}
+    Returns: Stream of JSON events with type field
+      - {type: "step", ...} - Step changes
+      - {type: "token", ...} - Token stream
+      - {type: "tool", ...} - Tool execution
+      - {type: "done", ...} - Completion
+      - {type: "error", ...} - Errors
+    """
     await ws.accept()
     
     # Use client info safely
@@ -180,19 +219,154 @@ async def ws_endpoint(ws: WebSocket):
     session_id = f"{client_info}-{len(sessions)}"
     sessions[session_id] = []
     
+    # Logger for this session
+    session_logger = logging.getLogger(f"session.{session_id}")
+    
     try:
         while True:
             if session_id in sessions:
-                task = await ws.receive_text()
-                sessions[session_id].append(task)
+                # Receive message as JSON
+                data = await ws.receive_text()
+                sessions[session_id].append(data)
                 
-                # Simple echo for now
-                await ws.send_text(f"Echo: {task}")
+                # Parse JSON to extract message and model
+                try:
+                    msg_data = json.loads(data)
+                    task = msg_data.get('message', data)
+                    model = msg_data.get('model')
+                    print(f"[WS] Received - message: {task[:30]}..., model: {model}")
+                except:
+                    # Plain text fallback
+                    task = data
+                    model = None
+                    print(f"[WS] Plain text received, model: {model}")
                 
-                # Send completion marker
-                await ws.send_text("[DONE]")
-    except Exception:
-        pass
+                # Send step 1: Analyzing
+                await ws.send_text(json.dumps({
+                    "type": "step", 
+                    "step_id": "step-analyzing", 
+                    "title": "Analyzing request",
+                    "status": "active",
+                    "data": "Analyzing request..."
+                }))
+                
+                # Use streaming service with model
+                from services.streaming import get_streaming_service
+                from settings import settings
+                
+                selected_model = model or settings.model_fast or 'qwen3.5:0.8b'
+                print(f"[WS] Using model: {selected_model}")
+                
+                # Stream the response
+                stream_service = get_streaming_service()
+                
+                # Mark step 1 as done before starting stream
+                await ws.send_text(json.dumps({
+                    "type": "step",
+                    "step_id": "step-analyzing",
+                    "title": "Analyzing request",
+                    "status": "done",
+                    "data": "Analysis complete"
+                }))
+                
+                # Activate step 2: Planning solution
+                await ws.send_text(json.dumps({
+                    "type": "step",
+                    "step_id": "step-planning",
+                    "title": "Planning solution",
+                    "status": "active",
+                    "data": "Planning approach..."
+                }))
+                
+                async for chunk in stream_service.stream_generate(task, model=selected_model):
+                    # Send the chunk
+                    await ws.send_text(json.dumps(chunk.to_dict()))
+                    
+                    # Also emit to log subscribers
+                    for log_ws in _log_subscriptions:
+                        try:
+                            await log_ws.send_text(json.dumps({
+                                "type": "log",
+                                "message": chunk.text[:100] if chunk.text else "",
+                                "status": chunk.status.value
+                            }))
+                        except Exception:
+                            pass
+                
+                # Mark step 2 as done
+                await ws.send_text(json.dumps({
+                    "type": "step",
+                    "step_id": "step-planning",
+                    "title": "Planning solution",
+                    "status": "done",
+                    "data": "Plan completed"
+                }))
+                
+                # Activate step 3: Executing
+                await ws.send_text(json.dumps({
+                    "type": "step",
+                    "step_id": "step-executing",
+                    "title": "Executing",
+                    "status": "active",
+                    "data": "Executing code..."
+                }))
+                
+                # Mark step 3 as done
+                await ws.send_text(json.dumps({
+                    "type": "step",
+                    "step_id": "step-executing",
+                    "title": "Executing",
+                    "status": "done",
+                    "data": "Execution complete"
+                }))
+                
+                # Mark step 4 (Reviewing) as done
+                await ws.send_text(json.dumps({
+                    "type": "step",
+                    "step_id": "step-reviewing",
+                    "title": "Reviewing",
+                    "status": "done",
+                    "data": "Review complete"
+                }))
+                
+                # Send done event
+                await ws.send_text(json.dumps({"type": "done", "data": ""}))
+                
+    except Exception as e:
+        print(f"[WS] Error: {e}")
+        session_logger.error(f"WebSocket error: {e}")
+    finally:
+        # Cleanup
+        if session_id in sessions:
+            del sessions[session_id]
+
+
+@app.websocket("/logs")
+async def ws_logs(websocket: WebSocket):
+    """WebSocket endpoint for streaming backend logs
+    
+    This endpoint streams log messages from the backend:
+    - Agent step changes
+    - Execution progress
+    - Errors
+    """
+    await websocket.accept()
+    
+    # Add to subscriptions
+    _log_subscriptions.add(websocket)
+    
+    print(f"[WS LOGS] Client connected")
+    
+    try:
+        # Keep alive and forward logs
+        while True:
+            await asyncio.sleep(1)
+    except Exception as e:
+        print(f"[WS LOGS] Error: {e}")
+    finally:
+        _log_subscriptions.discard(websocket)
+        print(f"[WS LOGS] Client disconnected")
+
 
 if __name__ == "__main__":
     import uvicorn

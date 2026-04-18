@@ -35,6 +35,7 @@ class EventEmitter {
   }
 
   emit<K extends keyof EventMap>(event: K, data: EventMap[K]): void {
+    console.log('[events.emit]', event, data)
     this.handlers.get(event)?.forEach((handler) => handler(data))
   }
 
