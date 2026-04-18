@@ -101,7 +101,7 @@ class State:
         """Nettoyer state"""
         self.code_generations = []
         self.errors = []
-        self.plans = {}
+        self.plan = {}
         self.architecture = {}
 
 

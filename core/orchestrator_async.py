@@ -28,11 +28,66 @@ try:
         FIX_PROMPT,
     )
 except ImportError:
-    PLANNER_PROMPT = None
-    ARCHITECT_PROMPT = None
-    CODER_PROMPT = None
-    REVIEWER_PROMPT = None
-    FIX_PROMPT = None
+    # Fallback prompts with proper {task} placeholders
+    PLANNER_PROMPT = """You are a senior planner.
+Return JSON:
+{{
+  "goal": "...",
+  "steps": ["...", "..."]
+}}
+
+Task:
+{task}
+"""
+    ARCHITECT_PROMPT = """You are a software architect.
+Plan:
+{plan}
+
+Return JSON:
+{{
+  "files": [
+    {{"name": "main.py", "role": "..."}}
+  ]
+}}
+"""
+    CODER_PROMPT = """You are a senior Python engineer.
+Architecture:
+{architecture}
+
+Return JSON:
+{{
+  "files": {{
+    "main.py": "code here"
+  }}
+}}
+"""
+    REVIEWER_PROMPT = """Review this code and detect issues.
+Code:
+{code}
+
+Return JSON:
+{{
+  "issues": ["..."],
+  "fixes": ["..."]
+}}
+"""
+    FIX_PROMPT = """Fix this Python code.
+Error:
+{error}
+
+Current code:
+{code_content}
+
+Return ONLY JSON:
+{{
+  "files": {{
+    "main.py": "fixed code here"
+  }}
+}}
+
+Retry count: {attempt}
+Max retries: {max_retry}
+"""
 
 logger = logging.getLogger(__name__)
 
@@ -325,16 +380,29 @@ Max retries: {max_retry}
         self,
         prompt: str,
         mode: str,
+        timeout: float = 60.0,
     ) -> dict[str, Any]:
         """
         Call LLM via router + safe JSON parsing.
+        
+        Args:
+            prompt: The prompt to send
+            mode: Router mode (fast, reasoning, code)
+            timeout: Max wait time in seconds (default 60s)
         """
         loop = asyncio.get_running_loop()
 
-        response = await loop.run_in_executor(
-            None,
-            lambda: self.router.generate(prompt, mode),
-        )
+        try:
+            response = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    lambda: self.router.generate(prompt, mode),
+                ),
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            logger.error(f"LLM call timed out after {timeout}s")
+            return {"error": "timeout", "message": f"LLM call timed out after {timeout}s"}
 
         return self._safe_json(response)
 

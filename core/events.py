@@ -4,6 +4,7 @@ Event protocol system with pub/sub for real-time messaging.
 Centralizes all event types and handlers.
 """
 
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -70,38 +71,44 @@ class EventType(str, Enum):
 # ==================== Event Bus (Pub/Sub) ====================
 
 class EventBus:
-    """Simple pub/sub event bus"""
+    """Simple pub/sub event bus with thread-safe operations"""
     
     def __init__(self):
         self._subscribers: Dict[EventType, List[Callable]] = {
             event_type: [] for event_type in EventType
         }
+        self._lock = threading.Lock()
     
     def subscribe(self, event_type: EventType, handler: Callable) -> str:
         """Subscribe to an event type. Returns subscription ID."""
         sub_id = str(uuid.uuid4())
-        self._subscribers[event_type].append(handler)
+        with self._lock:
+            self._subscribers[event_type].append(handler)
         return sub_id
     
     def unsubscribe(self, event_type: EventType, handler: Callable):
         """Unsubscribe from an event type"""
-        if handler in self._subscribers[event_type]:
-            self._subscribers[event_type].remove(handler)
+        with self._lock:
+            if handler in self._subscribers[event_type]:
+                self._subscribers[event_type].remove(handler)
     
     def publish(self, event: BaseEvent, event_type: EventType):
         """Publish an event to all subscribers"""
-        for handler in self._subscribers.get(event_type, []):
+        # Copy handlers under lock to avoid modification during iteration
+        with self._lock:
+            handlers = list(self._subscribers.get(event_type, []))
+        for handler in handlers:
             try:
                 handler(event)
             except Exception as e:
-                # Log but don't crash
                 import logging
                 logging.getLogger(__name__).error(f"Handler error: {e}")
     
     def clear(self):
         """Clear all subscribers"""
-        for event_type in self._subscribers:
-            self._subscribers[event_type].clear()
+        with self._lock:
+            for event_type in self._subscribers:
+                self._subscribers[event_type].clear()
 
 
 # Singleton event bus
