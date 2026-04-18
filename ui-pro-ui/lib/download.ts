@@ -39,28 +39,42 @@ const LANGUAGE_EXTENSIONS: Record<string, string> = {
 
 /**
  * Extract a meaningful name from code content
- * - Looks for: class X, def X, function X, const X, let X, var X
+ * - Looks for: class X, def X, function X, const X, let X, var X, arrow functions
+ * - Ignores matches inside comments and strings
  * - Falls back to timestamp-based name
  */
 function extractNameFromCode(content: string): string {
-  // Try to find a meaningful identifier from the code
+  // Remove comments and strings to avoid false matches
+  const cleaned = content
+    .replace(/\/\/.*$/gm, '') // Remove single-line comments
+    .replace(/\/\*[\s\S]*?\*\//g, '') // Remove multi-line comments
+    .replace(/['"`].*?['"`]/gs, '""') // Replace strings with empty
+
+  // Priority patterns (preferred declarations first)
   const patterns = [
-    /class\s+(\w+)/,           // class MyClass
-    /def\s+(\w+)/,             // def my_function
-    /function\s+(\w+)/,       // function myFunction
-    /const\s+(\w+)/,           // const myConst
-    /let\s+(\w+)/,             // let myVar
-    /var\s+(\w+)/,             // var myVar
-    /interface\s+(\w+)/,      // interface MyInterface
-    /type\s+(\w+)/,           // type MyType
-    /pub\s+fn\s+(\w+)/,        // pub fn my_function (Rust)
-    /func\s+(\w+)/,            // func myFunction
+    { regex: /class\s+(\w+)/, group: 1 },           // class MyClass
+    { regex: /interface\s+(\w+)/, group: 1 },       // interface MyInterface
+    { regex: /type\s+(\w+)(?:\s*[=<])/, group: 1 }, // type MyType = or type MyType<
+    { regex: /function\s+(\w+)/, group: 1 },       // function myFunction
+    { regex: /pub\s+fn\s+(\w+)/, group: 1 },      // pub fn my_function (Rust)
+    { regex: /func\s+(\w+)/, group: 1 },         // func myFunction (Go)
+    { regex: /def\s+(\w+)/, group: 1 },           // def my_function (Python)
+    { regex: /const\s+(\w+)\s*[=:]/, group: 1 }, // const myConst = or const myConst:
+    { regex: /let\s+(\w+)\s*[=:]/, group: 1 },    // let myVar = or let myVar:
+    { regex: /var\s+(\w+)\s*[=:]/, group: 1 },     // var myVar = or var myVar:
+    { regex: /=>\s*\{/, group: 0 },               // Arrow function (anonymous) - no name
+    { regex: /export\s+default\s+(\w+)/, group: 1 }, // export default MyClass
+    { regex: /export\s+(\w+)/, group: 1 },      // export MyFunction
   ]
 
-  for (const pattern of patterns) {
-    const match = content.match(pattern)
-    if (match && match[1]) {
-      return match[1].toLowerCase()
+  for (const { regex, group } of patterns) {
+    const match = cleaned.match(regex)
+    if (match && match[group] && match[group].length > 0) {
+      const name = match[group].toLowerCase()
+      // Validate: starts with letter, contains only word chars
+      if (/^[a-zA-Z][\w]*$/.test(name)) {
+        return name
+      }
     }
   }
 
@@ -74,7 +88,42 @@ function extractNameFromCode(content: string): string {
  */
 function getExtension(language: string): string {
   const lang = language.toLowerCase()
-  return LANGUAGE_EXTENSIONS[lang] || 'txt'
+  
+  // Map full language names to extensions
+  const LANGUAGE_MAP: Record<string, string> = {
+    'javascript': 'js',
+    'typescript': 'ts',
+    'python': 'py',
+    'ruby': 'rb',
+    'rust': 'rs',
+    'go': 'go',
+    'java': 'java',
+    'cpp': 'cpp',
+    'csharp': 'cs',
+    'c#': 'cs',
+    'php': 'php',
+    'swift': 'swift',
+    'kotlin': 'kt',
+    'scala': 'scala',
+    'shell': 'sh',
+    'bash': 'sh',
+    'sql': 'sql',
+    'html': 'html',
+    'css': 'css',
+    'json': 'json',
+    'yaml': 'yml',
+    'markdown': 'md',
+    'xml': 'xml',
+    'dockerfile': 'dockerfile',
+    'toml': 'toml',
+    // Aliases
+    'ts': 'ts',
+    'js': 'js',
+    'jsx': 'jsx',
+    'tsx': 'tsx',
+  }
+  
+  return LANGUAGE_MAP[lang] || LANGUAGE_EXTENSIONS[lang] || 'txt'
 }
 
 export function downloadCode(content: string, language: string = 'txt') {
