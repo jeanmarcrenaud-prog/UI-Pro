@@ -19,11 +19,14 @@ let _messageHandlers: Set<MessageHandler> = new Set()
 let _messageQueue: string[] = [] // Queue for rapid messages
 
 class ChatService {
-  private currentContent = ''
+  private currentContent = ''  // Accumulated response
+  private currentMessageContent = ''  // Input message (for reconnect)
   private flushTimeout: ReturnType<typeof setTimeout> | null = null
   private buffer = ''
   private heartbeat: ReturnType<typeof setInterval> | null = null
   private currentMessageId: string | null = null
+  private reconnectAttempts = 0
+  private _hasStartedStreaming = false
 
   // Process queued messages
   private flushQueue() {
@@ -70,6 +73,7 @@ class ChatService {
     // Reset state
     this.buffer = ''
     this.currentContent = ''
+    this.currentMessageContent = ''
     this.currentMessageId = null
     
     if (_ws) {
@@ -87,6 +91,8 @@ class ChatService {
     const messageId = generateId()
     this.currentMessageId = messageId
     this.currentContent = ''
+    this.currentMessageContent = ''
+    this._hasStartedStreaming = false
     
     // Reuse existing WebSocket if connected
     if (_ws && _ws.readyState === WebSocket.OPEN) {
@@ -103,16 +109,24 @@ class ChatService {
     
     _ws.onopen = () => {
       _isConnected = true
-      events.emit('status', { status: 'streaming' })
+      // Status is 'connecting' until first token arrives
+      events.emit('status', { status: 'connecting' })
+      // Store the input message for potential reconnect
+      this.currentMessageContent = content
       this.queueOrSend(content)
       this.flushQueue()
       
+      // Clear any existing heartbeat
+      if (this.heartbeat) clearInterval(this.heartbeat)
       // Heartbeat: ping every 15 seconds to detect dead connections
-      const heartbeat = setInterval(() => {
+      this.heartbeat = setInterval(() => {
         if (_ws?.readyState === WebSocket.OPEN) {
           _ws.send(JSON.stringify({ type: 'ping' }))
         } else {
-          clearInterval(heartbeat)
+          if (this.heartbeat) {
+            clearInterval(this.heartbeat)
+            this.heartbeat = null
+          }
         }
       }, 15000)
     }
@@ -123,6 +137,14 @@ _ws.onmessage = (event) => {
       
       try {
         const parsed = JSON.parse(data)
+        
+        // First token: switch from connecting to streaming
+        if (parsed.type === 'token' || parsed.content) {
+          if (!this._hasStartedStreaming) {
+            this._hasStartedStreaming = true
+            events.emit('status', { status: 'streaming' })
+          }
+        }
         
         // DONE - response complete
         if (parsed.done === true || parsed.type === 'done') {
@@ -201,7 +223,44 @@ _ws.onmessage = (event) => {
 
     _ws.onclose = () => {
       _isConnected = false
-      events.emit('status', { status: 'idle' })
+      
+      // Clear heartbeat on disconnect
+      if (this.heartbeat) {
+        clearInterval(this.heartbeat)
+        this.heartbeat = null
+      }
+      
+      // Reconnect logic: max 3 attempts with exponential backoff
+      if (this.currentMessageContent && this.reconnectAttempts < 3) {
+        this.reconnectAttempts++
+        const delay = 500 * this.reconnectAttempts
+        console.log(`[ChatService] Reconnect attempt ${this.reconnectAttempts}/3 in ${delay}ms`)
+        
+        setTimeout(() => {
+          // Create NEW WebSocket connection (old one is closed)
+          const selectedModel = useUIStore.getState().selectedModel
+          const wsUrl = `ws://${window.location.hostname}:8000/ws`
+          _ws = new WebSocket(wsUrl)
+          
+          _ws.onopen = () => {
+            _isConnected = true
+            // Flush queue on reconnect too!
+            this.flushQueue()
+            // Re-send the message that was in progress
+            if (this.currentMessageContent) {
+              _ws?.send(JSON.stringify({ message_id: this.currentMessageId, message: this.currentMessageContent, model: selectedModel }))
+            }
+          }
+          
+          // If reconnect also fails, recursion handled by onclose
+        }, delay)
+      } else {
+        // All reconnect attempts failed or no message to resend
+        events.emit('status', { status: 'idle' })
+        this.reconnectAttempts = 0
+        this.currentMessageContent = ''
+        console.log('[ChatService] Reconnect failed, falling back to idle')
+      }
     }
   }
 
@@ -225,7 +284,7 @@ _ws.onmessage = (event) => {
        })
     } catch (error) {
       this.emitToHandlers({
-        id: `generateId()`,
+        id: generateId(),
         role: 'assistant',
         content: error instanceof Error ? error.message : 'Connection failed',
         status: 'error',
