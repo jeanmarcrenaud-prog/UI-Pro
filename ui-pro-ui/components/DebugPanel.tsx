@@ -71,6 +71,11 @@ export function DebugPanel({
     }
   }, [logs, isOpen])
   
+  // Debug: log when status changes
+  useEffect(() => {
+    console.log('[DebugPanel] Status:', status, 'steps:', steps.length)
+  }, [status, steps])
+  
   const closeFn = useCallback(() => {
     if (onClose) onClose()
     else if (onToggle) onToggle()

@@ -13,6 +13,7 @@ export interface Message {
   content: string
   status?: MessageStatus
   timestamp?: string
+  done?: boolean
 }
 
 export interface AgentStep {
@@ -20,6 +21,18 @@ export interface AgentStep {
   title: string
   detail?: string
   status: AgentStepStatus
+}
+
+// UseChat hook return type
+export interface UseChatReturn {
+  messages: Message[]
+  isLoading: boolean
+  error: string | null
+  isActive: boolean
+  currentStep: AgentStep | undefined
+  steps: AgentStep[]
+  sendMessage: (content: string) => void
+  clear: () => void
 }
 
 export interface AgentMessage extends Message {
