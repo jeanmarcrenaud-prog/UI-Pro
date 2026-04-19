@@ -187,8 +187,8 @@ class ChatService {
           return
         }
         
-        // TOKEN - streaming content
-        const text = parsed.content
+        // TOKEN - streaming content (handle both response and thinking fields)
+        const text = parsed.content || parsed.thinking
         if (text && typeof text === 'string') {
           this.currentContent += text
           this.buffer += text
