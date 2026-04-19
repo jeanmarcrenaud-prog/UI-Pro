@@ -4,7 +4,7 @@ type EventHandler<T = unknown> = (data: T) => void
 interface EventMap {
   // Chat events
   message: { role: 'user' | 'assistant'; content: string }
-  status: { status: 'idle' | 'connecting' | 'streaming' | 'error' }
+  status: { status: 'idle' | 'connecting' | 'streaming' | 'error' | 'reconnecting' }
   
   // Agent events
   agentStep: { stepId: string; status: 'pending' | 'active' | 'done' }
