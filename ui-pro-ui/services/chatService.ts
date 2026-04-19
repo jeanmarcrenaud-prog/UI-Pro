@@ -106,11 +106,10 @@ _ws.onmessage = (event) => {
         }
         
         // STEP - emit step event
-        if (parsed.type === 'step') {
-          events.emit('agentStep', { 
-            stepId: parsed.step_id, 
-            status: parsed.status
-          })
+        if (parsed.type === 'step' || parsed.step_id || parsed.step) {
+          const stepId = parsed.step_id || parsed.step || 'unknown'
+          const status = parsed.status || 'active'
+          events.emit('agentStep', { stepId, status })
           return
         }
         
