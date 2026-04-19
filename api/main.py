@@ -323,16 +323,21 @@ async def ws_endpoint(ws: WebSocket):
                 }))
                 
                 async for chunk in stream_service.stream_generate(task, model=selected_model):
-                    # Send the chunk
-                    await ws.send_text(json.dumps(chunk.to_dict()))
+                    # Standardized format: type + content
+                    chunk_text = chunk.text if hasattr(chunk, 'text') else ''
+                    if chunk_text:
+                        await ws.send_text(json.dumps({
+                            "type": "token",
+                            "content": chunk_text,
+                            "done": False
+                        }))
                     
-                    # Also emit to log subscribers
-                    for log_ws in _log_subscriptions:
+                    # Also emit to log subscribers (safe iteration)
+                    for log_ws in list(_log_subscriptions):
                         try:
                             await log_ws.send_text(json.dumps({
                                 "type": "log",
-                                "message": chunk.text[:100] if chunk.text else "",
-                                "status": chunk.status.value
+                                "message": chunk_text[:100] if chunk_text else "",
                             }))
                         except Exception:
                             pass
