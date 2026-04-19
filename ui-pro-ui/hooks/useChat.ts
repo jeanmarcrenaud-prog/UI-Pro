@@ -90,7 +90,8 @@ export const useChat = (): UseChatReturn => {
     isCompletedRef.current = false
     contentRef.current = ''  // Single source of truth
     
-    // Store message ID for filtering
+    // Generate message ID first for consistent filtering
+    const messageId = generateId()
     currentMessageIdRef.current = messageId
     
     // Clear previous handler to prevent double updates
