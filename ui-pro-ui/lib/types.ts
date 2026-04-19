@@ -34,6 +34,7 @@ export interface UseChatReturn {
   steps: AgentStep[]
   sendMessage: (content: string) => void
   clear: () => void
+  cancel: () => void
 }
 
 export interface AgentMessage extends Message {
