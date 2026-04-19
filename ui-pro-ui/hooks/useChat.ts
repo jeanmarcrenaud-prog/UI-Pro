@@ -58,24 +58,35 @@ export const useChat = (): UseChatReturn => {
   // Track if component is mounted
   const isActiveRef = useRef(true)
   
+  // Safety timeout ref
+  const safetyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  
+  // RAF for batching updates (60fps max)
+  const rafRef = useRef<number | null>(null)
+  
   // Store references to avoid stale closures
   const stepsRef = useRef(steps)
   stepsRef.current = steps  // Sync outside useEffect
 
-  // Single listener registration
+  // Single listener registration with guard
   useEffect(() => {
     const handleStep = (data: { stepId: string; status: 'pending' | 'active' | 'done' }) => {
       useChatStore.getState().addLog(`🔄 Step: ${data.stepId} → ${data.status}`)
       updateStepRef.current(data.stepId, data.status)
     }
     
+    // Remove first to avoid duplicate listeners
+    events.off('agentStep', handleStep)
     events.on('agentStep', handleStep)
     
     return () => {
       events.off('agentStep', handleStep)
-      // Cleanup handler on unmount
+      // Cleanup handler and timeout on unmount
       isActiveRef.current = false
       handlerCleanupRef.current?.()
+      handlerCleanupRef.current = null
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
+      if (safetyTimeoutRef.current) clearTimeout(safetyTimeoutRef.current)
     }
   }, []) // Empty deps - only run once
 
@@ -121,8 +132,8 @@ export const useChat = (): UseChatReturn => {
     
     try {
       handlerCleanupRef.current = chatService.onMessage((msg: Message) => {
-        // Safety: ignore if unmounted
-        if (!isActiveRef.current) return
+        // Safety: ignore if unmounted or already completed
+        if (!isActiveRef.current || isCompletedRef.current) return
         
         // Filter by message_id if available (robust check)
         if (msg.message_id && currentMessageIdRef.current && msg.message_id !== currentMessageIdRef.current) {
@@ -149,8 +160,13 @@ export const useChat = (): UseChatReturn => {
           // Sync tokenCount to store
           useChatStore.getState().setTokenCount(charCount)
           
-          // Update message - always use function for stability
-          updateMessageById(assistantId, () => contentRef.current, 'streaming')
+          // Update message - use RAF for batching (60fps max)
+          if (!rafRef.current) {
+            rafRef.current = requestAnimationFrame(() => {
+              updateMessageById(assistantId, () => contentRef.current, 'streaming')
+              rafRef.current = null
+            })
+          }
           
           // Advance step when first token arrives
           if (!hasSwitchedStepRef.current) {
@@ -163,11 +179,24 @@ export const useChat = (): UseChatReturn => {
         // Done - single source, prevent double
         if ((msg.done === true || msg.status === 'done') && !isCompletedRef.current) {
           isCompletedRef.current = true
+          // Flush any pending RAF
+          if (rafRef.current) {
+            cancelAnimationFrame(rafRef.current)
+            rafRef.current = null
+          }
+          // Clear safety timeout
+          if (safetyTimeoutRef.current) {
+            clearTimeout(safetyTimeoutRef.current)
+            safetyTimeoutRef.current = null
+          }
           updateMessageById(assistantId, () => contentRef.current, 'done')
           handlerCleanupRef.current?.()
           handlerCleanupRef.current = null
-          // Mark all steps done
-          stepsRef.current.forEach(s => updateStep(s.id, 'done'))
+          // Mark all steps done properly
+          const currentSteps = useAgentStore.getState().steps
+          currentSteps.forEach(s => {
+            if (s.status !== 'done') updateStep(s.id, 'done')
+          })
           useChatStore.getState().saveToHistory()
           useChatStore.getState().addLog(`✅ Done! ${charCount} chars`)
           setLoading(false)
@@ -186,8 +215,9 @@ export const useChat = (): UseChatReturn => {
       isSendingRef.current = false
     }
     
-    // Safety timeout - force unlock if something goes wrong
-    setTimeout(() => {
+    // Safety timeout - force unlock if something goes wrong (with cleanup)
+    clearTimeout(safetyTimeoutRef.current || undefined)
+    safetyTimeoutRef.current = setTimeout(() => {
       if (isSendingRef.current && !isCompletedRef.current) {
         console.warn('[useChat] Safety: force unlock stuck state')
         isSendingRef.current = false
@@ -196,6 +226,9 @@ export const useChat = (): UseChatReturn => {
   }, [addMessage, updateMessageById, setLoading, setError, start, updateStep, reset])
 
   const clear = useCallback(() => {
+    // Cleanup first
+    if (rafRef.current) cancelAnimationFrame(rafRef.current)
+    if (safetyTimeoutRef.current) clearTimeout(safetyTimeoutRef.current)
     // Deactivate first to prevent race with incoming messages
     isActiveRef.current = false
     // Cleanup handler on clear
@@ -208,11 +241,15 @@ export const useChat = (): UseChatReturn => {
   
   // Expose cancel for external use
   const cancel = useCallback(() => {
+    // Invalidate stream first to prevent race
+    isCompletedRef.current = true
+    currentMessageIdRef.current = ''
     chatService.cancel()
     handlerCleanupRef.current?.()
     handlerCleanupRef.current = null
+    if (safetyTimeoutRef.current) clearTimeout(safetyTimeoutRef.current)
+    if (rafRef.current) cancelAnimationFrame(rafRef.current)
     isSendingRef.current = false
-    isCompletedRef.current = true
     setLoading(false)
   }, [setLoading])
 
