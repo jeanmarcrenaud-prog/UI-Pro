@@ -1,10 +1,13 @@
-from fastapi import FastAPI, WebSocket, Request, HTTPException, Depends
+from fastapi import FastAPI, WebSocket, Request, WebSocketDisconnect, HTTPException, Depends
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
+from typing import Optional
 import logging
 import json
 import time
 import asyncio
+import httpx
+import uuid
 
 logging.getLogger("transformers").setLevel(logging.ERROR)
 logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
@@ -24,6 +27,31 @@ except Exception:
 
 # API Key authentication
 API_KEY_HEADER = "x-api-key"
+SESSION_TTL = 3600  # 1 hour TTL for sessions (in seconds)
+MAX_MESSAGES = 20  # Max messages per session to prevent memory bloat
+MAX_SESSIONS = 1000  # Max total sessions
+
+# Session storage with proper structure
+sessions: dict[str, dict] = {}  # session_id -> {"messages": [], "created_at": float, "last_activity": float}
+
+def _cleanup_sessions():
+    """Remove expired sessions to prevent memory leaks"""
+    import time
+    now = time.time()
+    
+    # Remove expired sessions
+    expired = [k for k, v in sessions.items() if now - v.get("last_activity", 0) > SESSION_TTL]
+    for k in expired:
+        del sessions[k]
+    if expired:
+        print(f"[SESSIONS] Cleaned up {len(expired)} expired sessions")
+    
+    # Enforce MAX_SESSIONS limit
+    if len(sessions) >= MAX_SESSIONS:
+        # Remove oldest session
+        oldest = min(sessions.items(), key=lambda x: x[1].get("last_activity", 0))
+        del sessions[oldest[0]]
+        print(f"[SESSIONS] Removed oldest session (limit reached)")
 
 # Chat request model
 class ChatRequest(BaseModel):
@@ -32,6 +60,15 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     result: str
     status: str = "success"
+
+# SSE Event model
+class StreamEvent(BaseModel):
+    """Standardized SSE event format"""
+    type: str
+    step_id: Optional[str] = None
+    data: str
+    event_id: Optional[str] = None
+    stream_id: Optional[str] = None
 
 
 def verify_api_key(request: Request) -> bool:
@@ -55,7 +92,7 @@ def verify_api_key(request: Request) -> bool:
 
 # 🚀 Charger tout depuis .env via settings
 app = FastAPI()
-sessions = {}
+# Note: sessions already defined above with proper typing
 
 
 @app.get("/")
@@ -87,36 +124,12 @@ def home(request: Request):
 
 
 @app.get("/health")
-def health_check():
-    """Health check endpoint for container orchestration"""
-    import psutil
-    
+def health():
+    """Health check - simple and fast for container orchestration"""
     return {
-        "status": "healthy",
+        "status": "ok",
         "timestamp": time.time(),
-        "version": app_config.version if hasattr(app_config, 'version') else "1.0.0",
-        "services": {
-            "api": "ok",
-            "llm": _check_ollama(),
-        },
-        "system": {
-            "cpu_percent": psutil.cpu_percent(),
-            "memory_percent": psutil.virtual_memory().percent,
-        }
     }
-
-
-def _check_ollama() -> str:
-    """Check if Ollama is reachable"""
-    import requests
-    try:
-        resp = requests.get(
-            settings.ollama_url.replace("/api/generate", "/api/tags"),
-            timeout=2
-        )
-        return "ok" if resp.status_code == 200 else "unreachable"
-    except Exception:
-        return "unreachable"
 
 
 @app.get("/status", dependencies=[Depends(verify_api_key)])
@@ -128,21 +141,28 @@ def status():
     }
 
 
-@app.get("/api/models")
-def get_models():
-    """Proxy endpoint to fetch models from Ollama (avoids CORS issues)"""
-    import requests
+@app.get("/api/models", dependencies=[Depends(verify_api_key)])
+async def get_models():
+    """Proxy endpoint to fetch models from Ollama (avoids CORS issues)
+    
+    Uses async httpx client to avoid blocking threads.
+    Requires API key auth.
+    """
     try:
         ollama_url = settings.ollama_url or "http://localhost:11434"
-        resp = requests.get(f"{ollama_url}/api/tags", timeout=5)
-        if resp.status_code == 200:
-            data = resp.json()
-            models = data.get("models", [])
-            return {
-                "models": [{"id": m["name"], "name": m["name"], "provider": "ollama"} for m in models],
-                "status": "ok"
-            }
-        return {"models": [], "status": "error", "message": "Failed to fetch models"}
+        
+        # Use async httpx client instead of blocking requests
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{ollama_url}/api/tags")
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                models = data.get("models", [])
+                return {
+                    "models": [{"id": m["name"], "name": m["name"], "provider": "ollama"} for m in models],
+                    "status": "ok"
+                }
+            return {"models": [], "status": "error", "message": f"HTTP {resp.status_code}"}
     except Exception as e:
         return {"models": [], "status": "error", "message": str(e)}
 
@@ -157,7 +177,7 @@ def get_default_model():
 
 
 # Chat endpoint
-@app.post("/api/chat")
+@app.post("/api/chat", dependencies=[Depends(verify_api_key)])
 def chat(request: ChatRequest):
     """Chat with the agent"""
     try:
@@ -202,6 +222,13 @@ _log_subscriptions: set = set()
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
+    """WebSocket endpoint with proper auth and session management"""
+    # API key authentication
+    if app_config.api.api_key:
+        provided_key = ws.headers.get(API_KEY_HEADER, "")
+        if provided_key != app_config.api.api_key:
+            await ws.close(code=1008, message="Invalid API key")
+            return
     """WebSocket endpoint for real-time streaming with log events
     
     Accepts: JSON {message: "...", model?: "..."}
@@ -214,20 +241,37 @@ async def ws_endpoint(ws: WebSocket):
     """
     await ws.accept()
     
-    # Use client info safely
-    client_info = str(ws.client.host) if ws.client.host else "unknown"
-    session_id = f"{client_info}-{len(sessions)}"
-    sessions[session_id] = []
+    # Use client info safely with UUID to avoid collisions
+    client_info = str(ws.client.host) if ws.client and ws.client.host else "unknown"
+    session_id = f"{client_info}-{uuid.uuid4().hex[:8]}"
+    
+    # Register session with proper structure
+    now = time.time()
+    sessions[session_id] = {"messages": [], "created_at": now, "last_activity": now}
     
     # Logger for this session
     session_logger = logging.getLogger(f"session.{session_id}")
     
+    # Track cleanup timing
+    last_cleanup = time.time()
+    
     try:
         while True:
+            # Periodic cleanup every 60 seconds to prevent memory leaks
+            now = time.time()
+            if now - last_cleanup > 60:
+                _cleanup_sessions()
+                last_cleanup = now
+            
             if session_id in sessions:
                 # Receive message as JSON
                 data = await ws.receive_text()
-                sessions[session_id].append(data)
+                sessions[session_id]["messages"].append(data)
+                sessions[session_id]["last_activity"] = time.time()  # Update activity
+                
+                # Enforce message limit
+                if len(sessions[session_id]["messages"]) > MAX_MESSAGES:
+                    sessions[session_id]["messages"] = sessions[session_id]["messages"][-MAX_MESSAGES:]
                 
                 # Parse JSON to extract message and model
                 try:
