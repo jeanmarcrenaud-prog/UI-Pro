@@ -114,8 +114,8 @@ _ws.onmessage = (event) => {
         }
         
         // TOKEN - streaming content extraction
-        // Format: {"model":..., "response": "...", "done": false}
-        const text = parsed.response
+        // Standardized format: {"type": "token", "content": "...", "done": false}
+        const text = parsed.content || parsed.response
         if (text && typeof text === 'string') {
           this.currentContent += text
           this.emitToHandlers({
