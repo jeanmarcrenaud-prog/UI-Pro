@@ -43,8 +43,18 @@ export const useChat = (): UseChatReturn => {
   // Track if we've already switched from thinking to streaming step
   const hasSwitchedStepRef = useRef(false)
   
+  // Current message ID for filtering multi-stream
+  const currentMessageIdRef = { current: '' }
+  
   // GLOBAL CLEANUP: store handler cleanup for unmount/cancel
   const handlerCleanupRef = useRef<(() => void) | null>(null)
+  
+  // Track if component is mounted to prevent updates after unmount
+  const isActiveRef = useRef(true)
+  
+  // UI buffer for smooth streaming (avoid re-render on every chunk)
+  const uiBufferRef = { current: '' }
+  const flushTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   
   // Store references to avoid stale closures
   const stepsRef = useRef(steps)
@@ -61,7 +71,8 @@ export const useChat = (): UseChatReturn => {
     
     return () => {
       events.off('agentStep', handleStep)
-      // Also cleanup handler on unmount
+      // Mark inactive and cleanup handler on unmount
+      isActiveRef.current = false
       handlerCleanupRef.current?.()
     }
   }, []) // Empty deps - only run once
@@ -73,6 +84,9 @@ export const useChat = (): UseChatReturn => {
     // Acquire lock
     isSendingRef.current = true
     hasSwitchedStepRef.current = false
+    // Store message ID for multi-stream filtering
+    const messageId = generateId()
+    currentMessageIdRef.current = messageId
 
     // Reset and start fresh
     reset()
@@ -101,8 +115,13 @@ export const useChat = (): UseChatReturn => {
     try {
       // Register handler and store cleanup for unmount
       handlerCleanupRef.current = chatService.onMessage((msg: Message) => {
-        // Future-proof: ignore non-assistant messages
-        if (msg.role !== 'assistant') return
+        // Safety: ignore if unmounted
+        if (!isActiveRef.current) return
+        
+        // Future-proof: filter by message_id for multi-stream support
+        if (msg.message_id && msg.message_id !== currentMessageIdRef.current) {
+          return
+        }
         
         // Handle error status
         if (msg.status === 'error') {
@@ -119,15 +138,19 @@ export const useChat = (): UseChatReturn => {
           charCount += msg.content.length
           // Use ref for O(1) append (not O(n) string concat)
           contentRef.current += msg.content
+          // Buffer UI updates for smooth rendering (avoid re-render on every chunk)
+          uiBufferRef.current += msg.content
           // Sync tokenCount to store for DebugPanel
           useChatStore.getState().setTokenCount(charCount)
           
-          // CRITICAL FIX: Use updateMessageById with deterministic assistantId
-          updateMessageById(
-            assistantId,
-            () => contentRef.current,
-            'streaming'
-          )
+          // Flush buffer every 30ms for smooth UX
+          clearTimeout(flushTimeoutRef.current || undefined)
+          flushTimeoutRef.current = setTimeout(() => {
+            if (uiBufferRef.current) {
+              updateMessageById(assistantId, () => contentRef.current, 'streaming')
+              uiBufferRef.current = ''
+            }
+          }, 30)
           
           // Advance step when first token arrives (only once)
           const currentSteps = stepsRef.current
@@ -141,6 +164,12 @@ export const useChat = (): UseChatReturn => {
         
         // Done - check backend status field
         if (msg.done === true || msg.status === 'done') {
+          // Flush remaining buffer
+          clearTimeout(flushTimeoutRef.current || undefined)
+          if (uiBufferRef.current) {
+            updateMessageById(assistantId, () => contentRef.current, 'streaming')
+            uiBufferRef.current = ''
+          }
           handlerCleanupRef.current?.()
           // Mark all steps done
           stepsRef.current.forEach(s => updateStep(s.id, 'done'))
@@ -166,7 +195,9 @@ export const useChat = (): UseChatReturn => {
 
   const clear = useCallback(() => {
     // Cleanup on clear too
+    clearTimeout(flushTimeoutRef.current || undefined)
     handlerCleanupRef.current?.()
+    isActiveRef.current = false
     clearMessages()
     reset()
     setError(null)

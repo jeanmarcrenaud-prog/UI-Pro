@@ -152,6 +152,7 @@ class ChatService {
               role: 'assistant',
               content: this.buffer,
               status: 'streaming',
+              message_id: this.currentMessageId || undefined,
             })
             this.buffer = ''
           }
@@ -160,6 +161,7 @@ class ChatService {
             role: 'assistant',
             content: this.currentContent,
             status: 'done',
+            message_id: this.currentMessageId || undefined,
           })
           events.emit('status', { status: 'idle' })
           return
@@ -182,6 +184,7 @@ class ChatService {
             role: 'assistant',
             content: parsed.message || 'Server error',
             status: 'error',
+            message_id: this.currentMessageId || undefined,
           })
           events.emit('status', { status: 'error' })
           return
@@ -201,6 +204,7 @@ class ChatService {
                 role: 'assistant',
                 content: this.buffer,
                 status: 'streaming',
+                message_id: this.currentMessageId || undefined,
               })
               this.buffer = ''
             }
@@ -292,6 +296,7 @@ class ChatService {
           role: 'assistant',
           content: this.buffer,
           status: 'streaming',
+          message_id: this.currentMessageId || undefined,
         })
         this.buffer = ''
       }

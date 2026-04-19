@@ -14,6 +14,7 @@ export interface Message {
   status?: MessageStatus
   timestamp?: string
   done?: boolean
+  message_id?: string  // For WebSocket deduplication
 }
 
 export interface AgentStep {
