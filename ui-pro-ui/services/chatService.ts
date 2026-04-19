@@ -388,7 +388,7 @@ class ChatService {
     events.emit('status', { status: 'idle' })
   }
 
-  async sendMessage(content: string): Promise<void> {
+  async sendMessage(content: string, messageId?: string): Promise<void> {
     const selectedModel = useUIStore.getState().selectedModel
     console.log('[ChatService] 📤 sendMessage:', content.substring(0, 30))
     
@@ -398,9 +398,8 @@ class ChatService {
       return
     }
     
-    // Generate unique message ID for tracking
-    const messageId = generateId()
-    this.currentMessageId = messageId
+    // Use provided messageId or generate new one
+    this.currentMessageId = messageId || generateId()
     this.currentContent = ''
     this.currentMessageContent = ''
     this._hasStartedStreaming = false

@@ -91,7 +91,7 @@ export const useChat = (): UseChatReturn => {
     contentRef.current = ''  // Single source of truth
     
     // Store message ID for filtering
-    currentMessageIdRef.current = generateId()
+    currentMessageIdRef.current = messageId
     
     // Clear previous handler to prevent double updates
     handlerCleanupRef.current?.()
@@ -130,7 +130,7 @@ export const useChat = (): UseChatReturn => {
         
         // Handle error status
         if (msg.status === 'error') {
-          updateMessageById(assistantId, msg.content, 'error')
+          updateMessageById(assistantId, () => msg.content, 'error')
           handlerCleanupRef.current?.()
           setLoading(false)
           isSendingRef.current = false
@@ -146,8 +146,8 @@ export const useChat = (): UseChatReturn => {
           // Sync tokenCount to store
           useChatStore.getState().setTokenCount(charCount)
           
-          // Update message - always use full content (single source)
-          updateMessageById(assistantId, contentRef.current, 'streaming')
+          // Update message - always use function for stability
+          updateMessageById(assistantId, () => contentRef.current, 'streaming')
           
           // Advance step when first token arrives
           const currentSteps = stepsRef.current
@@ -162,7 +162,7 @@ export const useChat = (): UseChatReturn => {
         // Done - single source, prevent double
         if ((msg.done === true || msg.status === 'done') && !isCompletedRef.current) {
           isCompletedRef.current = true
-          updateMessageById(assistantId, contentRef.current, 'done')
+          updateMessageById(assistantId, () => contentRef.current, 'done')
           handlerCleanupRef.current?.()
           // Mark all steps done
           stepsRef.current.forEach(s => updateStep(s.id, 'done'))
@@ -173,8 +173,8 @@ export const useChat = (): UseChatReturn => {
         }
       })
 
-      // Send message
-      chatService.sendMessage(content)
+      // Send message with messageId for consistent filtering
+      chatService.sendMessage(content, messageId)
       
     } catch (err) {
       handlerCleanupRef.current?.()
@@ -185,6 +185,8 @@ export const useChat = (): UseChatReturn => {
   }, [addMessage, updateMessageById, setLoading, setError, start, updateStep, reset])
 
   const clear = useCallback(() => {
+    // Deactivate first to prevent race with incoming messages
+    isActiveRef.current = false
     // Cleanup handler on clear
     handlerCleanupRef.current?.()
     clearMessages()
