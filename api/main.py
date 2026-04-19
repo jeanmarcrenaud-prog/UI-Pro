@@ -311,6 +311,7 @@ async def ws_endpoint(ws: WebSocket):
                     task = data
                     model = None
                     msg_id = None
+                    last_chunk = 0
                     chunk_index = 0
                     print(f"[WS] Plain text received, model: {model}")
                 
@@ -358,6 +359,11 @@ async def ws_endpoint(ws: WebSocket):
                 }))
                 
                 async for chunk in stream_service.stream_generate(task, model=selected_model):
+                    # Skip chunks we've already sent (resume support)
+                    if chunk_index <= last_chunk:
+                        if chunk.text:
+                            chunk_index += 1
+                        continue
                     # Standardized format: type + content + message_id + chunk_index
                     chunk_text = chunk.text if hasattr(chunk, 'text') else ''
                     if chunk_text:
