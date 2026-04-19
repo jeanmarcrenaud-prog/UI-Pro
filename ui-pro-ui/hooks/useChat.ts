@@ -40,20 +40,14 @@ export const useChat = (): UseChatReturn => {
   // Lock to prevent race condition on rapid sends
   const isSendingRef = useRef(false)
   
-  // Track if we've already switched from thinking to streaming step
+// Track if we've already switched from thinking to streaming step
   const hasSwitchedStepRef = useRef(false)
   
-  // Current message ID for filtering multi-stream
-  const currentMessageIdRef = { current: '' }
+  // Current message ID for filtering multi-stream (must be useRef for persistence)
+  const currentMessageIdRef = useRef('')
   
-  // GLOBAL CLEANUP: store handler cleanup for unmount/cancel
-  const handlerCleanupRef = useRef<(() => void) | null>(null)
-  
-  // Track if component is mounted to prevent updates after unmount
-  const isActiveRef = useRef(true)
-  
-  // UI buffer for smooth streaming (avoid re-render on every chunk)
-  const uiBufferRef = { current: '' }
+  // UI buffer for smooth streaming (must be useRef for persistence)
+  const uiBufferRef = useRef('')
   const flushTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   
   // Store references to avoid stale closures
@@ -82,11 +76,15 @@ export const useChat = (): UseChatReturn => {
     if (isSendingRef.current || !content.trim()) return
 
     // Acquire lock
+    if (isSendingRef.current) return
     isSendingRef.current = true
     hasSwitchedStepRef.current = false
+    isActiveRef.current = true  // Reset active state after clear()
     // Store message ID for multi-stream filtering
-    const messageId = generateId()
-    currentMessageIdRef.current = messageId
+    currentMessageIdRef.current = generateId()
+    
+    // Clear previous handler to prevent double updates
+    handlerCleanupRef.current?.()
 
     // Reset and start fresh
     reset()
@@ -194,10 +192,9 @@ export const useChat = (): UseChatReturn => {
   }, [addMessage, updateMessageById, setLoading, setError, start, updateStep, reset])
 
   const clear = useCallback(() => {
-    // Cleanup on clear too
+    // Cleanup on clear (but don't deactivate - reset will handle it)
     clearTimeout(flushTimeoutRef.current || undefined)
     handlerCleanupRef.current?.()
-    isActiveRef.current = false
     clearMessages()
     reset()
     setError(null)
