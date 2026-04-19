@@ -275,9 +275,8 @@ class ChatService {
 
     // Reuse message handler
     this.attachMessageHandler(ws)
-  }
-
-  // Just log errors, let onclose handle reconnection
+    
+    // Just log errors, let onclose handle reconnection
     ws.onerror = () => {
       console.warn('[ChatService] WebSocket error')
     }
