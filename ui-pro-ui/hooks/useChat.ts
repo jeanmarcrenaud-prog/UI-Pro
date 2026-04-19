@@ -43,33 +43,26 @@ export const useChat = (): UseChatReturn => {
   // Track if we've already switched from thinking to streaming step
   const hasSwitchedStepRef = useRef(false)
   
-  // Current message ID for filtering multi-stream (must be useRef for persistence)
+  // Current message ID for filtering
   const currentMessageIdRef = useRef('')
   
-  // Track if stream is completed (prevent double done)
+  // Track if stream is completed
   const isCompletedRef = useRef(false)
   
-  // Accumulate content in ref for O(1) append
+  // Single source of truth for content
   const contentRef = useRef('')
-  
-  // Track last flushed length for diff streaming
-  const lastFlushedLengthRef = useRef(0)
   
   // GLOBAL CLEANUP: store handler cleanup for unmount/cancel
   const handlerCleanupRef = useRef<(() => void) | null>(null)
   
-  // Track if component is mounted to prevent updates after unmount
+  // Track if component is mounted
   const isActiveRef = useRef(true)
-  
-  // UI buffer for smooth streaming (must be useRef for persistence)
-  const uiBufferRef = useRef('')
-  const flushTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   
   // Store references to avoid stale closures
   const stepsRef = useRef(steps)
   stepsRef.current = steps  // Sync outside useEffect
 
-  // Single listener registration (not dependent on steps)
+  // Single listener registration
   useEffect(() => {
     const handleStep = (data: { stepId: string; status: 'pending' | 'active' | 'done' }) => {
       useChatStore.getState().addLog(`🔄 Step: ${data.stepId} → ${data.status}`)
@@ -80,26 +73,24 @@ export const useChat = (): UseChatReturn => {
     
     return () => {
       events.off('agentStep', handleStep)
-      // Mark inactive and cleanup handler on unmount
+      // Cleanup handler on unmount
       isActiveRef.current = false
       handlerCleanupRef.current?.()
     }
   }, []) // Empty deps - only run once
 
   const sendMessage = useCallback(async (content: string) => {
-    // Prevent race condition - single guard is enough
+    // Single guard check
     if (isSendingRef.current || !content.trim()) return
 
-    // Acquire lock
-    if (isSendingRef.current || !content.trim()) return
+    // Acquire lock and reset state
     isSendingRef.current = true
     hasSwitchedStepRef.current = false
-    isActiveRef.current = true  // Reset active state after clear()
-    isCompletedRef.current = false  // Reset completion flag
-    contentRef.current = ''  // Reset content
-    lastFlushedLengthRef.current = 0  // Reset flush length
+    isActiveRef.current = true
+    isCompletedRef.current = false
+    contentRef.current = ''  // Single source of truth
     
-    // Store message ID for multi-stream filtering
+    // Store message ID for filtering
     currentMessageIdRef.current = generateId()
     
     // Clear previous handler to prevent double updates
@@ -111,7 +102,7 @@ export const useChat = (): UseChatReturn => {
     // User message  
     addMessage({ role: 'user', content, id: generateId() })
     
-    // CRITICAL: Generate and store assistant ID at creation time (deterministic)
+    // Assistant placeholder with deterministic ID
     const assistantId = generateId()
     addMessage({ role: 'assistant', content: '', status: 'thinking', id: assistantId })
     setLoading(true)
@@ -128,19 +119,18 @@ export const useChat = (): UseChatReturn => {
     let charCount = 0
     
     try {
-      // Register handler and store cleanup for unmount
       handlerCleanupRef.current = chatService.onMessage((msg: Message) => {
         // Safety: ignore if unmounted
         if (!isActiveRef.current) return
         
-        // Future-proof: filter by message_id for multi-stream support
-        if (msg.message_id && msg.message_id !== currentMessageIdRef.current) {
+        // Filter by message_id if available (robust check)
+        if (msg.message_id && currentMessageIdRef.current && msg.message_id !== currentMessageIdRef.current) {
           return
         }
         
         // Handle error status
         if (msg.status === 'error') {
-          updateMessageById(assistantId, () => msg.content, 'error')
+          updateMessageById(assistantId, msg.content, 'error')
           handlerCleanupRef.current?.()
           setLoading(false)
           isSendingRef.current = false
@@ -148,29 +138,18 @@ export const useChat = (): UseChatReturn => {
           return
         }
         
-        // Update chars - use content length
+        // Update chars
         if (msg.content && msg.content.length > 0) {
           charCount += msg.content.length
-          // Use ref for O(1) append (not O(n) string concat)
+          // Single source of truth: just accumulate
           contentRef.current += msg.content
-          // Buffer UI updates for smooth rendering (avoid re-render on every chunk)
-          uiBufferRef.current += msg.content
-          // Sync tokenCount to store for DebugPanel
+          // Sync tokenCount to store
           useChatStore.getState().setTokenCount(charCount)
           
-          // Flush buffer every 30ms for smooth UX (diff streaming)
-          clearTimeout(flushTimeoutRef.current || undefined)
-          flushTimeoutRef.current = setTimeout(() => {
-            if (uiBufferRef.current) {
-              // Diff streaming: only append new content
-              const newChunk = contentRef.current.slice(lastFlushedLengthRef.current)
-              lastFlushedLengthRef.current = contentRef.current.length
-              updateMessageById(assistantId, prev => prev + newChunk, 'streaming')
-              uiBufferRef.current = ''
-            }
-          }, 30)
+          // Update message - always use full content (single source)
+          updateMessageById(assistantId, contentRef.current, 'streaming')
           
-          // Advance step when first token arrives (only once)
+          // Advance step when first token arrives
           const currentSteps = stepsRef.current
           const currentActive = currentSteps.find(s => s.status === 'active')
           if (currentActive?.id === 'step-analyzing' && !hasSwitchedStepRef.current) {
@@ -180,23 +159,16 @@ export const useChat = (): UseChatReturn => {
           }
         }
         
-        // Done - check backend status field (prevent double done)
+        // Done - single source, prevent double
         if ((msg.done === true || msg.status === 'done') && !isCompletedRef.current) {
           isCompletedRef.current = true
-          // Flush remaining buffer (diff streaming)
-          clearTimeout(flushTimeoutRef.current || undefined)
-          if (uiBufferRef.current) {
-            const newChunk = contentRef.current.slice(lastFlushedLengthRef.current)
-            updateMessageById(assistantId, prev => prev + newChunk, 'streaming')
-            uiBufferRef.current = ''
-          }
+          updateMessageById(assistantId, contentRef.current, 'done')
           handlerCleanupRef.current?.()
           // Mark all steps done
           stepsRef.current.forEach(s => updateStep(s.id, 'done'))
           useChatStore.getState().saveToHistory()
           useChatStore.getState().addLog(`✅ Done! ${charCount} chars`)
           setLoading(false)
-          // Release lock
           isSendingRef.current = false
         }
       })
@@ -208,14 +180,12 @@ export const useChat = (): UseChatReturn => {
       handlerCleanupRef.current?.()
       setError(err instanceof Error ? err.message : 'Error')
       setLoading(false)
-      // Release lock on error
       isSendingRef.current = false
     }
   }, [addMessage, updateMessageById, setLoading, setError, start, updateStep, reset])
 
   const clear = useCallback(() => {
-    // Cleanup on clear (but don't deactivate - reset will handle it)
-    clearTimeout(flushTimeoutRef.current || undefined)
+    // Cleanup handler on clear
     handlerCleanupRef.current?.()
     clearMessages()
     reset()
