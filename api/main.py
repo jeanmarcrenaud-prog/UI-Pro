@@ -227,7 +227,7 @@ async def ws_endpoint(ws: WebSocket):
     if app_config.api.api_key:
         provided_key = ws.headers.get(API_KEY_HEADER, "")
         if provided_key != app_config.api.api_key:
-            await ws.close(code=1008, message="Invalid API key")
+            await ws.close(code=1008)
             return
     """WebSocket endpoint for real-time streaming with log events
     
