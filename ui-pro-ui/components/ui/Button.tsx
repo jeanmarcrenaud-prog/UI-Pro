@@ -119,48 +119,41 @@ export function TypingIndicator() {
     </div>
   )
 }
-// StepItem description: agent step list item with status icon
-// Status values: pending → ⏳, active → ⚙️, done → ✅
-// Left border indicator matches theme
-// Text truncates for long titles
-// Optional detail section indented
 
-export interface StepItemProps {
-  step: {
-    status: 'pending' | 'active' | 'done'
-    title: string
-    detail?: string
-  }
-  isLoading?: boolean
+// StepItem - uses shared AgentStep type from types.ts
+import type { AgentStep } from '@/lib/types'
+
+interface StepItemProps {
+  step: AgentStep
+}
+
+// Status config - consistent with agent/StepItem.tsx
+const statusConfig: Record<AgentStep['status'], { icon: string; badge: string; color: string }> = {
+  done: { icon: '✓', badge: 'done', color: 'text-emerald-400' },
+  active: { icon: '→', badge: 'active', color: 'text-violet-400' },
+  pending: { icon: '-', badge: 'pending', color: 'text-slate-500' },
+  error: { icon: '!', badge: 'error', color: 'text-red-400' },
 }
 
 export function StepItem({ step }: StepItemProps) {
-  const statusIcons: Record<string, string> = {
-    done: '✅',
-    active: '⚙️',
-    pending: '⏳',
-  }
-
-  const statusTexts: Record<string, string> = {
-    done: '✓',
-    active: '→',
-    pending: '-',
-  }
-
+  const config = statusConfig[step.status] || statusConfig.pending
+  
   return (
     <div className="flex items-start gap-3 py-1.5 -ml-3 pl-3 border-l-2 border-slate-800/50">
       {/* Status icon */}
-      <span className="flex-shrink-0 text-base">{statusIcons[step.status]}</span>
+      <span className={`flex-shrink-0 text-base ${config.color}`}>{config.icon}</span>
 
       {/* Title with optional status indicator */}
       <div className="flex-1 min-w-0">
         <span
           className={`${
-            step.status === 'active' ? 'text-white font-medium' : 'text-slate-400'
+            step.status === 'active' ? 'text-white font-medium' : step.status === 'error' ? 'text-red-300' : 'text-slate-400'
           } truncate`}
         >
           {step.title}
-          {step.status === 'active' && <span className="ml-1 text-violet-400 text-xs">(active)</span>}
+          {(step.status === 'active' || step.status === 'error') && (
+            <span className={`ml-1 text-xs ${config.color}`}>({config.badge})</span>
+          )}
         </span>
 
         {/* Optional detail */}
@@ -174,10 +167,13 @@ export function StepItem({ step }: StepItemProps) {
       {/* Status badge */}
       <span
         className={`text-xs px-2 py-0.5 rounded-full ${
-          step.status === 'done' ? 'bg-green-900/30 text-green-400' : step.status === 'active' ? 'bg-violet-900/30 text-violet-400' : 'bg-slate-800 text-slate-500'
+          step.status === 'done' ? 'bg-emerald-900/30 text-emerald-400' 
+          : step.status === 'active' ? 'bg-violet-900/30 text-violet-400'
+          : step.status === 'error' ? 'bg-red-900/30 text-red-400'
+          : 'bg-slate-800 text-slate-500'
         }`}
       >
-        {statusTexts[step.status]}
+        {config.badge}
       </span>
     </div>
   )

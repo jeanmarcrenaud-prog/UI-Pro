@@ -61,7 +61,9 @@ class ModelDiscoveryService {
     
     // Fetch default model from backend settings and use as initial selection
     try {
-      const response = await fetch('/api/settings/default-model')
+      const response = await fetch('/api/settings/default-model', {
+        signal: AbortSignal.timeout(5000),
+      })
       if (response.ok) {
         const data = await response.json()
         const defaultModel = data.model_fast
