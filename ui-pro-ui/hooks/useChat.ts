@@ -46,6 +46,15 @@ export const useChat = (): UseChatReturn => {
   // Current message ID for filtering multi-stream (must be useRef for persistence)
   const currentMessageIdRef = useRef('')
   
+  // Track if stream is completed (prevent double done)
+  const isCompletedRef = useRef(false)
+  
+  // Accumulate content in ref for O(1) append
+  const contentRef = useRef('')
+  
+  // Track last flushed length for diff streaming
+  const lastFlushedLengthRef = useRef(0)
+  
   // GLOBAL CLEANUP: store handler cleanup for unmount/cancel
   const handlerCleanupRef = useRef<(() => void) | null>(null)
   
@@ -82,10 +91,14 @@ export const useChat = (): UseChatReturn => {
     if (isSendingRef.current || !content.trim()) return
 
     // Acquire lock
-    if (isSendingRef.current) return
+    if (isSendingRef.current || !content.trim()) return
     isSendingRef.current = true
     hasSwitchedStepRef.current = false
     isActiveRef.current = true  // Reset active state after clear()
+    isCompletedRef.current = false  // Reset completion flag
+    contentRef.current = ''  // Reset content
+    lastFlushedLengthRef.current = 0  // Reset flush length
+    
     // Store message ID for multi-stream filtering
     currentMessageIdRef.current = generateId()
     
@@ -112,8 +125,6 @@ export const useChat = (): UseChatReturn => {
     start(stepsData)
     useChatStore.getState().addLog(`🚀 Starting: ${content.substring(0, 30)}...`)
 
-    // Accumulate content in ref for O(1) append (instead of O(n) string concat)
-    const contentRef = { current: '' }
     let charCount = 0
     
     try {
@@ -147,11 +158,14 @@ export const useChat = (): UseChatReturn => {
           // Sync tokenCount to store for DebugPanel
           useChatStore.getState().setTokenCount(charCount)
           
-          // Flush buffer every 30ms for smooth UX
+          // Flush buffer every 30ms for smooth UX (diff streaming)
           clearTimeout(flushTimeoutRef.current || undefined)
           flushTimeoutRef.current = setTimeout(() => {
             if (uiBufferRef.current) {
-              updateMessageById(assistantId, () => contentRef.current, 'streaming')
+              // Diff streaming: only append new content
+              const newChunk = contentRef.current.slice(lastFlushedLengthRef.current)
+              lastFlushedLengthRef.current = contentRef.current.length
+              updateMessageById(assistantId, prev => prev + newChunk, 'streaming')
               uiBufferRef.current = ''
             }
           }, 30)
@@ -166,12 +180,14 @@ export const useChat = (): UseChatReturn => {
           }
         }
         
-        // Done - check backend status field
-        if (msg.done === true || msg.status === 'done') {
-          // Flush remaining buffer
+        // Done - check backend status field (prevent double done)
+        if ((msg.done === true || msg.status === 'done') && !isCompletedRef.current) {
+          isCompletedRef.current = true
+          // Flush remaining buffer (diff streaming)
           clearTimeout(flushTimeoutRef.current || undefined)
           if (uiBufferRef.current) {
-            updateMessageById(assistantId, () => contentRef.current, 'streaming')
+            const newChunk = contentRef.current.slice(lastFlushedLengthRef.current)
+            updateMessageById(assistantId, prev => prev + newChunk, 'streaming')
             uiBufferRef.current = ''
           }
           handlerCleanupRef.current?.()
