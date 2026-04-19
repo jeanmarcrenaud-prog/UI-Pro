@@ -94,6 +94,121 @@ class ChatService {
     this._lastChunkIndex = 0
   }
 
+  // Attach message handler (reused on reconnect)
+  private attachMessageHandler(ws: WebSocket) {
+    ws.onmessage = (event) => {
+      const data = event.data
+      if (!data || !data.trim()) return
+      
+      try {
+        const parsed = JSON.parse(data)
+        
+        // Ignore pong responses
+        if (parsed.type === 'pong') {
+          return
+        }
+        
+        // Handle resume acknowledgment
+        if (parsed.type === 'resume') {
+          console.log('[ChatService] Resuming from chunk:', parsed.resuming_from)
+          return
+        }
+        
+        // Filter old messages by message_id
+        if (parsed.message_id && parsed.message_id !== this.currentMessageId) {
+          console.log('[ChatService] Ignoring old message:', parsed.message_id)
+          return
+        }
+        
+        // Filter duplicate chunks by chunk_index
+        if (parsed.chunk_index && parsed.chunk_index <= this._lastChunkIndex) {
+          console.log('[ChatService] Ignoring duplicate chunk:', parsed.chunk_index)
+          return
+        }
+        if (parsed.chunk_index) {
+          this._lastChunkIndex = parsed.chunk_index
+        }
+        
+        // First token: switch from connecting to streaming
+        if (parsed.type === 'token' || parsed.content) {
+          if (!this._hasStartedStreaming) {
+            this._hasStartedStreaming = true
+            this.streamStartTime = Date.now()
+            this.startStreamTimeout()
+            events.emit('status', { status: 'streaming' })
+          }
+          this.resetStreamTimeout()
+        }
+        
+        // DONE - response complete
+        if (parsed.done === true || parsed.type === 'done') {
+          this.clearStreamTimeout()
+          if (this.buffer) {
+            this.emitToHandlers({
+              id: generateId(),
+              role: 'assistant',
+              content: this.buffer,
+              status: 'streaming',
+            })
+            this.buffer = ''
+          }
+          this.emitToHandlers({
+            id: generateId(),
+            role: 'assistant',
+            content: this.currentContent,
+            status: 'done',
+          })
+          events.emit('status', { status: 'idle' })
+          return
+        }
+        
+        // STEP - emit step event
+        if (parsed.type === 'step' || parsed.step_id || parsed.step) {
+          this.resetStreamTimeout()
+          const stepId = parsed.step_id || parsed.step || 'unknown'
+          const status = parsed.status || 'active'
+          events.emit('agentStep', { stepId, status })
+          return
+        }
+        
+        // ERROR - handle server errors
+        if (parsed.type === 'error') {
+          this.clearStreamTimeout()
+          this.emitToHandlers({
+            id: generateId(),
+            role: 'assistant',
+            content: parsed.message || 'Server error',
+            status: 'error',
+          })
+          events.emit('status', { status: 'error' })
+          return
+        }
+        
+        // TOKEN - streaming content
+        const text = parsed.content
+        if (text && typeof text === 'string') {
+          this.currentContent += text
+          this.buffer += text
+          
+          clearTimeout(this.flushTimeout || undefined)
+          this.flushTimeout = setTimeout(() => {
+            if (this.buffer) {
+              this.emitToHandlers({
+                id: generateId(),
+                role: 'assistant',
+                content: this.buffer,
+                status: 'streaming',
+              })
+              this.buffer = ''
+            }
+          }, 30)
+        }
+      } catch (e) {
+        console.warn('[ChatService] Parse error:', e)
+      }
+    }
+  }
+
   // Clear message queue
   private clearQueue() {
     _messageQueue.length = 0
@@ -155,38 +270,8 @@ class ChatService {
       }, 15000)
     }
 
-    ws.onmessage = (event) => {
-      const data = event.data
-      if (!data || !data.trim()) return
-      
-      try {
-        const parsed = JSON.parse(data)
-        
-        // Ignore pong responses
-        if (parsed.type === 'pong') {
-          return
-        }
-        
-        // Filter old messages by message_id
-        if (parsed.message_id && parsed.message_id !== this.currentMessageId) {
-          console.log('[ChatService] Ignoring old message:', parsed.message_id)
-          return
-        }
-        
-        // Filter duplicate chunks by chunk_index
-        if (parsed.chunk_index && parsed.chunk_index <= this._lastChunkIndex) {
-          console.log('[ChatService] Ignoring duplicate chunk:', parsed.chunk_index)
-          return
-        }
-        if (parsed.chunk_index) {
-          this._lastChunkIndex = parsed.chunk_index
-        }
-        
-        // First token: switch from connecting to streaming
-        if (parsed.type === 'token' || parsed.content) {
-          if (!this._hasStartedStreaming) {
-            this._hasStartedStreaming = true
-            this.streamStartTime = Date.now()
+    // Reuse message handler
+    this.attachMessageHandler(ws)
             this.startStreamTimeout()
             events.emit('status', { status: 'streaming' })
           }
@@ -296,15 +381,46 @@ class ChatService {
         setTimeout(() => {
           // Clear queue on reconnect to avoid double send
           this.clearQueue()
-          // Reset stream state before resend to avoid duplication
-          this.resetStreamState()
+          // Reset stream state but preserve last chunk index for resume
+          this._hasStartedStreaming = false
+          this.buffer = ''
           
           // Create NEW WebSocket connection (old one is closed)
+          const selectedModel = useUIStore.getState().selectedModel
           const wsUrl = `ws://${window.location.hostname}:8000/ws`
           _ws = new WebSocket(wsUrl)
           
-          // Attach handlers to new WebSocket
-          this.attachHandlers(_ws, this.currentMessageContent)
+          // Send message with last_chunk_index for resume
+          const resumePayload = JSON.stringify({
+            message_id: this.currentMessageId,
+            message: this.currentMessageContent,
+            model: selectedModel,
+            last_chunk_index: this._lastChunkIndex
+          })
+          
+          _ws.onopen = () => {
+            _isConnected = true
+            this.reconnectAttempts = 0
+            events.emit('status', { status: 'connecting' })
+            this.queueOrSend(this.currentMessageContent)
+            this.flushQueue()
+            
+            // Send resume message
+            _ws?.send(resumePayload)
+            
+            // Start heartbeat
+            if (this.heartbeat) clearInterval(this.heartbeat)
+            this.heartbeat = setInterval(() => {
+              if (_ws?.readyState === WebSocket.OPEN) {
+                _ws.send(JSON.stringify({ type: 'ping' }))
+              } else {
+                this.clearTimers()
+              }
+            }, 15000)
+          }
+          
+          // Re-attach message handler
+          this.attachMessageHandler(_ws)
         }, delay)
       } else {
         // All reconnect attempts failed or no message to resend

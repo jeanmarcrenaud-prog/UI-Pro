@@ -290,9 +290,22 @@ async def ws_endpoint(ws: WebSocket):
                     task = msg_data.get('message', data)
                     model = msg_data.get('model')
                     msg_id = msg_data.get('message_id')  # Track for deduplication
-                    # Reset chunk_index for new message
-                    chunk_index = 0
-                    print(f"[WS] Received - message: {task[:30]}..., model: {model}, msg_id: {msg_id}")
+                    # Check for resume - client sends last_chunk_index to resume from
+                    last_chunk = msg_data.get('last_chunk_index', 0)
+                    # Reset chunk_index for new message OR resume from last
+                    chunk_index = last_chunk
+                    
+                    # Send resume acknowledgment if resuming
+                    if last_chunk > 0:
+                        await ws.send_text(json.dumps({
+                            "type": "resume",
+                            "message_id": msg_id,
+                            "resuming_from": last_chunk,
+                            "chunk_index": chunk_index
+                        }))
+                        print(f"[WS] Resuming from chunk {last_chunk}")
+                    
+                    print(f"[WS] Received - message: {task[:30]}..., model: {model}, msg_id: {msg_id}, resume_from: {last_chunk}")
                 except:
                     # Plain text fallback
                     task = data
