@@ -20,6 +20,8 @@ let _messageQueue: string[] = [] // Queue for rapid messages
 
 class ChatService {
   private currentContent = ''
+  private flushTimeout: NodeJS.Timeout | null = null
+  private buffer = ''
 
   // Process queued messages
   private flushQueue() {
@@ -82,8 +84,17 @@ class ChatService {
     _ws.onopen = () => {
       _isConnected = true
       events.emit('status', { status: 'streaming' })
-      this.queueOrSend(content) // Use queue (will flush any queued messages)
-      this.flushQueue() // Flush any pending messages
+      this.queueOrSend(content)
+      this.flushQueue()
+      
+      // Heartbeat: ping every 15 seconds to detect dead connections
+      const heartbeat = setInterval(() => {
+        if (_ws?.readyState === WebSocket.OPEN) {
+          _ws.send(JSON.stringify({ type: 'ping' }))
+        } else {
+          clearInterval(heartbeat)
+        }
+      }, 15000)
     }
 
 _ws.onmessage = (event) => {
@@ -125,17 +136,26 @@ _ws.onmessage = (event) => {
           return
         }
         
-        // TOKEN - streaming content extraction
+        // TOKEN - streaming content extraction with buffering for smooth UX
         // PROPRE: ONLY use parsed.content (standardized format)
         const text = parsed.content
         if (text && typeof text === 'string') {
           this.currentContent += text
-          this.emitToHandlers({
-            id: generateId(),
-            role: 'assistant',
-            content: text,
-            status: 'streaming',
-          })
+          this.buffer += text
+          
+          // Buffer and flush every 30ms for smooth streaming
+          clearTimeout(this.flushTimeout || undefined)
+          this.flushTimeout = setTimeout(() => {
+            if (this.buffer) {
+              this.emitToHandlers({
+                id: generateId(),
+                role: 'assistant',
+                content: this.buffer,
+                status: 'streaming',
+              })
+              this.buffer = ''
+            }
+          }, 30)
         }
       } catch (e) {
           // Skip JSON parse errors - don't display raw JSON
