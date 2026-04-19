@@ -19,14 +19,34 @@ let _messageHandlers: Set<MessageHandler> = new Set()
 let _messageQueue: string[] = [] // Queue for rapid messages
 
 class ChatService {
-  private currentContent = ''  // Accumulated response
+  private currentContent = ''  // Source of truth for accumulated response
   private currentMessageContent = ''  // Input message (for reconnect)
   private flushTimeout: ReturnType<typeof setTimeout> | null = null
-  private buffer = ''
+  private buffer = ''  // Buffer for UI flush only
   private heartbeat: ReturnType<typeof setInterval> | null = null
   private currentMessageId: string | null = null
   private reconnectAttempts = 0
   private _hasStartedStreaming = false
+  private _pendingContent = ''  // Store content for sendMessage closure
+
+  // Centralized timer cleanup
+  private clearTimers() {
+    if (this.heartbeat) {
+      clearInterval(this.heartbeat)
+      this.heartbeat = null
+    }
+    if (this.flushTimeout) {
+      clearTimeout(this.flushTimeout)
+      this.flushTimeout = null
+    }
+  }
+
+  // Reset stream state before reconnect resend
+  private resetStreamState() {
+    this._hasStartedStreaming = false
+    this.buffer = ''
+    this.currentContent = ''
+  }
 
   // Process queued messages
   private flushQueue() {
@@ -58,18 +78,160 @@ class ChatService {
     _messageHandlers.forEach(h => h(msg))
   }
 
+  // Attach handlers to WebSocket (reusable for initial + reconnect)
+  private attachHandlers(ws: WebSocket, content: string) {
+    // Store for reconnect
+    this._pendingContent = content
+    
+    ws.onopen = () => {
+      _isConnected = true
+      events.emit('status', { status: 'connecting' })
+      this.currentMessageContent = content
+      this.queueOrSend(content)
+      this.flushQueue()
+      
+      // Clear any existing heartbeat and start new one
+      if (this.heartbeat) clearInterval(this.heartbeat)
+      this.heartbeat = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'ping' }))
+        } else {
+          this.clearTimers()
+        }
+      }, 15000)
+    }
+
+    ws.onmessage = (event) => {
+      const data = event.data
+      if (!data || !data.trim()) return
+      
+      try {
+        const parsed = JSON.parse(data)
+        
+        // Filter old messages by message_id
+        if (parsed.message_id && parsed.message_id !== this.currentMessageId) {
+          console.log('[ChatService] Ignoring old message:', parsed.message_id)
+          return
+        }
+        
+        // First token: switch from connecting to streaming
+        if (parsed.type === 'token' || parsed.content) {
+          if (!this._hasStartedStreaming) {
+            this._hasStartedStreaming = true
+            events.emit('status', { status: 'streaming' })
+          }
+        }
+        
+        // DONE - response complete
+        if (parsed.done === true || parsed.type === 'done') {
+          // Flush remaining buffer to UI (DO NOT add to currentContent - it's already there)
+          if (this.buffer) {
+            this.emitToHandlers({
+              id: generateId(),
+              role: 'assistant',
+              content: this.buffer,
+              status: 'streaming',
+            })
+            this.buffer = ''
+          }
+          this.emitToHandlers({
+            id: generateId(),
+            role: 'assistant',
+            content: this.currentContent,
+            status: 'done',
+          })
+          events.emit('status', { status: 'idle' })
+          return
+        }
+        
+        // STEP - emit step event
+        if (parsed.type === 'step' || parsed.step_id || parsed.step) {
+          const stepId = parsed.step_id || parsed.step || 'unknown'
+          const status = parsed.status || 'active'
+          events.emit('agentStep', { stepId, status })
+          return
+        }
+        
+        // ERROR - handle server errors
+        if (parsed.type === 'error') {
+          this.emitToHandlers({
+            id: generateId(),
+            role: 'assistant',
+            content: parsed.message || 'Server error',
+            status: 'error',
+          })
+          events.emit('status', { status: 'error' })
+          return
+        }
+        
+        // TOKEN - streaming content extraction with buffering for smooth UX
+        // Buffer for UI flush ONLY, currentContent is source of truth
+        const text = parsed.content
+        if (text && typeof text === 'string') {
+          this.currentContent += text  // Source of truth
+          this.buffer += text  // For UI flush
+          
+          // Buffer and flush every 30ms for smooth streaming
+          clearTimeout(this.flushTimeout || undefined)
+          this.flushTimeout = setTimeout(() => {
+            if (this.buffer) {
+              this.emitToHandlers({
+                id: generateId(),
+                role: 'assistant',
+                content: this.buffer,
+                status: 'streaming',
+              })
+              this.buffer = ''
+            }
+          }, 30)
+        }
+      } catch (e) {
+        // Skip JSON parse errors - don't display raw JSON
+        console.warn('[ChatService] Parse error:', e)
+      }
+    }
+
+    ws.onerror = () => {
+      this.clearTimers()
+      this.fetchFallback(content)
+    }
+
+    ws.onclose = () => {
+      _isConnected = false
+      this.clearTimers()
+      
+      // Reconnect logic: max 3 attempts with exponential backoff
+      if (this.currentMessageContent && this.reconnectAttempts < 3) {
+        this.reconnectAttempts++
+        events.emit('status', { status: 'reconnecting' })
+        const delay = 500 * this.reconnectAttempts
+        console.log(`[ChatService] Reconnect attempt ${this.reconnectAttempts}/3 in ${delay}ms`)
+        
+        setTimeout(() => {
+          // Reset stream state before resend to avoid duplication
+          this.resetStreamState()
+          
+          // Create NEW WebSocket connection (old one is closed)
+          const selectedModel = useUIStore.getState().selectedModel
+          const wsUrl = `ws://${window.location.hostname}:8000/ws`
+          _ws = new WebSocket(wsUrl)
+          
+          // Attach handlers to new WebSocket
+          this.attachHandlers(_ws, this.currentMessageContent)
+        }, delay)
+      } else {
+        // All reconnect attempts failed or no message to resend
+        events.emit('status', { status: 'idle' })
+        this.reconnectAttempts = 0
+        this.currentMessageContent = ''
+        console.log('[ChatService] Reconnect failed, falling back to fetchFallback')
+      }
+    }
+  }
+
   // Clean singleton connection
   disconnect() {
-    // Clear heartbeat
-    if (this.heartbeat) {
-      clearInterval(this.heartbeat)
-      this.heartbeat = null
-    }
-    // Clear flush timeout
-    if (this.flushTimeout) {
-      clearTimeout(this.flushTimeout)
-      this.flushTimeout = null
-    }
+    this.clearTimers()
     // Reset state
     this.buffer = ''
     this.currentContent = ''
@@ -107,161 +269,8 @@ class ChatService {
     const wsUrl = `ws://${window.location.hostname}:8000/ws`
     _ws = new WebSocket(wsUrl)
     
-    _ws.onopen = () => {
-      _isConnected = true
-      // Status is 'connecting' until first token arrives
-      events.emit('status', { status: 'connecting' })
-      // Store the input message for potential reconnect
-      this.currentMessageContent = content
-      this.queueOrSend(content)
-      this.flushQueue()
-      
-      // Clear any existing heartbeat
-      if (this.heartbeat) clearInterval(this.heartbeat)
-      // Heartbeat: ping every 15 seconds to detect dead connections
-      this.heartbeat = setInterval(() => {
-        if (_ws?.readyState === WebSocket.OPEN) {
-          _ws.send(JSON.stringify({ type: 'ping' }))
-        } else {
-          if (this.heartbeat) {
-            clearInterval(this.heartbeat)
-            this.heartbeat = null
-          }
-        }
-      }, 15000)
-    }
-
-_ws.onmessage = (event) => {
-      const data = event.data
-      if (!data || !data.trim()) return
-      
-      try {
-        const parsed = JSON.parse(data)
-        
-        // First token: switch from connecting to streaming
-        if (parsed.type === 'token' || parsed.content) {
-          if (!this._hasStartedStreaming) {
-            this._hasStartedStreaming = true
-            events.emit('status', { status: 'streaming' })
-          }
-        }
-        
-        // DONE - response complete
-        if (parsed.done === true || parsed.type === 'done') {
-          // CRITICAL: flush remaining buffer first
-          if (this.buffer) {
-            this.emitToHandlers({
-              id: generateId(),
-              role: 'assistant',
-              content: this.buffer,
-              status: 'streaming',
-            })
-            this.currentContent += this.buffer
-            this.buffer = ''
-          }
-          this.emitToHandlers({
-            id: generateId(),
-            role: 'assistant',
-            content: this.currentContent,
-            status: 'done',
-          })
-          events.emit('status', { status: 'idle' })
-          return
-        }
-        
-        // STEP - emit step event
-        if (parsed.type === 'step' || parsed.step_id || parsed.step) {
-          const stepId = parsed.step_id || parsed.step || 'unknown'
-          const status = parsed.status || 'active'
-          events.emit('agentStep', { stepId, status })
-          return
-        }
-        
-        // ERROR - handle server errors
-        if (parsed.type === 'error') {
-          this.emitToHandlers({
-            id: generateId(),
-            role: 'assistant',
-            content: parsed.message || 'Server error',
-            status: 'error',
-          })
-          events.emit('status', { status: 'idle' })
-          return
-        }
-        
-        // TOKEN - streaming content extraction with buffering for smooth UX
-        // PROPRE: ONLY use parsed.content (standardized format)
-        const text = parsed.content
-        if (text && typeof text === 'string') {
-          this.currentContent += text
-          this.buffer += text
-          
-          // Buffer and flush every 30ms for smooth streaming
-          clearTimeout(this.flushTimeout || undefined)
-          this.flushTimeout = setTimeout(() => {
-            if (this.buffer) {
-              this.emitToHandlers({
-                id: generateId(),
-                role: 'assistant',
-                content: this.buffer,
-                status: 'streaming',
-              })
-              this.buffer = ''
-            }
-          }, 30)
-        }
-      } catch (e) {
-          // Skip JSON parse errors - don't display raw JSON
-          console.warn('[ChatService] Parse error:', e)
-        }
-    }
-
-    _ws.onerror = () => {
-      this.disconnect()
-      this.fetchFallback(content)
-    }
-
-    _ws.onclose = () => {
-      _isConnected = false
-      
-      // Clear heartbeat on disconnect
-      if (this.heartbeat) {
-        clearInterval(this.heartbeat)
-        this.heartbeat = null
-      }
-      
-      // Reconnect logic: max 3 attempts with exponential backoff
-      if (this.currentMessageContent && this.reconnectAttempts < 3) {
-        this.reconnectAttempts++
-        const delay = 500 * this.reconnectAttempts
-        console.log(`[ChatService] Reconnect attempt ${this.reconnectAttempts}/3 in ${delay}ms`)
-        
-        setTimeout(() => {
-          // Create NEW WebSocket connection (old one is closed)
-          const selectedModel = useUIStore.getState().selectedModel
-          const wsUrl = `ws://${window.location.hostname}:8000/ws`
-          _ws = new WebSocket(wsUrl)
-          
-          _ws.onopen = () => {
-            _isConnected = true
-            // Flush queue on reconnect too!
-            this.flushQueue()
-            // Re-send the message that was in progress
-            if (this.currentMessageContent) {
-              _ws?.send(JSON.stringify({ message_id: this.currentMessageId, message: this.currentMessageContent, model: selectedModel }))
-            }
-          }
-          
-          // If reconnect also fails, recursion handled by onclose
-        }, delay)
-      } else {
-        // All reconnect attempts failed or no message to resend
-        events.emit('status', { status: 'idle' })
-        this.reconnectAttempts = 0
-        this.currentMessageContent = ''
-        console.log('[ChatService] Reconnect failed, falling back to idle')
-      }
-    }
+    // Attach all handlers
+    this.attachHandlers(_ws, content)
   }
 
   private async fetchFallback(content: string): Promise<void> {
@@ -276,12 +285,12 @@ _ws.onmessage = (event) => {
       })
       const data = await response.json()
       
-       this.emitToHandlers({
-         id: generateId(),
-         role: 'assistant',
-         content: data.result || 'No response',
-         status: data.status === 'error' ? 'error' : 'done',
-       })
+      this.emitToHandlers({
+        id: generateId(),
+        role: 'assistant',
+        content: data.result || 'No response',
+        status: data.status === 'error' ? 'error' : 'done',
+      })
     } catch (error) {
       this.emitToHandlers({
         id: generateId(),
