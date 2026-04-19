@@ -115,7 +115,8 @@ class ChatService {
         }
         
          // TOKEN - streaming content
-         const text = parsed.data || parsed.content || parsed.message || parsed.text || ''
+         // Handle Ollama format: {"model":..., "response": "...", "done": false}
+         const text = parsed.response || parsed.data || parsed.content || parsed.message || parsed.text || ''
          if (text) {
            this.currentContent += text
            this.emitToHandlers({
