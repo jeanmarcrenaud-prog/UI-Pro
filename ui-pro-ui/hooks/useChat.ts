@@ -43,14 +43,15 @@ export const useChat = (): UseChatReturn => {
   // Track if we've already switched from thinking to streaming step
   const hasSwitchedStepRef = useRef(false)
   
+  // GLOBAL CLEANUP: store handler cleanup for unmount/cancel
+  const handlerCleanupRef = useRef<(() => void) | null>(null)
+  
   // Store references to avoid stale closures
   const stepsRef = useRef(steps)
+  stepsRef.current = steps  // Sync outside useEffect
 
+  // Single listener registration (not dependent on steps)
   useEffect(() => {
-    // Sync refs on each render
-    stepsRef.current = steps
-    
-    // Register agentStep listener
     const handleStep = (data: { stepId: string; status: 'pending' | 'active' | 'done' }) => {
       useChatStore.getState().addLog(`🔄 Step: ${data.stepId} → ${data.status}`)
       updateStepRef.current(data.stepId, data.status)
@@ -60,13 +61,14 @@ export const useChat = (): UseChatReturn => {
     
     return () => {
       events.off('agentStep', handleStep)
+      // Also cleanup handler on unmount
+      handlerCleanupRef.current?.()
     }
-  }, [steps])
+  }, []) // Empty deps - only run once
 
   const sendMessage = useCallback(async (content: string) => {
-    // Prevent race condition - double send
-    if (isSendingRef.current) return
-    if (!content.trim() || isLoading) return
+    // Prevent race condition - single guard is enough
+    if (isSendingRef.current || !content.trim()) return
 
     // Acquire lock
     isSendingRef.current = true
@@ -92,23 +94,35 @@ export const useChat = (): UseChatReturn => {
     start(stepsData)
     useChatStore.getState().addLog(`🚀 Starting: ${content.substring(0, 30)}...`)
 
-    let tokenCount = 0
-    let handlerCleanup: (() => void) | null = null
+    // Accumulate content in ref for O(1) append (instead of O(n) string concat)
+    const contentRef = { current: '' }
+    let charCount = 0
     
     try {
-      // Register handler and get cleanup from chatService
-      handlerCleanup = chatService.onMessage((msg: Message) => {
-        // Update tokens - use content length (more accurate than count++)
+      // Register handler and store cleanup for unmount
+      handlerCleanupRef.current = chatService.onMessage((msg: Message) => {
+        // Handle error status
+        if (msg.status === 'error') {
+          updateMessageById(assistantId, () => msg.content, 'error')
+          handlerCleanupRef.current?.()
+          setLoading(false)
+          isSendingRef.current = false
+          useChatStore.getState().addLog(`❌ Error: ${msg.content}`)
+          return
+        }
+        
+        // Update chars - use content length
         if (msg.content && msg.content.length > 0) {
-          tokenCount += msg.content.length
+          charCount += msg.content.length
+          // Use ref for O(1) append (not O(n) string concat)
+          contentRef.current += msg.content
           // Sync tokenCount to store for DebugPanel
-          useChatStore.getState().setTokenCount(tokenCount)
+          useChatStore.getState().setTokenCount(charCount)
           
           // CRITICAL FIX: Use updateMessageById with deterministic assistantId
-          // This is robust to reorder and multiple streams
           updateMessageById(
             assistantId,
-            (prev: string) => prev + msg.content,
+            () => contentRef.current,
             'streaming'
           )
           
@@ -119,24 +133,16 @@ export const useChat = (): UseChatReturn => {
             hasSwitchedStepRef.current = true
             updateStep('step-analyzing', 'done')
             updateStep('step-planning', 'active')
-            
-            // Get fresh steps and mark complete
-            const completedSteps = useAgentStore.getState().steps
-              .filter(s => s.status === 'done')
-            if (completedSteps.length === currentSteps.length) {
-              useChatStore.getState().saveToHistory()
-              useChatStore.getState().addLog(`✅ Done! ${completedSteps.length} steps`)
-            }
           }
         }
         
         // Done - check backend status field
         if (msg.done === true || msg.status === 'done') {
-          handlerCleanup?.()
+          handlerCleanupRef.current?.()
           // Mark all steps done
           stepsRef.current.forEach(s => updateStep(s.id, 'done'))
           useChatStore.getState().saveToHistory()
-          useChatStore.getState().addLog(`✅ Done! ${tokenCount} chars`)
+          useChatStore.getState().addLog(`✅ Done! ${charCount} chars`)
           setLoading(false)
           // Release lock
           isSendingRef.current = false
@@ -147,15 +153,17 @@ export const useChat = (): UseChatReturn => {
       chatService.sendMessage(content)
       
     } catch (err) {
-      handlerCleanup?.()
+      handlerCleanupRef.current?.()
       setError(err instanceof Error ? err.message : 'Error')
       setLoading(false)
       // Release lock on error
       isSendingRef.current = false
     }
-  }, [isLoading, addMessage, updateLastMessage, updateMessageById, setLoading, setError, start, updateStep, reset])
+  }, [addMessage, updateLastMessage, updateMessageById, setLoading, setError, start, updateStep, reset])
 
   const clear = useCallback(() => {
+    // Cleanup on clear too
+    handlerCleanupRef.current?.()
     clearMessages()
     reset()
     setError(null)
