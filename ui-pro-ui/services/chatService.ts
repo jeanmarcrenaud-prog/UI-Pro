@@ -58,6 +58,8 @@ class ChatService {
   }
 
   private resetStreamTimeout() {
+    // Don't reset if not connected
+    if (!_isConnected) return
     if (this.streamTimeout) {
       clearTimeout(this.streamTimeout)
     }
@@ -77,9 +79,10 @@ class ChatService {
   private handleStreamTimeout() {
     this.clearTimers()
     this.disconnect()
-    // Fallback to fetch if timeout
+    // Emit retrying status before fallback
     if (this.currentMessageContent) {
-      console.log('[ChatService] Timeout - falling back to fetch')
+      events.emit('status', { status: 'retrying' })
+      console.log('[ChatService] Timeout - retrying with fetchFallback')
       this.fetchFallback(this.currentMessageContent)
     } else {
       events.emit('status', { status: 'error' })
@@ -267,91 +270,14 @@ class ChatService {
         } else {
           this.clearTimers()
         }
-      }, 15000)
+}, 15000)
     }
 
     // Reuse message handler
     this.attachMessageHandler(ws)
-            this.startStreamTimeout()
-            events.emit('status', { status: 'streaming' })
-          }
-          // Reset timeout on each token
-          this.resetStreamTimeout()
-        }
-        
-        // DONE - response complete
-        if (parsed.done === true || parsed.type === 'done') {
-          this.clearStreamTimeout()
-          // Flush remaining buffer to UI (DO NOT add to currentContent - it's already there)
-          if (this.buffer) {
-            this.emitToHandlers({
-              id: generateId(),
-              role: 'assistant',
-              content: this.buffer,
-              status: 'streaming',
-            })
-            this.buffer = ''
-          }
-          this.emitToHandlers({
-            id: generateId(),
-            role: 'assistant',
-            content: this.currentContent,
-            status: 'done',
-          })
-          events.emit('status', { status: 'idle' })
-          return
-        }
-        
-        // STEP - emit step event
-        if (parsed.type === 'step' || parsed.step_id || parsed.step) {
-          this.resetStreamTimeout()  // Reset timeout on step changes
-          const stepId = parsed.step_id || parsed.step || 'unknown'
-          const status = parsed.status || 'active'
-          events.emit('agentStep', { stepId, status })
-          return
-        }
-        
-        // ERROR - handle server errors
-        if (parsed.type === 'error') {
-          this.clearStreamTimeout()
-          this.emitToHandlers({
-            id: generateId(),
-            role: 'assistant',
-            content: parsed.message || 'Server error',
-            status: 'error',
-          })
-          events.emit('status', { status: 'error' })
-          return
-        }
-        
-        // TOKEN - streaming content extraction with buffering for smooth UX
-        // Buffer for UI flush ONLY, currentContent is source of truth
-        const text = parsed.content
-        if (text && typeof text === 'string') {
-          this.currentContent += text  // Source of truth
-          this.buffer += text  // For UI flush
-          
-          // Buffer and flush every 30ms for smooth streaming
-          clearTimeout(this.flushTimeout || undefined)
-          this.flushTimeout = setTimeout(() => {
-            if (this.buffer) {
-              this.emitToHandlers({
-                id: generateId(),
-                role: 'assistant',
-                content: this.buffer,
-                status: 'streaming',
-              })
-              this.buffer = ''
-            }
-          }, 30)
-        }
-      } catch (e) {
-        // Skip JSON parse errors - don't display raw JSON
-        console.warn('[ChatService] Parse error:', e)
-      }
-    }
+  }
 
-    // Just log errors, let onclose handle reconnection
+  // Just log errors, let onclose handle reconnection
     ws.onerror = () => {
       console.warn('[ChatService] WebSocket error')
     }
@@ -402,10 +328,8 @@ class ChatService {
             _isConnected = true
             this.reconnectAttempts = 0
             events.emit('status', { status: 'connecting' })
-            this.queueOrSend(this.currentMessageContent)
-            this.flushQueue()
             
-            // Send resume message
+            // Send resume message only (not queue - avoids double send)
             _ws?.send(resumePayload)
             
             // Start heartbeat
