@@ -71,15 +71,19 @@ export const useChat = (): UseChatReturn => {
   const stepsRef = useRef(steps)
   stepsRef.current = steps  // Sync outside useEffect
 
+  // Safe event listener ref - declare OUTSIDE useEffect (React rules)
+  const handleStepRef = useRef<(data: { stepId: string; status: 'pending' | 'active' | 'done' }) => void>()
+
   // Safe event listener with ref (100% safe in StrictMode)
   useEffect(() => {
-    const handleStepRef = useRef<(data: { stepId: string; status: 'pending' | 'active' | 'done' }) => void>()
-    
-    const handler = (data: { stepId: string; status: 'pending' | 'active' | 'done' }) => {
+    handleStepRef.current = (data: { stepId: string; status: 'pending' | 'active' | 'done' }) => {
       useChatStore.getState().addLog(`🔄 Step: ${data.stepId} → ${data.status}`)
       updateStepRef.current(data.stepId, data.status)
     }
-    handleStepRef.current = handler
+    
+    const handler = (data: { stepId: string; status: 'pending' | 'active' | 'done' }) => {
+      handleStepRef.current?.(data)
+    }
     
     events.on('agentStep', handler)
     
@@ -163,7 +167,7 @@ export const useChat = (): UseChatReturn => {
           // Update message - use RAF for batching (60fps max)
           if (!rafRef.current) {
             rafRef.current = requestAnimationFrame(() => {
-              // Check again before updating
+              // Early return guard (ultra safe)
               if (isStreamActiveRef.current && !isCompletedRef.current) {
                 updateMessageById(assistantId, () => contentRef.current, 'streaming')
               }
@@ -184,22 +188,15 @@ export const useChat = (): UseChatReturn => {
           isCompletedRef.current = true
           isStreamActiveRef.current = false
           
-          // Flush any pending RAF + content
+          // Flush any pending RAF only
           if (rafRef.current) {
             cancelAnimationFrame(rafRef.current)
-            // Critical: flush remaining content before clearing
-            updateMessageById(assistantId, () => contentRef.current, 'streaming')
             rafRef.current = null
           }
           
-          // Clear safety timeout
-          if (safetyTimeoutRef.current) {
-            clearTimeout(safetyTimeoutRef.current)
-            safetyTimeoutRef.current = null
-          }
-          
-          // Final update with accumulated content
+          // UN SINGLE update final (no double render)
           updateMessageById(assistantId, () => contentRef.current, 'done')
+          
           handlerCleanupRef.current?.()
           handlerCleanupRef.current = null
           
@@ -232,6 +229,11 @@ export const useChat = (): UseChatReturn => {
       if (isSendingRef.current && !isCompletedRef.current) {
         console.warn('[useChat] Safety: force unlock stuck state')
         isSendingRef.current = false
+        isStreamActiveRef.current = false
+        isCompletedRef.current = true
+        handlerCleanupRef.current?.()
+        handlerCleanupRef.current = null
+        setLoading(false)
       }
     }, 60000)
   }, [addMessage, updateMessageById, setLoading, setError, start, updateStep, reset])
