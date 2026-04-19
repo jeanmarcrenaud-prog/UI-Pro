@@ -27,7 +27,6 @@ class ChatService {
   private currentMessageId: string | null = null
   private reconnectAttempts = 0
   private _hasStartedStreaming = false
-  private _pendingContent = ''  // Store content for sendMessage closure
 
   // Centralized timer cleanup
   private clearTimers() {
@@ -48,6 +47,11 @@ class ChatService {
     this.currentContent = ''
   }
 
+  // Clear message queue
+  private clearQueue() {
+    _messageQueue.length = 0
+  }
+
   // Process queued messages
   private flushQueue() {
     while (_messageQueue.length > 0 && _ws?.readyState === WebSocket.OPEN) {
@@ -56,10 +60,14 @@ class ChatService {
     }
   }
 
-  // Queue message for delivery
+  // Queue message for delivery (now includes message_id)
   private queueOrSend(content: string) {
     const selectedModel = useUIStore.getState().selectedModel
-    const payload = JSON.stringify({ message: content, model: selectedModel })
+    const payload = JSON.stringify({
+      message_id: this.currentMessageId,
+      message: content,
+      model: selectedModel
+    })
     
     if (_ws && _ws.readyState === WebSocket.OPEN) {
       _ws.send(payload)
@@ -80,11 +88,10 @@ class ChatService {
 
   // Attach handlers to WebSocket (reusable for initial + reconnect)
   private attachHandlers(ws: WebSocket, content: string) {
-    // Store for reconnect
-    this._pendingContent = content
-    
     ws.onopen = () => {
       _isConnected = true
+      // Reset reconnect attempts on successful connection
+      this.reconnectAttempts = 0
       events.emit('status', { status: 'connecting' })
       this.currentMessageContent = content
       this.queueOrSend(content)
@@ -107,6 +114,11 @@ class ChatService {
       
       try {
         const parsed = JSON.parse(data)
+        
+        // Ignore pong responses
+        if (parsed.type === 'pong') {
+          return
+        }
         
         // Filter old messages by message_id
         if (parsed.message_id && parsed.message_id !== this.currentMessageId) {
@@ -191,14 +203,25 @@ class ChatService {
       }
     }
 
+    // Just log errors, let onclose handle reconnection
     ws.onerror = () => {
-      this.clearTimers()
-      this.fetchFallback(content)
+      console.warn('[ChatService] WebSocket error')
     }
 
     ws.onclose = () => {
       _isConnected = false
       this.clearTimers()
+      
+      // Flush any pending buffer before reconnect (don't lose data)
+      if (this.buffer) {
+        this.emitToHandlers({
+          id: generateId(),
+          role: 'assistant',
+          content: this.buffer,
+          status: 'streaming',
+        })
+        this.buffer = ''
+      }
       
       // Reconnect logic: max 3 attempts with exponential backoff
       if (this.currentMessageContent && this.reconnectAttempts < 3) {
@@ -208,11 +231,12 @@ class ChatService {
         console.log(`[ChatService] Reconnect attempt ${this.reconnectAttempts}/3 in ${delay}ms`)
         
         setTimeout(() => {
+          // Clear queue on reconnect to avoid double send
+          this.clearQueue()
           // Reset stream state before resend to avoid duplication
           this.resetStreamState()
           
           // Create NEW WebSocket connection (old one is closed)
-          const selectedModel = useUIStore.getState().selectedModel
           const wsUrl = `ws://${window.location.hostname}:8000/ws`
           _ws = new WebSocket(wsUrl)
           
@@ -245,9 +269,27 @@ class ChatService {
     }
   }
 
+  // Cancel in-progress stream
+  cancel() {
+    if (_ws?.readyState === WebSocket.OPEN) {
+      _ws.send(JSON.stringify({
+        type: 'cancel',
+        message_id: this.currentMessageId
+      }))
+    }
+    this.disconnect()
+    events.emit('status', { status: 'idle' })
+  }
+
   async sendMessage(content: string): Promise<void> {
     const selectedModel = useUIStore.getState().selectedModel
     console.log('[ChatService] 📤 sendMessage:', content.substring(0, 30))
+    
+    // Prevent sending while message is in progress
+    if (this._hasStartedStreaming || this.currentMessageContent) {
+      console.warn('[ChatService] Message in progress, ignoring new send')
+      return
+    }
     
     // Generate unique message ID for tracking
     const messageId = generateId()
