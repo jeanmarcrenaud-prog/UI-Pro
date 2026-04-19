@@ -113,9 +113,21 @@ _ws.onmessage = (event) => {
           return
         }
         
+        // ERROR - handle server errors
+        if (parsed.type === 'error') {
+          this.emitToHandlers({
+            id: generateId(),
+            role: 'assistant',
+            content: parsed.message || 'Server error',
+            status: 'error',
+          })
+          events.emit('status', { status: 'idle' })
+          return
+        }
+        
         // TOKEN - streaming content extraction
-        // Standardized format: {"type": "token", "content": "...", "done": false}
-        const text = parsed.content || parsed.response
+        // PROPRE: ONLY use parsed.content (standardized format)
+        const text = parsed.content
         if (text && typeof text === 'string') {
           this.currentContent += text
           this.emitToHandlers({

@@ -384,6 +384,14 @@ async def ws_endpoint(ws: WebSocket):
     except Exception as e:
         print(f"[WS] Error: {e}")
         session_logger.error(f"WebSocket error: {e}")
+        # Send error to client
+        try:
+            await ws.send_text(json.dumps({
+                "type": "error",
+                "message": str(e)
+            }))
+        except:
+            pass
     finally:
         # Cleanup
         if session_id in sessions:
