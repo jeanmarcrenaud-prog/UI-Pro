@@ -38,6 +38,7 @@ export function DebugPanel({
   lastErrorMsg,
   currentStep = 0,
   logs = [],
+  onClearLogs,
   subscribeToStore = true,
 }: DebugPanelProps) {
   const [localTokenCount, setLocalTokenCount] = useState(propTokenCount)
@@ -121,7 +122,7 @@ export function DebugPanel({
           <Row label="Model" value={modelName} color="violet" />
           <Row label="Backend" value="🦙 Ollama" />
           <Row label="Elapsed" value={`${elapsedSeconds}s`} />
-          <Row label="Tokens" value={tokenCount} color="violet" bold />
+          <Row label="Tokens" value={localTokenCount} color="violet" bold />
         </div>
 
         {/* PROGRESS */}
