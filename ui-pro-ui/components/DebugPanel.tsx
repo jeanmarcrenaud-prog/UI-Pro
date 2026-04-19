@@ -22,8 +22,9 @@ interface DebugPanelProps {
   tokenCount?: number
   connectionStatus?: 'connected' | 'connecting' | 'error'
   lastErrorMsg?: string
-  currentStep?: number // Simplified: single prop
+  currentStep?: number
   logs?: string[]
+  subscribeToStore?: boolean
 }
 
 export function DebugPanel({
@@ -34,30 +35,46 @@ export function DebugPanel({
   status = 'idle',
   modelName = 'gemma4:latest',
   elapsedSeconds = 0,
-  tokenCount = 0,
+  tokenCount: propTokenCount = 0,
   lastErrorMsg,
   currentStep = 0,
   logs = [],
   onClearLogs,
+  subscribeToStore = true,
 }: DebugPanelProps) {
+  const [localTokenCount, setLocalTokenCount] = useState(propTokenCount)
   const logsEndRef = useRef<HTMLDivElement>(null)
-  const closeFn = useMemo(() => onClose || onToggle || (() => {}), [onClose, onToggle])
-
-  // Memoize expensive calculations
+  
+  // CRITICAL FIX: Sync with parent prop changes
+  useEffect(() => {
+    if (propTokenCount !== localTokenCount) {
+      setLocalTokenCount(propTokenCount)
+    }
+  }, [propTokenCount, localTokenCount])
+  
   const completed = useMemo(() => steps.filter(s => s.status === 'done').length, [steps])
   const progress = useMemo(() => 
-    steps.length > 0 ? Math.round((completed / steps.length) * 100) : 0
-  , [steps, completed])
+    steps.length > 0 ? Math.round((completed / steps.length) * 100) : 0,
+    [steps, completed]
+  )
   const activeIdx = useMemo(() => 
     steps.findIndex(s => s.status === 'active') !== -1 
       ? steps.findIndex(s => s.status === 'active') 
-      : currentStep
-  , [steps, currentStep])
+      : currentStep,
+    [steps, currentStep]
+  )
 
-  // Scroll on logs change
+  // Scroll on logs change only when panel is open
   useEffect(() => {
-    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [logs])
+    if (isOpen && logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [logs, isOpen])
+  
+  const closeFn = useCallback(() => {
+    if (onClose) onClose()
+    else if (onToggle) onToggle()
+  }, [onClose, onToggle])
 
   if (!isOpen) return (
     <button onClick={closeFn} className="fixed right-4 top-4 bg-slate-800 border border-slate-700 text-slate-400 px-3 py-2 rounded-lg text-xs hover:bg-slate-700 z-50">
@@ -102,9 +119,9 @@ export function DebugPanel({
             <span className="text-slate-500">Elapsed</span>
             <span className="font-mono text-slate-300">{elapsedSeconds}s</span>
           </div>
-          <div className="flex items-center justify-between text-xs">
+          <div className="flex items-center justify-between text-xs font-bold">
             <span className="text-slate-500">Tokens</span>
-            <span className="font-mono text-violet-400">{tokenCount}</span>
+            <span className="font-mono text-violet-400">{localTokenCount}</span>
           </div>
         </div>
 
@@ -116,7 +133,7 @@ export function DebugPanel({
               <span className="text-slate-500 font-mono">{elapsedSeconds}s</span>
             </div>
             <div className="h-1.5 bg-slate-800/60 rounded-full overflow-hidden">
-              <motion.div className="h-full bg-gradient-to-r from-violet-500 to-fuchsia-500" initial={{ width: 0 }} animate={{ width: `${progress}%` }} transition={{ duration: 0.8 }} />
+              <motion.div className="h-full bg-gradient-to-r from-violet-500 to-fuchsia-500" initial={{ width: 0 }} animate={{ width: `${progress}%` }} transition={{ duration: 0.8, ease: 'easeInOut' }} />
             </div>
           </div>
         )}
@@ -144,7 +161,6 @@ export function DebugPanel({
           <div className="px-4 py-2.5 border-b border-slate-800/60 flex justify-between items-center">
             <span className="text-xs font-medium text-slate-500">Live Logs</span>
             <button onClick={() => {
-              // Clear logs - use explicit callback if provided
               if (onClearLogs) {
                 onClearLogs()
               }
