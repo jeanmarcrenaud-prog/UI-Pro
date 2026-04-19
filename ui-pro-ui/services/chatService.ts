@@ -27,6 +27,7 @@ class ChatService {
   private currentMessageId: string | null = null
   private reconnectAttempts = 0
   private _hasStartedStreaming = false
+  private _lastChunkIndex = 0  // Track chunk order to prevent duplication
 
   // Centralized timer cleanup
   private clearTimers() {
@@ -45,6 +46,7 @@ class ChatService {
     this._hasStartedStreaming = false
     this.buffer = ''
     this.currentContent = ''
+    this._lastChunkIndex = 0
   }
 
   // Clear message queue
@@ -124,6 +126,15 @@ class ChatService {
         if (parsed.message_id && parsed.message_id !== this.currentMessageId) {
           console.log('[ChatService] Ignoring old message:', parsed.message_id)
           return
+        }
+        
+        // Filter duplicate chunks by chunk_index
+        if (parsed.chunk_index && parsed.chunk_index <= this._lastChunkIndex) {
+          console.log('[ChatService] Ignoring duplicate chunk:', parsed.chunk_index)
+          return
+        }
+        if (parsed.chunk_index) {
+          this._lastChunkIndex = parsed.chunk_index
         }
         
         // First token: switch from connecting to streaming
@@ -297,6 +308,7 @@ class ChatService {
     this.currentContent = ''
     this.currentMessageContent = ''
     this._hasStartedStreaming = false
+    this._lastChunkIndex = 0
     
     // Reuse existing WebSocket if connected
     if (_ws && _ws.readyState === WebSocket.OPEN) {
