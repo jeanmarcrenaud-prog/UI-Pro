@@ -257,14 +257,14 @@ async def ws_endpoint(ws: WebSocket):
     
     # Track message_id for deduplication across reconnect
     msg_id = None
+    chunk_index = 0  # Track chunk order to prevent duplication
     
     try:
         while True:
             # Periodic cleanup every 60 seconds to prevent memory leaks
-            now = time.time()
-            if now - last_cleanup > 60:
+            if time.time() - last_cleanup > 60:
                 _cleanup_sessions()
-                last_cleanup = now
+                last_cleanup = time.time()
             
             if session_id in sessions:
                 # Receive message as JSON
@@ -276,18 +276,29 @@ async def ws_endpoint(ws: WebSocket):
                 if len(sessions[session_id]["messages"]) > MAX_MESSAGES:
                     sessions[session_id]["messages"] = sessions[session_id]["messages"][-MAX_MESSAGES:]
                 
-                # Parse JSON to extract message and model
+                # Handle ping heartbeat
                 try:
                     msg_data = json.loads(data)
+                    # Check for ping/pong
+                    if msg_data.get('type') == 'ping':
+                        await ws.send_text(json.dumps({"type": "pong", "message_id": msg_id}))
+                        continue
+                    if msg_data.get('type') == 'cancel':
+                        # Client cancelled - stop streaming
+                        print(f"[WS] Client cancelled: {msg_data.get('message_id')}")
+                        break
                     task = msg_data.get('message', data)
                     model = msg_data.get('model')
                     msg_id = msg_data.get('message_id')  # Track for deduplication
+                    # Reset chunk_index for new message
+                    chunk_index = 0
                     print(f"[WS] Received - message: {task[:30]}..., model: {model}, msg_id: {msg_id}")
                 except:
                     # Plain text fallback
                     task = data
                     model = None
                     msg_id = None
+                    chunk_index = 0
                     print(f"[WS] Plain text received, model: {model}")
                 
                 # Send step 1: Analyzing
@@ -297,7 +308,8 @@ async def ws_endpoint(ws: WebSocket):
                     "title": "Analyzing request",
                     "status": "active",
                     "data": "Analyzing request...",
-                    "message_id": msg_id
+                    "message_id": msg_id,
+                    "chunk_index": chunk_index
                 }))
                 
                 # Use streaming service with model
@@ -317,7 +329,8 @@ async def ws_endpoint(ws: WebSocket):
                     "title": "Analyzing request",
                     "status": "done",
                     "data": "Analysis complete",
-                    "message_id": msg_id
+                    "message_id": msg_id,
+                    "chunk_index": chunk_index
                 }))
                 
                 # Activate step 2: Planning solution
@@ -327,18 +340,21 @@ async def ws_endpoint(ws: WebSocket):
                     "title": "Planning solution",
                     "status": "active",
                     "data": "Planning approach...",
-                    "message_id": msg_id
+                    "message_id": msg_id,
+                    "chunk_index": chunk_index
                 }))
                 
                 async for chunk in stream_service.stream_generate(task, model=selected_model):
-                    # Standardized format: type + content + message_id
+                    # Standardized format: type + content + message_id + chunk_index
                     chunk_text = chunk.text if hasattr(chunk, 'text') else ''
                     if chunk_text:
+                        chunk_index += 1
                         await ws.send_text(json.dumps({
                             "type": "token",
                             "content": chunk_text,
                             "done": False,
-                            "message_id": msg_id
+                            "message_id": msg_id,
+                            "chunk_index": chunk_index
                         }))
                     
                     # Also emit to log subscribers (safe iteration)
@@ -358,7 +374,8 @@ async def ws_endpoint(ws: WebSocket):
                     "title": "Planning solution",
                     "status": "done",
                     "data": "Plan completed",
-                    "message_id": msg_id
+                    "message_id": msg_id,
+                    "chunk_index": chunk_index
                 }))
                 
                 # Activate step 3: Executing
@@ -368,7 +385,8 @@ async def ws_endpoint(ws: WebSocket):
                     "title": "Executing",
                     "status": "active",
                     "data": "Executing code...",
-                    "message_id": msg_id
+                    "message_id": msg_id,
+                    "chunk_index": chunk_index
                 }))
                 
                 # Mark step 3 as done
@@ -378,7 +396,8 @@ async def ws_endpoint(ws: WebSocket):
                     "title": "Executing",
                     "status": "done",
                     "data": "Execution complete",
-                    "message_id": msg_id
+                    "message_id": msg_id,
+                    "chunk_index": chunk_index
                 }))
                 
                 # Mark step 4 (Reviewing) as done
@@ -388,11 +407,12 @@ async def ws_endpoint(ws: WebSocket):
                     "title": "Reviewing",
                     "status": "done",
                     "data": "Review complete",
-                    "message_id": msg_id
+                    "message_id": msg_id,
+                    "chunk_index": chunk_index
                 }))
                 
                 # Send done event with message_id for deduplication
-                await ws.send_text(json.dumps({"type": "done", "data": "", "message_id": msg_id}))
+                await ws.send_text(json.dumps({"type": "done", "data": "", "message_id": msg_id, "chunk_index": chunk_index}))
                 
     except Exception as e:
         print(f"[WS] Error: {e}")
@@ -402,7 +422,8 @@ async def ws_endpoint(ws: WebSocket):
             await ws.send_text(json.dumps({
                 "type": "error",
                 "message": str(e),
-                "message_id": msg_id
+                "message_id": msg_id,
+                "chunk_index": chunk_index
             }))
         except:
             pass
