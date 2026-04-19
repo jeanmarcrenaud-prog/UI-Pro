@@ -15,7 +15,6 @@ interface DebugPanelProps {
   isOpen: boolean
   onClose?: () => void
   onToggle?: () => void
-  onClearLogs?: () => void
   status?: 'idle' | 'running' | 'completed' | 'error'
   modelName?: string
   elapsedSeconds?: number
@@ -39,7 +38,6 @@ export function DebugPanel({
   lastErrorMsg,
   currentStep = 0,
   logs = [],
-  onClearLogs,
   subscribeToStore = true,
 }: DebugPanelProps) {
   const [localTokenCount, setLocalTokenCount] = useState(propTokenCount)
