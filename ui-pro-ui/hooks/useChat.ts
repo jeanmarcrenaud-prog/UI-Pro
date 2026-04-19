@@ -131,8 +131,10 @@ export const useChat = (): UseChatReturn => {
         
         // Handle error status
         if (msg.status === 'error') {
+          isCompletedRef.current = true  // Prevent double done
           updateMessageById(assistantId, () => msg.content, 'error')
           handlerCleanupRef.current?.()
+          handlerCleanupRef.current = null
           setLoading(false)
           isSendingRef.current = false
           useChatStore.getState().addLog(`❌ Error: ${msg.content}`)
@@ -151,9 +153,7 @@ export const useChat = (): UseChatReturn => {
           updateMessageById(assistantId, () => contentRef.current, 'streaming')
           
           // Advance step when first token arrives
-          const currentSteps = stepsRef.current
-          const currentActive = currentSteps.find(s => s.status === 'active')
-          if (currentActive?.id === 'step-analyzing' && !hasSwitchedStepRef.current) {
+          if (!hasSwitchedStepRef.current) {
             hasSwitchedStepRef.current = true
             updateStep('step-analyzing', 'done')
             updateStep('step-planning', 'active')
@@ -165,6 +165,7 @@ export const useChat = (): UseChatReturn => {
           isCompletedRef.current = true
           updateMessageById(assistantId, () => contentRef.current, 'done')
           handlerCleanupRef.current?.()
+          handlerCleanupRef.current = null
           // Mark all steps done
           stepsRef.current.forEach(s => updateStep(s.id, 'done'))
           useChatStore.getState().saveToHistory()
@@ -179,10 +180,19 @@ export const useChat = (): UseChatReturn => {
       
     } catch (err) {
       handlerCleanupRef.current?.()
+      handlerCleanupRef.current = null
       setError(err instanceof Error ? err.message : 'Error')
       setLoading(false)
       isSendingRef.current = false
     }
+    
+    // Safety timeout - force unlock if something goes wrong
+    setTimeout(() => {
+      if (isSendingRef.current && !isCompletedRef.current) {
+        console.warn('[useChat] Safety: force unlock stuck state')
+        isSendingRef.current = false
+      }
+    }, 60000)
   }, [addMessage, updateMessageById, setLoading, setError, start, updateStep, reset])
 
   const clear = useCallback(() => {
@@ -190,10 +200,21 @@ export const useChat = (): UseChatReturn => {
     isActiveRef.current = false
     // Cleanup handler on clear
     handlerCleanupRef.current?.()
+    handlerCleanupRef.current = null
     clearMessages()
     reset()
     setError(null)
   }, [clearMessages, reset, setError])
+  
+  // Expose cancel for external use
+  const cancel = useCallback(() => {
+    chatService.cancel()
+    handlerCleanupRef.current?.()
+    handlerCleanupRef.current = null
+    isSendingRef.current = false
+    isCompletedRef.current = true
+    setLoading(false)
+  }, [setLoading])
 
   const currentStep = steps.find(s => s.status === 'active')
 
@@ -206,5 +227,6 @@ export const useChat = (): UseChatReturn => {
     steps,
     sendMessage,
     clear,
+    cancel,
   }
 }
