@@ -255,6 +255,9 @@ async def ws_endpoint(ws: WebSocket):
     # Track cleanup timing
     last_cleanup = time.time()
     
+    # Track message_id for deduplication across reconnect
+    msg_id = None
+    
     try:
         while True:
             # Periodic cleanup every 60 seconds to prevent memory leaks
@@ -278,11 +281,13 @@ async def ws_endpoint(ws: WebSocket):
                     msg_data = json.loads(data)
                     task = msg_data.get('message', data)
                     model = msg_data.get('model')
-                    print(f"[WS] Received - message: {task[:30]}..., model: {model}")
+                    msg_id = msg_data.get('message_id')  # Track for deduplication
+                    print(f"[WS] Received - message: {task[:30]}..., model: {model}, msg_id: {msg_id}")
                 except:
                     # Plain text fallback
                     task = data
                     model = None
+                    msg_id = None
                     print(f"[WS] Plain text received, model: {model}")
                 
                 # Send step 1: Analyzing
@@ -291,7 +296,8 @@ async def ws_endpoint(ws: WebSocket):
                     "step_id": "step-analyzing", 
                     "title": "Analyzing request",
                     "status": "active",
-                    "data": "Analyzing request..."
+                    "data": "Analyzing request...",
+                    "message_id": msg_id
                 }))
                 
                 # Use streaming service with model
@@ -310,7 +316,8 @@ async def ws_endpoint(ws: WebSocket):
                     "step_id": "step-analyzing",
                     "title": "Analyzing request",
                     "status": "done",
-                    "data": "Analysis complete"
+                    "data": "Analysis complete",
+                    "message_id": msg_id
                 }))
                 
                 # Activate step 2: Planning solution
@@ -319,17 +326,19 @@ async def ws_endpoint(ws: WebSocket):
                     "step_id": "step-planning",
                     "title": "Planning solution",
                     "status": "active",
-                    "data": "Planning approach..."
+                    "data": "Planning approach...",
+                    "message_id": msg_id
                 }))
                 
                 async for chunk in stream_service.stream_generate(task, model=selected_model):
-                    # Standardized format: type + content
+                    # Standardized format: type + content + message_id
                     chunk_text = chunk.text if hasattr(chunk, 'text') else ''
                     if chunk_text:
                         await ws.send_text(json.dumps({
                             "type": "token",
                             "content": chunk_text,
-                            "done": False
+                            "done": False,
+                            "message_id": msg_id
                         }))
                     
                     # Also emit to log subscribers (safe iteration)
@@ -348,7 +357,8 @@ async def ws_endpoint(ws: WebSocket):
                     "step_id": "step-planning",
                     "title": "Planning solution",
                     "status": "done",
-                    "data": "Plan completed"
+                    "data": "Plan completed",
+                    "message_id": msg_id
                 }))
                 
                 # Activate step 3: Executing
@@ -357,7 +367,8 @@ async def ws_endpoint(ws: WebSocket):
                     "step_id": "step-executing",
                     "title": "Executing",
                     "status": "active",
-                    "data": "Executing code..."
+                    "data": "Executing code...",
+                    "message_id": msg_id
                 }))
                 
                 # Mark step 3 as done
@@ -366,7 +377,8 @@ async def ws_endpoint(ws: WebSocket):
                     "step_id": "step-executing",
                     "title": "Executing",
                     "status": "done",
-                    "data": "Execution complete"
+                    "data": "Execution complete",
+                    "message_id": msg_id
                 }))
                 
                 # Mark step 4 (Reviewing) as done
@@ -375,11 +387,12 @@ async def ws_endpoint(ws: WebSocket):
                     "step_id": "step-reviewing",
                     "title": "Reviewing",
                     "status": "done",
-                    "data": "Review complete"
+                    "data": "Review complete",
+                    "message_id": msg_id
                 }))
                 
-                # Send done event
-                await ws.send_text(json.dumps({"type": "done", "data": ""}))
+                # Send done event with message_id for deduplication
+                await ws.send_text(json.dumps({"type": "done", "data": "", "message_id": msg_id}))
                 
     except Exception as e:
         print(f"[WS] Error: {e}")
@@ -388,7 +401,8 @@ async def ws_endpoint(ws: WebSocket):
         try:
             await ws.send_text(json.dumps({
                 "type": "error",
-                "message": str(e)
+                "message": str(e),
+                "message_id": msg_id
             }))
         except:
             pass
