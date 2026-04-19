@@ -27,6 +27,7 @@ interface ChatStore extends ChatState {
   // Messages
   addMessage: (message: Message) => void
   updateLastMessage: (content: string, status?: Message['status']) => void
+  updateMessageById: (id: string, updater: (content: string) => string, status?: Message['status']) => void
   clearMessages: () => void
   setLoading: (loading: boolean) => void
   setError: (error: string | null) => void
@@ -152,6 +153,15 @@ export const useChatStore = create<ChatStore>()(
           }
           return { messages: msgs }
         }),
+
+      updateMessageById: (id, updater, status) =>
+        set((state) => ({
+          messages: state.messages.map(m =>
+            m.id === id
+              ? { ...m, content: updater(m.content), status: status || m.status }
+              : m
+          )
+        })),
 
       clearMessages: () => set({ messages: [], error: null, currentChatId: null }),
 
