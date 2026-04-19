@@ -86,7 +86,7 @@ class ChatService {
       this.flushQueue() // Flush any pending messages
     }
 
-    _ws.onmessage = (event) => {
+_ws.onmessage = (event) => {
       const data = event.data
       if (!data || !data.trim()) return
       
@@ -94,7 +94,7 @@ class ChatService {
         const parsed = JSON.parse(data)
         
         // DONE - response complete
-        if (parsed.type === 'done') {
+        if (parsed.done === true || parsed.type === 'done') {
           this.emitToHandlers({
             id: generateId(),
             role: 'assistant',
@@ -114,28 +114,22 @@ class ChatService {
           return
         }
         
-         // TOKEN - streaming content
-         // Handle Ollama format: {"model":..., "response": "...", "done": false}
-         const text = parsed.response || parsed.data || parsed.content || parsed.message || parsed.text || ''
-         if (text) {
-           this.currentContent += text
-           this.emitToHandlers({
-             id: generateId(),
-             role: 'assistant',
-             content: text,
-             status: 'streaming',
-           })
-         }
-       } catch {
-         // Plain text fallback
-         this.currentContent += data
-         this.emitToHandlers({
-           id: generateId(),
-           role: 'assistant',
-           content: data,
-           status: 'streaming',
-         })
-       }
+        // TOKEN - streaming content extraction
+        // Format: {"model":..., "response": "...", "done": false}
+        const text = parsed.response
+        if (text && typeof text === 'string') {
+          this.currentContent += text
+          this.emitToHandlers({
+            id: generateId(),
+            role: 'assistant',
+            content: text,
+            status: 'streaming',
+          })
+        }
+      } catch (e) {
+          // Skip JSON parse errors - don't display raw JSON
+          console.warn('[ChatService] Parse error:', e)
+        }
     }
 
     _ws.onerror = () => {
