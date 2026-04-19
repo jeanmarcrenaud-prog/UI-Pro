@@ -24,10 +24,13 @@ class ChatService {
   private flushTimeout: ReturnType<typeof setTimeout> | null = null
   private buffer = ''  // Buffer for UI flush only
   private heartbeat: ReturnType<typeof setInterval> | null = null
+  private streamTimeout: ReturnType<typeof setTimeout> | null = null  // Timeout for stalled streaming
+  private streamStartTime = 0  // Track when streaming started
   private currentMessageId: string | null = null
   private reconnectAttempts = 0
   private _hasStartedStreaming = false
   private _lastChunkIndex = 0  // Track chunk order to prevent duplication
+  private static readonly STREAM_TIMEOUT_MS = 30000  // 30s timeout for streaming
 
   // Centralized timer cleanup
   private clearTimers() {
@@ -38,6 +41,48 @@ class ChatService {
     if (this.flushTimeout) {
       clearTimeout(this.flushTimeout)
       this.flushTimeout = null
+    }
+    if (this.streamTimeout) {
+      clearTimeout(this.streamTimeout)
+      this.streamTimeout = null
+    }
+  }
+
+  // Start stream timeout - kill if no tokens for 30s
+  private startStreamTimeout() {
+    this.clearStreamTimeout()
+    this.streamTimeout = setTimeout(() => {
+      console.warn('[ChatService] Stream timeout - no response for 30s')
+      this.handleStreamTimeout()
+    }, ChatService.STREAM_TIMEOUT_MS)
+  }
+
+  private resetStreamTimeout() {
+    if (this.streamTimeout) {
+      clearTimeout(this.streamTimeout)
+    }
+    this.streamTimeout = setTimeout(() => {
+      console.warn('[ChatService] Stream timeout - stalled')
+      this.handleStreamTimeout()
+    }, ChatService.STREAM_TIMEOUT_MS)
+  }
+
+  private clearStreamTimeout() {
+    if (this.streamTimeout) {
+      clearTimeout(this.streamTimeout)
+      this.streamTimeout = null
+    }
+  }
+
+  private handleStreamTimeout() {
+    this.clearTimers()
+    this.disconnect()
+    // Fallback to fetch if timeout
+    if (this.currentMessageContent) {
+      console.log('[ChatService] Timeout - falling back to fetch')
+      this.fetchFallback(this.currentMessageContent)
+    } else {
+      events.emit('status', { status: 'error' })
     }
   }
 
@@ -141,12 +186,17 @@ class ChatService {
         if (parsed.type === 'token' || parsed.content) {
           if (!this._hasStartedStreaming) {
             this._hasStartedStreaming = true
+            this.streamStartTime = Date.now()
+            this.startStreamTimeout()
             events.emit('status', { status: 'streaming' })
           }
+          // Reset timeout on each token
+          this.resetStreamTimeout()
         }
         
         // DONE - response complete
         if (parsed.done === true || parsed.type === 'done') {
+          this.clearStreamTimeout()
           // Flush remaining buffer to UI (DO NOT add to currentContent - it's already there)
           if (this.buffer) {
             this.emitToHandlers({
@@ -169,6 +219,7 @@ class ChatService {
         
         // STEP - emit step event
         if (parsed.type === 'step' || parsed.step_id || parsed.step) {
+          this.resetStreamTimeout()  // Reset timeout on step changes
           const stepId = parsed.step_id || parsed.step || 'unknown'
           const status = parsed.status || 'active'
           events.emit('agentStep', { stepId, status })
@@ -177,6 +228,7 @@ class ChatService {
         
         // ERROR - handle server errors
         if (parsed.type === 'error') {
+          this.clearStreamTimeout()
           this.emitToHandlers({
             id: generateId(),
             role: 'assistant',
