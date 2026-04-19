@@ -20,8 +20,10 @@ let _messageQueue: string[] = [] // Queue for rapid messages
 
 class ChatService {
   private currentContent = ''
-  private flushTimeout: NodeJS.Timeout | null = null
+  private flushTimeout: ReturnType<typeof setTimeout> | null = null
   private buffer = ''
+  private heartbeat: ReturnType<typeof setInterval> | null = null
+  private currentMessageId: string | null = null
 
   // Process queued messages
   private flushQueue() {
@@ -55,6 +57,21 @@ class ChatService {
 
   // Clean singleton connection
   disconnect() {
+    // Clear heartbeat
+    if (this.heartbeat) {
+      clearInterval(this.heartbeat)
+      this.heartbeat = null
+    }
+    // Clear flush timeout
+    if (this.flushTimeout) {
+      clearTimeout(this.flushTimeout)
+      this.flushTimeout = null
+    }
+    // Reset state
+    this.buffer = ''
+    this.currentContent = ''
+    this.currentMessageId = null
+    
     if (_ws) {
       _ws.close()
       _ws = null
@@ -66,11 +83,14 @@ class ChatService {
     const selectedModel = useUIStore.getState().selectedModel
     console.log('[ChatService] 📤 sendMessage:', content.substring(0, 30))
     
+    // Generate unique message ID for tracking
+    const messageId = generateId()
+    this.currentMessageId = messageId
     this.currentContent = ''
     
     // Reuse existing WebSocket if connected
     if (_ws && _ws.readyState === WebSocket.OPEN) {
-      _ws.send(JSON.stringify({ message: content, model: selectedModel }))
+      _ws.send(JSON.stringify({ message_id: messageId, message: content, model: selectedModel }))
       return
     }
     
@@ -106,6 +126,17 @@ _ws.onmessage = (event) => {
         
         // DONE - response complete
         if (parsed.done === true || parsed.type === 'done') {
+          // CRITICAL: flush remaining buffer first
+          if (this.buffer) {
+            this.emitToHandlers({
+              id: generateId(),
+              role: 'assistant',
+              content: this.buffer,
+              status: 'streaming',
+            })
+            this.currentContent += this.buffer
+            this.buffer = ''
+          }
           this.emitToHandlers({
             id: generateId(),
             role: 'assistant',
