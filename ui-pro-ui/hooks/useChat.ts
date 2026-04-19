@@ -101,6 +101,9 @@ export const useChat = (): UseChatReturn => {
     try {
       // Register handler and store cleanup for unmount
       handlerCleanupRef.current = chatService.onMessage((msg: Message) => {
+        // Future-proof: ignore non-assistant messages
+        if (msg.role !== 'assistant') return
+        
         // Handle error status
         if (msg.status === 'error') {
           updateMessageById(assistantId, () => msg.content, 'error')
@@ -159,7 +162,7 @@ export const useChat = (): UseChatReturn => {
       // Release lock on error
       isSendingRef.current = false
     }
-  }, [addMessage, updateLastMessage, updateMessageById, setLoading, setError, start, updateStep, reset])
+  }, [addMessage, updateMessageById, setLoading, setError, start, updateStep, reset])
 
   const clear = useCallback(() => {
     // Cleanup on clear too
