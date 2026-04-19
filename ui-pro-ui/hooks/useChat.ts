@@ -40,11 +40,17 @@ export const useChat = (): UseChatReturn => {
   // Lock to prevent race condition on rapid sends
   const isSendingRef = useRef(false)
   
-// Track if we've already switched from thinking to streaming step
+  // Track if we've already switched from thinking to streaming step
   const hasSwitchedStepRef = useRef(false)
   
   // Current message ID for filtering multi-stream (must be useRef for persistence)
   const currentMessageIdRef = useRef('')
+  
+  // GLOBAL CLEANUP: store handler cleanup for unmount/cancel
+  const handlerCleanupRef = useRef<(() => void) | null>(null)
+  
+  // Track if component is mounted to prevent updates after unmount
+  const isActiveRef = useRef(true)
   
   // UI buffer for smooth streaming (must be useRef for persistence)
   const uiBufferRef = useRef('')
