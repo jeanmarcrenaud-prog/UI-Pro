@@ -55,8 +55,11 @@ export const useChat = (): UseChatReturn => {
   // GLOBAL CLEANUP: store handler cleanup for unmount/cancel
   const handlerCleanupRef = useRef<(() => void) | null>(null)
   
-  // Track if component is mounted
-  const isActiveRef = useRef(true)
+  // Track if component is mounted (lifecycle)
+  const isMountedRef = useRef(true)
+  
+  // Track if stream is active (business logic)
+  const isStreamActiveRef = useRef(false)
   
   // Safety timeout ref
   const safetyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -68,21 +71,23 @@ export const useChat = (): UseChatReturn => {
   const stepsRef = useRef(steps)
   stepsRef.current = steps  // Sync outside useEffect
 
-  // Single listener registration with guard
+  // Safe event listener with ref (100% safe in StrictMode)
   useEffect(() => {
-    const handleStep = (data: { stepId: string; status: 'pending' | 'active' | 'done' }) => {
+    const handleStepRef = useRef<(data: { stepId: string; status: 'pending' | 'active' | 'done' }) => void>()
+    
+    const handler = (data: { stepId: string; status: 'pending' | 'active' | 'done' }) => {
       useChatStore.getState().addLog(`🔄 Step: ${data.stepId} → ${data.status}`)
       updateStepRef.current(data.stepId, data.status)
     }
+    handleStepRef.current = handler
     
-    // Remove first to avoid duplicate listeners
-    events.off('agentStep', handleStep)
-    events.on('agentStep', handleStep)
+    events.on('agentStep', handler)
     
     return () => {
-      events.off('agentStep', handleStep)
+      events.off('agentStep', handler)
       // Cleanup handler and timeout on unmount
-      isActiveRef.current = false
+      isMountedRef.current = false
+      isStreamActiveRef.current = false
       handlerCleanupRef.current?.()
       handlerCleanupRef.current = null
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
@@ -97,7 +102,7 @@ export const useChat = (): UseChatReturn => {
     // Acquire lock and reset state
     isSendingRef.current = true
     hasSwitchedStepRef.current = false
-    isActiveRef.current = true
+    isStreamActiveRef.current = true
     isCompletedRef.current = false
     contentRef.current = ''  // Single source of truth
     
@@ -128,17 +133,13 @@ export const useChat = (): UseChatReturn => {
     start(stepsData)
     useChatStore.getState().addLog(`🚀 Starting: ${content.substring(0, 30)}...`)
 
-    let charCount = 0
-    
     try {
       handlerCleanupRef.current = chatService.onMessage((msg: Message) => {
-        // Safety: ignore if unmounted or already completed
-        if (!isActiveRef.current || isCompletedRef.current) return
+        // Safety: ignore if not mounted or stream not active
+        if (!isMountedRef.current || !isStreamActiveRef.current || isCompletedRef.current) return
         
-        // Filter by message_id if available (robust check)
-        if (msg.message_id && currentMessageIdRef.current && msg.message_id !== currentMessageIdRef.current) {
-          return
-        }
+        // Strict filter by message_id (no race condition possible)
+        if (msg.message_id !== currentMessageIdRef.current) return
         
         // Handle error status
         if (msg.status === 'error') {
@@ -152,18 +153,20 @@ export const useChat = (): UseChatReturn => {
           return
         }
         
-        // Update chars
+        // Update content - accumulate in single source of truth
         if (msg.content && msg.content.length > 0) {
-          charCount += msg.content.length
           // Single source of truth: just accumulate
           contentRef.current += msg.content
-          // Sync tokenCount to store
-          useChatStore.getState().setTokenCount(charCount)
+          // Sync tokenCount to store (use contentRef.length - no need for charCount)
+          useChatStore.getState().setTokenCount(contentRef.current.length)
           
           // Update message - use RAF for batching (60fps max)
           if (!rafRef.current) {
             rafRef.current = requestAnimationFrame(() => {
-              updateMessageById(assistantId, () => contentRef.current, 'streaming')
+              // Check again before updating
+              if (isStreamActiveRef.current && !isCompletedRef.current) {
+                updateMessageById(assistantId, () => contentRef.current, 'streaming')
+              }
               rafRef.current = null
             })
           }
@@ -179,26 +182,34 @@ export const useChat = (): UseChatReturn => {
         // Done - single source, prevent double
         if ((msg.done === true || msg.status === 'done') && !isCompletedRef.current) {
           isCompletedRef.current = true
-          // Flush any pending RAF
+          isStreamActiveRef.current = false
+          
+          // Flush any pending RAF + content
           if (rafRef.current) {
             cancelAnimationFrame(rafRef.current)
+            // Critical: flush remaining content before clearing
+            updateMessageById(assistantId, () => contentRef.current, 'streaming')
             rafRef.current = null
           }
+          
           // Clear safety timeout
           if (safetyTimeoutRef.current) {
             clearTimeout(safetyTimeoutRef.current)
             safetyTimeoutRef.current = null
           }
+          
+          // Final update with accumulated content
           updateMessageById(assistantId, () => contentRef.current, 'done')
           handlerCleanupRef.current?.()
           handlerCleanupRef.current = null
+          
           // Mark all steps done properly
           const currentSteps = useAgentStore.getState().steps
           currentSteps.forEach(s => {
             if (s.status !== 'done') updateStep(s.id, 'done')
           })
           useChatStore.getState().saveToHistory()
-          useChatStore.getState().addLog(`✅ Done! ${charCount} chars`)
+          useChatStore.getState().addLog(`✅ Done! ${contentRef.current.length} chars`)
           setLoading(false)
           isSendingRef.current = false
         }
@@ -230,7 +241,7 @@ export const useChat = (): UseChatReturn => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current)
     if (safetyTimeoutRef.current) clearTimeout(safetyTimeoutRef.current)
     // Deactivate first to prevent race with incoming messages
-    isActiveRef.current = false
+    isStreamActiveRef.current = false
     // Cleanup handler on clear
     handlerCleanupRef.current?.()
     handlerCleanupRef.current = null
@@ -243,6 +254,7 @@ export const useChat = (): UseChatReturn => {
   const cancel = useCallback(() => {
     // Invalidate stream first to prevent race
     isCompletedRef.current = true
+    isStreamActiveRef.current = false
     currentMessageIdRef.current = ''
     chatService.cancel()
     handlerCleanupRef.current?.()
