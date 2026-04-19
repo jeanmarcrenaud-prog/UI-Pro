@@ -158,7 +158,7 @@ export const useChatStore = create<ChatStore>()(
         set((state) => ({
           messages: state.messages.map(m =>
             m.id === id
-              ? { ...m, content: updater(m.content), status: status || m.status }
+              ? { ...m, content: typeof updater === 'function' ? updater(m.content) : updater, status: status || m.status }
               : m
           )
         })),
