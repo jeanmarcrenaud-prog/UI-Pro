@@ -128,7 +128,7 @@ export function SystemStats() {
 
   const fetchStats = async () => {
     try {
-      const res = await fetch('http://localhost:8000/health')
+      const res = await fetch('/health')
       if (!res.ok) throw new Error('Failed to fetch')
       const data = await res.json()
       setStats(data.system)
