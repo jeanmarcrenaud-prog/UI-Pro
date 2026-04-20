@@ -51,8 +51,10 @@ class ChatService {
   // STREAM HANDLER
   // =====================
   private handleMessage = (event: MessageEvent) => {
+    console.log('[ChatService] Raw message:', event.data)
     try {
       const msg = JSON.parse(event.data)
+      console.log('[ChatService] Parsed message:', msg)
 
       if (msg.type === 'pong') return
 
@@ -135,23 +137,32 @@ class ChatService {
   // =====================
   // CONNECTION
   // =====================
-  private connect() {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) return
+  private connect(): Promise<void> {
+    return new Promise((resolve) => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        resolve()
+        return
+      }
 
-    this.ws = new WebSocket(
-      `ws://${window.location.hostname}:8000/ws`
-    )
+      this.ws = new WebSocket(
+        `ws://${window.location.hostname}:8000/ws`
+      )
 
-    this.ws.onmessage = this.handleMessage
+      this.ws.onopen = () => {
+        console.log('[ChatService] WebSocket connected')
+        resolve()
+      }
 
-    this.ws.onclose = () => {
-      this.clearTimers()
+      this.ws.onmessage = this.handleMessage
 
-      if (this.state.reconnects < 3) {
-        this.state.reconnects++
-        setTimeout(() => this.connect(), 500 * this.state.reconnects)
-      } else {
-        this.stop()
+      this.ws.onclose = () => {
+        this.clearTimers()
+
+        if (this.state.reconnects < 3) {
+          this.state.reconnects++
+          setTimeout(() => this.connect(), 500 * this.state.reconnects)
+        } else {
+          this.stop()
         this.fallback()
       }
     }
@@ -168,11 +179,11 @@ class ChatService {
   // =====================
   // PUBLIC API
   // =====================
-  sendMessage(content: string, messageId?: string) {
+  async sendMessage(content: string, messageId?: string) {
     this.resetState()
     this.state.messageId = messageId || crypto.randomUUID()
 
-    this.connect()
+    await this.connect()
 
     const payload = {
       message_id: this.state.messageId,
@@ -180,6 +191,7 @@ class ChatService {
       model: useUIStore.getState().selectedModel,
     }
 
+    console.log('[ChatService] Sending payload:', payload)
     this.ws?.send(JSON.stringify(payload))
   }
 
