@@ -127,15 +127,23 @@ export function SystemStats() {
   const [error, setError] = useState<string | null>(null)
 
   const fetchStats = async () => {
+    console.log('[SystemStats] Starting fetch...')
     try {
-      const res = await fetch('http://localhost:8000/health')
-      if (!res.ok) throw new Error('Failed to fetch')
-      const data = await res.json()
+      // Use explicit localhost to avoid any proxy issues
+      const url = 'http://127.0.0.1:8000/health'
+      console.log('[SystemStats] Fetching:', url)
+      const res = await fetch(url)
+      console.log('[SystemStats] Response status:', res.status, res.statusText)
+      const text = await res.text()
+      console.log('[SystemStats] Response text:', text)
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${text}`)
+      const data = JSON.parse(text)
+      console.log('[SystemStats] Parsed data:', data)
       setStats(data.system)
       setError(null)
     } catch (err) {
+      console.error('[SystemStats] Error:', err)
       setError('Unable to load system stats')
-      console.error('Failed to fetch system stats:', err)
     } finally {
       setLoading(false)
     }
