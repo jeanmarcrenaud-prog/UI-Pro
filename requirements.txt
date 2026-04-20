@@ -17,6 +17,7 @@ PyYAML==6.0.1
 pytest==8.1.1
 pytest-mock==3.14.0
 psutil==5.9.8
+pynvml>=11.0.0
 
 # Development
 black==24.3.0

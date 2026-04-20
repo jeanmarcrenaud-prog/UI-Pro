@@ -311,15 +311,8 @@ def home(request: Request):
 @app.get("/health", response_model=HealthResponse)
 def health_check():
     """Health check endpoint for container orchestration"""
-    try:
-        import psutil
-        system_info = {
-            "cpu_percent": psutil.cpu_percent(),
-            "memory_percent": psutil.virtual_memory().percent,
-        }
-    except ImportError:
-        system_info = {"cpu_percent": None, "memory_percent": None}
-
+    system_info = _get_system_info()
+    
     return {
         "status": "healthy",
         "timestamp": time.time(),
@@ -330,6 +323,77 @@ def health_check():
         },
         "system": system_info
     }
+
+
+def _get_system_info() -> dict:
+    """Get system info including GPU metrics"""
+    system_info: dict = {}
+    
+    try:
+        import psutil
+        system_info["cpu_percent"] = psutil.cpu_percent()
+        system_info["memory_percent"] = psutil.virtual_memory().percent
+    except ImportError:
+        system_info["cpu_percent"] = None
+        system_info["memory_percent"] = None
+    
+    # Try to get GPU info
+    gpu_info = _get_gpu_info()
+    if gpu_info:
+        system_info["gpu"] = gpu_info
+    
+    return system_info
+
+
+def _get_gpu_info() -> dict | None:
+    """Get GPU utilization and memory usage"""
+    # Try pynvml first (NVIDIA GPU)
+    try:
+        import pynvml
+        pynvml.nvmlInit()
+        
+        # Get first GPU
+        handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+        
+        # Utilization
+        util = pynvml.nvmlDeviceGetUtilizationRates(handle)
+        gpu_util = util.gpu
+        memory = util.memory
+        
+        # Memory info
+        mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+        mem_used_mb = mem_info.used / (1024 * 1024)
+        mem_total_mb = mem_info.total / (1024 * 1024)
+        mem_percent = (mem_info.used / mem_info.total) * 100
+        
+        # Temperature
+        try:
+            temp = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
+        except Exception:
+            temp = None
+        
+        pynvml.nvmlShutdown()
+        
+        return {
+            "name": "NVIDIA GPU",
+            "utilization": gpu_util,
+            "memory_used_mb": round(mem_used_mb, 1),
+            "memory_total_mb": round(mem_total_mb, 1),
+            "memory_percent": round(mem_percent, 1),
+            "temperature": temp,
+        }
+    except ImportError:
+        pass
+    except Exception:
+        pass
+    
+    # Try nvidia-ml-py3 as fallback
+    try:
+        import pynvml
+    except ImportError:
+        pass
+    
+    return None
 
 
 @app.get("/status", response_model=StatusResponse, dependencies=[Depends(verify_api_key)])
