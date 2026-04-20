@@ -190,11 +190,14 @@ export const useChat = (): UseChatReturn => {
 
             // STREAM CONTENT
             if (msg.content) {
+              console.log('[useChat] Stream content received, advancing steps')
               appendStream(msg.content)
 
               // step progression
               updateStep('step-analyzing', 'done')
               updateStep('step-planning', 'active')
+              updateStep('step-executing', 'done')
+              updateStep('step-reviewing', 'active')
             }
 
             // DONE
