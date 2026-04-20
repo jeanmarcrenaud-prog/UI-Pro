@@ -18,20 +18,26 @@ interface EventMap {
   modelChange: { model: string }
   modelsDiscovered: { models: Array<{ id: string; name: string; provider: string }> }
   error: { message: string }
+  
+  // Custom store events
+  log: { message?: string }
+  tokens: { tokenCount?: number }
 }
 
+type AnyEventHandler = EventHandler<unknown>
+
 class EventEmitter {
-  private handlers: Map<string, Set<EventHandler>> = new Map()
+  private handlers: Map<string, Set<AnyEventHandler>> = new Map()
 
   on<K extends keyof EventMap>(event: K, handler: EventHandler<EventMap[K]>): void {
     if (!this.handlers.has(event)) {
       this.handlers.set(event, new Set())
     }
-    this.handlers.get(event)!.add(handler)
+    this.handlers.get(event)!.add(handler as AnyEventHandler)
   }
 
   off<K extends keyof EventMap>(event: K, handler: EventHandler<EventMap[K]>): void {
-    this.handlers.get(event)?.delete(handler)
+    this.handlers.get(event)?.delete(handler as AnyEventHandler)
   }
 
   emit<K extends keyof EventMap>(event: K, data: EventMap[K]): void {
