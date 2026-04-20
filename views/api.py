@@ -1,6 +1,7 @@
 from fastapi import FastAPI, WebSocket, Request, HTTPException, Depends
 from fastapi.websockets import WebSocketDisconnect
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 import logging
@@ -213,6 +214,15 @@ async def custom_exceptions(request: Request, exc: Exception):
 
 
 app.add_exception_handler(Exception, custom_exceptions)
+
+# CORS middleware for frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ==================== MIDDLEWARE ====================
