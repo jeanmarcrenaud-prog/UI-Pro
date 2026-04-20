@@ -1,3 +1,4 @@
+// Chat Service - WebSocket communication with backend
 import type { Message } from '@/lib/types'
 import { useUIStore } from '@/lib/stores/uiStore'
 import { events } from '@/lib/events'
@@ -17,9 +18,9 @@ class ChatService {
   }
 
   private timers = {
-    flush: null as any,
-    stream: null as any,
-    heartbeat: null as any,
+    flush: null as ReturnType<typeof setTimeout> | null,
+    stream: null as ReturnType<typeof setTimeout> | null,
+    heartbeat: null as ReturnType<typeof setInterval> | null,
   }
 
   // =====================
@@ -47,13 +48,62 @@ class ChatService {
     return () => this.handlers.delete(handler)
   }
 
+  // Parse message data - handles double-encoded JSON from backend
+  private parseMessageData(rawMsg: any): any {
+    // If msg.data exists and is a string, parse it
+    if (rawMsg.data && typeof rawMsg.data === 'string') {
+      try {
+        const dataStr = rawMsg.data
+        
+        // Try single parse first
+        try {
+          const inner = JSON.parse(dataStr)
+          return { ...rawMsg, ...inner }
+        } catch {
+          // Multiple concatenated JSON objects - extract responses
+          const responses: string[] = []
+          const doneFlags: boolean[] = []
+          
+          // Split by }{ and parse each object
+          const objects = dataStr.split(/(?=\{"model")/)
+          
+          for (const objStr of objects) {
+            if (!objStr.trim()) continue
+            try {
+              const fixed = objStr.startsWith('{') ? objStr : '{' + objStr
+              const obj = JSON.parse(fixed)
+              if (obj.response) responses.push(obj.response)
+              if (obj.thinking) responses.push(obj.thinking)
+              doneFlags.push(obj.done || false)
+            } catch {
+              // Skip malformed objects
+            }
+          }
+          
+          if (responses.length > 0) {
+            return { 
+              ...rawMsg, 
+              response: responses.join(''), 
+              done: doneFlags[doneFlags.length - 1] || false 
+            }
+          }
+          
+          return rawMsg
+        }
+      } catch {
+        return rawMsg
+      }
+    }
+    return rawMsg
+  }
+
   // =====================
   // STREAM HANDLER
   // =====================
   private handleMessage = (event: MessageEvent) => {
-    console.log('[ChatService] Raw message:', event.data)
     try {
-      const msg = JSON.parse(event.data)
+      const rawMsg = JSON.parse(event.data)
+      const msg = this.parseMessageData(rawMsg)
       console.log('[ChatService] Parsed message:', msg)
 
       if (msg.type === 'pong') return
@@ -88,7 +138,7 @@ class ChatService {
         events.emit('status', { status: 'streaming' })
       }
 
-      const text = msg.content || msg.thinking
+      const text = msg.response || msg.thinking || msg.content || ''
 
       if (text) {
         this.state.content += text
@@ -117,7 +167,7 @@ class ChatService {
         events.emit('status', { status: 'idle' })
       }
     } catch (e) {
-      console.warn('[ChatService] parse error')
+      console.warn('[ChatService] parse error', e)
     }
   }
 
@@ -144,36 +194,47 @@ class ChatService {
         return
       }
 
+      // Close existing socket if not open
+      if (this.ws) {
+        this.ws.close()
+      }
+
       this.ws = new WebSocket(
         `ws://${window.location.hostname}:8000/ws`
       )
 
       this.ws.onopen = () => {
         console.log('[ChatService] WebSocket connected')
+        this.state.reconnects = 0
+
+        this.timers.heartbeat = setInterval(() => {
+          this.ws?.send(JSON.stringify({ type: 'ping' }))
+        }, 15000)
+
         resolve()
       }
 
       this.ws.onmessage = this.handleMessage
 
+      this.ws.onerror = (err) => {
+        console.error('[ChatService] WebSocket error:', err)
+      }
+
       this.ws.onclose = () => {
+        console.log('[ChatService] WebSocket closed')
         this.clearTimers()
 
         if (this.state.reconnects < 3) {
           this.state.reconnects++
+          console.log(`[ChatService] Reconnecting (${this.state.reconnects}/3)...`)
           setTimeout(() => this.connect(), 500 * this.state.reconnects)
         } else {
+          console.log('[ChatService] Max reconnects reached')
           this.stop()
-        this.fallback()
+          this.fallback()
+        }
       }
-    }
-
-    this.ws.onopen = () => {
-      this.state.reconnects = 0
-
-      this.timers.heartbeat = setInterval(() => {
-        this.ws?.send(JSON.stringify({ type: 'ping' }))
-      }, 15000)
-    }
+    })
   }
 
   // =====================
@@ -183,16 +244,26 @@ class ChatService {
     this.resetState()
     this.state.messageId = messageId || crypto.randomUUID()
 
-    await this.connect()
+    try {
+      await this.connect()
 
-    const payload = {
-      message_id: this.state.messageId,
-      message: content,
-      model: useUIStore.getState().selectedModel,
+      const payload = {
+        message_id: this.state.messageId,
+        message: content,
+        model: useUIStore.getState().selectedModel,
+      }
+
+      console.log('[ChatService] Sending payload:', payload)
+      this.ws?.send(JSON.stringify(payload))
+    } catch (err) {
+      console.error('[ChatService] Failed to send message:', err)
+      this.emit({
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: 'Connection failed',
+        status: 'error',
+      })
     }
-
-    console.log('[ChatService] Sending payload:', payload)
-    this.ws?.send(JSON.stringify(payload))
   }
 
   cancel() {
