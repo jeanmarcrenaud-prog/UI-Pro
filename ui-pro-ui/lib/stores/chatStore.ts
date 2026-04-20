@@ -31,6 +31,8 @@ interface ChatStore extends ChatState {
   clearMessages: () => void
   setLoading: (loading: boolean) => void
   setError: (error: string | null) => void
+  // Internal
+  _generateTitle: (messages: Message[]) => string
 }
 
 // Lazy-initialize event listeners (prevent duplication on hot-reload)
