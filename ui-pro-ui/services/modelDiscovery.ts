@@ -24,12 +24,21 @@ class ModelDiscoveryService {
   private models: Model[] = []
   private backends: Record<string, BackendConfig>
   private pollInterval: number | null = null
+  private isDiscovering: boolean = false
 
   constructor(backends: Record<string, BackendConfig> = defaultBackends) {
     this.backends = backends
   }
 
   async discover(): Promise<Model[]> {
+    // Prevent concurrent discovery
+    if (this.isDiscovering) {
+      console.log('[ModelDiscovery] Discovery already in progress, skipping')
+      return this.models
+    }
+
+    this.isDiscovering = true
+    
     const allModels: Model[] = []
     const errors: string[] = []
 
@@ -61,7 +70,7 @@ class ModelDiscoveryService {
     
     // Fetch default model from backend settings and use as initial selection
     try {
-      const response = await fetch('/api/settings/default-model', {
+      const response = await fetch('http://localhost:8000/api/settings/default-model', {
         signal: AbortSignal.timeout(5000),
       })
       if (response.ok) {
@@ -82,6 +91,7 @@ class ModelDiscoveryService {
     // Emit event
     events.emit('modelsDiscovered', { models: allModels, errors })
     
+    this.isDiscovering = false
     return allModels
   }
 
@@ -120,7 +130,7 @@ class ModelDiscoveryService {
     } catch {
       // Fallback to proxy if direct fails (CORS)
       try {
-        response = await fetch('/api/models', {
+        response = await fetch('http://localhost:8000/api/settings/default-model', {
           method: 'GET',
           signal: AbortSignal.timeout(3000),
         })
@@ -194,7 +204,9 @@ class ModelDiscoveryService {
   startPolling(intervalMs: number = 60000): void {
     this.stopPolling()
     this.pollInterval = window.setInterval(() => {
-      this.discover()
+      if (!this.isDiscovering) {
+        this.discover()
+      }
     }, intervalMs)
   }
 
