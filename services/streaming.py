@@ -61,6 +61,7 @@ class StreamChunk:
             "index": self.chunk_index,
             "data": self.text,  # frontend expects 'data' not 'text'
             "content": self.text,  # also available as 'content'
+            "response": self.text,  # KEY FIX: Frontend looks for 'response' field
             "tokens": self.tokens_generated,
             "latency_ms": self.latency_ms,
             "error": self.error,
@@ -104,7 +105,7 @@ class StreamingService:
     }
     
     def to_dict(self, chunk: StreamChunk) -> dict[str, Any]:
-        """Convert chunk to SSE format"""
+        """Convert chunk to SSE format - FRONTEND COMPATIBLE"""
         return {
             "type": self.TO_DICT_MAP.get(chunk.status, "token"),
             "status": chunk.status.value,
@@ -112,6 +113,7 @@ class StreamingService:
             "index": chunk.chunk_index,
             "data": chunk.text,
             "content": chunk.text,
+            "response": chunk.text,  # KEY FIX: Frontend looks for 'response' field
             "tokens": chunk.tokens_generated,
             "latency_ms": chunk.latency_ms,
             "error": chunk.error,
@@ -121,7 +123,7 @@ class StreamingService:
     async def stream_generate(
         self,
         prompt: str,
-        model: str = None,
+        model: str | None = None,  # REQUIRED - no fallback!
         mode: str = "fast",
         on_chunk: Optional[Callable[[StreamChunk], None]] = None,
         on_progress: Optional[Callable[[int, int], None]] = None
@@ -147,14 +149,12 @@ class StreamingService:
         try:
             # Get LLM client
             from adapters.llm import OllamaClient, ModelConfig
-            from services.llm_router import get_llm_router
             
-            # Get model from router
-            router = get_llm_router()
-            route_result = router.route(prompt, mode=mode)
-            model = model or route_result["model"]
+            # Model is REQUIRED - no fallback
+            if not model:
+                raise ValueError("[STREAM] No model provided! Model is required.")
             
-            logger.info(f"Using model: {model} (from router)")
+            logger.info(f"[STREAM] Using model: {model}")
             
             # Detect backend based on model name
             backend = 'ollama'

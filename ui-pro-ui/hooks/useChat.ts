@@ -137,16 +137,23 @@ export const useChat = (): UseChatReturn => {
         .addLog(`🚀 Starting: ${content.slice(0, 30)}...`)
 
       const appendStream = (chunk: string) => {
+        const prevLen = contentRef.current.length
         contentRef.current += chunk
+        const totalLen = contentRef.current.length
 
-        useChatStore
-          .getState()
-          .setTokenCount(contentRef.current.length)
+        useChatStore.getState().setTokenCount(totalLen)
+
+        // Log to DebugPanel when crossing 50-char boundaries
+        const prev50 = Math.floor(prevLen / 50)
+        const curr50 = Math.floor(totalLen / 50)
+        if (curr50 > prev50 && totalLen > 0) {
+          const preview = contentRef.current.slice(-50)
+          useChatStore.getState().addLog(`[Token] "${preview}"`)
+        }
 
         if (!rafRef.current) {
           rafRef.current = requestAnimationFrame(() => {
             rafRef.current = null
-
             if (isStreamActiveRef.current && !isCompletedRef.current) {
               updateMessageById(
                 assistantMessageIdRef.current,
@@ -198,6 +205,8 @@ export const useChat = (): UseChatReturn => {
               updateStep('step-planning', 'active')
               updateStep('step-executing', 'done')
               updateStep('step-reviewing', 'active')
+            } else {
+              console.log('[useChat] Stream content empty:', Object.keys(msg))
             }
 
             // DONE

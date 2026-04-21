@@ -39,13 +39,41 @@ export function SettingsView() {
   }, [])
 
   /**
-   * Discover backend statuses (simulated - integrate with actual discovery if needed)
+   * Discover backend statuses dynamically
    */
-  const backendInfo: BackendInfo[] = [
-    { name: 'Ollama', url: 'http://localhost:11434', status: 'active' as const },
+  const [backendInfo, setBackendInfo] = useState<BackendInfo[]>([
+    { name: 'Ollama', url: 'http://localhost:11434', status: 'inactive' as const },
     { name: 'LM Studio', url: 'http://localhost:1234', status: 'inactive' as const },
     { name: 'llama.cpp', url: 'http://localhost:8080', status: 'inactive' as const },
-  ]
+    { name: 'Lemonade', url: 'http://localhost:13305', status: 'inactive' as const },
+  ])
+
+  // Test backend connectivity on mount
+  useEffect(() => {
+    const checkBackends = async () => {
+      const results = await Promise.all(
+        backendInfo.map(async (backend) => {
+          try {
+            const response = await fetch(`${backend.url}/api/tags`, {
+              signal: AbortSignal.timeout(2000),
+            })
+            if (response.ok) return { ...backend, status: 'active' as const }
+          } catch {
+            // Try alternate endpoint
+            try {
+              const response = await fetch(`${backend.url}/api/v1/models`, {
+                signal: AbortSignal.timeout(2000),
+              })
+              if (response.ok) return { ...backend, status: 'active' as const }
+            } catch {}
+          }
+          return backend
+        })
+      )
+      setBackendInfo(results)
+    }
+    checkBackends()
+  }, [])
 
   /**
    * Handle model refresh

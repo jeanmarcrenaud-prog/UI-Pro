@@ -69,6 +69,7 @@ class ModelDiscoveryService {
     useUIStore.getState().setAvailableModels(modelIds)
     
     // Fetch default model from backend settings and use as initial selection
+    // ONLY if no model is already selected (preserve user choice!)
     try {
       const response = await fetch('http://localhost:8000/api/settings/default-model', {
         signal: AbortSignal.timeout(5000),
@@ -76,13 +77,13 @@ class ModelDiscoveryService {
       if (response.ok) {
         const data = await response.json()
         const defaultModel = data.model_fast
-        // Only set if no model is currently selected
+        // Only set if no model is currently selected - NEVER override user choice
         if (!useUIStore.getState().selectedModel && defaultModel) {
           useUIStore.getState().setSelectedModel(defaultModel)
         }
       }
     } catch {
-      // Fallback: use first available model
+      // Fallback: use first available model ONLY if nothing selected
       if (modelIds.length > 0 && !useUIStore.getState().selectedModel) {
         useUIStore.getState().setSelectedModel(modelIds[0])
       }
@@ -185,14 +186,20 @@ class ModelDiscoveryService {
   }
 
   private async fetchLemonade(url: string): Promise<Model[]> {
+    console.log('[ModelDiscovery] Fetching from Lemonade:', url)
     const response = await fetch(`${url}/api/v1/models`, {
       method: 'GET',
       signal: AbortSignal.timeout(5000),
     })
     
-    if (!response.ok) return []
+    console.log('[ModelDiscovery] Lemonade response:', response.status)
+    if (!response.ok) {
+      console.log('[ModelDiscovery] Lemonade failed, status:', response.status)
+      return []
+    }
     
     const data = await response.json()
+    console.log('[ModelDiscovery] Lemonade models:', data)
     return (data.data || []).map((m: { id: string; labels?: string[] }) => ({
       id: m.id,
       name: m.id,

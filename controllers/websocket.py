@@ -22,7 +22,7 @@ class WebSocketController:
         logger.info(f"WebSocket connected: {session_id}")
         return session_id
     
-    async def handle_message(self, ws, session_id: str, task: str, model: str = None):
+    async def handle_message(self, ws, session_id: str, task: str, model: str | None = None):
         """Handle incoming task message"""
         from services.streaming import get_streaming_service
         from settings import settings
@@ -30,10 +30,13 @@ class WebSocketController:
         if session_id in self.sessions:
             self.sessions[session_id].append(task)
         
-        # Get model from message, settings, or default
-        selected_model = model or settings.model_fast or 'qwen3.5:0.8b'
+        # Model is REQUIRED - no fallback
+        if not model:
+            raise ValueError("No model provided! Model is required.")
         
-        logger.info(f"Using model: {selected_model} (from {'user' if model else 'settings'})")
+        selected_model = model
+        
+        logger.info(f"Using model: {selected_model} (from user)")
         
         # Stream with proper JSON format - pass model to streaming service
         stream_service = get_streaming_service()
