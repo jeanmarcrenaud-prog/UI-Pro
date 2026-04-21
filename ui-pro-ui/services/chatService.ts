@@ -204,12 +204,16 @@ class ChatService {
         this.ws.close()
       }
 
+      // Get model NOW, before connecting
+      const model = useUIStore.getState().selectedModel
+      
       this.ws = new WebSocket(
         `ws://${window.location.hostname}:8000/ws`
       )
 
       this.ws.onopen = () => {
-        console.log('[ChatService] WebSocket connected')
+        console.log('[ChatService] WebSocket connected, model:', model)
+        this.state.lastModel = model
         this.state.reconnects = 0
 
         this.timers.heartbeat = setInterval(() => {
