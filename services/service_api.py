@@ -1,19 +1,15 @@
-# services/api.py - Internal Service API
+# services/service_api.py - Internal Service API
 #
 # API interne unifiée pour les services:
-# - ChatService (pipeline orchestration)
+# - StreamingService (chat en temps réel)
 # - ModelService (LLM management)
 # - MemoryService (context retrieval)
 #
-# Usage:
-#   api = ServiceAPI()
-#   result = await api.chat.execute_task("Create a FastAPI app")
-#   status = await api.chat.get_status()
-#   metrics = api.model.get_metrics()
+# NOTE: ChatService supprimé - utiliser streaming.py directement
 
 from typing import Optional
 from .base import BaseService
-from .chat_service import ChatService, get_chat_service
+from .streaming import get_streaming_service
 from .model_service import ModelService, get_model_service
 from .memory_service import MemoryService, get_memory_service
 
@@ -29,17 +25,14 @@ class ServiceAPI:
     """
     
     def __init__(self):
-        self._chat: Optional[ChatService] = None
         self._model: Optional[ModelService] = None
         self._memory: Optional[MemoryService] = None
         self._initialized = False
     
     @property
-    def chat(self) -> ChatService:
-        """Get chat service (lazy init)"""
-        if self._chat is None:
-            self._chat = get_chat_service()
-        return self._chat
+    def streaming(self):
+        """Get streaming service"""
+        return get_streaming_service()
     
     @property
     def model(self) -> ModelService:
@@ -66,15 +59,10 @@ class ServiceAPI:
         # Initialize memory
         await self.memory.initialize()
         
-        # Initialize chat (depends on model + memory)
-        await self.chat.initialize()
-        
         self._initialized = True
     
     async def shutdown(self) -> None:
         """Shutdown all services"""
-        if self._chat:
-            await self._chat.shutdown()
         if self._model:
             await self._model.shutdown()
         if self._memory:
@@ -87,7 +75,7 @@ class ServiceAPI:
             "api": "healthy" if self._initialized else "not_initialized",
             "model": self.model.health_check() if self._model else "not_loaded",
             "memory": self.memory.health_check() if self._memory else "not_loaded",
-            "chat": self.chat.health_check() if self._chat else "not_loaded",
+            "streaming": "available",
         }
     
     def get_all_metrics(self) -> dict:
@@ -98,7 +86,7 @@ class ServiceAPI:
             },
             "model": self.model.get_metrics() if self._model else {},
             "memory": self.memory.get_metrics() if self._memory else {},
-            "chat": self.chat.get_metrics() if self._chat else {},
+            "streaming": {},
         }
 
 
@@ -127,9 +115,9 @@ async def shutdown_services() -> None:
     await api.shutdown()
 
 
-def get_chat():
-    """Get ChatService for task execution"""
-    return get_service_api().chat
+def get_streaming():
+    """Get StreamingService for real-time chat"""
+    return get_service_api().streaming
 
 
 def get_model():

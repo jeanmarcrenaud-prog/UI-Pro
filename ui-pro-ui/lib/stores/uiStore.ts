@@ -32,8 +32,11 @@ export const useUIStore = create<UIState>()(
       toggleCompactMode: () => set((state) => ({ compactMode: !state.compactMode })),
       
       // Model - initialized empty, will be set from API on mount
-      selectedModel: '',
-      setSelectedModel: (selectedModel) => set({ selectedModel }),
+      selectedModel: 'qwen3.5:9b',  // Default to 9b, not empty
+      setSelectedModel: (model) => {
+        console.log('[useUIStore] setSelectedModel called:', model)
+        set({ selectedModel: model })
+      },
       
       // Available models - defaults (will be refreshed from API)
       availableModels: [

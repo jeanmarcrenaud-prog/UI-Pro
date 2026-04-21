@@ -166,6 +166,7 @@ class StatusResponse(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str
+    model: str | None = None  # Optional model selection
 
 
 class ChatResponse(BaseModel):
@@ -444,8 +445,16 @@ async def ws_endpoint(ws: WebSocket):
 
         try:
             while True:
-                task = await ws.receive_text()
-                await controller.handle_message(ws, session_id, task)
+                raw = await ws.receive_text()
+                # Parse JSON if valid, extract model and message
+                try:
+                    msg_data = json.loads(raw)
+                    task = msg_data.get('message', raw)
+                    model = msg_data.get('model')
+                except (json.JSONDecodeError, TypeError):
+                    task = raw
+                    model = None
+                await controller.handle_message(ws, session_id, task, model=model or None)
         except WebSocketDisconnect:
             logger.info(f"WebSocket disconnected normally")
         except Exception as e:
@@ -509,30 +518,25 @@ async def stream_endpoint(prompt: str):
         )
 
 
-# ==================== CHAT ENDPOINT ====================
+# ==================== CHAT ENDPOINT (FALLBACK) ====================
 
-from services.chat_service import get_chat_service
-from core.executor import CodeExecutor
+from services.streaming import get_streaming_service
 
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
-    """Chat endpoint for REST API"""
+    """Chat endpoint for REST API (fallback when WebSocket fails)"""
     try:
-        # Try ChatService first
-        chat_service = get_chat_service()
-        result = await chat_service.execute(request.message)
-
-        # Extract result code safely
-        result_code = ""
-        if isinstance(result, dict):
-            code = result.get("code")
-            if code is not None:
-                result_code = str(code) if not isinstance(code, str) else code
-        elif result is not None:
-            result_code = str(result)
+        stream_service = get_streaming_service()
         
-        return ChatResponse(result=result_code)
+        # Collect full response from streaming
+        chunks = []
+        async for chunk in stream_service.stream_generate(request.message, model=request.model):
+            if chunk.text:
+                chunks.append(chunk.text)
+        
+        result_text = "".join(chunks)
+        return ChatResponse(result=result_text)
 
     except Exception as e:
         logger.error(f"Chat error: {e}")

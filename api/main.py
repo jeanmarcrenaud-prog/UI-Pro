@@ -171,8 +171,8 @@ async def get_models():
 def get_default_model():
     """Return the default model from settings (.env)"""
     return {
-        "model_fast": settings.model_fast or "qwen3.5:0.8b",
-        "model_reasoning": settings.model_reasoning or "qwen3.5:0.8b",
+        "model_fast": settings.model_fast or "qwen3.5:9b",
+        "model_reasoning": settings.model_reasoning or "qwen3.5:9b",
     }
 
 
@@ -326,12 +326,18 @@ async def ws_endpoint(ws: WebSocket):
                     "chunk_index": chunk_index
                 }))
                 
-                # Use streaming service with model
+                # Use streaming service with model - no fallback!
                 from services.streaming import get_streaming_service
-                from settings import settings
                 
-                selected_model = model or settings.model_fast or 'qwen3.5:0.8b'
-                print(f"[WS] Using model: {selected_model}")
+                if not model:
+                    await ws.send_text(json.dumps({
+                        "type": "error",
+                        "message": "No model provided! Model is required.",
+                        "message_id": msg_id,
+                    }))
+                    return
+                
+                print(f"[WS] Using model: {model} (user_selected)")
                 
                 # Stream the response
                 stream_service = get_streaming_service()
@@ -358,7 +364,7 @@ async def ws_endpoint(ws: WebSocket):
                     "chunk_index": chunk_index
                 }))
                 
-                async for chunk in stream_service.stream_generate(task, model=selected_model):
+                async for chunk in stream_service.stream_generate(task, model=model):
                     # Skip chunks we've already sent (resume support)
                     if chunk_index <= last_chunk:
                         if chunk.text:
@@ -371,6 +377,7 @@ async def ws_endpoint(ws: WebSocket):
                         await ws.send_text(json.dumps({
                             "type": "token",
                             "content": chunk_text,
+                            "response": chunk_text,  # KEY FIX: Frontend looks for 'response' field
                             "done": False,
                             "message_id": msg_id,
                             "chunk_index": chunk_index

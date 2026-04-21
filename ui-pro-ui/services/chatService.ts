@@ -108,8 +108,10 @@ class ChatService {
 
       if (msg.type === 'pong') return
 
-      if (msg.message_id && msg.message_id !== this.state.messageId)
+      if (msg.message_id && msg.message_id !== this.state.messageId) {
+        console.log('[ChatService] message_id mismatch:', msg.message_id, 'vs', this.state.messageId)
         return
+      }
 
       // STEP
       if (msg.type === 'step') {
@@ -143,6 +145,7 @@ class ChatService {
       if (text) {
         this.state.content += text
         this.state.buffer += text
+        console.log('[ChatService] Token received:', text.slice(0, 50))
 
         if (!this.timers.flush) {
           this.timers.flush = setTimeout(() => {
@@ -150,6 +153,8 @@ class ChatService {
             this.timers.flush = null
           }, 30)
         }
+      } else {
+        console.log('[ChatService] No text in message, fields available:', Object.keys(msg))
       }
 
       // DONE
@@ -247,11 +252,28 @@ class ChatService {
     try {
       await this.connect()
 
+      const selectedModel = useUIStore.getState().selectedModel
+      const availableModels = useUIStore.getState().availableModels
+      
+      // DEBUG: Log everything
+      console.log('[ChatService] sendMessage - full state:', {
+        selectedModel: selectedModel,
+        availableModels: availableModels,
+        storeKeys: Object.keys(useUIStore.getState())
+      })
+      
+      // Use selected model, or first available, or fallback to qwen3.5:9b
+      const model = selectedModel || availableModels[0] || 'qwen3.5:9b'
+      
+      console.log('[ChatService] Model selected:', model, '(selected=', selectedModel, ', firstAvailable=', availableModels[0], ')')
+      
       const payload = {
         message_id: this.state.messageId,
         message: content,
-        model: useUIStore.getState().selectedModel,
+        model: model,
       }
+      
+      console.log('[ChatService] Sending payload:', payload)
 
       console.log('[ChatService] Sending payload:', payload)
       this.ws?.send(JSON.stringify(payload))
