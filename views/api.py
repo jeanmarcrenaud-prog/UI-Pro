@@ -451,9 +451,11 @@ async def ws_endpoint(ws: WebSocket):
                     msg_data = json.loads(raw)
                     task = msg_data.get('message', raw)
                     model = msg_data.get('model')
+                    logger.info(f"[WS] Received model: {model}, task: {task[:50]}...")
                 except (json.JSONDecodeError, TypeError):
                     task = raw
                     model = None
+                    logger.warning(f"[WS] Non-JSON message received")
                 await controller.handle_message(ws, session_id, task, model=model or None)
         except WebSocketDisconnect:
             logger.info(f"WebSocket disconnected normally")
