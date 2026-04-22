@@ -175,7 +175,7 @@ export const useChat = (): UseChatReturn => {
             )
               return
 
-            if (msg.message_id !== currentRequestIdRef.current) return
+            if (msg.message_id != null && msg.message_id !== currentRequestIdRef.current) return
 
             // ERROR
             if (msg.status === 'error') {
@@ -195,10 +195,13 @@ export const useChat = (): UseChatReturn => {
               return
             }
 
-            // STREAM CONTENT
-            if (msg.content) {
-              console.log('[useChat] Stream content received, advancing steps')
-              appendStream(msg.content)
+            // STREAM CONTENT or STREAMING/GENERATING STATUS
+            // Advance steps when we receive ANY streaming content OR when status is 'streaming'/'generating'
+            if (msg.content || msg.status === 'streaming' || msg.status === 'generating') {
+              console.log('[useChat] Stream content/status received, advancing steps')
+              if (msg.content) {
+                appendStream(msg.content)
+              }
 
               // step progression
               updateStep('step-analyzing', 'done')

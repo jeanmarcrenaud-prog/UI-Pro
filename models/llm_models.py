@@ -48,8 +48,7 @@ def smart_call(prompt):
     return call(MODELS["fast"], prompt)
 
 def research_and_call(query):
-    from web import search_web, scrape_page
-    from logger import get_logger
+    from api.web import search_web, scrape_page
     
     logger.debug(f"Researching query: {query[:50]}...")
     results = search_web(query)

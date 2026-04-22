@@ -366,14 +366,18 @@ async def ws_endpoint(ws: WebSocket):
                 
                 async for chunk in stream_service.stream_generate(task, model=model):
                     # Skip chunks we've already sent (resume support)
-                    if chunk_index <= last_chunk:
-                        if chunk.text:
-                            chunk_index += 1
+                    if chunk_index < last_chunk:
+                        # Already sent, just advance counter
+                        chunk_index += 1
                         continue
+                    
                     # Standardized format: type + content + message_id + chunk_index
                     chunk_text = chunk.text if hasattr(chunk, 'text') else ''
+                    
+                    # Always increment counter (even for empty chunks to keep sync)
+                    chunk_index += 1
+                    
                     if chunk_text:
-                        chunk_index += 1
                         await ws.send_text(json.dumps({
                             "type": "token",
                             "content": chunk_text,
