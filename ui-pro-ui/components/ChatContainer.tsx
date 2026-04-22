@@ -99,8 +99,15 @@ export function ChatContainer({
               🤖
             </div>
             <div className="bg-slate-800 text-slate-200 rounded-2xl rounded-bl-md px-4 py-3 flex items-center gap-2 whitespace-nowrap">
-              <span className="text-sm">{currentStepNumber}</span>
-              <span className="text-sm font-medium">⚙️ {stepsMessage.steps.find(s => s.status === 'active')?.title || 'Processing'}</span>
+              {/* Show completion or active step number */}
+              {stepsMessage.steps.every(s => s.status === 'done') ? (
+                <span className="text-sm text-emerald-400">✅ Complete</span>
+              ) : (
+                <>
+                  <span className="text-sm">{currentStepNumber}</span>
+                  <span className="text-sm font-medium">⚙️ {stepsMessage.steps.find(s => s.status === 'active')?.title || 'Processing'}</span>
+                </>
+              )}
             </div>
           </motion.div>
         )}
