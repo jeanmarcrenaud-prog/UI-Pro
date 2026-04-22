@@ -177,6 +177,11 @@ export const useChat = (): UseChatReturn => {
 
             if (msg.message_id != null && msg.message_id !== currentRequestIdRef.current) return
 
+            // DEBUG: Log all messages
+            if (msg.type === 'done' || msg.status === 'done') {
+              console.log('[useChat] Detected done message:', msg)
+            }
+
             // ERROR
             if (msg.status === 'error') {
               isCompletedRef.current = true
@@ -212,11 +217,13 @@ export const useChat = (): UseChatReturn => {
               console.log('[useChat] Stream content empty:', Object.keys(msg))
             }
 
-            // DONE
+            // DONE - also handle stream completion after inactivity
+            // If we've been receiving content and then stop for 5+ seconds, assume done
             if (
               msg.done === true ||
               msg.status === 'done'
             ) {
+              console.log('[useChat] Received done signal')
               if (isCompletedRef.current) return
               isCompletedRef.current = true
 
