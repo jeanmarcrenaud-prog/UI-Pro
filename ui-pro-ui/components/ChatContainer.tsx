@@ -44,8 +44,9 @@ export function ChatContainer({
     { icon: '🧪', text: 'Write unit tests', prompt: 'Write comprehensive unit tests for this function with edge case coverage' },
   ]
 
-  // Step progress indicator - properly typed
-  const currentStepNumber = typeof currentStep === 'number' ? currentStep + 1 : 1
+  // Step progress indicator - find index of active step
+  const activeIndex = steps.findIndex(s => s.status === 'active')
+  const currentStepNumber = activeIndex >= 0 ? activeIndex + 1 : 1
 
   return (
     <div className="flex-1 flex flex-col">
