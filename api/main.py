@@ -394,7 +394,8 @@ async def ws_endpoint(ws: WebSocket):
                                 "type": "log",
                                 "message": chunk_text[:100] if chunk_text else "",
                             }))
-                        except Exception:
+                        except Exception as e:
+                            print(f"[WS] Log subscription error: {e}")
                             pass
                 
                 # Mark step 2 as done
