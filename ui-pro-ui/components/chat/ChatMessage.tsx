@@ -65,6 +65,15 @@ function ChatMessageContent({ msg }: ChatMessageContentProps) {
     )
   }
 
+  // Also render MarkdownRenderer for 'done' status
+  if (msg.role === 'assistant' && msg.content && msg.status === 'done') {
+    return (
+      <div className="text-slate-100">
+        <MarkdownRenderer content={msg.content} />
+      </div>
+    )
+  }
+
   if (msg.status === 'thinking') {
     return (
       <div className="text-sm text-slate-300">
