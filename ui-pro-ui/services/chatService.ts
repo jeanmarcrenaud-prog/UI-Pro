@@ -157,8 +157,9 @@ class ChatService {
         console.log('[ChatService] No text in message, fields available:', Object.keys(msg))
       }
 
-      // DONE
-      if (msg.done) {
+      // DONE - handle both msg.done (Ollama) and msg.type === 'done' (backend)
+      if (msg.done || msg.type === 'done') {
+        console.log('[ChatService] Done signal received')
         this.flushBuffer(true)
 
         this.emit({
