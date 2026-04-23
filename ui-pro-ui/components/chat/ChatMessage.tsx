@@ -22,7 +22,7 @@ export function ChatMessage({ msg }: ChatMessageProps) {
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.2 }}
-      className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
+      className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''} overflow-hidden`}
     >
       {/* Avatar */}
       <div
@@ -46,7 +46,6 @@ export function ChatMessage({ msg }: ChatMessageProps) {
         }`}
       >
         <ChatMessageContent msg={msg} />
-        <StreamingCursor msg={msg} />
       </div>
     </motion.div>
   )
@@ -74,10 +73,12 @@ function ChatMessageContent({ msg }: ChatMessageContentProps) {
     )
   }
 
-  if (msg.status === 'thinking') {
+  // For all other assistant messages with content, use MarkdownRenderer
+  // This ensures code is always in isolated scrollable containers
+  if (msg.role === 'assistant' && msg.content) {
     return (
-      <div className="text-sm text-slate-300">
-        <div className="mb-2">⚡ {msg.content || 'Generating...'}</div>
+      <div className="text-slate-100">
+        <MarkdownRenderer content={msg.content} />
       </div>
     )
   }
@@ -104,6 +105,7 @@ interface StreamingCursorProps {
 function StreamingCursor({ msg }: StreamingCursorProps) {
   if (msg.role !== 'assistant') return null
 
+  // Only show cursor during streaming status
   if (msg.status === 'streaming') {
     return (
       <motion.span
@@ -111,12 +113,6 @@ function StreamingCursor({ msg }: StreamingCursorProps) {
         transition={{ repeat: Infinity, duration: 0.8 }}
         className="inline-block w-2 h-4 bg-emerald-400 ml-1"
       />
-    )
-  }
-
-  if (msg.status === 'thinking') {
-    return (
-      <span className="inline-block w-2 h-4 bg-purple-400 ml-1" />
     )
   }
 

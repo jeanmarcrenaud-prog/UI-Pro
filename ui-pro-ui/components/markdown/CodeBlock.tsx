@@ -15,7 +15,15 @@ export function CodeBlock({ language, value }: any) {
         💾
       </button>
 
-      <div className="max-h-96 overflow-y-auto">
+      {/* Isolated code container with scrollbar */}
+      <div 
+        className="h-64 min-h-[8rem] overflow-auto"
+        style={{
+          maxHeight: '16rem',
+          scrollbarWidth: 'thin',
+          scrollbarColor: '#475569 #1e293b'
+        }}
+      >
         <Highlighter
           language={language}
           style={oneDark}
@@ -24,11 +32,17 @@ export function CodeBlock({ language, value }: any) {
             padding: '1rem',
             background: 'transparent',
             fontSize: '0.875rem',
-            lineHeight: '1.5'
+            lineHeight: '1.5',
+            minHeight: '8rem'
           }}
         >
           {value}
         </Highlighter>
+      </div>
+      
+      {/* Code language badge */}
+      <div className="absolute bottom-2 left-3 text-xs text-slate-500">
+        {language || 'code'}
       </div>
     </div>
   )
