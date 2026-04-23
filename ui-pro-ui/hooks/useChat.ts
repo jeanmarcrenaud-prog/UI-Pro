@@ -201,20 +201,11 @@ export const useChat = (): UseChatReturn => {
             }
 
             // STREAM CONTENT or STREAMING/GENERATING STATUS
-            // Advance steps when we receive ANY streaming content OR when status is 'streaming'/'generating'
+            // Only append content - steps are managed by backend events
             if (msg.content || msg.status === 'streaming' || msg.status === 'generating') {
-              console.log('[useChat] Stream content/status received, advancing steps')
               if (msg.content) {
                 appendStream(msg.content)
               }
-
-              // step progression
-              updateStep('step-analyzing', 'done')
-              updateStep('step-planning', 'active')
-              updateStep('step-executing', 'done')
-              updateStep('step-reviewing', 'active')
-            } else {
-              console.log('[useChat] Stream content empty:', Object.keys(msg))
             }
 
             // DONE - also handle stream completion after inactivity

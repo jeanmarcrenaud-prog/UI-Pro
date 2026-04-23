@@ -15,6 +15,7 @@ class ChatService {
     lastChunk: 0,
     started: false,
     reconnects: 0,
+    lastModel: null as string | null,
   }
 
   private timers = {
@@ -113,12 +114,17 @@ class ChatService {
         return
       }
 
-      // STEP
+      // STEP - always allow step events through (they don't have message_id)
       if (msg.type === 'step') {
         events.emit('agentStep', {
           stepId: msg.step_id,
           status: msg.status,
         })
+        return
+      }
+
+      if (msg.message_id && msg.message_id !== this.state.messageId) {
+        console.log('[ChatService] message_id mismatch:', msg.message_id, 'vs', this.state.messageId)
         return
       }
 
