@@ -211,9 +211,11 @@ def start_api(block: bool = True):
     print(f"{Colors.GREEN}→ http://localhost:{API_PORT}{Colors.RESET}")
     print(f"{Colors.GREEN}→ http://localhost:{API_PORT}/docs{Colors.RESET}")
     
-    # Launch via uvicorn module (cleaner than sys.path manipulation)
+    # Launch via uvicorn using venv Python
+    import sys
+    venv_python = sys.executable
     subprocess.run([
-        "uvicorn", "views.api:app", 
+        venv_python, "-m", "uvicorn", "views.api:app", 
         "--host", "0.0.0.0", 
         "--port", str(API_PORT)
     ])
