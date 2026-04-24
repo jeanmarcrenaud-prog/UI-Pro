@@ -20,13 +20,15 @@ class TestLLMRouter:
             reasoner = "qwen-opus"
             ollama_url = "http://localhost:11434"
             timeout = 30
+            url = "http://localhost:11434/api/generate"
+            model = "qwen2.5:7b"
         
         return MockConfig()
 
     @pytest.fixture
     def router(self, mock_config):
         """Create router with mock config"""
-        from models.llm_router import LLMRouter
+        from llm.router import LLMRouter, ModelsConfig
         return LLMRouter(config=mock_config)
 
     def test_get_model_for_task_code(self, router):
@@ -66,7 +68,7 @@ class TestLLMRouter:
     def test_generate_raises_on_error(self, router):
         """Test that generate handles errors gracefully"""
         # Mock the client to raise an error
-        with patch("models.llm_router.OllamaClient") as mock_client:
+        with patch("llm.client.OllamaClient") as mock_client:
             mock_instance = MagicMock()
             mock_instance.generate.side_effect = Exception("Connection failed")
             mock_client.return_value = mock_instance
@@ -77,7 +79,7 @@ class TestLLMRouter:
 
     def test_stream_raises_on_error(self, router):
         """Test that stream method handles errors gracefully"""
-        with patch("models.llm_router.OllamaClient") as mock_client:
+        with patch("llm.client.OllamaClient") as mock_client:
             mock_instance = MagicMock()
             mock_instance.stream.side_effect = Exception("Connection failed")
             mock_client.return_value = mock_instance
@@ -98,7 +100,7 @@ class TestModelSelection:
 
     def test_explicit_mode_mapping(self):
         """Test explicit mode parameter"""
-        from models.llm_router import ModelsConfig
+        from llm.router import ModelsConfig
         config = ModelsConfig()
         
         # Each mode should have a model
@@ -109,7 +111,7 @@ class TestModelSelection:
 
     def test_single_backend_config(self):
         """Test single backend configuration"""
-        from models.llm_router import ModelsConfig
+        from llm.router import ModelsConfig
         config = ModelsConfig()
         
         # Should have URL configured

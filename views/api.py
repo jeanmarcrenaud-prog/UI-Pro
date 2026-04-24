@@ -108,7 +108,7 @@ store = ThreadSafeStore(max_size=100)
 
 # ==================== TOP-LEVEL IMPORTS ====================
 
-from models.config import config as app_config
+from core.config import config as app_config
 from models.settings import settings
 
 logger = logging.getLogger(__name__)

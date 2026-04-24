@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from typing import Literal
 import logging
 
+from llm.client import OllamaClient, ModelConfig
+
 logger = logging.getLogger(__name__)
 
 # ==================== **1. CONFIG** ====================
@@ -106,19 +108,27 @@ class LLMRouter:
         
         return self.config.reasoning  # Default to reasoning
     
-    def get_for_task(self, task: str) -> "LLMClient":
+    def _create_model_config(self, model_name: str | None = None) -> ModelConfig:
+        """Create ModelConfig from current config and optional model name."""
+        return ModelConfig(
+            url=self.config.ollama_url,
+            model=model_name or self.config.fast,
+            timeout=self.config.timeout,
+        )
+    
+    def get_for_task(self, task: str) -> OllamaClient:
         """
-        Créer LLMClient approprié.
+        Créer OllamaClient approprié.
         
         Args:
             task: Description
             
         Returns:
-            LLMClient configuré
+            OllamaClient configuré
         """
         model_name = self.get_model_for_task(task)
         logger.debug(f"Routing task to model: {model_name}")
-        return OllamaClient(self.config)
+        return OllamaClient(self._create_model_config(model_name))
     
     def try_fallback(self, task: str) -> str:
         """
@@ -146,22 +156,28 @@ class LLMRouter:
         """
         # Get client for mode
         mode_to_model = {
-            "fast": getattr(self.config, 'fast', None) or "qwen2.5-coder:7b",
-            "code": getattr(self.config, 'code', None) or "deepseek-coder:33b",
-            "reasoning": getattr(self.config, 'reasoning', None) or "qwen2.5-coder:32b",
-            "reasoner": getattr(self.config, 'reasoner', None) or "qwen-opus",
+            "fast": self.config.fast,
+            "code": self.config.code,
+            "reasoning": self.config.reasoning,
+            "reasoner": self.config.reasoner,
         }
-        model_name = mode_to_model.get(mode, mode_to_model.get("fast"))
+        model_name = mode_to_model.get(mode, self.config.fast)
         
         # Get client and generate
-        client = OllamaClient(self.config)
+        client = OllamaClient(self._create_model_config(model_name))
         return client.generate(prompt)
     
-    def get_for_mode(self, mode: str) -> "OllamaClient":
+    def get_for_mode(self, mode: str) -> OllamaClient:
         """
         Get client by mode (fast/code/reasoning).
         """
-        return OllamaClient(self.config)
+        model_name = {
+            "fast": self.config.fast,
+            "code": self.config.code,
+            "reasoning": self.config.reasoning,
+            "reasoner": self.config.reasoner,
+        }.get(mode, self.config.fast)
+        return OllamaClient(self._create_model_config(model_name))
 
 
 # ==================== **3. Test Routing** ====================
@@ -188,4 +204,4 @@ class TestLLMRouter:
         """Test fallback"""
         # Test fallback when no Ollama available
         # (Skip in production)
-pass
+        pass

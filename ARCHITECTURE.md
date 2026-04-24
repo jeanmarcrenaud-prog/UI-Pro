@@ -1,53 +1,51 @@
-# 🏗️ Architecture UI-Pro
+# Architecture UI-Pro
 
 ## 📁 Structure du Projet
 
 ```
 ui-pro/
 ├── run.py                      # Launcher principal
-├── settings.py                 # Configuration centralisée (Pydantic)
+├── settings.py                 # Configuration centralisée
 ├── app/
 │   └── launcher.py             # Démarrage des services
-├── core/                       # Services métier共享 (état, memoria, logging)
-│   ├── config.py
-│   ├── errors.py              # Hiérarchie d'exceptions métier
-│   ├── logging.py            # Logging standardisé
-│   ├── memory.py             # FAISS wrapper
+├── core/                       # Core modules (canonical)
+│   ├── config.py               # Configuration
+│   ├── errors.py              # Hiérarchie d'exceptions
+│   ├── logger.py             # Logging standardisé
+│   ├── memory.py             # FAISS wrapper (canonical)
 │   ├── metrics.py           # Métriques
 │   ├── orchestrator_async.py # Pipeline agent
 │   ├── prompts.py            # Prompts centralisés
-│   ├── state_manager.py      # Gestion d'état
-│   └── logger.py             # Logger partagé
-├── controllers/               # Coordination requête/réponse (canonical)
-│   ├── executor.py          # CodeExecutor (sandbox, auto-fix)
-│   ├── orchestrator.py       # Orchestrateur principal
-│   ├── team.py               # Équipe d'agents
-│   ├── llm_client.py        # Client LLM (legacy)
-│   └── code_review.py        # Code review
-├── services/                  # Orchestration dépendances/adapters (pur)
-│   ├── chat_service.py       # Service de chat
-│   ├── model_service.py    # Service modèle LLM
+│   ├── state_manager.py      # Gestion d'état (canonical)
+│   ├── executor.py           # CodeExecutor (canonical)
+│   ├── code_review.py        # Code review (canonical)
+│   ├── constants.py           # Constantes
+│   └── events.py             # Event bus
+├── controllers/               # Coordination
+│   └── orchestrator.py       # Orchestrateur principal
+├── services/                  # Service layer
+│   ├── model_service.py     # Service modèle LLM
 │   ├── memory_service.py    # Service mémoire
-│   ├── streaming.py         # Streaming SSE/WS
-│   ├── tools.py             # Registre d'outils
-│   └── agents.py             # Définitions d'agents
-├── adapters/                  # Intégrations externes
-│   ├── executor/            # Adaptateur executor
-│   ├── llm/                 # Clients LLM (Ollama, LM Studio, llama.cpp)
-│   │   ├── client.py       # Canonical OllamaClient
-│   │   └── __init__.py
-│   └── memory/              # Adaptateurs mémoire
-│       └── faiss.py         # FAISS adapter
-├── models/                   # Schémas et types
-│   ├── config.py
-│   ├── settings.py          # Settings Pydantic
-│   ├── state.py
-│   ├── llm_router.py
-│   └── memory.py
-├── llm/                     # Appels LLM
-│   ├── __init__.py
-│   ├── models.py
-│   └── router.py
+│   ├── streaming.py        # Streaming SSE/WS
+│   ├── tools.py            # Registre d'outils
+│   ├── llm_router.py      # Advanced routing
+│   └── agents.py           # Agent definitions
+├── llm/                     # LLM clients (canonical)
+│   ├── client.py           # OllamaClient (canonical)
+│   └── router.py           # Basic routing (canonical)
+├── models/                   # Types only (NO logic)
+│   ├── settings.py        # Settings
+│   └── metrics.py         # Metrics types
+├── agents/                   # Agent system
+│   ├── agent.py           # Base agent
+│   ├── planner.py         # Planner
+│   └── react.py           # ReAct agent
+├── adapters/                  # Legacy adapters (deprecated)
+│   ├── executor/         # Re-exports from core
+│   ├── llm/             # Re-exports from llm/
+│   └── memory/           # FAISS adapter
+└── tests/                   # Test suite
+```
 ├── views/                    # Couche API
 │   ├── api.py              # FastAPI app
 │   ├── dashboard.py        # Gradio UI

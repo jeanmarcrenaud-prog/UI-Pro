@@ -1,6 +1,9 @@
 # services/error_handler.py - Error Handling Service
 #
-# Comprehensive error handling with:
+# Role: Comprehensive error classification and recovery
+# Function: Classifies errors, provides user-friendly messages and recovery suggestions
+#
+# Features:
 # - Error classification
 # - User-friendly messages
 # - Recovery suggestions

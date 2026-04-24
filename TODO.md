@@ -2,9 +2,18 @@
 
 > **Liste des tâches de refactoring et d'amélioration** du projet `ui-pro`.
 
-Statut: **COMPLÉTÉ** - Toutes les améliorations prioritaires ont été implémentées.
+Statut: ✅ COMPLÉTÉ - 2026-04-24
 
 ## ✅ COMPLÉTÉ (Terminé)
+
+### Refactoring Terminé (2026-04-24)
+
+| Tâche | Description | Status |
+|-------|-------------|--------|
+| **Code Deduplication** | Supprimé 9 fichiers doublons (models/llm_router.py, models/memory.py, etc.) | ✅ DONE |
+| **Router Fix** |Corrigé llm/router.py avec imports corrects | ✅ DONE |
+| **services/llm_router.py Fix** | Restauré version fonctionnelle | ✅ DONE |
+| **Docstrings** | Ajoutés Role/Function dans services/*.py | ✅ DONE |
 
 ### Core Implementation
 
@@ -130,5 +139,5 @@ pytest tests/test_execution.py -v
 
 ---
 
-**Dernière mise à jour**: 2026-04-14  
+**Dernière mise à jour**: 2026-04-24  
 **Status**: Complété ✅

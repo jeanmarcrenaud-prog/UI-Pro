@@ -1,22 +1,19 @@
 # services/tools.py - Tools / Function Calling
-"""
-ToolManager - Validate, execute and log tool calls.
-
-Contract:
-    async run_tool(name: str, args: dict) -> ToolResult
-    
-    - Validates tool call against registered tools
-    - Executes with timeout (default 30s)
-    - Returns structured ToolResult
-    
-Registered tools:
-    - calculator
-    - search_memory
-    - get_time
-    
-Dependencies:
-    - core/executor.py for sandboxed code execution
-"""
+#
+# Role: Tool registry and execution for function calling
+# Function: Validate, execute and log tool calls
+#
+# Contract:
+#     async run_tool(name: str, args: dict) -> ToolResult
+#     
+#     - Validates tool call against registered tools
+#     - Executes with timeout (default 30s)
+#     - Returns structured ToolResult
+#     
+# Registered tools:
+#     - calculator
+#     - search_memory
+#     - get_time
 
 import logging
 import json
