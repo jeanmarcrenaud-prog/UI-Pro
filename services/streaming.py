@@ -146,7 +146,7 @@ class StreamingService:
     
     def _get_validated_client(self, model: str, backend: str):
         """Validate backend availability and get client."""
-        from adapters.llm import OllamaClient, ModelConfig
+        from llm.client import OllamaClient, ModelConfig
         from models.settings import settings
         import requests
         
@@ -185,7 +185,7 @@ class StreamingService:
             raise ValueError(f"Backend '{backend}' not reachable: {e}")
         
         # Return client for validated backend
-        config = ModelConfig(backend=backend)
+        config = ModelConfig(url=url, model=model, timeout=30)
         return OllamaClient(config)
     
     def _parse_available_models(self, response, backend: str) -> list[str]:
@@ -235,7 +235,7 @@ class StreamingService:
         
         try:
             # Get LLM client
-            from adapters.llm import OllamaClient, ModelConfig
+            from llm.client import OllamaClient, ModelConfig
             from models.settings import settings
             
             # Model is REQUIRED - no fallback
