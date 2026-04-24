@@ -18,7 +18,7 @@
 import logging
 import json
 import asyncio
-from typing import Optional, Dict, Any, List, Callable, Union
+from typing import Optional, Dict, Any, List, Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime
