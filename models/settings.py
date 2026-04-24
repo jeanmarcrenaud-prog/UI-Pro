@@ -1,7 +1,10 @@
 """
-settings.py - Configuration centralisée pour UI-Pro
-
-Single source of truth for application configuration.
+models/settings.py - Unified Configuration
+#
+# Role: Single source of truth for all settings (YAML + env backends)
+# Used by: All modules requiring configuration
+#
+# NOTE:
 
 NOTE:
 - YAML config is intended for application-level settings (app, api, memory, dashboard).

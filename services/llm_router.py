@@ -1,6 +1,7 @@
 # services/llm_router.py - Advanced LLM Router
-"""
-AdvancedLLMRouter - Task-based model selection with cost/window optimization.
+#
+# Role: Task-based model selection with cost/window optimization
+# Used by: orchestrator for complex task routing
 
 Contract:
     async select_model(task: TaskType, context_window?: int) -> ModelInfo

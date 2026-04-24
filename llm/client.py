@@ -1,6 +1,7 @@
-# 🎯 **LLMClient Interface** (Protocol-based DI)
+# llm/client.py - LLM Client Interfaces & Factory
 #
-# Cette interface abstraite permet :
+# Role: Protocol-based LLM client interface with Ollama adapter
+# Used by: router.py, streaming service, general LLM calls
 # - Swap facile (Ollama → HTTP → HF)
 # - Mocking pour tests
 # - Architecture propre (Inversion de contrôle)

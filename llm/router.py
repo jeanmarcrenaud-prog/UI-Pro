@@ -1,6 +1,7 @@
-# 🔄 **Multi-Model Router**
+# llm/router.py - Multi-Model Router
 #
-# Route queries vers les meilleurs modèles :
+# Role: Intelligent routing of tasks to best model based on keywords
+# Used by: orchestrator, code_review, general task routing
 # - fast → qwen2.5:7b (exposé <300ms)
 # - reasoning → qwen2.5:32b (complexité)
 # - code → deepseek-coder:33b (spécialisation)

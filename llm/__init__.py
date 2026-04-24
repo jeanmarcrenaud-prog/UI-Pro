@@ -1,4 +1,7 @@
-# LLM package - Agents, Client, Router, Models
+# llm/__init__.py - LLM Package Entry Point
+#
+# Role: Public API for LLM agents (planner, architect, coder, etc.)
+# Exports: call, smart_call, research_and_call, MODELS, agent functions
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))

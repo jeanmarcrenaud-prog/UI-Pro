@@ -1,6 +1,7 @@
 # services/streaming.py - Streaming Service
 #
-# Real-time streaming responses with:
+# Role: Real-time LLM response streaming with WebSocket support
+# Used by: WebSocket endpoint, API streaming
 # - Stream-based generation
 # - Error recovery
 # - Proper cancellation support
