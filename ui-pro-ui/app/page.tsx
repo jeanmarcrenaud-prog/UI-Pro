@@ -34,11 +34,18 @@ export default function Home() {
     
     if (isLoading) {
       // Log model on first call only
-      if (!hasLoggedModel.current) {
-        hasLoggedModel.current = true
-        const currentModel = selectedModel || availableModels[0] || 'gemma4'
-        useChatStore.getState().addLog(`🤖 Using model: ${currentModel}`)
-      }
+
+
+  if (!hasLoggedModel.current) {
+    hasLoggedModel.current = true
+
+    const currentModel =
+      selectedModel ??
+      (availableModels.length > 0 ? availableModels[0] : 'unknown')
+
+    useChatStore.getState().addLog(`🤖 Using model: ${currentModel}`)
+  }
+
       
       interval = setInterval(() => {
         setElapsedSeconds(s => s + 1)
@@ -54,8 +61,10 @@ export default function Home() {
     }
   }, [isLoading, selectedModel, availableModels])
 
-  const modelName = selectedModel || availableModels[0] || 'gemma4'
-  
+  const modelName =
+    selectedModel ??
+    (availableModels.length > 0 ? availableModels[0] : undefined)
+    
   const hasError = messages.some(m => m.status === 'error')
   const debugStatus: 'idle' | 'running' | 'error' = isLoading ? 'running' : hasError? 'error' : 'idle'
 

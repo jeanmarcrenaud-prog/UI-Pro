@@ -77,6 +77,18 @@ class StreamConfig:
     max_tokens: int = 2048
     timeout_ms: int = 60000
     enable_progress: bool = True
+    
+    # Backend detection rules (model name patterns -> backend)
+    backend_rules: dict = None
+    
+    def __post_init__(self):
+        if self.backend_rules is None:
+            self.backend_rules = {
+                "ollama": [],  # Default for ollama models
+                "lemonade": ["GGUF", "user.", "Whisper-Base"],
+                "llamacpp": ["llamacpp"],
+                "lmstudio": ["lmstudio"],
+            }
 
 
 class StreamingService:
@@ -120,6 +132,80 @@ class StreamingService:
             "timestamp": chunk.timestamp.isoformat(),
         }
     
+    def _detect_backend(self, model: str) -> str:
+        """Detect which backend to use based on model name patterns."""
+        rules = self.config.backend_rules
+        for backend, patterns in rules.items():
+            if not patterns:
+                continue  # Empty list = default for this backend
+            for pattern in patterns:
+                if pattern in model or model.startswith(pattern):
+                    return backend
+        return "ollama"  # Default fallback
+    
+    def _get_validated_client(self, model: str, backend: str):
+        """Validate backend availability and get client."""
+        from adapters.llm import OllamaClient, ModelConfig
+        from models.settings import settings
+        import requests
+        
+        backends_config = settings.backends
+        backend_cfg = backends_config.get(backend)
+        
+        if not backend_cfg:
+            raise ValueError(f"Unknown backend: {backend}")
+        
+        if not backend_cfg.get("enabled", False):
+            raise ValueError(f"Backend '{backend}' is disabled in config")
+        
+        url = backend_cfg["url"]
+        models_endpoint = backend_cfg["models_endpoint"]
+        
+        try:
+            test_resp = requests.get(f"{url}{models_endpoint}", timeout=5)
+            if test_resp.status_code == 404:
+                # Endpoint doesn't exist - try anyway
+                pass
+            elif not test_resp.ok:
+                raise ValueError(f"Backend '{backend}' returned {test_resp.status_code}")
+            
+            # Parse models based on backend
+            available_models = self._parse_available_models(test_resp, backend)
+            
+            if model not in available_models:
+                raise ValueError(
+                    f"Model '{model}' not found in {backend}. "
+                    f"Available: {available_models}"
+                )
+            
+            logger.info(f"[STREAM] {backend} validated, model '{model}' available")
+            
+        except requests.exceptions.ConnectionError as e:
+            raise ValueError(f"Backend '{backend}' not reachable: {e}")
+        
+        # Return client for validated backend
+        config = ModelConfig(backend=backend)
+        return OllamaClient(config)
+    
+    def _parse_available_models(self, response, backend: str) -> list[str]:
+        """Parse available models from backend response."""
+        if not response.ok:
+            return []
+        
+        try:
+            data = response.json()
+        except Exception:
+            return []
+        
+        if backend == "ollama":
+            return [m.get("name", "") for m in data.get("models", [])]
+        elif backend == "lemonade":
+            return [m.get("id", "") for m in data.get("data", [])]
+        elif backend in ["lmstudio", "llamacpp"]:
+            return [m.get("id", "") for m in data.get("data", [])]
+        
+        return []
+    
     async def stream_generate(
         self,
         prompt: str,
@@ -149,6 +235,7 @@ class StreamingService:
         try:
             # Get LLM client
             from adapters.llm import OllamaClient, ModelConfig
+            from models.settings import settings
             
             # Model is REQUIRED - no fallback
             if not model:
@@ -156,34 +243,12 @@ class StreamingService:
             
             logger.info(f"[STREAM] Using model: {model}")
             
-            # Detect backend based on model name
-            backend = 'ollama'
-            if model and ('GGUF' in model or model.startswith('user.') or model in ['Whisper-Base']):
-                backend = 'lemonade'
-                logger.info(f"Using Lemonade backend for model: {model}")
+            # Detect backend using config rules
+            backend = self._detect_backend(model)
+            logger.info(f"[STREAM] Detected backend: {backend}")
             
-            # Try Ollama first, fallback to Lemonade if fails
-            config_ollama = ModelConfig(backend='ollama')
-            client = OllamaClient(config_ollama)
-            
-            # Test if Ollama is working, otherwise use Lemonade
-            try:
-                import requests
-                test_resp = requests.get("http://localhost:11434/api/tags", timeout=2)
-                if test_resp.ok and test_resp.json().get('models'):
-                    logger.info("Ollama backend is available")
-                else:
-                    logger.warning("Ollama has no models, trying Lemonade")
-                    backend = 'lemonade'
-                    model = "Gemma-4-E2B-it-GGUF"  # Use available Lemonade model
-                    config_ollama = ModelConfig(backend='lemonade')
-                    client = OllamaClient(config_ollama)
-            except Exception as e:
-                logger.warning(f"Ollama not available ({e}), trying Lemonade")
-                backend = 'lemonade'
-                model = "Gemma-4-E2B-it-GGUF"  # Use available Lemonade model
-                config_ollama = ModelConfig(backend='lemonade')
-                client = OllamaClient(config_ollama)
+            # Validate backend and model using settings config
+            client = self._get_validated_client(model, backend)
             
             # Register this stream so it can be cancelled later
             self._active_streams[stream_id] = asyncio.current_task()
