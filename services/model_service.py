@@ -1,6 +1,7 @@
-# services/model_service.py - Model Management Service (Advanced)
+# services/model_service.py - Model Management Service
 #
-# Gestion intelligente des modèles LLM avec:
+# Role: Intelligent model selection with latency/success tracking
+# Used by: orchestrator, router fallback
 # - Fallback automatique intelligent
 # - Latency tracking (p50, p95)
 # - Routing contextuel selon task + historique

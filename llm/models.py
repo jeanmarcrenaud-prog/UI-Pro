@@ -1,4 +1,7 @@
-from core.logger import get_logger
+# llm/models.py - Ollama Direct Client
+#
+# Role: Low-level direct calls to Ollama API
+# Used by: llm/__init__.py wrapper, not for external use
 from models.settings import settings
 import requests
 
