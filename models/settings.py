@@ -1,29 +1,25 @@
-"""
-settings.py
-
-Configuration externalisée pour le projet ui-pro.
-Charge depuis .env file ou environnement variables.
-"""
-
+import copy
 import os
 import logging
 from pathlib import Path
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
 
+# Note: Configure logging.basicConfig(...) before importing this module
+# to see logs from settings.py
 logger = logging.getLogger(__name__)
 
 # Paths
-PROJECT_ROOT = Path(__file__).parent.parent
+PROJECT_ROOT = Path(__file__).parent
 
 # Load .env file relative to PROJECT_ROOT
 ENV_FILE = PROJECT_ROOT / ".env"
 LOAD_DOTENV = ENV_FILE.exists()
 if LOAD_DOTENV:
     load_dotenv(ENV_FILE)
-    logger.info(f"[settings] Loaded .env from {ENV_FILE}")
+    logger.debug(f"[settings] Loaded .env from {ENV_FILE}")
 else:
-    logger.info(f"[settings] No .env file found at {ENV_FILE}")
+    logger.debug(f"[settings] No .env file found at {ENV_FILE}")
 
 # Paths - relative to PROJECT_ROOT
 WORKSPACE = PROJECT_ROOT / os.getenv("WORKSPACE", "workspace")
@@ -62,8 +58,8 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 # HF_TOKEN should be loaded carefully (see memory.py or .env)
 # DO NOT hardcode in this file!
 
-# Backend configuration
-BACKENDS = {
+# Backend configuration (deep copy to prevent mutation)
+_BACKENDS_TEMPLATE = {
     "ollama": {
         "url": OLLAMA_URL,
         "enabled": _parse_bool(os.getenv("OLLAMA_ENABLED"), True),
@@ -102,9 +98,9 @@ class Settings:
     llm_timeout: int = LLM_TIMEOUT
     executor_timeout: int = EXECUTOR_TIMEOUT
     log_level: str = LOG_LEVEL
-    workspace: str = field(default_factory=lambda: str(WORKSPACE))
+    workspace: Path = WORKSPACE
     load_dotenv: bool = LOAD_DOTENV
-    backends: dict = field(default_factory=lambda: BACKENDS)
+    backends: dict = field(default_factory=lambda: copy.deepcopy(_BACKENDS_TEMPLATE))
     
     def get_model_for_task(self, task_type: str) -> str:
         """Smart model selection based on task type."""
@@ -117,15 +113,26 @@ class Settings:
         elif any(kw in task_lower for kw in REASONING_KEYWORDS):
             return self.model_reasoning
         return self.model_fast
+    
+    def get_workspace_str(self) -> str:
+        """Get workspace as string for external I/O."""
+        return str(self.workspace)
 
 
-def _get_settings() -> Settings:
+# True singleton pattern
+_settings: Settings | None = None
+
+
+def get_settings() -> Settings:
     """Get singleton settings instance."""
-    return Settings()
+    global _settings
+    if _settings is None:
+        _settings = Settings()
+    return _settings
 
 
-# Singleton instance
-settings: Settings = _get_settings()
+# Public API
+settings = get_settings()
 
 
 def get_model_for_task(task_type: str) -> str:
