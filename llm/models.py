@@ -3,6 +3,7 @@
 # Role: Low-level direct calls to Ollama API
 # Used by: llm/__init__.py wrapper, not for external use
 from models.settings import settings
+from views.logger import get_logger
 import requests
 
 OLLAMA_URL = f"{settings.ollama_url}/api/generate"
