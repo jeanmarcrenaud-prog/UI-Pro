@@ -24,20 +24,33 @@ from abc import ABC, abstractmethod
 @dataclass
 class ModelConfig:
     """Configuration pour chaque type de backend"""
-    url: str = "http://localhost:11434/api/generate"
-    model: str = "qwen2.5-coder:32b"
+    url: str = ""
+    model: str = ""
     
+    def __post_init__(self):
+        if not self.url or not self.model:
+            from models.settings import settings
+            self.url = self.url or f"{settings.ollama_url}/api/generate"
+            self.model = self.model or settings.model_fast
+            
 @dataclass  
 class Settings:
-    """Settings globaux (de settings.py ou .env)"""
+    """Settings globaux (de settings.py)"""
     HF_TOKEN: Optional[str] = None
-    OLLAMA_URL: str = "http://localhost:11434"
-    MODEL_FAST: str = "qwen2.5-coder:32b"
-    MODEL_REASONING: str = "qwen-opus"  
-    OLLAMA_TIMEOUT: int = 60
+    OLLAMA_URL: str = ""
+    MODEL_FAST: str = ""
+    MODEL_REASONING: str = ""  
+    OLLAMA_TIMEOUT: int = 30
     HTTP_TIMEOUT: int = 300
     LOG_LEVEL: str = "INFO"
-    BACKEND: Literal["ollama", "http"] = "ollama"  # Nouveau!
+    BACKEND: Literal["ollama", "http"] = "ollama"
+    
+    def __post_init__(self):
+        from models.settings import settings
+        self.OLLAMA_URL = self.OLLAMA_URL or settings.ollama_url
+        self.MODEL_FAST = self.MODEL_FAST or settings.model_fast
+        self.MODEL_REASONING = self.MODEL_REASONING or settings.model_reasoning
+        self.OLLAMA_TIMEOUT = self.OLLAMA_TIMEOUT or settings.llm_timeout
 
 
 # ==================== **2. INTERFACe** ====================
