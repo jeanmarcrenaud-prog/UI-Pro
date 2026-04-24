@@ -1,9 +1,17 @@
+"""
+settings.py - Configuration centralisée pour UI-Pro
+
+Single source of truth: lit config.yaml, puis override via .env.
+"""
+
 import copy
 import os
 import logging
 from pathlib import Path
 from dataclasses import dataclass, field
+from typing import Dict, Any, Optional
 from dotenv import load_dotenv
+import yaml
 
 # Note: Configure logging.basicConfig(...) before importing this module
 # to see logs from settings.py
@@ -38,7 +46,28 @@ def _parse_bool(value: str | None, default: bool = False) -> bool:
     return default
 
 
+def _load_yaml_config() -> Dict[str, Any]:
+    """Load config from YAML file"""
+    config_file = PROJECT_ROOT / "config.yaml"
+    if config_file.exists():
+        try:
+            with open(config_file, "r", encoding="utf-8") as f:
+                return yaml.safe_load(f) or {}
+        except Exception as e:
+            logger.warning(f"Failed to load config.yaml: {e}")
+            return {}
+    return {}
+
+
+# ========================
+# Load base config from YAML
+# ========================
+_YAML_CONFIG = _load_yaml_config()
+
+
+# ========================
 # LLM Backend Settings
+# ========================
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 LEMONADE_URL = os.getenv("LEMONADE_URL", "http://localhost:13305")
 LLAMACPP_URL = os.getenv("LLAMACPP_URL", "http://localhost:8080")
@@ -58,7 +87,10 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 # HF_TOKEN should be loaded carefully (see memory.py or .env)
 # DO NOT hardcode in this file!
 
-# Backend configuration (deep copy to prevent mutation)
+
+# ========================
+# Backend configuration
+# ========================
 _BACKENDS_TEMPLATE = {
     "ollama": {
         "url": OLLAMA_URL,
@@ -86,21 +118,69 @@ _BACKENDS_TEMPLATE = {
 REASONING_KEYWORDS = frozenset(["error", "debug", "optimize", "architecture", "complex", "plan", "architect"])
 
 
+# ========================
+# Unified Settings class
+# ========================
 @dataclass(frozen=True)
 class Settings:
-    """Immutable configuration singleton."""
+    """Immutable configuration singleton - unified source of truth."""
+    # Paths
+    project_root: Path = PROJECT_ROOT
+    workspace: Path = WORKSPACE
+    templates: Path = TEMPLATES
+    
+    # Backend URLs
     ollama_url: str = OLLAMA_URL
     lemonade_url: str = LEMONADE_URL
     llamacpp_url: str = LLAMACPP_URL
     lmstudio_url: str = LMSTUDIO_URL
+    
+    # Model settings
     model_fast: str = MODEL_FAST
     model_reasoning: str = MODEL_REASONING
     llm_timeout: int = LLM_TIMEOUT
+    
+    # Executor settings
     executor_timeout: int = EXECUTOR_TIMEOUT
+    
+    # Logging
     log_level: str = LOG_LEVEL
-    workspace: Path = WORKSPACE
+    
+    # YAML-based settings (for backward compatibility)
+    app_name: str = "UI-Pro"
+    version: str = "1.0.0"
+    debug: bool = False
+    api_host: str = "localhost"
+    api_port: int = 8000
+    api_key: str = ""
+    dashboard_port: int = 7860
+    memory_enabled: bool = True
+    memory_limit_mb: int = 512
+    
+    # Config
     load_dotenv: bool = LOAD_DOTENV
     backends: dict = field(default_factory=lambda: copy.deepcopy(_BACKENDS_TEMPLATE))
+    
+    def __post_init__(self):
+        # Override YAML-based settings if present in config
+        app_config = _YAML_CONFIG.get("app", {})
+        llm_config = _YAML_CONFIG.get("llm", {})
+        executor_config = _YAML_CONFIG.get("executor", {})
+        memory_config = _YAML_CONFIG.get("memory", {})
+        logging_config = _YAML_CONFIG.get("logging", {})
+        api_config = _YAML_CONFIG.get("api", {})
+        dashboard_config = _YAML_CONFIG.get("dashboard", {})
+        
+        # Override using object.__setattr__ (frozen dataclass)
+        object.__setattr__(self, 'app_name', os.getenv("APP_NAME", app_config.get("name", self.app_name)))
+        object.__setattr__(self, 'version', os.getenv("VERSION", app_config.get("version", self.version)))
+        object.__setattr__(self, 'debug', _parse_bool(os.getenv("DEBUG"), app_config.get("debug", self.debug)))
+        object.__setattr__(self, 'api_host', os.getenv("API_HOST", api_config.get("host", self.api_host)))
+        object.__setattr__(self, 'api_port', int(os.getenv("API_PORT", api_config.get("port", self.api_port))))
+        object.__setattr__(self, 'api_key', os.getenv("API_KEY", api_config.get("api_key", self.api_key)))
+        object.__setattr__(self, 'dashboard_port', int(os.getenv("DASHBOARD_PORT", dashboard_config.get("port", self.dashboard_port))))
+        object.__setattr__(self, 'memory_enabled', memory_config.get("enabled", self.memory_enabled))
+        object.__setattr__(self, 'memory_limit_mb', int(os.getenv("MEMORY_LIMIT_MB", memory_config.get("limit_mb", self.memory_limit_mb))))
     
     def get_model_for_task(self, task_type: str) -> str:
         """Smart model selection based on task type."""
@@ -120,7 +200,7 @@ class Settings:
 
 
 # True singleton pattern
-_settings: Settings | None = None
+_settings: Optional[Settings] = None
 
 
 def get_settings() -> Settings:
@@ -138,3 +218,7 @@ settings = get_settings()
 def get_model_for_task(task_type: str) -> str:
     """Smart model selection based on task type (delegates to singleton)."""
     return settings.get_model_for_task(task_type)
+
+
+# Backward compatibility - module-level constants
+BACKENDS = _BACKENDS_TEMPLATE
