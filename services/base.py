@@ -1,8 +1,11 @@
 # services/base.py - Base Service Interface
 #
-# Classe de base pour tous les services avec:
+# Role: Abstract base class for all services with common functionality
+# Function: Provides standardized logging, health checks, and metrics tracking
+#
+# Features:
 # - Logging structuré
-# - Health check
+# - Health check interface
 # - Metrics de base
 
 import logging

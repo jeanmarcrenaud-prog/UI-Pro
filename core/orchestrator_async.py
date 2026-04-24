@@ -16,7 +16,7 @@ import asyncio
 
 from core.state_manager import StateManager
 from core.executor import CodeExecutor
-from models.llm_router import LLMRouter
+from llm.router import LLMRouter
 
 # Try to import centralized prompts
 try:

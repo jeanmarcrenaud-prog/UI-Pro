@@ -1,16 +1,16 @@
 # services/memory_service.py - Memory Service (Enhanced)
-"""
-MemoryService - Read/write/compress conversational context via FAISS.
-
-Contract:
-    async get_context(query: str, k: int = 3) -> list[MemoryItem]
-    async save(text: str, session_id?: str) -> None
-    async compress() -> int  # Returns compressed count
-    
-Dependencies:
-    - FAISS via core/memory.py
-    - LLM for semantic compression
-"""
+#
+# Role: FAISS-based semantic memory with LLM compression
+# Function: Read/write/compress conversational context for context retrieval
+#
+# Contract:
+#     async get_context(query: str, k: int = 3) -> list[MemoryItem]
+#     async save(text: str, session_id?: str) -> None
+#     async compress() -> int  # Returns compressed count
+#     
+# Dependencies:
+#     - FAISS via core/memory.py
+#     - LLM for semantic compression
 
 import logging
 from typing import Optional, List, Dict, Any
@@ -107,7 +107,7 @@ class MemoryService(BaseService):
     async def initialize(self) -> None:
         """Initialize memory service"""
         try:
-            from models.memory import MemoryManager
+            from core.memory import MemoryManager
             path = self.persist_path if self.persist_path else None
             self._memory_manager = MemoryManager(persist_path=path)
             self.logger.info(f"MemoryService initialized with {self._memory_manager.count()} memories")

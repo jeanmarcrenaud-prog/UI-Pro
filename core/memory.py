@@ -122,7 +122,7 @@ class MemoryManager:
         if auto_save:
             self.save()
     
-def search(self, query: str, k: int = 3) -> list:
+    def search(self, query: str, k: int = 3) -> list:
         """Search in memory"""
         if not query or len(query.strip()) == 0:
             logger.warning("search_memory called with empty query")

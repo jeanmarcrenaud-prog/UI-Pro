@@ -8,29 +8,26 @@ de données de l'application (et NON la logique).
  POUR LA LOGIQUE, utiliser :
 - core/memory.py    : FAISS memory integration
 - core/state_manager.py : State management  
+- core/config.py    : Configuration
+- core/executor.py : Code execution
 - llm/router.py   : LLM routing
 - services/*     : Services
 
  Exports:
-- Configuration: Settings, settings
-- State: State, StateManager, AgentState, RunStatus
-- Metrics: Metrics, MetricsManager
-- Memory: MemoryItem (NOTE: MemoryManager est dans core/memory.py)
-- LLM: LLMRouter, ModelsConfig
+- Configuration: Settings, settings (NOTE: import depuis .settings)
+- Metrics: Metrics, MetricsManager (NOTE: import depuis .metrics)
+- LLM: LLMRouter, ModelsConfig (NOTE: import depuis llm.router)
 """
 
-from .state import State, StateManager
-from .config import Config, get_config
-from .metrics import Metrics, MetricsManager
+from core.config import Config, get_config
+from core.metrics import Metrics, MetricsManager
 from .settings import Settings, settings
 
 # MemoryManager EST dans core/memory.py (logique), PAS ici
-# Si vous avez besoin de MemoryManager, importez desde core.memory
+# State et StateManager sont dans core/state_manager.py
+# LLMRouter et ModelsConfig sont dans llm.router
 
-# State exports
-__all__ = [
-    "State",
-    "StateManager", 
+__all__ = [ 
     "Config",
     "get_config",
     "Metrics",

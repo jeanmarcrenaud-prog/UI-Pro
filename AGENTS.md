@@ -17,19 +17,35 @@ python run.py --check       # Verify dependencies
 ```
 ui-pro/
 ├── run.py                  # Entry point
+├── core/                   # Core modules
+│   ├── executor.py        # CodeExecutor (sandbox with auto-fix loop)
+│   ├── state_manager.py  # StateManager
+│   ├── memory.py         # FAISS memory
+│   └── orchestrator_async.py  # Async orchestrator
 ├── controllers/            # Business logic
-│   ├── orchestrator.py    # Pipeline: planner → architect → coder → reviewer → executor
-│   ├── executor.py        # Code execution (sandbox with auto-fix loop)
-│   ├── llm_client.py      # Ollama adapter
-│   └── code_review.py    # Code review integration
-├── models/                # Data layer
-│   ├── state.py           # State manager
-│   ├── memory.py          # FAISS memory
-│   ├── llm_router.py      # Model routing
-│   └── settings.py        # Configuration
-└── views/                 # UI layer
-    ├── dashboard.py       # Gradio interface
-    └── api.py             # FastAPI endpoints
+│   └── orchestrator.py  # Pipeline: planner → architect → coder → reviewer → executor
+├── services/             # Service layer
+│   ├── llm_router.py   # Advanced LLM routing
+│   ├── model_service.py
+│   └── memory_service.py
+├── llm/                  # LLM clients
+│   ├── router.py       # Basic model routing
+│   └── client.py       # Ollama client
+├── models/               # Data types (NOT logic)
+│   └── settings.py     # Configuration
+└── views/               # API layer
+    ├── api.py          # FastAPI endpoints
+    └── dashboard.py    # Gradio interface
+```
+
+## Structure Après Refactoring
+
+```
+models/              → types ONLY (settings, config)
+core/               → core logic (memory, state, executor, config)
+llm/                → LLM routing et clients
+services/            → service layer
+controllers/         → orchestrator, workflow
 ```
 
 ## Critical Quirks

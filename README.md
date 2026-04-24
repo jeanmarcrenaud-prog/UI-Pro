@@ -125,28 +125,25 @@ python run.py --test
 
 ```
 ui-pro/
-├── app/
-│   └── launcher.py          # Point d'entrée
-├── api/
-│   ├── main.py             # FastAPI backend
-│   └── ...
-├── controllers/            # Logique métier
-├── models/                 # Types Python
-├── views/                  # API views
-├── ui-pro-ui/              # Next.js frontend
+├── run.py                  # Entry point
+├── core/                   # Core modules (memory, state, executor, config)
+├── controllers/            # Business logic (orchestrator)
+├── services/              # Service layer (LLM routing, streaming, tools)
+├── llm/                   # LLM clients and routing
+├── models/                # Types Python (settings only)
+├── views/                 # API views
+├── agents/                # Agent system (agent, planner, react)
+├── adapters/              # Adapters (LLM, memory, executor)
+├── ui-pro-ui/             # Next.js frontend
 │   ├── app/
 │   │   ├── page.tsx       # Page principale
 │   │   └── layout.tsx      # Layout
 │   ├── components/        # Composants React
-│   │   ├── ChatContainer.tsx
-│   │   ├── Sidebar.tsx
-│   │   ├── SettingsView.tsx
-│   │   └── ...
-│   ├── features/           # Logique métier (controllers)
-│   ├── services/           # Communication backend
-│   ├── stores/            # Zustand stores
-│   └── lib/               # Types, events
-└── run.py                  #Launcher
+│   ├── features/          # Logique métier (controllers)
+│   ├── services/          # Communication backend
+│   ├── stores/           # Zustand stores
+│   └── lib/              # Types, events
+└── tests/                 # Test suite
 ```
 
 ## 🔧 Commandes

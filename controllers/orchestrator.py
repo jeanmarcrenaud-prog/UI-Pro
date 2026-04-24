@@ -14,8 +14,8 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from models.state import StateManager
-from controllers.executor import CodeExecutor  # Use CodeExecutor
+from core.state_manager import StateManager
+from core.executor import CodeExecutor
 from core.prompts import PLANNER_PROMPT, ARCHITECT_PROMPT, CODER_PROMPT, REVIEWER_PROMPT, FIX_PROMPT
 
 # Import agents from llm package
@@ -260,7 +260,7 @@ Max retries: {max_retry}
         """Retrieve memory context using FAISS"""
         # Import FAISS memory lazily to avoid import overhead
         try:
-            from models.memory import MemoryManager
+            from core.memory import MemoryManager
             
             # Get or create singleton memory manager
             if not hasattr(self, '_memory_manager'):
