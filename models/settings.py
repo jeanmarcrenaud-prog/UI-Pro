@@ -6,18 +6,41 @@ Charge depuis .env file ou environnement variables.
 """
 
 import os
+import logging
 from pathlib import Path
+from dataclasses import dataclass, field
 from dotenv import load_dotenv
 
-# Load .env file
-LOAD_DOTENV = Path(".env").exists()
-if LOAD_DOTENV:
-    load_dotenv(".env")
+logger = logging.getLogger(__name__)
 
 # Paths
-PROJECT_ROOT = Path(__file__).parent
-WORKSPACE = Path(os.getenv("WORKSPACE", "workspace"))
-TEMPLATES = Path("templates")
+PROJECT_ROOT = Path(__file__).parent.parent
+
+# Load .env file relative to PROJECT_ROOT
+ENV_FILE = PROJECT_ROOT / ".env"
+LOAD_DOTENV = ENV_FILE.exists()
+if LOAD_DOTENV:
+    load_dotenv(ENV_FILE)
+    logger.info(f"[settings] Loaded .env from {ENV_FILE}")
+else:
+    logger.info(f"[settings] No .env file found at {ENV_FILE}")
+
+# Paths - relative to PROJECT_ROOT
+WORKSPACE = PROJECT_ROOT / os.getenv("WORKSPACE", "workspace")
+TEMPLATES = PROJECT_ROOT / "templates"
+
+
+def _parse_bool(value: str | None, default: bool = False) -> bool:
+    """Parse boolean from environment variable."""
+    if value is None:
+        return default
+    lower = value.lower()
+    if lower in ("true", "1", "yes", "on"):
+        return True
+    if lower in ("false", "0", "no", "off"):
+        return False
+    return default
+
 
 # LLM Backend Settings
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
@@ -43,68 +66,68 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 BACKENDS = {
     "ollama": {
         "url": OLLAMA_URL,
-        "enabled": os.getenv("OLLAMA_ENABLED", "true").lower() == "true",
+        "enabled": _parse_bool(os.getenv("OLLAMA_ENABLED"), True),
         "models_endpoint": "/api/tags",
     },
     "lemonade": {
         "url": LEMONADE_URL,
-        "enabled": os.getenv("LEMONADE_ENABLED", "true").lower() == "true",
+        "enabled": _parse_bool(os.getenv("LEMONADE_ENABLED"), True),
         "models_endpoint": "/api/v1/models",
     },
     "llamacpp": {
         "url": LLAMACPP_URL,
-        "enabled": os.getenv("LLAMACPP_ENABLED", "false").lower() == "true",
+        "enabled": _parse_bool(os.getenv("LLAMACPP_ENABLED"), False),
         "models_endpoint": "/props",
     },
     "lmstudio": {
         "url": LMSTUDIO_URL,
-        "enabled": os.getenv("LMSTUDIO_ENABLED", "false").lower() == "true",
+        "enabled": _parse_bool(os.getenv("LMSTUDIO_ENABLED"), False),
         "models_endpoint": "/api/v1/models",
     },
 }
 
-class Settings:
-    """Configuration dictionary."""
-    ollama_url = OLLAMA_URL
-    lemonade_url = LEMONADE_URL
-    llamacpp_url = LLAMACPP_URL
-    lmstudio_url = LMSTUDIO_URL
-    model_fast = MODEL_FAST
-    model_reasoning = MODEL_REASONING
-    llm_timeout = LLM_TIMEOUT
-    executor_timeout = EXECUTOR_TIMEOUT
-    log_level = LOG_LEVEL
-    workspace = str(WORKSPACE)
-    load_dotenv = LOAD_DOTENV
-    backends = BACKENDS
+# Reasoning keywords for smart model selection
+REASONING_KEYWORDS = frozenset(["error", "debug", "optimize", "architecture", "complex", "plan", "architect"])
 
+
+@dataclass(frozen=True)
+class Settings:
+    """Immutable configuration singleton."""
+    ollama_url: str = OLLAMA_URL
+    lemonade_url: str = LEMONADE_URL
+    llamacpp_url: str = LLAMACPP_URL
+    lmstudio_url: str = LMSTUDIO_URL
+    model_fast: str = MODEL_FAST
+    model_reasoning: str = MODEL_REASONING
+    llm_timeout: int = LLM_TIMEOUT
+    executor_timeout: int = EXECUTOR_TIMEOUT
+    log_level: str = LOG_LEVEL
+    workspace: str = field(default_factory=lambda: str(WORKSPACE))
+    load_dotenv: bool = LOAD_DOTENV
+    backends: dict = field(default_factory=lambda: BACKENDS)
+    
     def get_model_for_task(self, task_type: str) -> str:
         """Smart model selection based on task type."""
-        if task_type.lower() == "fast":
+        task_lower = task_type.lower()
+        
+        if task_lower == "fast":
             return self.model_fast
-        elif task_type.lower() == "reasoning":
+        elif task_lower == "reasoning":
             return self.model_reasoning
-        elif task_type.lower() in ["error", "debug", "optimize", "architecture", "complex", "plan", "architect"]:
+        elif any(kw in task_lower for kw in REASONING_KEYWORDS):
             return self.model_reasoning
         return self.model_fast
 
-# Singleton instance
-_settings: Settings = None
 
-def get_settings() -> Settings:
+def _get_settings() -> Settings:
     """Get singleton settings instance."""
-    global _settings
-    if _settings is None:
-        _settings = Settings()
-    return _settings
+    return Settings()
 
-settings = get_settings()
+
+# Singleton instance
+settings: Settings = _get_settings()
+
 
 def get_model_for_task(task_type: str) -> str:
-    """Smart model selection based on task type."""
-    reasoning_keywords = ["error", "debug", "optimize", "architecture", "complex", "plan", "architect"]
-    task_lower = task_type.lower()
-    
-    if any(keyword in task_lower for keyword in reasoning_keywords):
-        return _settings.model_reasoning
-    return _settings.model_fast
+    """Smart model selection based on task type (delegates to singleton)."""
+    return settings.get_model_for_task(task_type)
