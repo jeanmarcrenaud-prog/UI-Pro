@@ -162,8 +162,11 @@ class StreamingService:
         url = backend_cfg["url"]
         models_endpoint = backend_cfg["models_endpoint"]
         
+        logger.info(f"[STREAM] Checking backend {backend} at {url}...")
+        
         try:
             test_resp = requests.get(f"{url}{models_endpoint}", timeout=5)
+            logger.info(f"[STREAM] Backend check status: {test_resp.status_code}")
             if test_resp.status_code == 404:
                 # Endpoint doesn't exist - try anyway
                 pass
@@ -172,12 +175,11 @@ class StreamingService:
             
             # Parse models based on backend
             available_models = self._parse_available_models(test_resp, backend)
+            logger.info(f"[STREAM] Available models: {available_models}")
             
+            # Skip exact match check - just log warning
             if model not in available_models:
-                raise ValueError(
-                    f"Model '{model}' not found in {backend}. "
-                    f"Available: {available_models}"
-                )
+                logger.warning(f"[STREAM] Model '{model}' not in list, but trying anyway...")
             
             logger.info(f"[STREAM] {backend} validated, model '{model}' available")
             
@@ -238,6 +240,10 @@ class StreamingService:
             from llm.client import OllamaClient, ModelConfig
             from models.settings import settings
             
+            logger.info(f"[STREAM] settings.ollama_url={settings.ollama_url}")
+            logger.info(f"[STREAM] settings.model_fast={settings.model_fast}")
+            logger.info(f"[STREAM] settings.model_reasoning={settings.model_reasoning}")
+            
             # Model is REQUIRED - no fallback
             if not model:
                 raise ValueError("[STREAM] No model provided! Model is required.")
@@ -249,7 +255,9 @@ class StreamingService:
             logger.info(f"[STREAM] Detected backend: {backend}")
             
             # Validate backend and model using settings config
+            logger.info(f"[STREAM] Getting validated client for {backend}...")
             client = self._get_validated_client(model, backend)
+            logger.info(f"[STREAM] Got client: url={client.url}, model={client.model}")
             
             # Register this stream so it can be cancelled later
             self._active_streams[stream_id] = asyncio.current_task()
@@ -267,7 +275,9 @@ class StreamingService:
             buffer = []
             token_count = 0
             
+            logger.info(f"[STREAM] Starting stream call to {client.url}...")
             for chunk_text in client.stream(prompt, model=model):
+                logger.info(f"[STREAM] Got chunk: {len(chunk_text)} chars")
                 # Check for cancellation
                 if stream_id in self._active_streams:
                     task = self._active_streams[stream_id]
