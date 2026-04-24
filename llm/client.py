@@ -18,26 +18,39 @@ from typing import Protocol, Iterator, Literal, Optional, Union
 import requests
 from abc import ABC, abstractmethod
 
-
 # ==================== **1. CONFIGURATION** ====================
+
+# Load settings once
+from models.settings import settings as _app_settings
 
 @dataclass
 class ModelConfig:
     """Configuration pour chaque type de backend"""
-    url: str = "http://localhost:11434/api/generate"
-    model: str = "qwen2.5-coder:32b"
+    url: str = ""
+    model: str = ""
     
+    def __post_init__(self):
+        if not self.url:
+            self.url = f"{_app_settings.ollama_url}/api/generate"
+        if not self.model:
+            self.model = _app_settings.model_fast
+
 @dataclass  
 class Settings:
-    """Settings globaux (de settings.py ou .env)"""
+    """Settings globaux (from models.settings)"""
     HF_TOKEN: Optional[str] = None
-    OLLAMA_URL: str = "http://localhost:11434"
-    MODEL_FAST: str = "qwen2.5-coder:32b"
-    MODEL_REASONING: str = "qwen-opus"  
+    OLLAMA_URL: str = ""
+    MODEL_FAST: str = ""
+    MODEL_REASONING: str = ""  
     OLLAMA_TIMEOUT: int = 60
     HTTP_TIMEOUT: int = 300
     LOG_LEVEL: str = "INFO"
-    BACKEND: Literal["ollama", "http"] = "ollama"  # Nouveau!
+    BACKEND: Literal["ollama", "http"] = "ollama"
+    
+    def __post_init__(self):
+        object.__setattr__(self, 'OLLAMA_URL', _app_settings.ollama_url)
+        object.__setattr__(self, 'MODEL_FAST', _app_settings.model_fast)
+        object.__setattr__(self, 'MODEL_REASONING', _app_settings.model_reasoning)
 
 
 # ==================== **2. INTERFACe** ====================
@@ -79,8 +92,9 @@ class OllamaClient(LLMClient):
     """
     
     def __init__(self, config: Settings | ModelConfig = None):
-        self.url = getattr(config, 'url', 'http://localhost:11434/api/generate')
-        self.model = getattr(config, 'model', 'qwen2.5-coder:32b')
+        from models.settings import settings as _s
+        self.url = getattr(config, 'url', f"{_s.ollama_url}/api/generate")
+        self.model = getattr(config, 'model', _s.model_fast)
     
     def generate(self, prompt: str, model: str,
                  system_prompt: Optional[str] = None,
@@ -102,7 +116,7 @@ class OllamaClient(LLMClient):
             response.raise_for_status()
             return response.json().get('response', '')
         except requests.RequestException as e:
-            from settings import settings
+            from models.settings import settings
             return f"[OllamaError: {e}] {prompt[:10]}..."
     
     def stream(self, prompt: str, model: str,
@@ -206,30 +220,31 @@ class MockLLMClient(LLMClient):
 
 
 # ==================== **6. Exemples d'Usage** ====================
+# NOTE: These are examples - uncomment for testing only
 
-# Usage basique :
-from llm_client import LLMFactory, OllamaClient
-factory = LLMFactory()
-llm = factory.create()
-response = llm.generate("Who is John Doe?", "qwen2.5-coder:32b")
-print(response)
+if __name__ == "__main__":
+    from llm.client import LLMFactory, OllamaClient
+    factory = LLMFactory()
+    llm = factory.create()
+    response = llm.generate("Who is John Doe?", "qwen2.5-coder:32b")
+    print(response)
 
-# Avec system prompt :
-response = llm.generate(
-    "Explain quantum physics",
-    model="qwen-opus",
-    system_prompt="You are a physics expert."
-)
+    # Avec system prompt :
+    response = llm.generate(
+        "Explain quantum physics",
+        model="qwen-opus",
+        system_prompt="You are a physics expert."
+    )
 
-# Streaming :
-import asyncio
-async def process_streaming():
-    async for chunk in llm.stream("Prompt..."):
-        print(chunk, end="")
+    # Streaming :
+    import asyncio
+    async def process_streaming():
+        async for chunk in llm.stream("Prompt..."):
+            print(chunk, end="")
 
-# Mock pour tests :
-from unittest.mock import patch
-@patch.object(LLMFactory, 'create', create=MockLLMClient)
-def test_with_mock():
-    llm = LLMFactory().create()
-    assert "mock" in llm.generate("test")
+    # Mock pour tests :
+    from unittest.mock import patch
+    @patch.object(LLMFactory, 'create', create=MockLLMClient)
+    def test_with_mock():
+        llm = LLMFactory().create()
+        assert "mock" in llm.generate("test")

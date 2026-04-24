@@ -16,7 +16,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
 # ==================== **1. CONFIG** ====================
 
 @dataclass
@@ -28,15 +27,24 @@ class ModelsConfig:
     code: str = "deepseek-coder:33b"
     reasoner: str = "qwen-opus"
     
-    # Backend settings
-    ollama_url: str = "http://localhost:11434/api/generate"
+    # Backend settings from settings
+    ollama_url: str = ""
     backend: Literal["ollama", "http"] = "ollama"
     timeout: int = 120
+    
+    def __post_init__(self):
+        if not self.ollama_url:
+            from models.settings import settings
+            self.ollama_url = f"{settings.ollama_url}/api/generate"
 
 # Singleton settings
 try:
-    from settings import Settings
-    _settings = Settings()
+    from models.settings import settings as _app_settings
+    _settings = ModelsConfig(
+        fast=_app_settings.model_fast,
+        reasoning=_app_settings.model_reasoning,
+        ollama_url=f"{_app_settings.ollama_url}/api/generate",
+    )
 except:
     _settings = ModelsConfig()
 
