@@ -2,134 +2,105 @@
 #
 # Role: Protocol-based LLM client interface with Ollama adapter
 # Used by: router.py, streaming service, general LLM calls
-# - Swap facile (Ollama → HTTP → HF)
-# - Mocking pour tests
-# - Architecture propre (Inversion de contrôle)
-#
-# Usage :
-#   from llm_factory import get_llm_client
-#   llm = get_llm_client(settings)
-#
-# Tests :
-#   with mock_llm():
-#       llm = get_llm_client(settings)
 
-from dataclasses import dataclass, field
-from typing import Protocol, Iterator, Literal, Optional, Union
+from dataclasses import dataclass
+from typing import Protocol, Iterator, Optional
+import logging
+import json
 import requests
-from abc import ABC, abstractmethod
 
-# ==================== **1. CONFIGURATION** ====================
+logger = logging.getLogger(__name__)
 
-# Load settings once
+
+# ==================== CONFIGURATION ====================
+
 from models.settings import settings as _app_settings
+
 
 @dataclass
 class ModelConfig:
-    """Configuration pour chaque type de backend"""
+    """Configuration for LLM backend"""
     url: str = ""
     model: str = ""
+    timeout: int = 30
     
     def __post_init__(self):
         if not self.url:
             self.url = f"{_app_settings.ollama_url}/api/generate"
         if not self.model:
             self.model = _app_settings.model_fast
-
-@dataclass  
-class Settings:
-    """Settings globaux (from models.settings)"""
-    HF_TOKEN: Optional[str] = None
-    OLLAMA_URL: str = ""
-    MODEL_FAST: str = ""
-    MODEL_REASONING: str = ""  
-    OLLAMA_TIMEOUT: int = 60
-    HTTP_TIMEOUT: int = 300
-    LOG_LEVEL: str = "INFO"
-    BACKEND: Literal["ollama", "http"] = "ollama"
-    
-    def __post_init__(self):
-        object.__setattr__(self, 'OLLAMA_URL', _app_settings.ollama_url)
-        object.__setattr__(self, 'MODEL_FAST', _app_settings.model_fast)
-        object.__setattr__(self, 'MODEL_REASONING', _app_settings.model_reasoning)
+        if self.timeout <= 0:
+            self.timeout = _app_settings.llm_timeout
 
 
-# ==================== **2. INTERFACe** ====================
+# ==================== PROTOCOL ====================
 
 class LLMClient(Protocol):
-    """
-    Interface standard pour tous les clients LLM.
+    """Interface standard pour tous les clients LLM."""
     
-    Implémentation typique :
-      from llm_client import LLMClient
-      @dataclass
-      class MyLLMClient(LLMClient):
-          def generate(self, prompt: str, model: str) -> str:
-              return self.api.generate(prompt, model)
-    """
     def generate(self, prompt: str, model: str, 
-                 system_prompt: Optional[str] = None,
-                 temperature: float = 0.7) -> str: ...
+               system_prompt: Optional[str] = None,
+               temperature: float = 0.7) -> str: ...
     
     def stream(self, prompt: str, model: str,
-               system_prompt: Optional[str] = None,
-               temperature: float = 0.7) -> Iterator[str]: ...
+              system_prompt: Optional[str] = None,
+              temperature: float = 0.7) -> Iterator[str]: ...
 
 
-# ==================== **3. ADAPTateur Ollama** ====================
+# ==================== OLLAMA ADAPTER ====================
 
 class OllamaClient(LLMClient):
-    """
-    Adaptateur pour Ollama local.
+    """Ollama local LLM client."""
     
-    Avantages :
-      ✅ Rapide (latence <50ms)
-      ✅ Local (pas de cloud)  
-      ✅ Gratuit (open source)
+    def __init__(self, config: ModelConfig = None):
+        cfg = config or ModelConfig()
+        self.url = cfg.url
+        self.model = cfg.model
+        self.timeout = cfg.timeout
     
-    Configuration :
-      OLLAMA_URL=http://localhost:11434
-      MODEL=qwen2.5-coder:32b
-    """
-    
-    def __init__(self, config: Settings | ModelConfig = None):
-        from models.settings import settings as _s
-        self.url = getattr(config, 'url', f"{_s.ollama_url}/api/generate")
-        self.model = getattr(config, 'model', _s.model_fast)
-    
-    def generate(self, prompt: str, model: str,
-                 system_prompt: Optional[str] = None,
-                 temperature: float = 0.7) -> str:
-        """Generer réponse Ollama complète"""
-        import requests
+    def generate(
+        self, 
+        prompt: str, 
+        model: str = None,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7
+    ) -> str:
+        """Generate response from Ollama."""
+        model = model or self.model
         
-        headers = {"Content-Type": "application/json"}
         payload = {
-            "model": model or self.model,
-            "prompt": prompt, 
+            "model": model,
+            "prompt": prompt,
             "system": system_prompt or "",
             "stream": False,
             "options": {"temperature": temperature}
         }
         
         try:
-            response = requests.post(self.url, json=payload, timeout=60)
+            response = requests.post(
+                self.url, 
+                json=payload, 
+                timeout=self.timeout
+            )
             response.raise_for_status()
-            return response.json().get('response', '')
+            data = response.json()
+            return data.get('response', '')
         except requests.RequestException as e:
-            from models.settings import settings
-            return f"[OllamaError: {e}] {prompt[:10]}..."
+            logger.error(f"Ollama request failed: {e}")
+            return f"[OllamaError: {e}]"
     
-    def stream(self, prompt: str, model: str,
-               system_prompt: Optional[str] = None,
-               temperature: float = 0.7) -> Iterator[str]:
-        """Streamer réponse Ollama chunk par chunk"""
-        import requests
-        import time
+    def stream(
+        self, 
+        prompt: str, 
+        model: str = None,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7
+    ) -> Iterator[str]:
+        """Stream response from Ollama."""
+        model = model or self.model
         
-        headers = {"Content-Type": "application/json"}
         payload = {
-            "model": model or self.model,
+            "model": model,
             "prompt": prompt,
             "system": system_prompt or "",
             "stream": True,
@@ -137,115 +108,94 @@ class OllamaClient(LLMClient):
         }
         
         try:
-            with requests.post(self.url, json=payload, stream=True) as r:
+            with requests.post(
+                self.url, 
+                json=payload, 
+                stream=True,
+                timeout=self.timeout
+            ) as r:
                 r.raise_for_status()
                 for line in r.iter_lines():
                     if line:
-                        chunk = line.decode().strip()
-                        # Ollama stream: {"response": "...", "done": false}
-                        if '"response"' in chunk:
-                            yield chunk
+                        text = line.decode().strip()
+                        if not text:
+                            continue
+                        # Parse JSON line from Ollama
+                        try:
+                            data = json.loads(text)
+                            content = data.get('response', '')
+                            if content:
+                                yield content
+                            if data.get('done', False):
+                                break
+                        except json.JSONDecodeError:
+                            logger.warning(f"Failed to parse stream line: {text[:50]}")
         except requests.RequestException as e:
             yield f"[Error: {e}]"
 
 
-# ==================== **4. Factory Singleton** ====================
+# ==================== FACTORY ====================
 
 class LLMFactory:
-    """
-    Singleton factory pour créer LLMs dynamiquement.
-    
-    Usage :
-      from llm_factory import LLMFactory
-      factory = LLMFactory()
-      llm = factory.create("OLLAMA_URL=http://...")
-    """
+    """Factory for creating LLM clients."""
     
     def __init__(self):
-        import settings
-        self.settings = settings
+        self._settings = _app_settings
     
-    def create(self, llm_type: str = None) -> LLMClient:
-        """
-        Factory pattern pour créer clients appropriés.
-        
-        Args:
-            llm_type: "ollama", "http", ou None pour default
-        
-        Returns:
-            LLMClient adapté au type
-        """
-        if not llm_type:
-            llm_type = self.settings.get("BACKEND", "ollama")
-        
-        if llm_type == "ollama":
-            return OllamaClient(self.settings)
-        elif llm_type == "http":
-            return OllamaClient(self.settings)  # Fallback
-        else:
-            return OllamaClient(self.settings)  # Default
+    def create(self, backend: str = "ollama") -> LLMClient:
+        """Create LLM client for given backend."""
+        if backend == "ollama":
+            return OllamaClient(ModelConfig())
+        # Fallback to Ollama
+        return OllamaClient(ModelConfig())
 
 
-# ==================== **5. Mock pour Tests** ====================
+# ==================== MOCK FOR TESTS ====================
 
-@dataclass  
-class MockLLMResponse:
-    response: str
-    tokens: int = 100
-    
 class MockLLMClient(LLMClient):
-    """
-    Mock LLM pour tests.
+    """Mock LLM for testing."""
     
-    Usage :
-      from llm_client import MockLLMClient
-      with MockLLMClient() as mock:
-          llm = factory.create()
-    """
-    
-    def __init__(self, responses: list[str] = None):
+    def __init__(
+        self, 
+        responses: list[str] = None,
+        config: ModelConfig = None
+    ):
         self.responses = responses or [
-            "Ceci est une réponse mock",
-            "Ceci est la deuxième réponse",  
-            "Fin de la réponse mock"
+            "Mock response 1",
+            "Mock response 2",
+            "Mock response 3",
         ]
-        self.call_count = 0
+        self._index = 0
+        self._config = config or ModelConfig()
     
-    def generate(self, prompt: str, model: str,
-                 **kwargs) -> str:
-        self.call_count += 1
-        return self.responses[self.call_count % len(self.responses)]
+    def generate(
+        self, 
+        prompt: str, 
+        model: str = None,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7
+    ) -> str:
+        """Return next mock response."""
+        response = self.responses[self._index]
+        self._index = (self._index + 1) % len(self.responses)
+        return response
     
-    def stream(self, prompt: str, model: str, **kwargs) -> Iterator[str]:
-        yield self.generate(prompt, model)
+    def stream(
+        self, 
+        prompt: str, 
+        model: str = None,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7
+    ) -> Iterator[str]:
+        """Yield mock responses."""
+        for response in self.responses:
+            yield response
 
 
-# ==================== **6. Exemples d'Usage** ====================
-# NOTE: These are examples - uncomment for testing only
-
-if __name__ == "__main__":
-    from llm.client import LLMFactory, OllamaClient
-    factory = LLMFactory()
-    llm = factory.create()
-    response = llm.generate("Who is John Doe?", "qwen2.5-coder:32b")
-    print(response)
-
-    # Avec system prompt :
-    response = llm.generate(
-        "Explain quantum physics",
-        model="qwen-opus",
-        system_prompt="You are a physics expert."
-    )
-
-    # Streaming :
-    import asyncio
-    async def process_streaming():
-        async for chunk in llm.stream("Prompt..."):
-            print(chunk, end="")
-
-    # Mock pour tests :
-    from unittest.mock import patch
-    @patch.object(LLMFactory, 'create', create=MockLLMClient)
-    def test_with_mock():
-        llm = LLMFactory().create()
-        assert "mock" in llm.generate("test")
+__all__ = [
+    "ModelConfig",
+    "LLMClient", 
+    "OllamaClient",
+    "LLMFactory",
+    "MockLLMClient",
+]
