@@ -1,7 +1,12 @@
 """
 settings.py - Configuration centralisée pour UI-Pro
 
-Single source of truth: lit config.yaml, puis override via .env.
+Single source of truth for application configuration.
+
+NOTE:
+- YAML config is intended for application-level settings (app, api, memory, dashboard).
+- LLM and backend settings are managed exclusively via environment variables.
+- Sensitive settings (API keys) MUST be set via environment variables only.
 """
 
 import copy
@@ -177,9 +182,12 @@ class Settings:
         object.__setattr__(self, 'debug', _parse_bool(os.getenv("DEBUG"), app_config.get("debug", self.debug)))
         object.__setattr__(self, 'api_host', os.getenv("API_HOST", api_config.get("host", self.api_host)))
         object.__setattr__(self, 'api_port', int(os.getenv("API_PORT", api_config.get("port", self.api_port))))
-        object.__setattr__(self, 'api_key', os.getenv("API_KEY", api_config.get("api_key", self.api_key)))
+        # Security: api_key MUST come from env only (never from YAML)
+        api_key_env = os.getenv("API_KEY")
+        if api_key_env:
+            object.__setattr__(self, 'api_key', api_key_env)
         object.__setattr__(self, 'dashboard_port', int(os.getenv("DASHBOARD_PORT", dashboard_config.get("port", self.dashboard_port))))
-        object.__setattr__(self, 'memory_enabled', memory_config.get("enabled", self.memory_enabled))
+        object.__setattr__(self, 'memory_enabled', _parse_bool(os.getenv("MEMORY_ENABLED"), memory_config.get("enabled", self.memory_enabled)))
         object.__setattr__(self, 'memory_limit_mb', int(os.getenv("MEMORY_LIMIT_MB", memory_config.get("limit_mb", self.memory_limit_mb))))
     
     def get_model_for_task(self, task_type: str) -> str:
@@ -197,6 +205,25 @@ class Settings:
     def get_workspace_str(self) -> str:
         """Get workspace as string for external I/O."""
         return str(self.workspace)
+    
+    def validate(self) -> tuple[bool, list[str]]:
+        """Validate configuration. Returns (is_valid, list_of_errors)."""
+        errors = []
+        
+        if self.api_port <= 0 or self.api_port > 65535:
+            errors.append(f"Invalid api_port: {self.api_port}")
+        
+        if self.dashboard_port <= 0 or self.dashboard_port > 65535:
+            errors.append(f"Invalid dashboard_port: {self.dashboard_port}")
+        
+        # Check workspace exists or can be created
+        if not self.workspace.exists():
+            try:
+                self.workspace.mkdir(parents=True, exist_ok=True)
+            except Exception as e:
+                errors.append(f"Cannot create workspace {self.workspace}: {e}")
+        
+        return (len(errors) == 0, errors)
 
 
 # True singleton pattern
