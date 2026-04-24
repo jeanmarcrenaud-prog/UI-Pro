@@ -338,16 +338,6 @@ class StreamingService:
                         chunk_index=chunk_index,
                         error=f"Network error: {e}"
                     ))
-        except ConnectionError as e:
-            logger.error(f"Network error for stream {stream_id}: {e}", exc_info=True)
-            if not is_cancelled:
-                yield StreamChunk(
-                    text="",
-                    status=StreamStatus.ERROR,
-                    stream_id=stream_id,
-                    chunk_index=chunk_index,
-                    error=f"Network error: {e}"
-                )
         except Exception as e:
             logger.error(f"Streaming error for {stream_id}: {e}", exc_info=True)
             if not is_cancelled:
@@ -395,6 +385,5 @@ __all__ = [
     "StreamChunk",
     "StreamConfig",
     "StreamStatus",
-    "stream_to_string",
     "get_streaming_service"
 ]
