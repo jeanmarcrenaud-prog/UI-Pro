@@ -3,7 +3,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from views.logger import get_logger
-from pathlib import Path
 
 from models.settings import settings
 WORKSPACE = settings.workspace
