@@ -217,24 +217,25 @@ class ModelService(BaseService):
     
     def __init__(self, config: Optional[dict] = None):
         super().__init__("ModelService")
+        from models.settings import settings
         self.config = config or {}
         
-        # Modèles disponibles
+        # Modèles disponibles - importés depuis settings
         self.models: dict[str, ModelConfig] = {
             "fast": ModelConfig(
-                name=self.config.get("MODEL_FAST", "qwen3.5:0.8b"),
+                name=self.config.get("MODEL_FAST") or settings.model_fast,
                 endpoint=self._build_endpoint(),
                 max_latency_ms=self.config.get("MAX_LATENCY_MS", 30000),
                 min_success_rate=self.config.get("MIN_SUCCESS_RATE", 0.5),
             ),
             "reasoning": ModelConfig(
-                name=self.config.get("MODEL_REASONING", "qwen3.5:0.8b"),
+                name=self.config.get("MODEL_REASONING") or settings.model_reasoning,
                 endpoint=self._build_endpoint(),
                 max_latency_ms=self.config.get("MAX_LATENCY_MS", 60000),
                 min_success_rate=self.config.get("MIN_SUCCESS_RATE", 0.5),
             ),
             "code": ModelConfig(
-                name=self.config.get("MODEL_CODE", "qwen3.5:0.8b"),
+                name=self.config.get("MODEL_CODE") or getattr(settings, 'model_code', 'deepseek-coder:33b'),
                 endpoint=self._build_endpoint(),
                 max_latency_ms=self.config.get("MAX_LATENCY_MS", 45000),
                 min_success_rate=self.config.get("MIN_SUCCESS_RATE", 0.5),

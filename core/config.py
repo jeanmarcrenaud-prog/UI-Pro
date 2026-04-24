@@ -15,12 +15,19 @@ CONFIG_PATH = Path("config.yaml")
 
 @dataclass
 class LLMConfig:
-    """LLM configuration"""
-    ollama_url: str = "http://localhost:11434"
-    model_fast: str = "qwen2.5-coder:32b"
-    model_reasoning: str = "qwen-opus"
+    """LLM configuration - importée depuis settings"""
+    ollama_url: str = ""
+    model_fast: str = ""
+    model_reasoning: str = ""
     timeout: int = 30
     hf_token: Optional[str] = None
+    
+    def __post_init__(self):
+        if not self.ollama_url:
+            from models.settings import settings
+            self.ollama_url = settings.ollama_url
+            self.model_fast = settings.model_fast
+            self.model_reasoning = settings.model_reasoning
 
 
 @dataclass

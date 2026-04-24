@@ -23,12 +23,12 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ModelsConfig:
-    """Configuration multi-modèles"""
-    # Models listés par type d'usage
-    fast: str = "qwen2.5-coder:7b"
-    reasoning: str = "qwen2.5-coder:32b"
-    code: str = "deepseek-coder:33b"
-    reasoner: str = "qwen-opus"
+    """Configuration multi-modèles - importée depuis settings.py"""
+    # Models importés depuis settings (pas de hardcoding)
+    fast: str = ""
+    reasoning: str = ""
+    code: str = ""
+    reasoner: str = ""
     
     # Backend settings from settings
     ollama_url: str = ""
@@ -36,16 +36,23 @@ class ModelsConfig:
     timeout: int = 120
     
     def __post_init__(self):
+        from models.settings import settings
+        # Utiliser settings comme source unique
+        self.fast = self.fast or settings.model_fast
+        self.reasoning = self.reasoning or settings.model_reasoning
+        self.code = self.code or getattr(settings, 'model_code', 'deepseek-coder:33b')
+        self.reasoner = self.reasoner or settings.model_reasoning
         if not self.ollama_url:
-            from models.settings import settings
             self.ollama_url = f"{settings.ollama_url}/api/generate"
 
-# Singleton settings
+# Singleton settings - utilise settings.py comme source unique
 try:
     from models.settings import settings as _app_settings
     _settings = ModelsConfig(
         fast=_app_settings.model_fast,
         reasoning=_app_settings.model_reasoning,
+        code=getattr(_app_settings, 'model_code', 'deepseek-coder:33b'),
+        reasoner=_app_settings.model_reasoning,
         ollama_url=f"{_app_settings.ollama_url}/api/generate",
     )
 except:
