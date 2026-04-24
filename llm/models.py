@@ -1,11 +1,13 @@
 from core.logger import get_logger
+from models.settings import settings
 import requests
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
+OLLAMA_URL = f"{settings.ollama_url}/api/generate"
+LEMONADE_URL = f"{settings.lemonade_url}/api/v1/chat/completions"
 
 MODELS = {
-    "fast": "qwen2.5-coder:32b",
-    "reasoning": "qwen-opus"
+    "fast": settings.model_fast,
+    "reasoning": settings.model_reasoning
 }
 
 logger = get_logger(__name__)
