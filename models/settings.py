@@ -82,9 +82,9 @@ LLAMACPP_URL = os.getenv("LLAMACPP_URL", "http://localhost:8080")
 LMSTUDIO_URL = os.getenv("LMSTUDIO_URL", "http://localhost:1234")
 
 # Model Settings - Use models that actually exist in Ollama!
-MODEL_FAST = os.getenv("MODEL_FAST", "qwen3.5:0.8b")
-MODEL_REASONING = os.getenv("MODEL_REASONING", "qwen3.5:9b")
-MODEL_CODE = os.getenv("MODEL_CODE", "qwen3.5:9b")
+MODEL_FAST = os.getenv("MODEL_FAST", "gemma4:e4b")
+MODEL_REASONING = os.getenv("MODEL_REASONING", "gemma4:latest")
+MODEL_CODE = os.getenv("MODEL_CODE", "gemma4:latest")
 LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", 30))
 
 # Executor Settings
