@@ -81,10 +81,10 @@ LEMONADE_URL = os.getenv("LEMONADE_URL", "http://localhost:13305")
 LLAMACPP_URL = os.getenv("LLAMACPP_URL", "http://localhost:8080")
 LMSTUDIO_URL = os.getenv("LMSTUDIO_URL", "http://localhost:1234")
 
-# Model Settings
-MODEL_FAST = os.getenv("MODEL_FAST", "qwen2.5-coder:32b")
-MODEL_REASONING = os.getenv("MODEL_REASONING", "qwen-opus")
-MODEL_CODE = os.getenv("MODEL_CODE", "deepseek-coder:33b")
+# Model Settings - Use models that actually exist in Ollama!
+MODEL_FAST = os.getenv("MODEL_FAST", "qwen3.5:0.8b")
+MODEL_REASONING = os.getenv("MODEL_REASONING", "qwen3.5:9b")
+MODEL_CODE = os.getenv("MODEL_CODE", "qwen3.5:9b")
 LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", 30))
 
 # Executor Settings
