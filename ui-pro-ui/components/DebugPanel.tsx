@@ -19,6 +19,7 @@ interface DebugPanelProps {
   modelName?: string
   elapsedSeconds?: number
   tokenCount?: number
+  connectionStatus?: string
   lastErrorMsg?: string
   currentStep?: number
   logs?: string[]

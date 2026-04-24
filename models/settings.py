@@ -19,8 +19,13 @@ PROJECT_ROOT = Path(__file__).parent
 WORKSPACE = Path(os.getenv("WORKSPACE", "workspace"))
 TEMPLATES = Path("templates")
 
-# LLM Settings
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
+# LLM Backend Settings
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
+LEMONADE_URL = os.getenv("LEMONADE_URL", "http://localhost:13305")
+LLAMACPP_URL = os.getenv("LLAMACPP_URL", "http://localhost:8080")
+LMSTUDIO_URL = os.getenv("LMSTUDIO_URL", "http://localhost:1234")
+
+# Model Settings
 MODEL_FAST = os.getenv("MODEL_FAST", "qwen2.5-coder:32b")
 MODEL_REASONING = os.getenv("MODEL_REASONING", "qwen-opus")
 LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", 30))
@@ -34,9 +39,36 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 # HF_TOKEN should be loaded carefully (see memory.py or .env)
 # DO NOT hardcode in this file!
 
+# Backend configuration
+BACKENDS = {
+    "ollama": {
+        "url": OLLAMA_URL,
+        "enabled": os.getenv("OLLAMA_ENABLED", "true").lower() == "true",
+        "models_endpoint": "/api/tags",
+    },
+    "lemonade": {
+        "url": LEMONADE_URL,
+        "enabled": os.getenv("LEMONADE_ENABLED", "true").lower() == "true",
+        "models_endpoint": "/api/v1/models",
+    },
+    "llamacpp": {
+        "url": LLAMACPP_URL,
+        "enabled": os.getenv("LLAMACPP_ENABLED", "false").lower() == "true",
+        "models_endpoint": "/props",
+    },
+    "lmstudio": {
+        "url": LMSTUDIO_URL,
+        "enabled": os.getenv("LMSTUDIO_ENABLED", "false").lower() == "true",
+        "models_endpoint": "/api/v1/models",
+    },
+}
+
 class Settings:
     """Configuration dictionary."""
     ollama_url = OLLAMA_URL
+    lemonade_url = LEMONADE_URL
+    llamacpp_url = LLAMACPP_URL
+    lmstudio_url = LMSTUDIO_URL
     model_fast = MODEL_FAST
     model_reasoning = MODEL_REASONING
     llm_timeout = LLM_TIMEOUT
@@ -44,6 +76,7 @@ class Settings:
     log_level = LOG_LEVEL
     workspace = str(WORKSPACE)
     load_dotenv = LOAD_DOTENV
+    backends = BACKENDS
 
     def get_model_for_task(self, task_type: str) -> str:
         """Smart model selection based on task type."""
