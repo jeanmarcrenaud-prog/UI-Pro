@@ -1,3 +1,7 @@
+// uiStore.ts
+// Role: Global UI store via Zustand with persistence - manages sidebar state, compact mode toggle,
+// model selection, and available models list across the application
+
 // UI Store - Unified UI state management with persistence
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'

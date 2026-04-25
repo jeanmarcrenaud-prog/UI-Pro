@@ -1,3 +1,7 @@
+// page.tsx (app/)
+// Role: Main dashboard page - renders the full UI with Sidebar, ChatContainer, DebugPanel, HistoryView,
+// and SettingsView based on active tab, with model logging and elapsed time timer
+
 'use client'
 
 // UI-Pro Dashboard - ChatGPT quality
@@ -31,22 +35,18 @@ export default function Home() {
   // Timer for elapsed time when loading
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null
-    
+
     if (isLoading) {
-      // Log model on first call only
+      if (!hasLoggedModel.current) {
+        hasLoggedModel.current = true
 
+        const currentModel =
+          selectedModel ??
+          (availableModels.length > 0 ? availableModels[0] : 'unknown')
 
-  if (!hasLoggedModel.current) {
-    hasLoggedModel.current = true
+        useChatStore.getState().addLog(`🤖 Using model: ${currentModel}`)
+      }
 
-    const currentModel =
-      selectedModel ??
-      (availableModels.length > 0 ? availableModels[0] : 'unknown')
-
-    useChatStore.getState().addLog(`🤖 Using model: ${currentModel}`)
-  }
-
-      
       interval = setInterval(() => {
         setElapsedSeconds(s => s + 1)
       }, 1000)
@@ -54,7 +54,7 @@ export default function Home() {
       hasLoggedModel.current = false // Reset for next time
       setElapsedSeconds(0)
     }
-    
+
     // ALWAYS cleanup - runs on unmount OR deps change
     return () => {
       if (interval) clearInterval(interval)
@@ -66,7 +66,7 @@ export default function Home() {
     (availableModels.length > 0 ? availableModels[0] : undefined)
     
   const hasError = messages.some(m => m.status === 'error')
-  const debugStatus: 'idle' | 'running' | 'error' = isLoading ? 'running' : hasError? 'error' : 'idle'
+  const debugStatus: 'idle' | 'running' | 'error' = isLoading ? 'running' : hasError ? 'error' : 'idle'
 
   return (
     <div className="flex h-screen bg-gradient-to-br from-slate-950 to-slate-900">

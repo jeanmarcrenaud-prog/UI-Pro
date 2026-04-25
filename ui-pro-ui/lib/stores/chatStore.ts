@@ -1,3 +1,7 @@
+// chatStore.ts
+// Role: Chat state store via Zustand with persistence - manages messages, loading state, error state,
+// chat history CRUD, logs, token count, and auto-generates chat titles from user messages
+
 // Chat Store - Zustand with event integration and history
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'

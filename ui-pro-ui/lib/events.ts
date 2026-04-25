@@ -1,3 +1,7 @@
+// events.ts
+// Role: Type-safe event emitter - provides central pub/sub system for app-wide events covering
+// chat, agent, model, and custom store lifecycle events
+
 // Event Emitter - Simple event-driven architecture
 type EventHandler<T = unknown> = (data: T) => void
 

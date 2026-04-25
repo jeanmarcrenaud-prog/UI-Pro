@@ -1,3 +1,7 @@
+// tokens.ts
+// Role: Design system source of truth - defines CSS variables for colors, border radius, spacing,
+// typography weights/sizes, and shadows used across all components via Tailwind
+
 // UI-Pro Design Tokens
 // Base design system - source of truth for all styling
 

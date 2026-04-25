@@ -161,8 +161,9 @@ class CodeExecutor:
     def _prepare_code(self, code: str) -> str:
         """Sanitize code - remove dangerous patterns"""
         # Remove shebang (not needed, can cause issues on Windows)
-        if code.startswith("#!"):
-            code = code[code.find("\n") + 1:]
+        lines = code.splitlines(True)
+        if lines and lines[0].lstrip().startswith("#!"):
+            code = "".join(lines[1:])
         
         # Block dangerous imports/calls
         dangerous = [

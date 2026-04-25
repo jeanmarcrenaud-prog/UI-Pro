@@ -1,3 +1,7 @@
+// types.ts
+// Role: Shared TypeScript interface definitions - central types for messages, agent steps, chat history,
+// API contracts, and store states used across all components and services
+
 // UI-Pro Types
 // ============
 

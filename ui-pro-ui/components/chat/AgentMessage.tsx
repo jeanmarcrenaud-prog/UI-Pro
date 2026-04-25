@@ -1,3 +1,6 @@
+// AgentMessage.tsx
+// Role: Renders an agent message with embedded step execution list in a chat bubble
+
 // components/chat/AgentMessage.tsx
 import { AgentSteps } from '../agent/AgentSteps'
 import type { AgentStep } from '@/lib/types'

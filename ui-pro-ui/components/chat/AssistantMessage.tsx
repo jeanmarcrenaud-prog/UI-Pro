@@ -1,3 +1,6 @@
+// AssistantMessage.tsx
+// Role: Renders assistant message with a typing animation effect (simulated streaming)
+
 // components/chat/AssistantMessage.tsx
 import { useEffect, useState } from "react"
 

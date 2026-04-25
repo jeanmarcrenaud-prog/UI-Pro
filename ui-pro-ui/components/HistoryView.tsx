@@ -1,6 +1,8 @@
-'use client'
+// HistoryView.tsx
+// Role: History page - displays saved chat list with timestamps, previews, and delete functionality
+// with confirm-on-second-click pattern and localStorage persistence via chatStore
 
-// History View - Chat history with localStorage persistence
+'use client'
 
 import { useState } from 'react'
 import { useChatStore } from '@/lib/stores/chatStore'
@@ -32,7 +34,6 @@ export function HistoryView({ onSelectChat, onClose }: HistoryViewProps) {
       setConfirmDelete(null)
     } else {
       setConfirmDelete(chatId)
-      setTimeout(() => setConfirmDelete(null), 3000)
     }
   }
 
@@ -73,48 +74,50 @@ export function HistoryView({ onSelectChat, onClose }: HistoryViewProps) {
           </div>
         ) : (
           <div className="divide-y divide-slate-800">
-            {sortedHistory.map((chat, index) => (
-              <motion.div
-                key={chat.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.05 }}
-                className="p-4 hover:bg-slate-800/30 transition-colors cursor-pointer group"
-                onClick={() => handleSelect(chat.id)}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-medium text-white truncate">
-                      {chat.title}
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-1">
-                      {chat.messages.length} message{chat.messages.length !== 1 ? 's' : ''} • {formatTime(chat.updatedAt)}
-                    </p>
-                    {/* Preview */}
-                    {chat.messages.length > 1 && (
-                      <p className="text-sm text-slate-500 mt-2 line-clamp-2">
-                        {chat.messages
-                          .filter(m => m.role === 'assistant')
-                          .slice(0, 1)[0]?.content
-                          ?.slice(0, 100) || '...'}
-                      </p>
-                    )}
-                  </div>
+            {sortedHistory.map((chat, index) => {
+              const msgCount = chat.messages?.length ?? 0
+              const previewMessage = chat.messages?.find(m => m.role === 'assistant')
+              const preview = previewMessage?.content?.slice(0, 100) || '...'
 
-                  {/* Delete button */}
-                  <button
-                    onClick={(e) => handleDelete(chat.id, e)}
-                    className={`px-2 py-1 rounded text-xs transition-colors ${
-                      confirmDelete === chat.id
-                        ? 'bg-red-600 text-white'
-                        : 'text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100'
-                    }`}
-                  >
-                    {confirmDelete === chat.id ? 'Confirm?' : '🗑️'}
-                  </button>
-                </div>
-              </motion.div>
-            ))}
+              return (
+                <motion.div
+                  key={chat.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                  className="p-4 hover:bg-slate-800/30 transition-colors cursor-pointer group min-h-[4rem]"
+                  onClick={() => handleSelect(chat.id)}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-medium text-white truncate">
+                        {chat.title}
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-1">
+                        {msgCount} message{msgCount !== 1 ? 's' : ''} • {formatTime(chat.updatedAt)}
+                      </p>
+                      {msgCount > 0 && (
+                        <p className="text-sm text-slate-500 mt-2 line-clamp-2">
+                          {preview}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Delete button */}
+                    <button
+                      onClick={(e) => handleDelete(chat.id, e)}
+                      className={`px-2 py-1 rounded text-xs transition-colors shrink-0 mt-1 ${
+                        confirmDelete === chat.id
+                          ? 'bg-red-600 text-white'
+                          : 'text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100'
+                      }`}
+                    >
+                      {confirmDelete === chat.id ? 'Confirm?' : '🗑️'}
+                    </button>
+                  </div>
+                </motion.div>
+              )
+            })}
           </div>
         )}
       </div>

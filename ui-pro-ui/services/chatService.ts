@@ -1,3 +1,7 @@
+// chatService.ts
+// Role: Singleton WebSocket service - manages backend connection, message streaming,
+// reconnection logic, and HTTP fallback for real-time AI chat communication
+
 // Chat Service - WebSocket communication with backend
 import type { Message } from '@/lib/types'
 import { useUIStore } from '@/lib/stores/uiStore'
@@ -12,7 +16,6 @@ class ChatService {
     messageId: null as string | null,
     content: '',
     buffer: '',
-    lastChunk: 0,
     started: false,
     reconnects: 0,
     lastModel: null as string | null,
@@ -30,7 +33,6 @@ class ChatService {
   private resetState() {
     this.state.content = ''
     this.state.buffer = ''
-    this.state.lastChunk = 0
     this.state.started = false
   }
 
@@ -49,50 +51,25 @@ class ChatService {
     return () => this.handlers.delete(handler)
   }
 
-  // Parse message data - handles double-encoded JSON from backend
+  // Parse message data - handles SSE JSON format
   private parseMessageData(rawMsg: any): any {
-    // If msg.data exists and is a string, parse it
-    if (rawMsg.data && typeof rawMsg.data === 'string') {
+    // If rawMsg is already an object, return it
+    if (typeof rawMsg !== 'string') return rawMsg
+
+    // Try standard JSON parse first
+    try {
+      return JSON.parse(rawMsg)
+    } catch {
+      // Fallback: Handle potential double-encoding or concatenated JSON
+      // Attempt to find JSON objects in the string
       try {
-        const dataStr = rawMsg.data
-        
-        // Try single parse first
-        try {
-          const inner = JSON.parse(dataStr)
-          return { ...rawMsg, ...inner }
-        } catch {
-          // Multiple concatenated JSON objects - extract responses
-          const responses: string[] = []
-          const doneFlags: boolean[] = []
-          
-          // Split by }{ and parse each object
-          const objects = dataStr.split(/(?=\{"model")/)
-          
-          for (const objStr of objects) {
-            if (!objStr.trim()) continue
-            try {
-              const fixed = objStr.startsWith('{') ? objStr : '{' + objStr
-              const obj = JSON.parse(fixed)
-              if (obj.response) responses.push(obj.response)
-              if (obj.thinking) responses.push(obj.thinking)
-              doneFlags.push(obj.done || false)
-            } catch {
-              // Skip malformed objects
-            }
-          }
-          
-          if (responses.length > 0) {
-            return { 
-              ...rawMsg, 
-              response: responses.join(''), 
-              done: doneFlags[doneFlags.length - 1] || false 
-            }
-          }
-          
-          return rawMsg
+        // Regex to find the first valid JSON object { ... }
+        const jsonMatch = rawMsg.match(/\{[^{}]+\}/)
+        if (jsonMatch) {
+          return JSON.parse(jsonMatch[0])
         }
-      } catch {
-        return rawMsg
+      } catch (e) {
+        console.warn('[ChatService] Failed to parse concatenated JSON', e)
       }
     }
     return rawMsg
@@ -103,71 +80,66 @@ class ChatService {
   // =====================
   private handleMessage = (event: MessageEvent) => {
     try {
-      const rawMsg = JSON.parse(event.data)
+      const rawMsg = typeof event.data === 'string' ? event.data : event.data
       const msg = this.parseMessageData(rawMsg)
-      console.log('[ChatService] Parsed message:', msg)
+      
+      if (!msg || typeof msg !== 'object') return
 
+      // Heartbeat / Pong
       if (msg.type === 'pong') return
 
-      if (msg.message_id && msg.message_id !== this.state.messageId) {
-        console.log('[ChatService] message_id mismatch:', msg.message_id, 'vs', this.state.messageId)
+      // FIX: message_id mismatch check (removed duplicate)
+      if (this.state.messageId && msg.message_id && msg.message_id !== this.state.messageId) {
         return
       }
 
-      // STEP - always allow step events through (they don't have message_id)
-      if (msg.type === 'step') {
+      // Handle Step events
+      if (msg.type === 'step' || msg.status) {
         events.emit('agentStep', {
-          stepId: msg.step_id,
-          status: msg.status,
+          stepId: msg.step_id || msg.status,
+          status: msg.status || 'active',
         })
         return
       }
 
-      if (msg.message_id && msg.message_id !== this.state.messageId) {
-        console.log('[ChatService] message_id mismatch:', msg.message_id, 'vs', this.state.messageId)
-        return
-      }
-
-      // ERROR
+      // Handle Error events
       if (msg.type === 'error') {
         this.stop()
         this.emit({
           id: crypto.randomUUID(),
           role: 'assistant',
-          content: msg.message,
+          content: msg.message || msg.error || 'An error occurred',
           status: 'error',
         })
         return
       }
 
-      // STREAM START
-      if (!this.state.started && (msg.content || msg.thinking)) {
+      // Handle Stream Start (detect first token)
+      if (!this.state.started && (msg.content || msg.text || msg.token)) {
         this.state.started = true
         events.emit('status', { status: 'streaming' })
       }
 
-      const text = msg.response || msg.thinking || msg.content || ''
+      // Normalize text content (handle multiple potential field names)
+      const text = msg.content || msg.text || msg.token || msg.response || msg.thinking || ''
 
       if (text) {
         this.state.content += text
         this.state.buffer += text
-        console.log('[ChatService] Token received:', text.slice(0, 50))
 
+        // Throttle buffer flush to avoid excessive re-renders
         if (!this.timers.flush) {
           this.timers.flush = setTimeout(() => {
             this.flushBuffer()
             this.timers.flush = null
           }, 30)
         }
-      } else {
-        console.log('[ChatService] No text in message, fields available:', Object.keys(msg))
       }
 
-      // DONE - handle both msg.done (Ollama) and msg.type === 'done' (backend)
+      // Handle Done signal
       if (msg.done || msg.type === 'done') {
-        console.log('[ChatService] Done signal received')
-        this.flushBuffer(true)
-
+        this.flushBuffer(true) // Flush remaining buffer as final
+        
         this.emit({
           id: crypto.randomUUID(),
           role: 'assistant',
@@ -179,7 +151,7 @@ class ChatService {
         events.emit('status', { status: 'idle' })
       }
     } catch (e) {
-      console.warn('[ChatService] parse error', e)
+      console.error('[ChatService] Error handling WS message:', e)
     }
   }
 
@@ -200,26 +172,33 @@ class ChatService {
   // CONNECTION
   // =====================
   private connect(): Promise<void> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         resolve()
         return
       }
 
-      // Close existing socket if not open
       if (this.ws) {
         this.ws.close()
       }
 
-      // Get model NOW, before connecting
       const model = useUIStore.getState().selectedModel
       
-      this.ws = new WebSocket(
-        `ws://${window.location.hostname}:8000/ws`
-      )
+      // Use localhost as fallback, never allow empty host
+      const host = window.location.hostname || 'localhost'
+      const wsUrl = `ws://${host}:8000/ws`
+      console.log('[ChatService] Connecting to', wsUrl)
+      this.ws = new WebSocket(wsUrl)
+
+      // Timeout after 8s
+      const timeoutId = setTimeout(() => {
+        this.ws?.close()
+        reject(new Error('[ChatService] WebSocket connection timeout'))
+      }, 8000)
 
       this.ws.onopen = () => {
-        console.log('[ChatService] WebSocket connected, model:', model)
+        clearTimeout(timeoutId)
+        console.log('[ChatService] WebSocket connected')
         this.state.lastModel = model
         this.state.reconnects = 0
 
@@ -233,21 +212,27 @@ class ChatService {
       this.ws.onmessage = this.handleMessage
 
       this.ws.onerror = (err) => {
+        clearTimeout(timeoutId)
         console.error('[ChatService] WebSocket error:', err)
+        // Reject instead of resolve - don't let caller think connection succeeded
+        reject(new Error('[ChatService] WebSocket error'))
       }
 
-      this.ws.onclose = () => {
-        console.log('[ChatService] WebSocket closed')
+      this.ws.onclose = (ev) => {
+        clearTimeout(timeoutId)
         this.clearTimers()
-
-        if (this.state.reconnects < 3) {
+        // Only reset reconnects on clean close (code 1000) or 1001
+        if (ev.code >= 1000 && ev.code !== 1006) {
+          this.state.reconnects = 6 // Trigger immediate fallback
+        }
+        if (this.state.reconnects < 6) {
           this.state.reconnects++
-          console.log(`[ChatService] Reconnecting (${this.state.reconnects}/3)...`)
-          setTimeout(() => this.connect(), 500 * this.state.reconnects)
+          console.log(`[ChatService] Reconnecting (${this.state.reconnects}/6)...`)
+          setTimeout(() => this.connect(), Math.min(500 * this.state.reconnects, 3000))
         } else {
-          console.log('[ChatService] Max reconnects reached')
-          this.stop()
+          console.warn('[ChatService] Max reconnects reached. Falling back to HTTP.')
           this.fallback()
+          reject(new Error('[ChatService] Max reconnects reached'))
         }
       }
     })
@@ -266,34 +251,21 @@ class ChatService {
       const selectedModel = useUIStore.getState().selectedModel
       const availableModels = useUIStore.getState().availableModels
       
-      // DEBUG: Log everything
-      console.log('[ChatService] sendMessage - full state:', {
-        selectedModel: selectedModel,
-        availableModels: availableModels,
-        storeKeys: Object.keys(useUIStore.getState())
-      })
-      
-      // Use selected model, or first available, or fallback to qwen3.5:9b
       const model = selectedModel || availableModels[0] || 'qwen3.5:9b'
-      
-      console.log('[ChatService] Model selected:', model, '(selected=', selectedModel, ', firstAvailable=', availableModels[0], ')')
       
       const payload = {
         message_id: this.state.messageId,
         message: content,
         model: model,
       }
-      
-      console.log('[ChatService] Sending payload:', payload)
 
-      console.log('[ChatService] Sending payload:', payload)
       this.ws?.send(JSON.stringify(payload))
     } catch (err) {
       console.error('[ChatService] Failed to send message:', err)
       this.emit({
         id: crypto.randomUUID(),
         role: 'assistant',
-        content: 'Connection failed',
+        content: 'Connection failed. Please try again.',
         status: 'error',
       })
     }
@@ -301,7 +273,6 @@ class ChatService {
 
   cancel() {
     this.stop()
-
     this.ws?.send(
       JSON.stringify({
         type: 'cancel',
@@ -314,46 +285,44 @@ class ChatService {
     this.clearTimers()
     this.state.started = false
     this.state.messageId = null
-
-    if (this.ws) {
-      this.ws.close()
-      this.ws = null
-    }
-
+    this.ws?.close()
+    this.ws = null
     events.emit('status', { status: 'idle' })
   }
 
   private async fallback() {
+    const host = window.location.hostname || 'localhost'
     try {
       const res = await fetch(
-        'http://localhost:8000/api/chat',
+        `http://${host}:8000/api/chat`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            message: this.state.content,
+            message: this.state.content, // Or the original content
             model: useUIStore.getState().selectedModel,
           }),
         }
       )
 
+      if (!res.ok) throw new Error('HTTP fallback failed')
       const data = await res.json()
+      const fallbackContent = data?.result ?? data?.message ?? 'Response received but content unavailable.'
 
       this.emit({
         id: crypto.randomUUID(),
         role: 'assistant',
-        content: data.result,
+        content: typeof fallbackContent === 'string' ? fallbackContent : 'Response received but content unavailable.',
         status: 'done',
       })
     } catch {
       this.emit({
         id: crypto.randomUUID(),
         role: 'assistant',
-        content: 'Connection failed',
+        content: 'Connection failed. Backend unreachable.',
         status: 'error',
       })
     }
-
     events.emit('status', { status: 'idle' })
   }
 }

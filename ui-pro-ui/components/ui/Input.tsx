@@ -1,3 +1,6 @@
+// Input.tsx
+// Role: Styled text input with label, error state, helper text and focus ring
+
 'use client'
 
 import React from 'react'

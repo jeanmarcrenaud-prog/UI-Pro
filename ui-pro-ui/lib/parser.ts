@@ -1,3 +1,7 @@
+// parser.ts
+// Role: LLM response parser with provider adapter architecture - auto-detects and extracts streaming
+// content from multiple LLM APIs (Custom, OpenAI, Anthropic, Grok, Mistral, Ollama)
+
 /**
  * LLM Response Parser with Provider Adapter Architecture
  * Supports: Custom protocol, OpenAI, Anthropic, Grok, Mistral, Ollama

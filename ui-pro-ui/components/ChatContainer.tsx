@@ -1,5 +1,10 @@
+// ChatContainer.tsx
+// Role: Main chat container - orchestrates messages display, agent steps, loading states and input area
+// Renders welcome screen, message timeline, agent progress, streaming cursor, and sticky input
+
 'use client'
 
+import { useState } from 'react'
 import type { Message, AgentStep } from '@/lib/types'
 import { useChat } from '@/hooks/useChat'
 import { ChatMessages } from './chat/ChatMessages'
@@ -26,6 +31,9 @@ export function ChatContainer({
     steps,
   } = useChat()
 
+  // Controlled input state (avoids DOM-read anti-pattern)
+  const [inputValue, setInputValue] = useState('')
+
   // Override hook values with props if provided (backward compatibility)
   const messages = propMessages || hookMessages
   const isLoading = hookIsLoading
@@ -50,7 +58,7 @@ export function ChatContainer({
 
   return (
     <div className="flex-1 flex flex-col">
-      {/* Messages with timeline */}
+      {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
         {messages.length === 0 ? (
           /* Welcome screen */
@@ -63,7 +71,7 @@ export function ChatContainer({
             <h2 className="text-xl font-semibold mb-2">Welcome to UI-Pro</h2>
             <p className="text-sm">Your AI Agent Orchestration System</p>
 
-            {/* Example prompts */}
+            {/* Example prompts - memoized for stable keys */}
             <div className="mt-8 max-w-md mx-auto">
               <p className="text-xs text-slate-500 mb-3">Try an example:</p>
               <div className="grid gap-2">
@@ -84,7 +92,7 @@ export function ChatContainer({
             <p className="text-xs mt-8 text-slate-500">Or type your own request below...</p>
           </motion.div>
         ) : (
-          /* Messages timeline */
+          /* Messages */
           <ChatMessages messages={messages} />
         )}
 
@@ -142,26 +150,22 @@ export function ChatContainer({
             <textarea
               placeholder="Describe your task..."
               disabled={isLoading}
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
               className="w-full bg-transparent outline-none text-white px-3 resize-none placeholder:text-slate-500"
               rows={1}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault()
-                  const textarea = e.target as HTMLTextAreaElement
-                  const value = textarea.value
-                  sendMessage(value)
-                  textarea.value = ''
+                  sendMessage(inputValue)
+                  setInputValue('')
                 }
               }}
             />
             <button
               onClick={() => {
-                const textarea = document.activeElement as HTMLTextAreaElement
-                if (textarea) {
-                  const value = textarea.value
-                  sendMessage(value)
-                  textarea.value = ''
-                }
+                sendMessage(inputValue)
+                setInputValue('')
               }}
               disabled={isLoading}
               className="bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white px-4 py-1.5 rounded-lg ml-1 font-medium transition-colors flex items-center gap-2"

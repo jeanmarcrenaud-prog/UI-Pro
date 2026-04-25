@@ -1,3 +1,6 @@
+// ui/index.ts
+// Role: Barrel exports for UI components - exposes all design system components (Button, Card, Input, Textarea, Select, Badge)
+
 // UI Component barrel exports
 // All components use design system tokens
 

@@ -1,3 +1,7 @@
+// Button.tsx
+// Role: Primary button component with variants (primary/secondary/ghost/danger), sizes (xs/sm/md/lg), loading state and accessibility support
+// Also exports: MessageBubble, TypingIndicator, StepItem from ui/
+
 'use client'
 
 import React from 'react'

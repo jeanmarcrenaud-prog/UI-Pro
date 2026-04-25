@@ -1,3 +1,6 @@
+// MarkdownRenderer.tsx
+// Role: Converts markdown content to React elements with syntax-highlighted code blocks and inline code support
+
 import ReactMarkdown from 'react-markdown'
 import { CodeBlock } from './CodeBlock'
 

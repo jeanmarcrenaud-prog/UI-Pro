@@ -1,3 +1,7 @@
+// modelDiscovery.ts
+// Role: Singleton service that discovers available LLM models from backends (Ollama, LMStudio, 
+// llama.cpp, Lemonade), updates the UI store, fetches default model from settings, and polls for updates
+
 // Model Discovery Service - Discovers available models from different backends
 import { useUIStore } from '@/lib/stores/uiStore'
 import { events } from '@/lib/events'
@@ -71,20 +75,26 @@ class ModelDiscoveryService {
     // Fetch default model from backend settings and use as initial selection
     // ONLY if no model is already selected (preserve user choice!)
     try {
-      const response = await fetch('http://localhost:8000/api/settings/default-model', {
-        signal: AbortSignal.timeout(5000),
+      const settingsController = new AbortController()
+      const settingsTimeout = setTimeout(() => settingsController.abort(), 5000)
+      const response = await fetch('/api/settings/default-model', {
+        signal: settingsController.signal,
       })
+      clearTimeout(settingsTimeout)
+
       if (response.ok) {
         const data = await response.json()
-        const defaultModel = data.model_fast
-        // Only set if no model is currently selected - NEVER override user choice
-        if (!useUIStore.getState().selectedModel && defaultModel) {
+        const defaultModel = data?.model_fast
+        // Only set if no model (strict null check, allow empty string)
+        const current = useUIStore.getState().selectedModel
+        if (!current && current !== '' && defaultModel) {
           useUIStore.getState().setSelectedModel(defaultModel)
         }
       }
     } catch {
-      // Fallback: use first available model ONLY if nothing selected
-      if (modelIds.length > 0 && !useUIStore.getState().selectedModel) {
+      // Fallback: use first available model, but ONLY if nothing selected
+      const current = useUIStore.getState().selectedModel
+      if (modelIds.length > 0 && (!current || current === '')) {
         useUIStore.getState().setSelectedModel(modelIds[0])
       }
     }
@@ -113,98 +123,125 @@ class ModelDiscoveryService {
         default:
           return []
       }
-    } catch {
-      // Silently fail - backend not available
+    } catch (e) {
+      console.debug(`[ModelDiscovery] Backend ${provider} unavailable:`, e)
       return []
     }
   }
 
   private async fetchOllama(url: string): Promise<Model[]> {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 3000)
+
     let response: Response
-    
     try {
-      // Try direct first
       response = await fetch(`${url}/api/tags`, {
         method: 'GET',
-        signal: AbortSignal.timeout(3000),
+        signal: controller.signal,
       })
     } catch {
-      // Fallback to proxy if direct fails (CORS)
+      // Fallback to proxy backend for model discovery
       try {
-        response = await fetch('http://localhost:8000/api/settings/default-model', {
+        const proxyController = new AbortController()
+        const proxyTimeout = setTimeout(() => proxyController.abort(), 3000)
+        response = await fetch('/api/settings/default-model', {
           method: 'GET',
-          signal: AbortSignal.timeout(3000),
+          signal: proxyController.signal,
         })
+        clearTimeout(proxyTimeout)
       } catch {
-        return [] // Silently fail
+        return []
       }
+    } finally {
+      clearTimeout(timeout)
     }
     
     if (!response.ok) return []
-    
+
     const data = await response.json()
-    const models = data.models || []
-    return models.map((m: { name: string }) => ({
-      id: m.name,
-      name: m.name,
-      provider: 'ollama' as const,
-    }))
+    
+    // Handle both direct ollama format and proxy format
+    if (data.models) {
+      return data.models.map((m: { name: string }) => ({
+        id: m.name,
+        name: m.name,
+        provider: 'ollama' as const,
+      }))
+    }
+    // Proxy returned { model_fast: ... } - not a model list
+    return []
   }
 
   private async fetchLMStudio(url: string): Promise<Model[]> {
-    const response = await fetch(`${url}/api/models`, {
-      method: 'GET',
-      signal: AbortSignal.timeout(5000),
-    })
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 5000)
     
-    if (!response.ok) return []
-    
-    const data = await response.json()
-    return (data.data || []).map((m: { id: string; name: string }) => ({
-      id: m.id,
-      name: m.name,
-      provider: 'lmstudio' as const,
-    }))
+    try {
+      const response = await fetch(`${url}/api/models`, {
+        method: 'GET',
+        signal: controller.signal,
+      })
+      
+      if (!response.ok) return []
+      
+      const data = await response.json()
+      return (data.data || []).map((m: { id: string; name: string }) => ({
+        id: m.id,
+        name: m.name,
+        provider: 'lmstudio' as const,
+      }))
+    } finally {
+      clearTimeout(timeout)
+    }
   }
 
   private async fetchLlamaCpp(url: string): Promise<Model[]> {
-    // llama.cpp usually uses specific endpoint
-    const response = await fetch(`${url}/v1/models`, {
-      method: 'GET',
-      headers: { 'Authorization': 'Bearer empty' },
-      signal: AbortSignal.timeout(5000),
-    })
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 5000)
     
-    if (!response.ok) return []
-    
-    const data = await response.json()
-    return (data.data || []).map((m: { id: string }) => ({
-      id: m.id,
-      name: m.id,
-      provider: 'llama.cpp' as const,
-    }))
+    try {
+      const response = await fetch(`${url}/v1/models`, {
+        method: 'GET',
+        headers: { 'Authorization': 'Bearer empty' },
+        signal: controller.signal,
+      })
+      
+      if (!response.ok) return []
+      
+      const data = await response.json()
+      return (data.data || []).map((m: { id: string }) => ({
+        id: m.id,
+        name: m.id,
+        provider: 'llama.cpp' as const,
+      }))
+    } finally {
+      clearTimeout(timeout)
+    }
   }
 
   private async fetchLemonade(url: string): Promise<Model[]> {
-    console.log('[ModelDiscovery] Fetching from Lemonade:', url)
-    const response = await fetch(`${url}/api/v1/models`, {
-      method: 'GET',
-      signal: AbortSignal.timeout(5000),
-    })
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 5000)
     
-    console.log('[ModelDiscovery] Lemonade response:', response.status)
-    if (!response.ok) {
-      console.log('[ModelDiscovery] Lemonade failed, status:', response.status)
-      return []
+    try {
+      const response = await fetch(`${url}/api/v1/models`, {
+        method: 'GET',
+        signal: controller.signal,
+      })
+      
+      if (!response.ok) {
+        return []
+      }
+      
+      const data = await response.json()
+      return (data.data || []).map((m: { id: string; labels?: string[] }) => ({
+        id: m.id,
+        name: m.id,
+        provider: 'lemonade' as const,
+      }))
+    } finally {
+      clearTimeout(timeout)
     }
-    
-    const data = await response.json()
-    console.log('[ModelDiscovery] Lemonade models:', data)
-    return (data.data || []).map((m: { id: string; labels?: string[] }) => ({
-      id: m.id,
-      name: m.id,
-      provider: 'lemonade' as const,
-    }))
   }
 
   // Start polling for model updates

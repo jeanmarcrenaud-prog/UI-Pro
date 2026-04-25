@@ -1,3 +1,7 @@
+// layout.tsx (app/)
+// Role: Root layout component - sets up Next.js app router metadata, imports global styles, and
+// configures dark mode with Tailwind class-based theming
+
 import type { Metadata } from 'next'
 import './globals.css'
 

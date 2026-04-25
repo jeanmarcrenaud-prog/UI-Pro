@@ -1,3 +1,6 @@
+// AgentSteps.tsx (chat/)
+// Role: Renders agent execution steps with status icons (pending/active/done) and progress animation
+
 'use client'
 
 import { motion } from 'framer-motion'

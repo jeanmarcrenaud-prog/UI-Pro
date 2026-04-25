@@ -1,3 +1,7 @@
+// useChat.ts
+// Role: Core React hook for chat functionality - orchestrates message sending via WebSocket, manages
+// streaming state, agent step lifecycle, error handling, safety timeouts, and token count tracking
+
 'use client'
 
 import { useCallback, useEffect, useRef } from 'react'
@@ -175,7 +179,9 @@ export const useChat = (): UseChatReturn => {
             )
               return
 
-            if (msg.message_id != null && msg.message_id !== currentRequestIdRef.current) return
+            // FIX: Strict null check for message_id
+            if (msg.message_id == null || msg.message_id === '') return
+            if (msg.message_id !== currentRequestIdRef.current) return
 
             // DEBUG: Log all messages
             if (msg.type === 'done' || msg.status === 'done') {

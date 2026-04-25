@@ -39,6 +39,8 @@ class StreamChunk:
     tokens_generated: int = 0
     latency_ms: float = 0.0
     error: Optional[str] = None
+    step_id: Optional[str] = None
+    step_status: Optional[str] = None
     timestamp: datetime = field(default_factory=datetime.now)
     
     def to_dict(self) -> dict[str, Any]:
@@ -55,7 +57,7 @@ class StreamChunk:
             StreamStatus.CANCELLED: "error",
         }
         
-        return {
+        result = {
             "type": type_map.get(self.status, "token"),
             "status": self.status.value,
             "stream_id": self.stream_id,
@@ -68,6 +70,14 @@ class StreamChunk:
             "error": self.error,
             "timestamp": self.timestamp.isoformat(),
         }
+        
+        # Add step events for frontend step tracking
+        if self.step_id:
+            result["type"] = "step"
+            result["step_id"] = self.step_id
+            result["step_status"] = self.step_status
+        
+        return result
 
 
 @dataclass
@@ -262,14 +272,35 @@ class StreamingService:
             # Register this stream so it can be cancelled later
             self._active_streams[stream_id] = asyncio.current_task()
             
-            # Start streaming with initial STATUS
+            # Send step event: Step 1 - Analyzing (STARTING)
             yield StreamChunk(
                 text="",
                 status=StreamStatus.STARTING,
                 stream_id=stream_id,
                 chunk_index=0,
                 latency_ms=0,
-                error="Initializing stream..."
+                step_id="step-analyzing",
+                step_status="active"
+            )
+            
+            # Send step event: Step 1 done, Step 2 active
+            yield StreamChunk(
+                text="",
+                status=StreamStatus.GENERATING,
+                stream_id=stream_id,
+                chunk_index=1,
+                latency_ms=(time.time() - start_time) * 1000,
+                step_id="step-analyzing",
+                step_status="done"
+            )
+            yield StreamChunk(
+                text="",
+                status=StreamStatus.GENERATING,
+                stream_id=stream_id,
+                chunk_index=2,
+                latency_ms=(time.time() - start_time) * 1000,
+                step_id="step-planning",
+                step_status="active"
             )
             
             buffer = []

@@ -1,3 +1,6 @@
+// Select.tsx
+// Role: Styled dropdown select with label, error state, empty message and custom SVG caret
+
 'use client'
 
 import React, { useRef } from 'react'

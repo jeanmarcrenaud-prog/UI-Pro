@@ -1,3 +1,7 @@
+// download.ts
+// Role: File download utility - extracts meaningful filenames from code content using pattern matching,
+// maps language identifiers to file extensions, and triggers browser downloads via Blob URLs
+
 // Map language identifiers to file extensions
 const LANGUAGE_EXTENSIONS: Record<string, string> = {
   js: 'js',

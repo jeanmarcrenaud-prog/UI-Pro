@@ -1,3 +1,7 @@
+// useChat.test.tsx
+// Role: Unit tests for the useChat hook - covers message sending, error handling, streaming, agent
+// step navigation, state initialization, and safety guards using mocked stores and services
+
 /**
  * Tests unitaires pour le hook useChat
  * 

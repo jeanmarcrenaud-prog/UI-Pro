@@ -1,3 +1,6 @@
+// DebugPanel.tsx
+// Role: Debug sidebar panel - displays agent execution status, model info, step progress, live logs
+
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -45,16 +48,14 @@ export function DebugPanel({
   const [localTokenCount, setLocalTokenCount] = useState(propTokenCount)
   const logsEndRef = useRef<HTMLDivElement>(null)
 
-  // CRITICAL FIX: Sync with parent prop changes
+  // FIX: Force sync when prop changes (handles React.memo parent issues)
   useEffect(() => {
     if (propTokenCount !== localTokenCount) {
       setLocalTokenCount(propTokenCount)
     }
   }, [propTokenCount, localTokenCount])
 
-  // =====================
-  // DERIVED STATE (OPTIMIZED)
-  // =====================
+  // Derived state optimization
   const completed = useMemo(
     () => steps.filter((s) => s.status === 'done').length,
     [steps]
@@ -69,24 +70,15 @@ export function DebugPanel({
     return idx !== -1 ? idx : currentStep
   }, [steps, currentStep])
 
-  // =====================
-  // SCROLL LOGS
-  // =====================
   useEffect(() => {
     if (!isOpen) return
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [logs.length, isOpen])
 
-  // =====================
-  // CLOSE HANDLER
-  // =====================
   const closeFn = useCallback(() => {
     onClose?.() ?? onToggle?.()
   }, [onClose, onToggle])
 
-  // =====================
-  // HIDDEN STATE
-  // =====================
   if (!isOpen) {
     return (
       <button
@@ -126,14 +118,13 @@ export function DebugPanel({
           <Row label="Tokens" value={localTokenCount} color="violet" bold />
         </div>
 
-        {/* PROGRESS */}
-        {steps.length > 0 && status !== 'idle' && (
+        {/* PROGRESS - only show when agent is actively running (not idle/error) */}
+        {steps.length > 0 && status === 'running' && (
           <div className="p-4 border-b border-slate-800/60">
             <div className="flex justify-between text-xs mb-2">
               <span>Step {activeIdx + 1} / {steps.length}</span>
               <span>{elapsedSeconds}s</span>
             </div>
-
             <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
               <motion.div
                 className="h-full bg-violet-500"
@@ -146,12 +137,9 @@ export function DebugPanel({
 
         {/* STEPS */}
         <div className="p-4 border-b border-slate-800/60">
-          <div className="text-xs text-slate-500 mb-3">
-            Agent Execution
-          </div>
-
+          <div className="text-xs text-slate-500 mb-3">Agent Execution</div>
           {steps.map((step, i) => (
-            <div key={step.id} className="flex gap-3 text-sm mb-2">
+            <div key={`${step.id}-${i}`} className="flex gap-3 text-sm mb-2">
               <div className="w-5 h-5 flex items-center justify-center rounded-full text-xs bg-slate-800">
                 {step.status === 'done'
                   ? '✓'
@@ -161,18 +149,12 @@ export function DebugPanel({
               </div>
               <div>
                 <div
-                  className={
-                    step.status === 'active'
-                      ? 'text-white'
-                      : 'text-slate-400'
-                  }
+                  className={step.status === 'active' ? 'text-white' : 'text-slate-400'}
                 >
                   {step.title}
                 </div>
                 {step.detail && (
-                  <div className="text-xs text-slate-500">
-                    {step.detail}
-                  </div>
+                  <div className="text-xs text-slate-500">{step.detail}</div>
                 )}
               </div>
             </div>
@@ -182,9 +164,7 @@ export function DebugPanel({
         {/* LOGS */}
         <div className="flex-1 flex flex-col min-h-0">
           <div className="px-4 py-2 border-b border-slate-800 flex justify-between">
-            <span className="text-xs text-slate-500">
-              Live Logs
-            </span>
+            <span className="text-xs text-slate-500">Live Logs</span>
             <button
               onClick={onClearLogs}
               className="text-[10px] text-slate-500"
@@ -192,26 +172,23 @@ export function DebugPanel({
               Clear
             </button>
           </div>
-
           <div className="flex-1 p-4 font-mono text-[10px] overflow-y-auto">
             {logs.length === 0 ? (
-              <span className="text-slate-600 italic">
-                Waiting...
-              </span>
+              <span className="text-slate-600 italic">Waiting...</span>
             ) : (
-              logs.map((l, i) => <div key={i}>{l}</div>)
+              logs.map((l, i) => <div key={`log-${i}-${l.slice(0, 10)}`}>{l}</div>)
             )}
             <div ref={logsEndRef} />
           </div>
         </div>
       </div>
 
-      {/* ERROR */}
-      {lastErrorMsg && (
+      {/* ERROR - only show when status is error */}
+      {lastErrorMsg && status === 'error' ? (
         <div className="p-3 text-xs text-red-400 border-t border-red-900/30">
           ⚠ {lastErrorMsg.split('\n')[0]}
         </div>
-      )}
+      ) : null}
     </motion.div>
   )
 }
