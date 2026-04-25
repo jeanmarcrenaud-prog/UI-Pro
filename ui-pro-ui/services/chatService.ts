@@ -82,6 +82,7 @@ class ChatService {
   private handleMessage = (event: MessageEvent) => {
     try {
       const rawMsg = typeof event.data === 'string' ? event.data : event.data
+      console.log('[ChatService] Raw:', rawMsg.substring(0, 100))
       const msg = this.parseMessageData(rawMsg)
       
       if (!msg || typeof msg !== 'object') return
