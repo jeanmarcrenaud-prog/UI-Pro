@@ -133,15 +133,7 @@ class ChatService {
 
       // Handle Done signal
       if (msg.done || msg.type === 'done') {
-        this.flushBuffer(true) // Flush remaining buffer as final
-        
-        this.emit({
-          id: crypto.randomUUID(),
-          role: 'assistant',
-          content: this.state.content,
-          status: 'done',
-        })
-
+        this.flushBuffer(true) // Flush remaining buffer and emit as 'done'
         this.stop()
         events.emit('status', { status: 'idle' })
       }
@@ -171,11 +163,9 @@ class ChatService {
     if (this.connectPromise) {
       return this.connectPromise
     }
-    
-    return new Promise((resolve, reject) => {
-      this.connectPromise = this.connect().then(resolve).catch(reject)
-      
-      // Reset manuallyClosed flag
+
+    // Fix: Create promise first, then start connection logic
+    this.connectPromise = new Promise((resolve, reject) => {
       this.manuallyClosed = false
       
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
@@ -187,14 +177,9 @@ class ChatService {
         this.ws.close()
       }
 
-      const model = useUIStore.getState().selectedModel
-      
-      // Use dynamic host (window.location.hostname) for the frontend to work in any environment
-      // Use config for port - derive from wsUrl or use default
-      const hostname = window.location.hostname
-      const host = hostname || 'localhost'
+      const host = window.location.hostname || 'localhost'
       const wsUrl = `ws://${host}:8000/ws`
-      console.log('[ChatService] Connecting to:', wsUrl, '| hostname:', hostname)
+      console.log('[ChatService] Connecting to:', wsUrl)
       this.ws = new WebSocket(wsUrl)
 
       // Timeout after 8s
@@ -206,11 +191,14 @@ class ChatService {
       this.ws.onopen = () => {
         clearTimeout(timeoutId)
         console.log('[ChatService] WebSocket connected')
-        this.state.lastModel = model
+        this.state.lastModel = useUIStore.getState().selectedModel
         this.state.reconnects = 0
 
+        // Fix: Secure heartbeat
         this.timers.heartbeat = setInterval(() => {
-          this.ws?.send(JSON.stringify({ type: 'ping' }))
+          if (this.ws?.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({ type: 'ping' }))
+          }
         }, 15000)
 
         resolve()
@@ -221,7 +209,6 @@ class ChatService {
       this.ws.onerror = (err) => {
         clearTimeout(timeoutId)
         console.error('[ChatService] WebSocket error:', err)
-        // Reject instead of resolve - don't let caller think connection succeeded
         reject(new Error('[ChatService] WebSocket error'))
       }
 
@@ -231,25 +218,33 @@ class ChatService {
         
         // Fix: Don't reconnect if manually closed
         if (this.manuallyClosed) {
-          console.log('[ChatService] Socket manually closed, not reconnecting')
-          reject(new Error('[ChatService] Connection closed'))
+          console.log('[ChatService] Socket manually closed')
           return
         }
         
-        // Only reset reconnects on clean close (code 1000) or 1001
-        if (ev.code >= 1000 && ev.code !== 1006) {
-          this.state.reconnects = 6 // Trigger immediate fallback
+        // Clean close
+        if (ev.code === 1000 || ev.code === 1001) {
+          return
         }
-        if (this.state.reconnects < 6) {
+        
+        // Reconnect with backoff
+        if (this.state.reconnects < 5) {
           this.state.reconnects++
-          console.log(`[ChatService] Reconnecting (${this.state.reconnects}/6)...`)
-          setTimeout(() => this.connect(), Math.min(500 * this.state.reconnects, 3000))
+          console.log(`[ChatService] Reconnecting (${this.state.reconnects}/5)...`)
+          setTimeout(() => {
+            this.connect().catch(() => {})
+          }, Math.min(500 * this.state.reconnects, 3000))
         } else {
           console.warn('[ChatService] Max reconnects reached. Falling back to HTTP.')
           this.fallback()
           reject(new Error('[ChatService] Max reconnects reached'))
         }
       }
+    })
+
+    // Fix: Cleanup after resolve/reject
+    return this.connectPromise.finally(() => {
+      this.connectPromise = null
     })
   }
 
@@ -260,11 +255,6 @@ class ChatService {
     this.resetState()
     this.state.messageId = messageId || crypto.randomUUID()
     this.state.lastPrompt = content  // Fix: Store for fallback
-
-    // Fix: Prevent concurrent connections
-    if (this.connectPromise) {
-      return this.connectPromise
-    }
 
     try {
       await this.connect()
