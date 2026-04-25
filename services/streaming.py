@@ -356,9 +356,9 @@ class StreamingService:
                                 stream_id=stream_id, chunk_index=chunk_index,
                                 error="Max tokens reached"
                             )
-# Send COMPLETED event
-            logger.info(f"[STREAM] Stream COMPLETED")
-            yield StreamChunk(
+                        # Send COMPLETED event
+                        logger.info(f"[STREAM] Stream COMPLETED")
+                        yield StreamChunk(
                             text="", status=StreamStatus.COMPLETED,
                             stream_id=stream_id, chunk_index=chunk_index,
                             error="Max tokens reached"

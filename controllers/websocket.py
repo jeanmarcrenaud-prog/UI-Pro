@@ -53,8 +53,13 @@ class WebSocketController:
         
         # Stream with proper JSON format - pass model to streaming service
         stream_service = get_streaming_service()
+        chunk_count = 0
         async for chunk in stream_service.stream_generate(task, model=model):
             await ws.send_text(json.dumps(chunk.to_dict()))
+            chunk_count += 1
+            logger.info(f"[WS] Sent chunk {chunk_count}: {chunk.status}")
+        
+        logger.info(f"[WS] Stream complete, sent {chunk_count} chunks")
         
         return ""
     
