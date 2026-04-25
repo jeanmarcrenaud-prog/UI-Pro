@@ -13,9 +13,17 @@ class ChatService {
 
   private handlers = new Set<(m: Message) => void>()
 
+  // Fix: Lifecycle state to prevent race conditions
+  private lifecycleState: 'idle' | 'connecting' | 'open' | 'closing' | 'fallback' = 'idle'
+
+  // Fix: Track assistant message for single-message updates
+  private assistantMessageId: string | null = null
+
+  // Fix: Throttle for smooth 60fps streaming
+  private lastFlush = 0
+
   private state = {
     messageId: null as string | null,
-    content: '',
     buffer: '',
     started: false,
     reconnects: 0,
@@ -130,16 +138,23 @@ class ChatService {
       const text = msg.content || msg.text || msg.token || msg.response || msg.thinking || msg.data || ''
 
       if (text) {
-        this.state.content += text
+        // Fix: Buffer only - no duplicate content accumulation
         this.state.buffer += text
 
-        // Throttle buffer flush to avoid excessive re-renders
-        if (!this.timers.flush) {
-          this.timers.flush = setTimeout(() => {
-            this.flushBuffer()
-            this.timers.flush = null
-          }, 30)
+        // Throttle buffer flush to ~60fps
+        const now = Date.now()
+        if (now - this.lastFlush < 16) {
+          // Schedule flush if not already scheduled
+          if (!this.timers.flush) {
+            this.timers.flush = setTimeout(() => {
+              this.flushBuffer()
+              this.timers.flush = null
+            }, 16)
+          }
+          return
         }
+        this.lastFlush = now
+        this.flushBuffer()
       }
 
       // Handle Done signal
@@ -157,13 +172,28 @@ class ChatService {
   private flushBuffer(final = false) {
     if (!this.state.buffer) return
 
-    this.emit({
-      id: crypto.randomUUID(),
-      role: 'assistant',
-      content: this.state.buffer,
-      status: final ? 'done' : 'streaming',
-    })
+    // Fix: Use single message ID for streaming updates
+    if (!this.assistantMessageId) {
+      this.assistantMessageId = crypto.randomUUID()
+      this.emit({
+        id: this.assistantMessageId,
+        role: 'assistant',
+        content: this.state.buffer,
+        status: final ? 'done' : 'streaming',
+      })
+    } else {
+      // Update existing message
+      this.emit({
+        id: this.assistantMessageId,
+        role: 'assistant',
+        content: this.state.buffer,
+        status: final ? 'done' : 'streaming',
+      })
+    }
 
+    if (final) {
+      this.assistantMessageId = null
+    }
     this.state.buffer = ''
   }
 
@@ -175,6 +205,8 @@ class ChatService {
     if (this.connectPromise) {
       return this.connectPromise
     }
+
+    this.lifecycleState = 'connecting'  // Fix: Set lifecycle state
 
     // Fix: Create promise first, then start connection logic
     this.connectPromise = new Promise((resolve, reject) => {
@@ -221,6 +253,7 @@ class ChatService {
         console.log('[ChatService] WebSocket connected')
         this.state.lastModel = useUIStore.getState().selectedModel
         this.state.reconnects = 0
+        this.lifecycleState = 'open'  // Fix: Set lifecycle state
 
         // Fix: Secure heartbeat
         this.timers.heartbeat = setInterval(() => {
@@ -249,6 +282,7 @@ class ChatService {
 
         // Fix: Clear WebSocket reference to prevent stale state
         this.ws = null
+        this.lifecycleState = 'closing'  // Fix: Set lifecycle state
 
         clearTimeout(timeoutId)
         this.clearTimers()
@@ -256,11 +290,13 @@ class ChatService {
         // Fix: Don't reconnect if manually closed
         if (this.manuallyClosed) {
           console.log('[ChatService] Socket manually closed')
+          this.lifecycleState = 'idle'
           return
         }
         
         // Clean close
         if (ev.code === 1000 || ev.code === 1001) {
+          this.lifecycleState = 'idle'
           return
         }
         
@@ -290,10 +326,11 @@ class ChatService {
   // PUBLIC API
   // =====================
   async sendMessage(content: string, messageId?: string) {
-    // Fix: Prevent concurrent messages without throwing
-    if (this.state.messageId) {
-      console.warn('[ChatService] Message already in progress')
-      return
+    // Fix: Use lifecycleState guard for state machine
+    if (this.lifecycleState === 'connecting' || this.lifecycleState === 'open') {
+      if (this.state.messageId) {
+        throw new Error('Message already in progress')
+      }
     }
 
     this.resetState()
@@ -343,28 +380,33 @@ class ChatService {
     this.clearTimers()
     this.state.started = false
     this.state.messageId = null
+    this.lifecycleState = 'closing'  // Fix: Set lifecycle state
     // Fix: Safe ws close
     const ws = this.ws
     this.ws = null
     ws?.close()
+    this.lifecycleState = 'idle'
     events.emit('status', { status: 'idle' })
   }
 
   private async fallback() {
-    // Fix: Prevent multiple fallback calls
-    if (this.isFallingBack) return
+    // Fix: Use lifecycleState guard
+    if (this.lifecycleState === 'fallback' || this.lifecycleState === 'closing') {
+      return
+    }
+    this.lifecycleState = 'fallback'
     this.isFallingBack = true
 
     const host = window.location.hostname || 'localhost'
     try {
-      // Fix: Use API_CONFIG
+      // Fix: Use API_CONFIG and lastPrompt ONLY
       const apiUrl = API_CONFIG.apiUrl.replace('localhost', host) + '/api/chat'
       const res = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          // Fix: Use lastPrompt instead of empty content
-          message: this.state.lastPrompt || this.state.content,
+          // Fix: Use lastPrompt ONLY - no content garbage
+          message: this.state.lastPrompt,
           model: useUIStore.getState().selectedModel,
         }),
       })
@@ -373,15 +415,23 @@ class ChatService {
       const data = await res.json()
       const fallbackContent = data?.result ?? data?.message ?? 'Response received but content unavailable.'
 
+      // Fix: Single message update
+      if (!this.assistantMessageId) {
+        this.assistantMessageId = crypto.randomUUID()
+      }
       this.emit({
-        id: crypto.randomUUID(),
+        id: this.assistantMessageId,
         role: 'assistant',
         content: typeof fallbackContent === 'string' ? fallbackContent : 'Response received but content unavailable.',
         status: 'done',
       })
     } catch {
+      // Fix: Single error message
+      if (!this.assistantMessageId) {
+        this.assistantMessageId = crypto.randomUUID()
+      }
       this.emit({
-        id: crypto.randomUUID(),
+        id: this.assistantMessageId,
         role: 'assistant',
         content: 'Connection failed. Backend unreachable.',
         status: 'error',
@@ -389,6 +439,8 @@ class ChatService {
     } finally {
       this.isFallingBack = false
       this.state.messageId = null
+      this.lifecycleState = 'idle'
+      this.assistantMessageId = null
       events.emit('status', { status: 'idle' })
     }
   }
