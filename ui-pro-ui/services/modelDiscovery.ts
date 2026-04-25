@@ -5,6 +5,7 @@
 // Model Discovery Service - Discovers available models from different backends
 import { useUIStore } from '@/lib/stores/uiStore'
 import { events } from '@/lib/events'
+import { LLM_CONFIG } from '@/lib/config'
 
 interface Model {
   id: string
@@ -17,11 +18,12 @@ interface BackendConfig {
   enabled: boolean
 }
 
+// Use config for default backends - with NEXT_PUBLIC_ env var overrides
 const defaultBackends: Record<string, BackendConfig> = {
-  ollama: { url: 'http://localhost:11434', enabled: true },
-  lmstudio: { url: 'http://localhost:1234', enabled: true },
-  llamacpp: { url: 'http://localhost:8080', enabled: true },
-  lemonade: { url: 'http://localhost:13305', enabled: true },
+  ollama: { url: LLM_CONFIG.ollamaUrl, enabled: true },
+  lmstudio: { url: LLM_CONFIG.lmstudioUrl, enabled: true },
+  llamacpp: { url: LLM_CONFIG.llamacppUrl, enabled: true },
+  lemonade: { url: LLM_CONFIG.lemonadeUrl, enabled: true },
 }
 
 class ModelDiscoveryService {

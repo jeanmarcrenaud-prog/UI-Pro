@@ -5,6 +5,7 @@
 // UI Store - Unified UI state management with persistence
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { LLM_CONFIG } from '@/lib/config'
 
 interface UIState {
   // Sidebar
@@ -35,22 +36,15 @@ export const useUIStore = create<UIState>()(
       compactMode: false,
       toggleCompactMode: () => set((state) => ({ compactMode: !state.compactMode })),
       
-      // Model - initialized empty, will be set from API on mount
-      selectedModel: 'qwen3.5:9b',  // Default to 9b, not empty
+      // Model - initialized from config, should be overridden from API on mount
+      selectedModel: LLM_CONFIG.defaultModel,
       setSelectedModel: (model) => {
         console.log('[useUIStore] setSelectedModel called:', model)
         set({ selectedModel: model })
       },
       
-      // Available models - defaults (will be refreshed from API)
-      availableModels: [
-        'qwen3.5:0.8b',
-        'gemma4:latest',
-        'gemma4:e4b', 
-        'lfm2:latest',
-        'nemotron-cascade-2:latest',
-        'qwen3.5:9b'
-      ],
+      // Available models - initialized from config (will be refreshed from API)
+      availableModels: LLM_CONFIG.defaultModels,
       setAvailableModels: (availableModels) => set({ availableModels }),
     }),
     {

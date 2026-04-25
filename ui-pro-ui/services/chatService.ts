@@ -6,6 +6,7 @@
 import type { Message } from '@/lib/types'
 import { useUIStore } from '@/lib/stores/uiStore'
 import { events } from '@/lib/events'
+import { API_CONFIG } from '@/lib/config'
 
 class ChatService {
   private ws: WebSocket | null = null
@@ -184,7 +185,8 @@ class ChatService {
 
       const model = useUIStore.getState().selectedModel
       
-      // Use localhost as fallback, never allow empty host
+      // Use dynamic host (window.location.hostname) for the frontend to work in any environment
+      // Use config for port - derive from wsUrl or use default
       const host = window.location.hostname || 'localhost'
       const wsUrl = `ws://${host}:8000/ws`
       console.log('[ChatService] Connecting to', wsUrl)
@@ -293,9 +295,10 @@ class ChatService {
   private async fallback() {
     const host = window.location.hostname || 'localhost'
     try {
+      // Use dynamic host for HTTP fallback too
+      const apiUrl = `http://${host}:8000/api/chat`
       const res = await fetch(
-        `http://${host}:8000/api/chat`,
-        {
+        apiUrl,
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
