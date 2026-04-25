@@ -117,13 +117,13 @@ class ChatService {
       }
 
       // Handle Stream Start (detect first token)
-      if (!this.state.started && (msg.content || msg.text || msg.token)) {
+      if (!this.state.started && (msg.content || msg.text || msg.token || msg.data)) {
         this.state.started = true
         events.emit('status', { status: 'streaming' })
       }
 
       // Normalize text content (handle multiple potential field names)
-      const text = msg.content || msg.text || msg.token || msg.response || msg.thinking || ''
+      const text = msg.content || msg.text || msg.token || msg.response || msg.thinking || msg.data || ''
 
       if (text) {
         this.state.content += text
