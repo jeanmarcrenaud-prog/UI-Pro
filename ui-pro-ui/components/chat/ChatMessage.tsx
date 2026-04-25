@@ -1,3 +1,6 @@
+// ChatMessage.tsx
+// Role: Renders a single chat message (user or assistant) with avatar, markdown content, error display and streaming cursor
+
 import { motion } from 'framer-motion'
 import { MarkdownRenderer } from '../markdown/MarkdownRenderer'
 import { events } from '@/lib/events'

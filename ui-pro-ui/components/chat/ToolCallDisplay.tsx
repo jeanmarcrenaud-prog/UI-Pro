@@ -1,3 +1,7 @@
+// ToolCallDisplay.tsx
+// Role: Displays active tool call badges (e.g., "execute", "read_file") with running/completed status
+// Listens to events toolCall for real-time updates
+
 'use client'
 
 import { useState, useEffect } from 'react'

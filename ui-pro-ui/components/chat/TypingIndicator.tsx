@@ -1,3 +1,6 @@
+// TypingIndicator.tsx
+// Role: Displays 3 animated bouncing dots to indicate the AI is processing
+
 'use client'
 
 import React from 'react'

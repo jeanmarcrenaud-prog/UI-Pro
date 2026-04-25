@@ -1,3 +1,6 @@
+// StepItem.tsx
+// Role: Renders a single agent step with status icon, title, and detail text
+
 'use client'
 
 import type { AgentStep } from '@/lib/types'

@@ -1,3 +1,6 @@
+// Textarea.tsx
+// Role: Styled textarea with label, error state, helper text and focus ring
+
 'use client'
 
 import React from 'react'

@@ -1,3 +1,11 @@
+// jest.setup.ts
+// Role: Jest test environment setup - configures polyfills for TextEncoder/TextDecoder, mocks
+// window.matchMedia and WebSocket, sets NODE_ENV, and initializes React testing library globals
+
+// jest.setup.ts
+// Role: Jest test environment setup - configures polyfills for TextEncoder/TextDecoder, mocks
+// window.matchMedia and WebSocket, sets NODE_ENV, and initializes React testing library globals
+
 /**
  * Setup file pour Jest - configure l'environnement de test
  */

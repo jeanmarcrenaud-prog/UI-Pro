@@ -1,3 +1,7 @@
+// Sidebar.tsx
+// Role: Main sidebar - provides navigation tabs (Chat/History/Settings), model selector dropdown with
+// discovery, new chat button, recent chat history list, and footer with model count
+
 'use client'
 
 import { useState, useEffect, useRef } from 'react'

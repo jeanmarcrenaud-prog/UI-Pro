@@ -1,3 +1,6 @@
+// SystemStats.tsx
+// Role: Displays real-time system metrics - CPU, memory, GPU utilization and temperature via polling /health endpoint
+
 'use client'
 
 import { useState, useEffect } from 'react'

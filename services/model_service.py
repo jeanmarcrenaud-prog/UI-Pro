@@ -307,14 +307,13 @@ class ModelService(BaseService):
     
     def _get_client_for_model(self, model_config: ModelConfig):
         """Create LLM client for specific model"""
-        from adapters.llm import OllamaClient
+        from llm.client import OllamaClient, ModelConfig as LlmModelConfig
         
-        class ModelConfigWrapper:
-            def __init__(self, url: str, model: str):
-                self.url = url
-                self.model = model
-        
-        return OllamaClient(ModelConfigWrapper(model_config.endpoint, model_config.name))
+        return OllamaClient(LlmModelConfig(
+            url=model_config.endpoint,
+            model=model_config.name,
+            timeout=model_config.timeout,
+        ))
     
     def generate(
         self,
@@ -423,7 +422,11 @@ class ModelService(BaseService):
         task_hint: Optional[str] = None
     ) -> str:
         """Async wrapper for generate"""
-        return self.generate(prompt, mode, system_prompt, temperature, task_hint)
+        import asyncio
+        return await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: self.generate(prompt, mode, system_prompt, temperature, task_hint)
+        )
     
     def get_metrics(self) -> dict:
         """Get detailed service metrics"""

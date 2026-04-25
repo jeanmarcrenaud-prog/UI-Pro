@@ -1,3 +1,6 @@
+// AgentSteps.tsx (agent/)
+// Role: Renders a list of agent execution steps using StepItem components
+
 'use client'
 
 import { StepItem } from './index'

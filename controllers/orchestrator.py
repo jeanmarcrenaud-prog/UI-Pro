@@ -22,12 +22,14 @@ from core.prompts import PLANNER_PROMPT, ARCHITECT_PROMPT, CODER_PROMPT, REVIEWE
 try:
     from llm import planner, architect, coder, reviewer
 except ImportError as e:
-    logger.warning(f"Agents not available from llm package: {e}")
+    logging.getLogger(__name__).warning(f"Agents not available from llm package: {e}")
     # Will use _planner() instead
 
 
 class Orchestrator:
     def __init__(self):
+        from llm.router import LLMRouter
+        self.logger = logging.getLogger(f"{__name__}.Orchestrator")
         self.state_manager = StateManager()
         self.router = LLMRouter()
         self.state = None
@@ -41,10 +43,10 @@ class Orchestrator:
             self.state.task = task
             self.state.status = "running"
 
-            logger.info(f"🚀 Starting pipeline: {task}")
+            self.logger.info(f"🚀 Starting pipeline: {task}")
 
             # ================= STEP 1: PARALLEL =================
-            logger.info("Step 1: Planning + Memory")
+            self.logger.info("Step 1: Planning + Memory")
 
             plan, memory = await asyncio.gather(
                 self._planner(task),
@@ -55,25 +57,25 @@ class Orchestrator:
             self.state.memory = memory
 
             # ================= STEP 2: ARCHITECT =================
-            logger.info("Step 2: Architecture")
+            self.logger.info("Step 2: Architecture")
 
             architecture = await self._architect(task, plan)
             self.state.architecture = architecture
 
             # ================= STEP 3: CODER =================
-            logger.info("Step 3: Code generation")
+            self.logger.info("Step 3: Code generation")
 
             code = await self._coder(task, architecture)
             self.state.code = code
 
             # ================= STEP 4: REVIEW =================
-            logger.info("Step 4: Review")
+            self.logger.info("Step 4: Review")
 
             review = await self._reviewer(code)
             self.state.review = review
 
             # ================= STEP 5: TEST =================
-            logger.info("Step 5: Test")
+            self.logger.info("Step 5: Test")
 
             tests = await self._runner(code)
             self.state.tests = tests
@@ -85,12 +87,12 @@ class Orchestrator:
             self.state.status = "completed"
             self.state.completed_at = datetime.now()
 
-            logger.info(f"✅ Done in {duration}ms")
+            self.logger.info(f"✅ Done in {duration}ms")
 
             return self.state.to_dict()
 
         except Exception as e:
-            logger.error(f"❌ Pipeline error: {e}", exc_info=True)
+            self.logger.error(f"❌ Pipeline error: {e}", exc_info=True)
 
             if self.state:
                 self.state.status = "failed"
@@ -179,18 +181,20 @@ Return JSON:
           4. Re-exécuter
           5. Max retry = 3
         """
-        logger.info("🔨 Starting code execution + auto-fix loop")
+        self.logger.info("🔨 Starting code execution + auto-fix loop")
         
         max_retry = 3
         attempt = 0
+        execution = {}
         
         while attempt < max_retry:
             attempt += 1
-            logger.info(f"[Auto-Fix] Attempt {attempt}/{max_retry}")
+            self.logger.info(f"[Auto-Fix] Attempt {attempt}/{max_retry}")
             
             # Execution sandboxed
+            executor_instance = CodeExecutor()
             execution = await asyncio.to_thread(
-                executor.run,
+                executor_instance.run,
                 code.get("files", {})
             )
             
@@ -198,12 +202,12 @@ Return JSON:
             
             # Vérifie succès
             if execution.get("success"):
-                logger.info(f"✅ Execution success (attempt {attempt})")
+                self.logger.info(f"✅ Execution success (attempt {attempt})")
                 return execution
             
             # Échec → Auto-fix
-            logger.warning(f"❌ Execution failed (attempt {attempt})")
-            logger.warning("🔧 Auto-fix triggered")
+            self.logger.warning(f"❌ Execution failed (attempt {attempt})")
+            self.logger.warning("🔧 Auto-fix triggered")
             
             try:
                 # Générer fix prompt
@@ -231,7 +235,7 @@ Max retries: {max_retry}
                 
                 # Corriger code
                 fixed_code = await self._llm_call(fix_prompt, "code")
-                logger.info(f"🔧 Applied fix (length=%d)", len(fixed_code.get("raw", "")) if isinstance(fixed_code, dict) else len(str(fixed_code)))
+                self.logger.info(f"🔧 Applied fix (length=%d)", len(fixed_code.get("raw", "")) if isinstance(fixed_code, dict) else len(str(fixed_code)))
                 
                 # Normalize code format - handle both dict and string fixes
                 if isinstance(fixed_code, dict):
@@ -246,11 +250,11 @@ Max retries: {max_retry}
                 continue
                 
             except Exception as fix_error:
-                logger.error(f"❌ Auto-fix failed: {fix_error}", exc_info=True)
+                self.logger.error(f"❌ Auto-fix failed: {fix_error}", exc_info=True)
                 break
         
         # Échec après max_retry
-        logger.error(f"❌ Exhausted max retry attempts ({max_retry})")
+        self.logger.error(f"❌ Exhausted max retry attempts ({max_retry})")
         if self.state:
             self.state.errors.append(f"Auto-fix failed after {max_retry} attempts")
         
@@ -270,17 +274,17 @@ Max retries: {max_retry}
             results = self._memory_manager.search(task, k=3)
             
             if results:
-                logger.info(f"Found {len(results)} memory results for task: {task[:50]}...")
+                self.logger.info(f"Found {len(results)} memory results for task: {task[:50]}...")
                 return results
             
-            logger.debug(f"No memory results found for task: {task[:50]}...")
+            self.logger.debug(f"No memory results found for task: {task[:50]}...")
             return []
             
         except ImportError as e:
-            logger.warning(f"Memory module not available: {e}")
+            self.logger.warning(f"Memory module not available: {e}")
             return []
         except Exception as e:
-            logger.error(f"Memory search failed: {e}")
+            self.logger.error(f"Memory search failed: {e}")
             return []
 
     # ================= CORE =================

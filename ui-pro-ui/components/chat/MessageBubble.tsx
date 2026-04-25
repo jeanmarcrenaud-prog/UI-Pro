@@ -1,3 +1,7 @@
+// MessageBubble.tsx
+// Role: Renders a single message bubble with status icon, content, and timestamp
+// Messages display: user (right, violet bg) and assistant (left, slate bg) with avatar
+
 'use client'
 
 import type { Message } from '@/lib/types'

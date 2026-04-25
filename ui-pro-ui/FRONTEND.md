@@ -267,3 +267,60 @@ Intelligent filename extraction from code content:
 - Looks for `class`, `def`, `function`, `const`, etc.
 - Falls back to timestamp-based name
 - Supports 20+ languages with proper extensions
+
+---
+
+## Bugs Fixed (April 2026)
+
+This section documents all bugs that were identified and fixed in the frontend codebase.
+
+### Critical Bugs
+
+| # | File | Bug Description | Root Cause | Fix |
+|-----|------|----------------|-----------|------|
+| 1 | `app/page.tsx` | useEffect code orphaned outside if block - timer and model logging never executed | Bad indentation after `if (isLoading)` | Fixed indentation |
+| 2 | `app/page.tsx` | `hasError?` without space - syntax error | Missing ternary space | Added space `hasError ?` |
+| 3 | `components/ChatContainer.tsx` | DOM-read anti-pattern for input value | `textarea.value` reads bypass React state | Added controlled input with `useState` |
+
+### WebSocket Bugs (chatService.ts)
+
+| # | Bug Description | Root Cause | Fix |
+|-----|----------------|-----------|------|
+| 4 | `ws://${host}:8000` where `host` could be empty string | `window.location.hostname` returns empty string on localhost | Added `\|\| 'localhost'` fallback |
+| 5 | 8s timeout on connect Promise | No timeout caused hang on failed connection | Added `Promise.race` with timeout |
+| 6 | `onerror` called `resolve()` instead of `reject()` | Errors silently ignored, invalid responses sent | Changed to `reject()` |
+| 7 | `fallback()` content could be undefined | Proxy returned `{model_fast}` not array | Added safe fallback string |
+| 8 | Clean close detected but reconnects not reset | `ev.code >= 1000` missed some clean codes | Increased to 6 reconnects with better detection |
+| 9 | `fallback()` URL construction wrong | Empty `host` passed to URL | Fixed URL construction |
+
+### Model Discovery Bugs (modelDiscovery.ts)
+
+| # | Bug Description | Root Cause | Fix |
+|-----|----------------|-----------|------|
+| 10 | `AbortSignal.timeout()` not supported in all browsers | Safari/Firefox older versions | Replaced with `AbortController` |
+| 11 | Wrong Ollama fallback endpoint | Proxy returns `{model_fast}` not model array | Added proxy format detection, returns empty array |
+| 12 | User model selection ignored | Empty string treated as valid model | Added falsy check `\|\| undefined` |
+
+### Component Bugs
+
+| # | File | Bug Description | Root Cause | Fix |
+|-----|------|----------------|-----------|------|
+| 13 | `SettingsView.tsx` - settings never loaded | `hasLoaded` never set to `true` | Added `setHasLoaded(true)` in mount effect |
+| 14 | `HistoryView.tsx` - crash on undefined messages | `messages.length` when `messages` undefined | Added optional chaining |
+| 15 | `HistoryView.tsx` - confirm-delete race condition | `setTimeout` caused race on remount | Removed setTimeout, direct delete |
+| 16 | `CodeBlock.tsx` - `as any` type suppression | Type workaround for SyntaxHighlighter | Added proper `CodeBlockProps` interface |
+| 17 | `DebugPanel.tsx` - progress bar on error | Showed on `status === 'error'` | Changed to only show on `status === 'running'` |
+| 18 | `DebugPanel.tsx` - error section always shown | Showed regardless of status | Changed to only show on `status === 'error'` |
+| 19 | `DebugPanel.tsx` - unstable step keys | Used step index only | Added `${step.id}-${i}` for stability |
+| 20 | `useChat.ts` - empty string handled wrong | `message_id === ""` compared incorrectly | Added empty string guard |
+
+### File Cleanup
+
+- **Deleted**: `components/chat/ChatContainer.tsx` - duplicate file never imported, created confusion
+
+### Known Limitations
+
+- `AbortController` requires manual abort signal management vs `AbortSignal.timeout()` simpler API
+- WebSocket fallback to HTTP may have latency on first request
+- Model discovery polls backend every 5s - could be improved with SSE for live updates
+- Some older browsers don't support `Array.at()` - using index notation instead

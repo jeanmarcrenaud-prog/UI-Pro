@@ -1,22 +1,27 @@
+// CodeBlock.tsx
+// Role: Renders highlighted code with oneDark theme, download button, and language badge
+
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/cjs/styles/prism'
 import { downloadCode } from '@/lib/download'
 
-// Type workaround for react-syntax-highlighter
-const Highlighter = SyntaxHighlighter as any
+interface CodeBlockProps {
+  language?: string
+  value: string
+}
 
-export function CodeBlock({ language, value }: any) {
+export function CodeBlock({ language, value }: CodeBlockProps) {
   return (
     <div className="relative my-3 border border-slate-700 rounded-lg overflow-hidden bg-slate-900">
       <button
-        onClick={() => downloadCode(value, language)}
+        onClick={() => downloadCode(value, language || 'txt')}
         className="absolute top-2 right-2 text-xs bg-slate-800 px-2 py-1 rounded z-10 hover:bg-slate-700 transition-colors"
       >
         💾
       </button>
 
       {/* Isolated code container with scrollbar */}
-      <div 
+      <div
         className="h-64 min-h-[8rem] overflow-auto"
         style={{
           maxHeight: '16rem',
@@ -24,11 +29,11 @@ export function CodeBlock({ language, value }: any) {
           scrollbarColor: '#475569 #1e293b'
         }}
       >
-        <Highlighter
+        <SyntaxHighlighter
           language={language}
           style={oneDark}
-          customStyle={{ 
-            margin: 0, 
+          customStyle={{
+            margin: 0,
             padding: '1rem',
             background: 'transparent',
             fontSize: '0.875rem',
@@ -37,9 +42,9 @@ export function CodeBlock({ language, value }: any) {
           }}
         >
           {value}
-        </Highlighter>
+        </SyntaxHighlighter>
       </div>
-      
+
       {/* Code language badge */}
       <div className="absolute bottom-2 left-3 text-xs text-slate-500">
         {language || 'code'}

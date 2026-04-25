@@ -1,3 +1,7 @@
+// chatController.ts
+// Role: Feature-level chat controller - orchestrates the chat flow by managing user/assistant message
+// creation, initial agent steps setup, stream service connection, and event-based token/step updates
+
 // Chat Controller - Orchestrates chat flow with events
 import { useChatStore } from '@/stores/chatStore'
 import { useAgentStore } from '@/stores/agentStore'

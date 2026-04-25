@@ -1,3 +1,6 @@
+// ChatInput.tsx
+// Role: Text input with send button - handles user message composition and Enter key submission
+
 'use client'
 
 import { useState } from 'react'

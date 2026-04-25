@@ -1,3 +1,7 @@
+// agentStore.ts
+// Role: Agent execution state store via Zustand - tracks active status, step list and individual step
+// status updates, current step tracking, and agent lifecycle (start/reset)
+
 // Agent Store - Zustand
 import { create } from 'zustand'
 import type { AgentStep, AgentStepStatus } from '@/lib/types'

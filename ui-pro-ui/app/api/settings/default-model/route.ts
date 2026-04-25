@@ -1,3 +1,7 @@
+// default-model/route.ts
+// Role: Next.js API route that proxies GET requests to the backend's default model settings endpoint,
+// returning fallback defaults if the backend is unavailable
+
 import { NextResponse } from 'next/server'
 
 // Proxy to backend FastAPI

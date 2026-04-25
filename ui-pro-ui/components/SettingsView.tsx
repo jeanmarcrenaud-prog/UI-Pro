@@ -1,3 +1,7 @@
+// SettingsView.tsx
+// Role: Settings page - displays model selector, backend status indicators, system resource metrics,
+// and About info - allows model discovery refresh and live backend connectivity checks
+
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
@@ -35,6 +39,7 @@ export function SettingsView() {
   // Initialize on mount
   useEffect(() => {
     setMounted(true)
+    setHasLoaded(true)
     // Discover models for first load if not already done
   }, [])
 

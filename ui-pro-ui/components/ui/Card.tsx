@@ -1,3 +1,6 @@
+// Card.tsx
+// Role: Container card with title/subtitle, loading skeleton, footer and hover shadow
+
 'use client'
 
 import React from 'react'

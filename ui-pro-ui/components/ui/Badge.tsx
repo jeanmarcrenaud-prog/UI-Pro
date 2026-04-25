@@ -1,3 +1,6 @@
+// Badge.tsx
+// Role: Small pill badge for status display - variants: default/success/error/warning/info/processing
+
 'use client'
 
 import React from 'react'
