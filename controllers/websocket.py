@@ -52,9 +52,12 @@ class WebSocketController:
         logger.info(f"Using model: {model}")
         
         # Stream with proper JSON format - pass model to streaming service
+        logger.info(f"[WS] Starting stream_generate for task: {task[:50]}...")
         stream_service = get_streaming_service()
+        logger.info(f"[WS] Got stream service, about to iterate...")
         chunk_count = 0
         async for chunk in stream_service.stream_generate(task, model=model):
+            logger.info(f"[WS] Got chunk from stream, about to send...")
             await ws.send_text(json.dumps(chunk.to_dict()))
             chunk_count += 1
             logger.info(f"[WS] Sent chunk {chunk_count}: {chunk.status}")
