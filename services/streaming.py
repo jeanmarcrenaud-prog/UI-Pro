@@ -273,6 +273,7 @@ class StreamingService:
             self._active_streams[stream_id] = asyncio.current_task()
             
             # Send step event: Step 1 - Analyzing (STARTING)
+            logger.info(f"[STREAM] Step: step-analyzing -> active")
             yield StreamChunk(
                 text="",
                 status=StreamStatus.STARTING,
@@ -284,6 +285,7 @@ class StreamingService:
             )
             
             # Send step event: Step 1 done, Step 2 active
+            logger.info(f"[STREAM] Step: step-analyzing -> done")
             yield StreamChunk(
                 text="",
                 status=StreamStatus.GENERATING,
@@ -293,6 +295,7 @@ class StreamingService:
                 step_id="step-analyzing",
                 step_status="done"
             )
+            logger.info(f"[STREAM] Step: step-planning -> active")
             yield StreamChunk(
                 text="",
                 status=StreamStatus.GENERATING,
@@ -353,8 +356,9 @@ class StreamingService:
                                 stream_id=stream_id, chunk_index=chunk_index,
                                 error="Max tokens reached"
                             )
-                        # Send COMPLETED event
-                        yield StreamChunk(
+# Send COMPLETED event
+            logger.info(f"[STREAM] Stream COMPLETED")
+            yield StreamChunk(
                             text="", status=StreamStatus.COMPLETED,
                             stream_id=stream_id, chunk_index=chunk_index,
                             error="Max tokens reached"
