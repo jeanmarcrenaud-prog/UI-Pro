@@ -436,9 +436,11 @@ async def ws_endpoint(ws: WebSocket):
     
     Delegates to WebSocketController (no business logic here)
     """
+    logger.info("[WS] WebSocket endpoint called!")  # DEBUG
     controller = get_websocket_controller()
 
     client_info = str(ws.client.host) if ws.client and ws.client.host else "unknown"
+    logger.info(f"[WS] Accepting connection from {client_info}")  # DEBUG
     try:
         await ws.accept()
         session_id = await controller.handle_connection(ws, client_info)
