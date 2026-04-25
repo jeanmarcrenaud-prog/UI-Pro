@@ -281,9 +281,10 @@ class ChatService {
   // PUBLIC API
   // =====================
   async sendMessage(content: string, messageId?: string) {
-    // Fix: Prevent concurrent messages
+    // Fix: Prevent concurrent messages without throwing
     if (this.state.messageId) {
-      throw new Error('A message is already being processed')
+      console.warn('[ChatService] Message already in progress')
+      return
     }
 
     this.resetState()
@@ -311,13 +312,9 @@ class ChatService {
 
       this.ws.send(JSON.stringify(payload))
     } catch (err) {
-      console.error('[ChatService] Failed to send message:', err)
-      this.emit({
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: 'Connection failed. Please try again.',
-        status: 'error',
-      })
+      console.error('[ChatService] Failed to send:', err)
+      // Fix: Use fallback instead of just emitting error
+      await this.fallback()
     }
   }
 
