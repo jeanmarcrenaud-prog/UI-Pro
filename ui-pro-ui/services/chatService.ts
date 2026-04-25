@@ -379,8 +379,9 @@ class ChatService {
       })
     } finally {
       this.isFallingBack = false
+      this.state.messageId = null
+      events.emit('status', { status: 'idle' })
     }
-    events.emit('status', { status: 'idle' })
   }
 }
 
