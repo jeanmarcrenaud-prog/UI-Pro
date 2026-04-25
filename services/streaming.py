@@ -329,6 +329,7 @@ class StreamingService:
                 # Only yield when buffer reaches chunk size
                 if len(buffer) >= self.config.chunk_size:
                     full_text = "".join(buffer)
+                    logger.info(f"[STREAM] Creating chunk with text: '{full_text[:30]}...'")
                     
                     chunk = StreamChunk(
                         text=full_text, status=StreamStatus.GENERATING,
