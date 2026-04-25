@@ -241,6 +241,12 @@ class ChatService {
       }
 
       this.ws.onclose = (ev) => {
+        // Fix: Prevent race condition - don't process if already settled
+        // This avoids double fallback when timeout + onclose both fire
+        if (settled) {
+          return
+        }
+
         clearTimeout(timeoutId)
         this.clearTimers()
         
