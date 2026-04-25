@@ -7,6 +7,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useUIStore } from '@/lib/stores/uiStore'
 import { modelDiscovery } from '@/services/modelDiscovery'
+import { LLM_CONFIG } from '@/lib/config'
 import { motion } from 'framer-motion'
 import { SystemStats } from './SystemStats'
 
@@ -47,10 +48,10 @@ export function SettingsView() {
    * Discover backend statuses dynamically
    */
   const [backendInfo, setBackendInfo] = useState<BackendInfo[]>([
-    { name: 'Ollama', url: 'http://localhost:11434', status: 'inactive' as const },
-    { name: 'LM Studio', url: 'http://localhost:1234', status: 'inactive' as const },
-    { name: 'llama.cpp', url: 'http://localhost:8080', status: 'inactive' as const },
-    { name: 'Lemonade', url: 'http://localhost:13305', status: 'inactive' as const },
+    { name: 'Ollama', url: LLM_CONFIG.ollamaUrl, status: 'inactive' as const },
+    { name: 'LM Studio', url: LLM_CONFIG.lmstudioUrl, status: 'inactive' as const },
+    { name: 'llama.cpp', url: LLM_CONFIG.llamacppUrl, status: 'inactive' as const },
+    { name: 'Lemonade', url: LLM_CONFIG.lemonadeUrl, status: 'inactive' as const },
   ])
 
   // Test backend connectivity on mount
