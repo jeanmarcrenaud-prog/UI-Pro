@@ -187,9 +187,10 @@ class ChatService {
       
       // Use dynamic host (window.location.hostname) for the frontend to work in any environment
       // Use config for port - derive from wsUrl or use default
-      const host = window.location.hostname || 'localhost'
+      const hostname = window.location.hostname
+      const host = hostname || 'localhost'
       const wsUrl = `ws://${host}:8000/ws`
-      console.log('[ChatService] Connecting to', wsUrl)
+      console.log('[ChatService] Connecting to:', wsUrl, '| hostname:', hostname)
       this.ws = new WebSocket(wsUrl)
 
       // Timeout after 8s
