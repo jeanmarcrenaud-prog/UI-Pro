@@ -247,6 +247,9 @@ class ChatService {
           return
         }
 
+        // Fix: Clear WebSocket reference to prevent stale state
+        this.ws = null
+
         clearTimeout(timeoutId)
         this.clearTimers()
         
