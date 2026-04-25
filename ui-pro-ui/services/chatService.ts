@@ -125,6 +125,8 @@ class ChatService {
 
       // Normalize text content (handle multiple potential field names)
       const text = msg.content || msg.text || msg.token || msg.response || msg.thinking || ''
+      
+      console.log('[ChatService] Processing text:', text ? `"${text.substring(0, 20)}..."` : '(empty)')
 
       if (text) {
         this.state.content += text
