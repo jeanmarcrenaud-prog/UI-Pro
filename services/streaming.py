@@ -83,7 +83,7 @@ class StreamChunk:
 @dataclass
 class StreamConfig:
     """Streaming configuration"""
-    chunk_size: int = 1  # Tokens per chunk (DEBUG: was 20)
+    chunk_size: int = 20  # Tokens per chunk
     buffer_tokens: int = 10  # Buffer before first yield
     max_tokens: int = 2048
     timeout_ms: int = 60000
