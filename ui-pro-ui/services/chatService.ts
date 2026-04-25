@@ -201,7 +201,7 @@ class ChatService {
 
       this.ws.onopen = () => {
         clearTimeout(timeoutId)
-        console.log('[ChatService] WebSocket connected')
+        console.log('[ChatService] WebSocket connected, state:', this.ws?.readyState)
         this.state.lastModel = model
         this.state.reconnects = 0
 
@@ -217,6 +217,7 @@ class ChatService {
       this.ws.onerror = (err) => {
         clearTimeout(timeoutId)
         console.error('[ChatService] WebSocket error:', err)
+        console.error('[ChatService] WS state:', this.ws?.readyState, 'url:', this.ws?.url)
         // Reject instead of resolve - don't let caller think connection succeeded
         reject(new Error('[ChatService] WebSocket error'))
       }
