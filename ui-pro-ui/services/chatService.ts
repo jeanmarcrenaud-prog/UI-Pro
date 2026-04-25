@@ -297,16 +297,14 @@ class ChatService {
     try {
       // Use dynamic host for HTTP fallback too
       const apiUrl = `http://${host}:8000/api/chat`
-      const res = await fetch(
-        apiUrl,
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message: this.state.content, // Or the original content
-            model: useUIStore.getState().selectedModel,
-          }),
-        }
-      )
+      const res = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: this.state.content,
+          model: useUIStore.getState().selectedModel,
+        }),
+      })
 
       if (!res.ok) throw new Error('HTTP fallback failed')
       const data = await res.json()
