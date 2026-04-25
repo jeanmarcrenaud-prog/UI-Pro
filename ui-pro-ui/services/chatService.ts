@@ -94,11 +94,11 @@ class ChatService {
         return
       }
 
-      // Handle Step events
-      if (msg.type === 'step' || msg.status) {
+      // Handle Step events - only trigger on explicit step type
+      if (msg.type === 'step') {
         events.emit('agentStep', {
-          stepId: msg.step_id || msg.status,
-          status: msg.status || 'active',
+          stepId: msg.step_id,
+          status: msg.step_status || 'active',
         })
         return
       }
