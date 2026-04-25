@@ -20,7 +20,11 @@ class ChatService {
     started: false,
     reconnects: 0,
     lastModel: null as string | null,
+    lastPrompt: '',  // Fix: Store last prompt for fallback
   }
+
+  private manuallyClosed = false  // Fix: Prevent auto-reconnect after intentional close
+  private connectPromise: Promise<void> | null = null  // Fix: Prevent concurrent connections
 
   private timers = {
     flush: null as ReturnType<typeof setTimeout> | null,
@@ -57,23 +61,13 @@ class ChatService {
     // If rawMsg is already an object, return it
     if (typeof rawMsg !== 'string') return rawMsg
 
-    // Try standard JSON parse first
+    // Fix: Robust JSON parsing
     try {
       return JSON.parse(rawMsg)
     } catch {
-      // Fallback: Handle potential double-encoding or concatenated JSON
-      // Attempt to find JSON objects in the string
-      try {
-        // Regex to find the first valid JSON object { ... }
-        const jsonMatch = rawMsg.match(/\{[^{}]+\}/)
-        if (jsonMatch) {
-          return JSON.parse(jsonMatch[0])
-        }
-      } catch (e) {
-        console.warn('[ChatService] Failed to parse concatenated JSON', e)
-      }
+      console.warn('[ChatService] Failed to parse message:', rawMsg.substring(0, 50))
+      return null
     }
-    return rawMsg
   }
 
   // =====================
@@ -82,7 +76,6 @@ class ChatService {
   private handleMessage = (event: MessageEvent) => {
     try {
       const rawMsg = typeof event.data === 'string' ? event.data : event.data
-      console.log('[ChatService] Raw:', rawMsg.substring(0, 100))
       const msg = this.parseMessageData(rawMsg)
       
       if (!msg || typeof msg !== 'object') return
@@ -174,7 +167,17 @@ class ChatService {
   // CONNECTION
   // =====================
   private connect(): Promise<void> {
+    // Fix: Prevent concurrent connections
+    if (this.connectPromise) {
+      return this.connectPromise
+    }
+    
     return new Promise((resolve, reject) => {
+      this.connectPromise = this.connect().then(resolve).catch(reject)
+      
+      // Reset manuallyClosed flag
+      this.manuallyClosed = false
+      
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         resolve()
         return
@@ -225,6 +228,14 @@ class ChatService {
       this.ws.onclose = (ev) => {
         clearTimeout(timeoutId)
         this.clearTimers()
+        
+        // Fix: Don't reconnect if manually closed
+        if (this.manuallyClosed) {
+          console.log('[ChatService] Socket manually closed, not reconnecting')
+          reject(new Error('[ChatService] Connection closed'))
+          return
+        }
+        
         // Only reset reconnects on clean close (code 1000) or 1001
         if (ev.code >= 1000 && ev.code !== 1006) {
           this.state.reconnects = 6 // Trigger immediate fallback
@@ -248,6 +259,12 @@ class ChatService {
   async sendMessage(content: string, messageId?: string) {
     this.resetState()
     this.state.messageId = messageId || crypto.randomUUID()
+    this.state.lastPrompt = content  // Fix: Store for fallback
+
+    // Fix: Prevent concurrent connections
+    if (this.connectPromise) {
+      return this.connectPromise
+    }
 
     try {
       await this.connect()
@@ -272,20 +289,24 @@ class ChatService {
         content: 'Connection failed. Please try again.',
         status: 'error',
       })
+    } finally {
+      this.connectPromise = null  // Fix: Reset after completion
     }
   }
 
   cancel() {
-    this.stop()
-    this.ws?.send(
-      JSON.stringify({
+    // Fix: Send cancel before stopping (ws becomes null after stop)
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
         type: 'cancel',
         message_id: this.state.messageId,
-      })
-    )
+      }))
+    }
+    this.stop()
   }
 
   stop() {
+    this.manuallyClosed = true  // Fix: Prevent auto-reconnect
     this.clearTimers()
     this.state.started = false
     this.state.messageId = null
@@ -303,7 +324,8 @@ class ChatService {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: this.state.content,
+          // Fix: Use lastPrompt instead of empty content
+          message: this.state.lastPrompt || this.state.content,
           model: useUIStore.getState().selectedModel,
         }),
       })
