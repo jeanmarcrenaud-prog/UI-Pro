@@ -179,7 +179,8 @@ class ChatService {
       }
 
       const host = window.location.hostname || 'localhost'
-      const wsUrl = `ws://${host}:8000/ws`
+      // Fix: Use API_CONFIG
+      const wsUrl = API_CONFIG.wsUrl.replace('localhost', host)
       console.log('[ChatService] Connecting to:', wsUrl)
       this.ws = new WebSocket(wsUrl)
 
@@ -234,7 +235,7 @@ class ChatService {
           console.log(`[ChatService] Reconnecting (${this.state.reconnects}/5)...`)
           setTimeout(() => {
             this.connectPromise = null  // Fix: Clear before reconnect
-            this.connect().catch(() => {})
+            this.fallback()  // Fix: Use fallback instead of WS reconnect
           }, Math.min(500 * this.state.reconnects, 3000))
         } else {
           console.warn('[ChatService] Max reconnects reached. Falling back to HTTP.')
@@ -242,6 +243,11 @@ class ChatService {
           reject(new Error('[ChatService] Max reconnects reached'))
         }
       }
+    })
+
+    // Fix: Cleanup after resolve/reject
+    return this.connectPromise.finally(() => {
+      this.connectPromise = null
     })
   }
 
@@ -305,8 +311,8 @@ class ChatService {
   private async fallback() {
     const host = window.location.hostname || 'localhost'
     try {
-      // Use dynamic host for HTTP fallback too
-      const apiUrl = `http://${host}:8000/api/chat`
+      // Fix: Use API_CONFIG
+      const apiUrl = API_CONFIG.apiUrl.replace('localhost', host) + '/api/chat'
       const res = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
