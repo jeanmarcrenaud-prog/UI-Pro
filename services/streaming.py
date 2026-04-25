@@ -48,6 +48,9 @@ class StreamChunk:
         
         Frontend expects: type: 'token' | 'step' | 'tool' | 'done' | 'error'
         """
+        # DEBUG: Log the text content
+        logger.info(f"[StreamChunk.to_dict] text='{self.text[:50]}...' status={self.status}")
+        
         # Map status to frontend event type
         type_map = {
             StreamStatus.STARTING: "token",
