@@ -134,6 +134,7 @@ class ChatService {
       // Handle Done signal
       if (msg.done || msg.type === 'done') {
         this.flushBuffer(true) // Flush remaining buffer and emit as 'done'
+        this.state.messageId = null  // Fix: Clear after done
         this.stop()
         events.emit('status', { status: 'idle' })
       }
@@ -232,6 +233,7 @@ class ChatService {
           this.state.reconnects++
           console.log(`[ChatService] Reconnecting (${this.state.reconnects}/5)...`)
           setTimeout(() => {
+            this.connectPromise = null  // Fix: Clear before reconnect
             this.connect().catch(() => {})
           }, Math.min(500 * this.state.reconnects, 3000))
         } else {
@@ -240,11 +242,6 @@ class ChatService {
           reject(new Error('[ChatService] Max reconnects reached'))
         }
       }
-    })
-
-    // Fix: Cleanup after resolve/reject
-    return this.connectPromise.finally(() => {
-      this.connectPromise = null
     })
   }
 
@@ -279,8 +276,6 @@ class ChatService {
         content: 'Connection failed. Please try again.',
         status: 'error',
       })
-    } finally {
-      this.connectPromise = null  // Fix: Reset after completion
     }
   }
 
@@ -300,8 +295,10 @@ class ChatService {
     this.clearTimers()
     this.state.started = false
     this.state.messageId = null
-    this.ws?.close()
+    // Fix: Safe ws close
+    const ws = this.ws
     this.ws = null
+    ws?.close()
     events.emit('status', { status: 'idle' })
   }
 
