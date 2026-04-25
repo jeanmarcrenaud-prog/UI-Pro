@@ -82,9 +82,7 @@ class ChatService {
   private handleMessage = (event: MessageEvent) => {
     try {
       const rawMsg = typeof event.data === 'string' ? event.data : event.data
-      console.log('[ChatService] Raw WS message:', rawMsg)
       const msg = this.parseMessageData(rawMsg)
-      console.log('[ChatService] Parsed msg:', msg)
       
       if (!msg || typeof msg !== 'object') return
 
@@ -125,8 +123,6 @@ class ChatService {
 
       // Normalize text content (handle multiple potential field names)
       const text = msg.content || msg.text || msg.token || msg.response || msg.thinking || ''
-      
-      console.log('[ChatService] Processing text:', text ? `"${text.substring(0, 20)}..."` : '(empty)')
 
       if (text) {
         this.state.content += text
@@ -205,7 +201,7 @@ class ChatService {
 
       this.ws.onopen = () => {
         clearTimeout(timeoutId)
-        console.log('[ChatService] WebSocket connected, state:', this.ws?.readyState)
+        console.log('[ChatService] WebSocket connected')
         this.state.lastModel = model
         this.state.reconnects = 0
 
@@ -221,7 +217,6 @@ class ChatService {
       this.ws.onerror = (err) => {
         clearTimeout(timeoutId)
         console.error('[ChatService] WebSocket error:', err)
-        console.error('[ChatService] WS state:', this.ws?.readyState, 'url:', this.ws?.url)
         // Reject instead of resolve - don't let caller think connection succeeded
         reject(new Error('[ChatService] WebSocket error'))
       }
