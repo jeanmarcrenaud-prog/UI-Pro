@@ -25,6 +25,7 @@ class ChatService {
 
   private manuallyClosed = false  // Fix: Prevent auto-reconnect after intentional close
   private connectPromise: Promise<void> | null = null  // Fix: Prevent concurrent connections
+  private isFallingBack = false  // Fix: Prevent duplicate fallback calls
 
   private timers = {
     flush: null as ReturnType<typeof setTimeout> | null,
@@ -42,9 +43,19 @@ class ChatService {
   }
 
   private clearTimers() {
-    if (this.timers.flush) clearTimeout(this.timers.flush)
-    if (this.timers.stream) clearTimeout(this.timers.stream)
-    if (this.timers.heartbeat) clearInterval(this.timers.heartbeat)
+    // Fix: Clear and reset refs to null
+    if (this.timers.flush) {
+      clearTimeout(this.timers.flush)
+      this.timers.flush = null
+    }
+    if (this.timers.stream) {
+      clearTimeout(this.timers.stream)
+      this.timers.stream = null
+    }
+    if (this.timers.heartbeat) {
+      clearInterval(this.timers.heartbeat)
+      this.timers.heartbeat = null
+    }
   }
 
   private emit(msg: Message) {
@@ -167,10 +178,25 @@ class ChatService {
 
     // Fix: Create promise first, then start connection logic
     this.connectPromise = new Promise((resolve, reject) => {
+      // Fix: Prevent multiple resolve/reject calls
+      let settled = false
+      const safeResolve = () => {
+        if (!settled) {
+          settled = true
+          resolve()
+        }
+      }
+      const safeReject = (error: Error) => {
+        if (!settled) {
+          settled = true
+          reject(error)
+        }
+      }
+      
       this.manuallyClosed = false
       
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        resolve()
+        safeResolve()
         return
       }
 
@@ -187,7 +213,7 @@ class ChatService {
       // Timeout after 8s
       const timeoutId = setTimeout(() => {
         this.ws?.close()
-        reject(new Error('[ChatService] WebSocket connection timeout'))
+        safeReject(new Error('[ChatService] WebSocket connection timeout'))
       }, 8000)
 
       this.ws.onopen = () => {
@@ -203,7 +229,7 @@ class ChatService {
           }
         }, 15000)
 
-        resolve()
+        safeResolve()
       }
 
       this.ws.onmessage = this.handleMessage
@@ -211,7 +237,7 @@ class ChatService {
       this.ws.onerror = (err) => {
         clearTimeout(timeoutId)
         console.error('[ChatService] WebSocket error:', err)
-        reject(new Error('[ChatService] WebSocket error'))
+        safeReject(new Error('[ChatService] WebSocket error'))
       }
 
       this.ws.onclose = (ev) => {
@@ -240,7 +266,7 @@ class ChatService {
         } else {
           console.warn('[ChatService] Max reconnects reached. Falling back to HTTP.')
           this.fallback()
-          reject(new Error('[ChatService] Max reconnects reached'))
+          safeReject(new Error('[ChatService] Max reconnects reached'))
         }
       }
     })
@@ -255,6 +281,11 @@ class ChatService {
   // PUBLIC API
   // =====================
   async sendMessage(content: string, messageId?: string) {
+    // Fix: Prevent concurrent messages
+    if (this.state.messageId) {
+      throw new Error('A message is already being processed')
+    }
+
     this.resetState()
     this.state.messageId = messageId || crypto.randomUUID()
     this.state.lastPrompt = content  // Fix: Store for fallback
@@ -273,7 +304,12 @@ class ChatService {
         model: model,
       }
 
-      this.ws?.send(JSON.stringify(payload))
+      // Fix: Verify WebSocket is OPEN before sending
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        throw new Error('WebSocket not ready')
+      }
+
+      this.ws.send(JSON.stringify(payload))
     } catch (err) {
       console.error('[ChatService] Failed to send message:', err)
       this.emit({
@@ -309,6 +345,10 @@ class ChatService {
   }
 
   private async fallback() {
+    // Fix: Prevent multiple fallback calls
+    if (this.isFallingBack) return
+    this.isFallingBack = true
+
     const host = window.location.hostname || 'localhost'
     try {
       // Fix: Use API_CONFIG
@@ -340,6 +380,8 @@ class ChatService {
         content: 'Connection failed. Backend unreachable.',
         status: 'error',
       })
+    } finally {
+      this.isFallingBack = false
     }
     events.emit('status', { status: 'idle' })
   }
