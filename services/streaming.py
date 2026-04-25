@@ -200,7 +200,7 @@ class StreamingService:
             raise ValueError(f"Backend '{backend}' not reachable: {e}")
         
         # Return client for validated backend
-        config = ModelConfig(url=url, model=model, timeout=30)
+        config = ModelConfig(url=f"{url}/api/generate", model=model, timeout=30)
         return OllamaClient(config)
     
     def _parse_available_models(self, response, backend: str) -> list[str]:
