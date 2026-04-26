@@ -287,13 +287,11 @@ class ChatService {
       }
 
 this.ws.onclose = (ev) => {
-        // Fix: Prevent race condition - don't process if already settled
-        // This avoids double fallback when timeout + onclose both fire
-        if (settled) {
-          return
-        }
+        // Fix: Handle close regardless of settlement state
+        // If settled=true: connection was successful, still need cleanup
+        // If settled=false: connection failed before establishing
 
-        // Fix: Cleanup first - then schedule fallback, reject LAST
+        // Cleanup first
         this.ws = null
         this.lifecycleState = 'closing'
 
@@ -304,31 +302,40 @@ this.ws.onclose = (ev) => {
         if (this.manuallyClosed) {
           console.log('[ChatService] Socket manually closed')
           this.lifecycleState = 'idle'
-          safeReject(new Error(`[ChatService] Socket manually closed (code: ${ev.code})`))
+          if (!settled) {
+            safeReject(new Error(`[ChatService] Socket manually closed (code: ${ev.code})`))
+          }
           return
         }
 
         // Clean close (1000 = normal, 1001 = going away)
         if (ev.code === 1000 || ev.code === 1001) {
           this.lifecycleState = 'idle'
-          safeReject(new Error(`[ChatService] Socket closed cleanly (code: ${ev.code})`))
+          if (!settled) {
+            safeReject(new Error(`[ChatService] Socket closed cleanly (code: ${ev.code})`))
+          }
           return
         }
 
-        // Reconnect with backoff - schedule fallback first
-        if (this.state.reconnects < 5) {
-          this.state.reconnects++
-          console.log(`[ChatService] Reconnecting (${this.state.reconnects}/5)...`)
-          setTimeout(() => {
+        // Reconnect with backoff - only if connection was not established
+        if (!settled) {
+          // Connection failed before establishing - try fallback
+          if (this.state.reconnects < 5) {
+            this.state.reconnects++
+            console.log(`[ChatService] Reconnecting (${this.state.reconnects}/5)...`)
+            setTimeout(() => {
+              this.fallback()
+            }, Math.min(500 * this.state.reconnects, 3000))
+          } else {
+            console.warn('[ChatService] Max reconnects reached. Falling back to HTTP.')
             this.fallback()
-          }, Math.min(500 * this.state.reconnects, 3000))
+          }
+          safeReject(new Error(`[ChatService] WebSocket closed before connection (code: ${ev.code})`))
         } else {
-          console.warn('[ChatService] Max reconnects reached. Falling back to HTTP.')
+          // Connection WAS established but dropped during conversation - reconnect
+          console.log('[ChatService] Connection dropped during conversation, reconnecting...')
           this.fallback()
         }
-
-        // Fix: Reject promise LAST after cleanup and fallback scheduled
-        safeReject(new Error(`[ChatService] WebSocket closed before connection established (code: ${ev.code})`))
       }
     })
 
