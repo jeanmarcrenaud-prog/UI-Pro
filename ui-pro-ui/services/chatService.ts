@@ -171,7 +171,14 @@ class ChatService {
   }
 
   private flushBuffer(final = false) {
-    if (!this.state.buffer) return
+    if (!this.state.buffer) {
+      // Fix: Still reset state on final even if no buffered content
+      if (final) {
+        this.assistantMessageId = null
+        this.state.fullContent = ''
+      }
+      return
+    }
 
     // Fix: Accumulate full content for correct streaming
     this.state.fullContent += this.state.buffer
