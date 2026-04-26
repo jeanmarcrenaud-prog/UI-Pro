@@ -25,6 +25,7 @@ class ChatService {
   private state = {
     messageId: null as string | null,
     buffer: '',
+    fullContent: '',  // Fix: Accumulate full content for correct streaming
     started: false,
     reconnects: 0,
     lastModel: null as string | null,
@@ -45,7 +46,7 @@ class ChatService {
   // CLEAN HELPERS
   // =====================
   private resetState() {
-    this.state.content = ''
+    this.state.fullContent = ''
     this.state.buffer = ''
     this.state.started = false
   }
@@ -172,27 +173,31 @@ class ChatService {
   private flushBuffer(final = false) {
     if (!this.state.buffer) return
 
+    // Fix: Accumulate full content for correct streaming
+    this.state.fullContent += this.state.buffer
+
     // Fix: Use single message ID for streaming updates
     if (!this.assistantMessageId) {
       this.assistantMessageId = crypto.randomUUID()
       this.emit({
         id: this.assistantMessageId,
         role: 'assistant',
-        content: this.state.buffer,
+        content: this.state.fullContent,
         status: final ? 'done' : 'streaming',
       })
     } else {
-      // Update existing message
+      // Update existing message with full accumulated content
       this.emit({
         id: this.assistantMessageId,
         role: 'assistant',
-        content: this.state.buffer,
+        content: this.state.fullContent,
         status: final ? 'done' : 'streaming',
       })
     }
 
     if (final) {
       this.assistantMessageId = null
+      this.state.fullContent = ''
     }
     this.state.buffer = ''
   }
