@@ -33,6 +33,7 @@ class ChatService {
   // Fix: Use enum instead of boolean for clearer intent
   private closeReason: 'user' | 'system' | 'error' | null = null
   private streamSessionId: string | null = null  // Fix: Stable session ID for streaming
+  private streamSeq = 0  // Fix: Sequence number for ordering
   private promptMap = new Map<string, string>()  // Fix: Bind prompts to messageId
   private connectPromise: Promise<void> | null = null
   private isFallingBack = false
@@ -48,6 +49,8 @@ class ChatService {
   private resetState() {
     this.state.started = false
     this.assistantMessageId = null
+    this.streamSessionId = null
+    this.streamSeq = 0
   }
 
   private clearTimers() {
@@ -139,18 +142,21 @@ class ChatService {
       }
 
       if (text) {
-        // Fix: Pure delta model - no fullContent state
+        // Fix: Pure delta model with sequence for ordering
         if (!this.assistantMessageId) {
           this.assistantMessageId = crypto.randomUUID()
           this.streamSessionId = this.assistantMessageId
+          this.streamSeq = 0
         }
+        this.streamSeq++
 
-        // Emit pure delta - UI accumulates
+        // Emit delta with sequence - UI can verify order
         const deltaMsg = {
           id: this.assistantMessageId,
           role: 'assistant' as const,
           content: '',  // Empty - UI appends delta
           delta: text,  // Pure delta for UI accumulation
+          seq: this.streamSeq,  // Sequence for ordering/ deduplication
           status: 'streaming' as const,
         }
 
