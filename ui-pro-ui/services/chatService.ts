@@ -23,23 +23,19 @@ class ChatService {
   private lastFlush = 0
 
   private state = {
-    messageId: null as string | null,
     started: false,
     reconnects: 0,
     lastModel: null as string | null,
   }
 
-  // Fix: Single active request - no duplicate state
-  private activeRequest: {
+  // Fix: Single unified request context
+  private current: {
     id: string
     prompt: string
     model: string
+    assistantId: string
+    status: 'connecting' | 'streaming' | 'done' | 'fallback' | 'idle'
   } | null = null
-
-  // Fix: Use enum instead of boolean for clearer intent
-  private closeReason: 'user' | 'system' | 'error' | null = null
-  private connectPromise: Promise<void> | null = null
-  private isFallingBack = false
 
   private timers = {
     flush: null as ReturnType<typeof setTimeout> | null,
@@ -431,34 +427,19 @@ this.ws.onclose = (ev) => {
       const data = await res.json()
       const fallbackContent = data?.result ?? data?.message ?? 'Response received but content unavailable.'
 
-      // Fix: Simulate streaming - split into chunks
-      if (!this.assistantMessageId) {
-        this.assistantMessageId = crypto.randomUUID()
+      // Fix: Instant response - no artificial streaming delay
+      if (!this.current) {
+        this.current = { id: crypto.randomUUID(), prompt: '', model: '', assistantId: '', status: 'fallback' }
       }
+      this.current.assistantId = crypto.randomUUID()
 
-      // Simulate streaming: emit chunks with small delay
-      const words = fallbackContent.split(' ')
-      let chunkIndex = 0
-      
-      for (const word of words) {
-        chunkIndex++
-        const chunk = word + (chunkIndex < words.length ? ' ' : '')
-        this.emit({
-          id: this.assistantMessageId,
-          role: 'assistant',
-          content: '',  // Empty - UI appends
-          delta: chunk,
-          status: 'streaming',
-        })
-        
-        // Small delay to simulate streaming
-        if (chunkIndex < words.length) {
-          await new Promise(r => setTimeout(r, 10))
-        }
-      }
-
-      // Final done
+      // Emit instant - let UI handle display timing
       this.emit({
+        id: this.current.assistantId,
+        role: 'assistant',
+        content: fallbackContent,
+        status: 'done',
+      })
         id: this.assistantMessageId,
         role: 'assistant',
         content: fallbackContent,
