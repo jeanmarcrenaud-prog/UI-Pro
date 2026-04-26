@@ -27,14 +27,19 @@ class ChatService {
     started: false,
     reconnects: 0,
     lastModel: null as string | null,
-    lastPrompt: '',
   }
+
+  // Fix: Single active request - no duplicate state
+  private activeRequest: {
+    id: string
+    prompt: string
+    model: string
+  } | null = null
 
   // Fix: Use enum instead of boolean for clearer intent
   private closeReason: 'user' | 'system' | 'error' | null = null
-  private streamSessionId: string | null = null  // Fix: Stable session ID for streaming
+  private streamSessionId: string | null = null  // Fix: Stable session ID
   private streamSeq = 0  // Fix: Sequence number for ordering
-  private promptMap = new Map<string, string>()  // Fix: Bind prompts to messageId
   private connectPromise: Promise<void> | null = null
   private isFallingBack = false
 
@@ -343,16 +348,17 @@ this.ws.onclose = (ev) => {
 
     this.resetState()
     this.state.messageId = messageId || crypto.randomUUID()
-    this.state.lastPrompt = content
-    this.promptMap.set(this.state.messageId, content)  // Fix: Bind prompt to messageId
+    // Fix: Use activeRequest - single source of truth
+    this.activeRequest = {
+      id: this.state.messageId,
+      prompt: content,
+      model: useUIStore.getState().selectedModel || useUIStore.getState().availableModels[0] || 'qwen3.5:9b',
+    }
 
     try {
       await this.connect()
 
-      const selectedModel = useUIStore.getState().selectedModel
-      const availableModels = useUIStore.getState().availableModels
-      
-      const model = selectedModel || availableModels[0] || 'qwen3.5:9b'
+      const model = this.activeRequest.model
       
       const payload = {
         message_id: this.state.messageId,
@@ -414,22 +420,19 @@ this.ws.onclose = (ev) => {
     this.isFallingBack = true
     this.lifecycleState = 'fallback'
 
-    // Fix: Clean up prompt map after fallback completes
-    const msgId = this.state.messageId
-
     const host = window.location.hostname || 'localhost'
-    const fallbackMessage = this.promptMap.get(msgId || '') || this.state.lastPrompt || ''
+    // Fix: Use activeRequest - single source of truth
+    const fallbackMessage = this.activeRequest?.prompt || ''
+    const fallbackModel = this.activeRequest?.model || useUIStore.getState().selectedModel
 
     try {
-      // Fix: Use API_CONFIG with messageId-bound prompt
       const apiUrl = API_CONFIG.apiUrl.replace('localhost', host) + '/api/chat'
       const res = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          // Fix: Use prompt from map (bound to messageId)
           message: fallbackMessage,
-          model: useUIStore.getState().selectedModel,
+          model: fallbackModel,
         }),
       })
 
@@ -460,10 +463,8 @@ this.ws.onclose = (ev) => {
       })
     } finally {
       this.isFallingBack = false
-      // Fix: Clean up prompt map to prevent memory leak
-      if (msgId) {
-        this.promptMap.delete(msgId)
-      }
+      // Fix: Clear active request
+      this.activeRequest = null
       this.lifecycleState = 'idle'
       this.assistantMessageId = null
       events.emit('status', { status: 'idle' })
