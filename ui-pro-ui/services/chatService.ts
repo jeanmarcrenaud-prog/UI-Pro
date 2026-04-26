@@ -431,14 +431,37 @@ this.ws.onclose = (ev) => {
       const data = await res.json()
       const fallbackContent = data?.result ?? data?.message ?? 'Response received but content unavailable.'
 
-      // Fix: Single message update
+      // Fix: Simulate streaming - split into chunks
       if (!this.assistantMessageId) {
         this.assistantMessageId = crypto.randomUUID()
       }
+
+      // Simulate streaming: emit chunks with small delay
+      const words = fallbackContent.split(' ')
+      let chunkIndex = 0
+      
+      for (const word of words) {
+        chunkIndex++
+        const chunk = word + (chunkIndex < words.length ? ' ' : '')
+        this.emit({
+          id: this.assistantMessageId,
+          role: 'assistant',
+          content: '',  // Empty - UI appends
+          delta: chunk,
+          status: 'streaming',
+        })
+        
+        // Small delay to simulate streaming
+        if (chunkIndex < words.length) {
+          await new Promise(r => setTimeout(r, 10))
+        }
+      }
+
+      // Final done
       this.emit({
         id: this.assistantMessageId,
         role: 'assistant',
-        content: typeof fallbackContent === 'string' ? fallbackContent : 'Response received but content unavailable.',
+        content: fallbackContent,
         status: 'done',
       })
     } catch {
