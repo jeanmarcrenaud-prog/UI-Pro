@@ -24,12 +24,11 @@ class ChatService {
 
   private state = {
     messageId: null as string | null,
-    buffer: '',
-    fullContent: '',  // Fix: Accumulate full content for correct streaming
+    fullContent: '',
     started: false,
     reconnects: 0,
     lastModel: null as string | null,
-    lastPrompt: '',  // Fix: Store last prompt for fallback
+    lastPrompt: '',
   }
 
   private manuallyClosed = false  // Fix: Prevent auto-reconnect after intentional close
@@ -46,9 +45,8 @@ class ChatService {
   // =====================
   private resetState() {
     this.state.fullContent = ''
-    this.state.buffer = ''
     this.state.started = false
-    this.assistantMessageId = null  // Fix: Reset assistant message ID
+    this.assistantMessageId = null
   }
 
   private clearTimers() {
@@ -135,13 +133,12 @@ class ChatService {
       const text = msg.content || msg.text || msg.token || msg.response || msg.thinking || msg.data || ''
 
       if (text) {
-        // Fix: Buffer only - no duplicate content accumulation
-        this.state.buffer += text
+        // Fix: Direct to fullContent - no intermediate buffer
+        this.state.fullContent += text
 
-        // Throttle buffer flush to ~60fps
+        // Throttle to ~60fps
         const now = Date.now()
         if (now - this.lastFlush < 16) {
-          // Schedule flush if not already scheduled
           if (!this.timers.flush) {
             this.timers.flush = setTimeout(() => {
               this.flushBuffer()
@@ -167,8 +164,7 @@ class ChatService {
   }
 
   private flushBuffer(final = false) {
-    if (!this.state.buffer) {
-      // Fix: Still reset state on final even if no buffered content
+    if (!this.state.fullContent) {
       if (final) {
         this.assistantMessageId = null
         this.state.fullContent = ''
@@ -176,10 +172,7 @@ class ChatService {
       return
     }
 
-    // Fix: Accumulate full content for correct streaming
-    this.state.fullContent += this.state.buffer
-
-    // Fix: Use single message ID for streaming updates
+    // Fix: Single message ID for streaming updates
     if (!this.assistantMessageId) {
       this.assistantMessageId = crypto.randomUUID()
       this.emit({
@@ -189,7 +182,6 @@ class ChatService {
         status: final ? 'done' : 'streaming',
       })
     } else {
-      // Update existing message with full accumulated content
       this.emit({
         id: this.assistantMessageId,
         role: 'assistant',
@@ -202,7 +194,6 @@ class ChatService {
       this.assistantMessageId = null
       this.state.fullContent = ''
     }
-    this.state.buffer = ''
   }
 
   // =====================
@@ -408,6 +399,10 @@ this.ws.onclose = (ev) => {
   }
 
   private async fallback() {
+    // Fix: Check manuallyClosed - prevent fallback after intentional close
+    if (this.manuallyClosed) {
+      return
+    }
     // Fix: Single guard - set flag first to prevent race
     if (this.isFallingBack) {
       return
