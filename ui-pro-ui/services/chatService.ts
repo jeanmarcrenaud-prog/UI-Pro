@@ -285,42 +285,42 @@ this.ws.onclose = (ev) => {
           return
         }
 
-        // Fix: Reject promise - WebSocket may have closed before onopen
-        safeReject(new Error(`[ChatService] WebSocket closed before connection established (code: ${ev.code})`))
-
-        // Fix: Clear WebSocket reference to prevent stale state
+        // Fix: Cleanup first - then schedule fallback, reject LAST
         this.ws = null
         this.lifecycleState = 'closing'
 
         clearTimeout(timeoutId)
         this.clearTimers()
-        
+
         // Fix: Don't reconnect if manually closed
         if (this.manuallyClosed) {
           console.log('[ChatService] Socket manually closed')
           this.lifecycleState = 'idle'
+          safeReject(new Error(`[ChatService] Socket manually closed (code: ${ev.code})`))
           return
         }
-        
-        // Clean close
+
+        // Clean close (1000 = normal, 1001 = going away)
         if (ev.code === 1000 || ev.code === 1001) {
           this.lifecycleState = 'idle'
+          safeReject(new Error(`[ChatService] Socket closed cleanly (code: ${ev.code})`))
           return
         }
-        
-        // Reconnect with backoff
+
+        // Reconnect with backoff - schedule fallback first
         if (this.state.reconnects < 5) {
           this.state.reconnects++
           console.log(`[ChatService] Reconnecting (${this.state.reconnects}/5)...`)
           setTimeout(() => {
-            this.connectPromise = null  // Fix: Clear before reconnect
-            this.fallback()  // Fix: Use fallback instead of WS reconnect
+            this.fallback()
           }, Math.min(500 * this.state.reconnects, 3000))
         } else {
           console.warn('[ChatService] Max reconnects reached. Falling back to HTTP.')
           this.fallback()
-          safeReject(new Error('[ChatService] Max reconnects reached'))
         }
+
+        // Fix: Reject promise LAST after cleanup and fallback scheduled
+        safeReject(new Error(`[ChatService] WebSocket closed before connection established (code: ${ev.code})`))
       }
     })
 
