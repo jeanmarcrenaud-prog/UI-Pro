@@ -33,9 +33,10 @@ class ChatService {
 
   // Fix: Use enum instead of boolean for clearer intent
   private closeReason: 'user' | 'system' | 'error' | null = null
+  private streamSessionId: string | null = null  // Fix: Stable session ID for streaming
   private promptMap = new Map<string, string>()  // Fix: Bind prompts to messageId
-  private connectPromise: Promise<void> | null = null  // Fix: Prevent concurrent connections
-  private isFallingBack = false  // Fix: Prevent duplicate fallback calls
+  private connectPromise: Promise<void> | null = null
+  private isFallingBack = false
 
   private timers = {
     flush: null as ReturnType<typeof setTimeout> | null,
@@ -134,28 +135,39 @@ class ChatService {
       // Normalize text content (handle multiple potential field names)
       const text = msg.content || msg.text || msg.token || msg.response || msg.thinking || msg.data || ''
 
+      // Verify stream session matches (prevents cross-talk)
+      if (this.streamSessionId && msg.stream_id && msg.stream_id !== this.streamSessionId) {
+        return
+      }
+
       if (text) {
-        // Fix: Delta model - accumulate fullContent but emit delta
-        this.state.fullContent += text
+        // Fix: Delta model - use streamSessionId for stability
+        if (!this.assistantMessageId) {
+          this.assistantMessageId = crypto.randomUUID()
+          this.streamSessionId = this.assistantMessageId
+        }
 
         // Create message with delta for UI accumulation
         const deltaMsg = {
-          id: this.assistantMessageId || crypto.randomUUID(),
+          id: this.assistantMessageId,
           role: 'assistant' as const,
-          content: this.state.fullContent,
+          content: this.state.fullContent + text,  // Include cumulative for initial
           delta: text,  // Incremental chunk for UI
           status: 'streaming' as const,
         }
-        this.assistantMessageId = deltaMsg.id
+        this.state.fullContent += text
 
-        // Throttle to ~60fps but always emit
+        // Throttle to ~60fps
         const now = Date.now()
         if (now - this.lastFlush >= 16) {
           this.lastFlush = now
           this.emit(deltaMsg)
         } else if (!this.timers.flush) {
           this.timers.flush = setTimeout(() => {
-            this.emit(deltaMsg)
+            this.emit({
+              ...deltaMsg,
+              content: this.state.fullContent,
+            })
             this.timers.flush = null
           }, 16)
         }
@@ -163,7 +175,7 @@ class ChatService {
 
       // Handle Done signal
       if (msg.done || msg.type === 'done') {
-        // Fix: Always emit final content on done (no condition check)
+        // Fix: Always emit final content on done
         if (this.assistantMessageId) {
           this.emit({
             id: this.assistantMessageId,
@@ -172,12 +184,10 @@ class ChatService {
             status: 'done',
           })
         }
-        this.state.messageId = null
-        this.state.started = false
-        this.state.fullContent = ''
+        this.resetState()
+        this.streamSessionId = null
         this.clearTimers()
         this.lifecycleState = 'idle'
-        this.assistantMessageId = null
         events.emit('status', { status: 'idle' })
       }
     } catch (e) {
@@ -426,6 +436,10 @@ this.ws.onclose = (ev) => {
     if (this.manuallyClosed) {
       return
     }
+    // Fix: Check lifecycleState - prevent fallback during closing
+    if (this.lifecycleState === 'closing') {
+      return
+    }
     // Fix: Single guard - set flag first to prevent race
     if (this.isFallingBack) {
       return
@@ -433,8 +447,10 @@ this.ws.onclose = (ev) => {
     this.isFallingBack = true
     this.lifecycleState = 'fallback'
 
-    const host = window.location.hostname || 'localhost'
+    // Fix: Clean up prompt map after fallback completes
     const msgId = this.state.messageId
+
+    const host = window.location.hostname || 'localhost'
     const fallbackMessage = this.promptMap.get(msgId || '') || this.state.lastPrompt || ''
 
     try {
@@ -477,8 +493,10 @@ this.ws.onclose = (ev) => {
       })
     } finally {
       this.isFallingBack = false
-      // Fix: Don't reset manuallyClosed - only stop()/cancel() should set it
-      this.state.messageId = null
+      // Fix: Clean up prompt map to prevent memory leak
+      if (msgId) {
+        this.promptMap.delete(msgId)
+      }
       this.lifecycleState = 'idle'
       this.assistantMessageId = null
       events.emit('status', { status: 'idle' })
