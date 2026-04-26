@@ -464,6 +464,7 @@ this.ws.onclose = (ev) => {
       })
     } finally {
       this.isFallingBack = false
+      this.manuallyClosed = false
       this.state.messageId = null
       this.lifecycleState = 'idle'
       this.assistantMessageId = null
