@@ -31,7 +31,8 @@ class ChatService {
     lastPrompt: '',
   }
 
-  private manuallyClosed = false  // Fix: Prevent auto-reconnect after intentional close
+  // Fix: Use enum instead of boolean for clearer intent
+  private closeReason: 'user' | 'system' | 'error' | null = null
   private connectPromise: Promise<void> | null = null  // Fix: Prevent concurrent connections
   private isFallingBack = false  // Fix: Prevent duplicate fallback calls
 
@@ -136,26 +137,30 @@ class ChatService {
         // Fix: Direct to fullContent - no intermediate buffer
         this.state.fullContent += text
 
-        // Throttle to ~60fps
+        // Throttle to ~60fps but always emit
         const now = Date.now()
-        if (now - this.lastFlush < 16) {
-          if (!this.timers.flush) {
-            this.timers.flush = setTimeout(() => {
-              this.flushBuffer()
-              this.timers.flush = null
-            }, 16)
-          }
-          return
+        if (now - this.lastFlush >= 16) {
+          this.lastFlush = now
+          this.flushBuffer()
+        } else if (!this.timers.flush) {
+          // Schedule flush to ensure no lost updates
+          this.timers.flush = setTimeout(() => {
+            this.flushBuffer()
+            this.timers.flush = null
+          }, 16)
         }
-        this.lastFlush = now
-        this.flushBuffer()
       }
 
       // Handle Done signal
       if (msg.done || msg.type === 'done') {
-        this.flushBuffer(true) // Flush remaining buffer and emit as 'done'
-        this.state.messageId = null  // Fix: Clear after done
-        this.stop()
+        // Fix: Flush and cleanup WITHOUT setting manuallyClosed (which blocks fallback)
+        this.flushBuffer(true)
+        this.state.messageId = null
+        this.state.started = false
+        // Don't call stop() - manuallyClosed blocks fallback
+        this.clearTimers()
+        this.lifecycleState = 'idle'
+        this.assistantMessageId = null
         events.emit('status', { status: 'idle' })
       }
     } catch (e) {
