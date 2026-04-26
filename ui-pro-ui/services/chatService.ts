@@ -398,7 +398,10 @@ this.ws.onclose = (ev) => {
   }
 
   private async fallback() {
-    // Fix: Use lifecycleState guard
+    // Fix: Use both guards for redundancy
+    if (this.isFallingBack) {
+      return
+    }
     if (this.lifecycleState === 'fallback' || this.lifecycleState === 'closing') {
       return
     }
