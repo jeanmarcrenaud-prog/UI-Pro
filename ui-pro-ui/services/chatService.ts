@@ -278,16 +278,19 @@ class ChatService {
         safeReject(new Error('[ChatService] WebSocket error'))
       }
 
-      this.ws.onclose = (ev) => {
+this.ws.onclose = (ev) => {
         // Fix: Prevent race condition - don't process if already settled
         // This avoids double fallback when timeout + onclose both fire
         if (settled) {
           return
         }
 
+        // Fix: Reject promise - WebSocket may have closed before onopen
+        safeReject(new Error(`[ChatService] WebSocket closed before connection established (code: ${ev.code})`))
+
         // Fix: Clear WebSocket reference to prevent stale state
         this.ws = null
-        this.lifecycleState = 'closing'  // Fix: Set lifecycle state
+        this.lifecycleState = 'closing'
 
         clearTimeout(timeoutId)
         this.clearTimers()
