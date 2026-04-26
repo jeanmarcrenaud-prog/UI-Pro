@@ -15,6 +15,7 @@ export interface Message {
   id: string
   role: MessageRole
   content: string
+  delta?: string  // For delta streaming (incremental updates)
   status?: MessageStatus
   timestamp?: string
   done?: boolean
