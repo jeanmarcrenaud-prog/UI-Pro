@@ -332,8 +332,8 @@ this.ws.onclose = (ev) => {
           }
           safeReject(new Error(`[ChatService] WebSocket closed before connection (code: ${ev.code})`))
         } else {
-          // Connection WAS established but dropped during conversation - reconnect
-          console.log('[ChatService] Connection dropped during conversation, reconnecting...')
+          // Established connection dropped during streaming: switch to HTTP
+          console.log('[ChatService] Connection dropped during conversation')
           this.fallback()
         }
       }
