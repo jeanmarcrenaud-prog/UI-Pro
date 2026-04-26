@@ -385,7 +385,7 @@ this.ws.onclose = (ev) => {
     this.stop()
   }
 
-  stop() {
+  public stop(): void {
     this.manuallyClosed = true  // Fix: Prevent auto-reconnect
     this.clearTimers()
     this.state.started = false
