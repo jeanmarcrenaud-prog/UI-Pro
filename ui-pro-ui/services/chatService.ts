@@ -13,9 +13,6 @@ class ChatService {
 
   private handlers = new Set<(m: Message) => void>()
 
-  // Fix: Lifecycle state to prevent race conditions
-  private lifecycleState: 'idle' | 'connecting' | 'open' | 'closing' | 'fallback' = 'idle'
-
   // Fix: Track assistant message for single-message updates
   private assistantMessageId: string | null = null
 
