@@ -33,6 +33,7 @@ class ChatService {
 
   // Fix: Use enum instead of boolean for clearer intent
   private closeReason: 'user' | 'system' | 'error' | null = null
+  private promptMap = new Map<string, string>()  // Fix: Bind prompts to messageId
   private connectPromise: Promise<void> | null = null  // Fix: Prevent concurrent connections
   private isFallingBack = false  // Fix: Prevent duplicate fallback calls
 
@@ -134,18 +135,27 @@ class ChatService {
       const text = msg.content || msg.text || msg.token || msg.response || msg.thinking || msg.data || ''
 
       if (text) {
-        // Fix: Direct to fullContent - no intermediate buffer
+        // Fix: Delta model - accumulate fullContent but emit delta
         this.state.fullContent += text
+
+        // Create message with delta for UI accumulation
+        const deltaMsg = {
+          id: this.assistantMessageId || crypto.randomUUID(),
+          role: 'assistant' as const,
+          content: this.state.fullContent,
+          delta: text,  // Incremental chunk for UI
+          status: 'streaming' as const,
+        }
+        this.assistantMessageId = deltaMsg.id
 
         // Throttle to ~60fps but always emit
         const now = Date.now()
         if (now - this.lastFlush >= 16) {
           this.lastFlush = now
-          this.flushBuffer()
+          this.emit(deltaMsg)
         } else if (!this.timers.flush) {
-          // Schedule flush to ensure no lost updates
           this.timers.flush = setTimeout(() => {
-            this.flushBuffer()
+            this.emit(deltaMsg)
             this.timers.flush = null
           }, 16)
         }
@@ -153,11 +163,18 @@ class ChatService {
 
       // Handle Done signal
       if (msg.done || msg.type === 'done') {
-        // Fix: Flush and cleanup WITHOUT setting manuallyClosed (which blocks fallback)
-        this.flushBuffer(true)
+        // Fix: Always emit final content on done (no condition check)
+        if (this.assistantMessageId) {
+          this.emit({
+            id: this.assistantMessageId,
+            role: 'assistant',
+            content: this.state.fullContent,
+            status: 'done',
+          })
+        }
         this.state.messageId = null
         this.state.started = false
-        // Don't call stop() - manuallyClosed blocks fallback
+        this.state.fullContent = ''
         this.clearTimers()
         this.lifecycleState = 'idle'
         this.assistantMessageId = null
@@ -349,7 +366,8 @@ this.ws.onclose = (ev) => {
 
     this.resetState()
     this.state.messageId = messageId || crypto.randomUUID()
-    this.state.lastPrompt = content  // Fix: Store for fallback
+    this.state.lastPrompt = content
+    this.promptMap.set(this.state.messageId, content)  // Fix: Bind prompt to messageId
 
     try {
       await this.connect()
@@ -416,15 +434,18 @@ this.ws.onclose = (ev) => {
     this.lifecycleState = 'fallback'
 
     const host = window.location.hostname || 'localhost'
+    const msgId = this.state.messageId
+    const fallbackMessage = this.promptMap.get(msgId || '') || this.state.lastPrompt || ''
+
     try {
-      // Fix: Use API_CONFIG and lastPrompt ONLY
+      // Fix: Use API_CONFIG with messageId-bound prompt
       const apiUrl = API_CONFIG.apiUrl.replace('localhost', host) + '/api/chat'
       const res = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          // Fix: Use lastPrompt ONLY - no content garbage
-          message: this.state.lastPrompt,
+          // Fix: Use prompt from map (bound to messageId)
+          message: fallbackMessage,
           model: useUIStore.getState().selectedModel,
         }),
       })
