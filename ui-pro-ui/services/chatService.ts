@@ -47,7 +47,7 @@ class ChatService {
   // =====================
   private resetState() {
     this.state.started = false
-    this.assistantMessageId = null
+    const assistantId = this.current?.assistantId = null
   }
 
   private clearTimers() {
@@ -140,13 +140,13 @@ class ChatService {
 
       if (text) {
         // Create message ID on first chunk
-        if (!this.assistantMessageId) {
-          this.assistantMessageId = crypto.randomUUID()
+        if (!const assistantId = this.current?.assistantId) {
+          const assistantId = this.current?.assistantId = crypto.randomUUID()
         }
 
         // Emit pure delta - UI accumulates
         const deltaMsg = {
-          id: this.assistantMessageId,
+          id: const assistantId = this.current?.assistantId,
           role: 'assistant' as const,
           content: '',  // Empty - UI appends delta
           delta: text,  // Pure delta for UI accumulation
@@ -169,9 +169,9 @@ class ChatService {
       // Handle Done signal
       if (msg.done || msg.type === 'done') {
         // Fix: Emit done with empty content (UI has all deltas)
-        if (this.assistantMessageId) {
+        if (const assistantId = this.current?.assistantId) {
           this.emit({
-            id: this.assistantMessageId,
+            id: const assistantId = this.current?.assistantId,
             role: 'assistant',
             content: '',
             status: 'done',
@@ -440,28 +440,21 @@ this.ws.onclose = (ev) => {
         content: fallbackContent,
         status: 'done',
       })
-        id: this.assistantMessageId,
-        role: 'assistant',
-        content: fallbackContent,
-        status: 'done',
-      })
     } catch {
       // Fix: Single error message
-      if (!this.assistantMessageId) {
-        this.assistantMessageId = crypto.randomUUID()
+      if (!this.current) {
+        this.current = { id: crypto.randomUUID(), prompt: '', model: '', assistantId: '', status: 'fallback' }
       }
+      this.current.assistantId = crypto.randomUUID()
       this.emit({
-        id: this.assistantMessageId,
+        id: this.current.assistantId,
         role: 'assistant',
         content: 'Connection failed. Backend unreachable.',
         status: 'error',
       })
     } finally {
-      this.isFallingBack = false
-      // Fix: Clear active request
-      this.activeRequest = null
-      this.lifecycleState = 'idle'
-      this.assistantMessageId = null
+      // Fix: Clear current request
+      this.current = null
       events.emit('status', { status: 'idle' })
     }
   }
