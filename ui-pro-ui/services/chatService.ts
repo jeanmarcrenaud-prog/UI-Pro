@@ -38,6 +38,10 @@ class ChatService {
     status: 'connecting' | 'streaming' | 'done' | 'fallback' | 'idle'
   } | null = null
 
+  private manuallyClosed = false
+  private connectPromise: Promise<void> | null = null
+  private lifecycleState: 'idle' | 'connecting' | 'open' | 'closing' | 'fallback' = 'idle'
+
   private timers = {
     flush: null as ReturnType<typeof setTimeout> | null,
     heartbeat: null as ReturnType<typeof setInterval> | null,
