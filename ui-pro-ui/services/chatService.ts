@@ -49,6 +49,7 @@ class ChatService {
     this.state.fullContent = ''
     this.state.buffer = ''
     this.state.started = false
+    this.assistantMessageId = null  // Fix: Reset assistant message ID
   }
 
   private clearTimers() {
