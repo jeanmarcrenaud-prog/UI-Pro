@@ -417,7 +417,7 @@ this.ws.onclose = (ev) => {
     if (this.isFallingBack) {
       return
     }
-    if (this.lifecycleState === 'fallback' || this.lifecycleState === 'closing') {
+    if (this.lifecycleState === 'fallback') {
       return
     }
     this.lifecycleState = 'fallback'
