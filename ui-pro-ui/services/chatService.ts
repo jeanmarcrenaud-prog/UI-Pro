@@ -48,7 +48,9 @@ class ChatService {
   // =====================
   private resetState() {
     this.state.started = false
-    const assistantId = this.current?.assistantId = null
+    if (this.current) {
+      this.current.assistantId = ''
+    }
   }
 
   private clearTimers() {
