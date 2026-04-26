@@ -23,6 +23,7 @@ class ChatService {
   private lastFlush = 0
 
   private state = {
+    messageId: null as string | null,
     started: false,
     reconnects: 0,
     lastModel: null as string | null,
@@ -134,14 +135,15 @@ class ChatService {
       const text = msg.content || msg.text || msg.token || msg.response || msg.thinking || msg.data || ''
 
       // Fix: Single ID filter - use request_id from backend
-      if (this.activeRequest && msg.request_id && msg.request_id !== this.activeRequest.id) {
+      if (this.current && msg.request_id && msg.request_id !== this.current.id) {
         return
       }
 
       if (text) {
         // Create message ID on first chunk
-        if (!const assistantId = this.current?.assistantId) {
-          const assistantId = this.current?.assistantId = crypto.randomUUID()
+        if (!this.current?.assistantId) {
+          // @ts-ignore - assistantId will be set
+          this.current.assistantId = crypto.randomUUID()
         }
 
         // Emit pure delta - UI accumulates
