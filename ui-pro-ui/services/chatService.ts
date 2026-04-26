@@ -24,7 +24,6 @@ class ChatService {
 
   private state = {
     messageId: null as string | null,
-    fullContent: '',
     started: false,
     reconnects: 0,
     lastModel: null as string | null,
@@ -47,7 +46,6 @@ class ChatService {
   // CLEAN HELPERS
   // =====================
   private resetState() {
-    this.state.fullContent = ''
     this.state.started = false
     this.assistantMessageId = null
   }
@@ -141,21 +139,20 @@ class ChatService {
       }
 
       if (text) {
-        // Fix: Delta model - use streamSessionId for stability
+        // Fix: Pure delta model - no fullContent state
         if (!this.assistantMessageId) {
           this.assistantMessageId = crypto.randomUUID()
           this.streamSessionId = this.assistantMessageId
         }
 
-        // Create message with delta for UI accumulation
+        // Emit pure delta - UI accumulates
         const deltaMsg = {
           id: this.assistantMessageId,
           role: 'assistant' as const,
-          content: this.state.fullContent + text,  // Include cumulative for initial
-          delta: text,  // Incremental chunk for UI
+          content: '',  // Empty - UI appends delta
+          delta: text,  // Pure delta for UI accumulation
           status: 'streaming' as const,
         }
-        this.state.fullContent += text
 
         // Throttle to ~60fps
         const now = Date.now()
@@ -164,10 +161,7 @@ class ChatService {
           this.emit(deltaMsg)
         } else if (!this.timers.flush) {
           this.timers.flush = setTimeout(() => {
-            this.emit({
-              ...deltaMsg,
-              content: this.state.fullContent,
-            })
+            this.emit(deltaMsg)
             this.timers.flush = null
           }, 16)
         }
@@ -175,12 +169,12 @@ class ChatService {
 
       // Handle Done signal
       if (msg.done || msg.type === 'done') {
-        // Fix: Always emit final content on done
+        // Fix: Emit done with empty content (UI has all deltas)
         if (this.assistantMessageId) {
           this.emit({
             id: this.assistantMessageId,
             role: 'assistant',
-            content: this.state.fullContent,
+            content: '',
             status: 'done',
           })
         }
@@ -192,39 +186,6 @@ class ChatService {
       }
     } catch (e) {
       console.error('[ChatService] Error handling WS message:', e)
-    }
-  }
-
-  private flushBuffer(final = false) {
-    if (!this.state.fullContent) {
-      if (final) {
-        this.assistantMessageId = null
-        this.state.fullContent = ''
-      }
-      return
-    }
-
-    // Fix: Single message ID for streaming updates
-    if (!this.assistantMessageId) {
-      this.assistantMessageId = crypto.randomUUID()
-      this.emit({
-        id: this.assistantMessageId,
-        role: 'assistant',
-        content: this.state.fullContent,
-        status: final ? 'done' : 'streaming',
-      })
-    } else {
-      this.emit({
-        id: this.assistantMessageId,
-        role: 'assistant',
-        content: this.state.fullContent,
-        status: final ? 'done' : 'streaming',
-      })
-    }
-
-    if (final) {
-      this.assistantMessageId = null
-      this.state.fullContent = ''
     }
   }
 
