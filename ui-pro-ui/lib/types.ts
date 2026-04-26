@@ -16,11 +16,9 @@ export interface Message {
   role: MessageRole
   content: string
   delta?: string  // For delta streaming (incremental updates)
-  seq?: number  // Sequence number for ordering
   status?: MessageStatus
   timestamp?: string
   done?: boolean
-  message_id?: string  // For WebSocket deduplication
 }
 
 export interface AgentStep {

@@ -38,8 +38,6 @@ class ChatService {
 
   // Fix: Use enum instead of boolean for clearer intent
   private closeReason: 'user' | 'system' | 'error' | null = null
-  private streamSessionId: string | null = null  // Fix: Stable session ID
-  private streamSeq = 0  // Fix: Sequence number for ordering
   private connectPromise: Promise<void> | null = null
   private isFallingBack = false
 
@@ -54,8 +52,6 @@ class ChatService {
   private resetState() {
     this.state.started = false
     this.assistantMessageId = null
-    this.streamSessionId = null
-    this.streamSeq = 0
   }
 
   private clearTimers() {
@@ -141,27 +137,23 @@ class ChatService {
       // Normalize text content (handle multiple potential field names)
       const text = msg.content || msg.text || msg.token || msg.response || msg.thinking || msg.data || ''
 
-      // Verify stream session matches (prevents cross-talk)
-      if (this.streamSessionId && msg.stream_id && msg.stream_id !== this.streamSessionId) {
+      // Fix: Single ID filter - use request_id from backend
+      if (this.activeRequest && msg.request_id && msg.request_id !== this.activeRequest.id) {
         return
       }
 
       if (text) {
-        // Fix: Pure delta model with sequence for ordering
+        // Create message ID on first chunk
         if (!this.assistantMessageId) {
           this.assistantMessageId = crypto.randomUUID()
-          this.streamSessionId = this.assistantMessageId
-          this.streamSeq = 0
         }
-        this.streamSeq++
 
-        // Emit delta with sequence - UI can verify order
+        // Emit pure delta - UI accumulates
         const deltaMsg = {
           id: this.assistantMessageId,
           role: 'assistant' as const,
           content: '',  // Empty - UI appends delta
           delta: text,  // Pure delta for UI accumulation
-          seq: this.streamSeq,  // Sequence for ordering/ deduplication
           status: 'streaming' as const,
         }
 
@@ -190,7 +182,6 @@ class ChatService {
           })
         }
         this.resetState()
-        this.streamSessionId = null
         this.clearTimers()
         this.lifecycleState = 'idle'
         events.emit('status', { status: 'idle' })
