@@ -38,7 +38,6 @@ class ChatService {
 
   private timers = {
     flush: null as ReturnType<typeof setTimeout> | null,
-    stream: null as ReturnType<typeof setTimeout> | null,
     heartbeat: null as ReturnType<typeof setInterval> | null,
   }
 
@@ -57,10 +56,6 @@ class ChatService {
     if (this.timers.flush) {
       clearTimeout(this.timers.flush)
       this.timers.flush = null
-    }
-    if (this.timers.stream) {
-      clearTimeout(this.timers.stream)
-      this.timers.stream = null
     }
     if (this.timers.heartbeat) {
       clearInterval(this.timers.heartbeat)
@@ -96,15 +91,15 @@ class ChatService {
   // =====================
   private handleMessage = (event: MessageEvent) => {
     try {
-      const rawMsg = typeof event.data === 'string' ? event.data : event.data
-      const msg = this.parseMessageData(rawMsg)
+      // Fix: Simplified - just parse the raw data
+      const msg = this.parseMessageData(event.data)
       
       if (!msg || typeof msg !== 'object') return
 
       // Heartbeat / Pong
       if (msg.type === 'pong') return
 
-      // FIX: message_id mismatch check (removed duplicate)
+      // Fix: Only filter if both message_id exist
       if (this.state.messageId && msg.message_id && msg.message_id !== this.state.messageId) {
         return
       }
@@ -413,15 +408,12 @@ this.ws.onclose = (ev) => {
   }
 
   private async fallback() {
-    // Fix: Use both guards for redundancy
+    // Fix: Single guard - set flag first to prevent race
     if (this.isFallingBack) {
       return
     }
-    if (this.lifecycleState === 'fallback') {
-      return
-    }
-    this.lifecycleState = 'fallback'
     this.isFallingBack = true
+    this.lifecycleState = 'fallback'
 
     const host = window.location.hostname || 'localhost'
     try {
@@ -464,7 +456,7 @@ this.ws.onclose = (ev) => {
       })
     } finally {
       this.isFallingBack = false
-      this.manuallyClosed = false
+      // Fix: Don't reset manuallyClosed - only stop()/cancel() should set it
       this.state.messageId = null
       this.lifecycleState = 'idle'
       this.assistantMessageId = null
