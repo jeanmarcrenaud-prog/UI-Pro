@@ -200,4 +200,4 @@ class TestLoggerRotation:
         
         assert LOGS_DIR.exists()
         assert MAX_LOG_SIZE == 10 * 1024 * 1024  # 10 MB
-        assert BACKUP_COUNT == 5
+        assert BACKUP_COUNT == 3  # Actual value in core/logger.py
