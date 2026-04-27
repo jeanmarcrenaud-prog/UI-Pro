@@ -5,6 +5,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
+import { translations, type Translations } from '@/lib/i18n'
+import { useUIStore } from '@/lib/stores/uiStore'
 
 interface AgentStep {
   id: string
@@ -28,6 +30,7 @@ interface DebugPanelProps {
   logs?: string[]
   onClearLogs?: () => void
   subscribeToStore?: boolean
+  locale?: 'en' | 'fr'
 }
 
 export function DebugPanel({
@@ -44,7 +47,11 @@ export function DebugPanel({
   logs = [],
   onClearLogs,
   subscribeToStore = true,
+  locale = 'en',
 }: DebugPanelProps) {
+  const { locale: storeLocale = 'fr' } = useUIStore()
+  const t: Translations = translations[storeLocale]
+  
   const [localTokenCount, setLocalTokenCount] = useState(propTokenCount)
   const logsEndRef = useRef<HTMLDivElement>(null)
 
@@ -65,9 +72,10 @@ export function DebugPanel({
     return steps.length ? Math.round((completed / steps.length) * 100) : 0
   }, [steps.length, completed])
 
-  const activeIdx = useMemo(() => {
-    const idx = steps.findIndex((s) => s.status === 'active')
-    return idx !== -1 ? idx : currentStep
+  // Use active step index as the source of truth for current step (consistent with StepProgress)
+  const activeStepNumber = useMemo(() => {
+    const activeIdx = steps.findIndex((s) => s.status === 'active')
+    return activeIdx !== -1 ? activeIdx + 1 : steps.length > 0 ? Math.max(1, currentStep + 1) : 1
   }, [steps, currentStep])
 
   useEffect(() => {
@@ -99,7 +107,7 @@ export function DebugPanel({
     >
       {/* HEADER */}
       <div className="bg-slate-900/50 px-4 py-3 border-b border-slate-800/60 flex items-center justify-between">
-        <span className="text-sm font-semibold">🔧 Debug Panel</span>
+        <span className="text-sm font-semibold">🔧 {t.debug?.title || 'Debug Panel'}</span>
         <button
           onClick={closeFn}
           className="text-slate-400 hover:text-white text-xs"
@@ -111,18 +119,18 @@ export function DebugPanel({
       <div className="flex-1 overflow-y-auto">
         {/* STATUS */}
         <div className="p-4 space-y-3 border-b border-slate-800/60">
-          <Row label="Status" value={status.toUpperCase()} />
-          <Row label="Model" value={modelName} color="violet" />
-          <Row label="Backend" value="🦙 Ollama" />
-          <Row label="Elapsed" value={`${elapsedSeconds}s`} />
-          <Row label="Tokens" value={localTokenCount} color="violet" bold />
+          <Row label={t.debug?.status || 'Status'} value={status.toUpperCase()} />
+          <Row label={t.debug?.model || 'Model'} value={modelName} color="violet" />
+          <Row label={t.debug?.backend || 'Backend'} value="🦙 Ollama" />
+          <Row label={t.debug?.elapsed || 'Elapsed'} value={`${elapsedSeconds}s`} />
+          <Row label={t.debug?.tokens || 'Tokens'} value={localTokenCount} color="violet" bold />
         </div>
 
         {/* PROGRESS - only show when agent is actively running (not idle/error) */}
         {steps.length > 0 && status === 'running' && (
           <div className="p-4 border-b border-slate-800/60">
             <div className="flex justify-between text-xs mb-2">
-              <span>Step {activeIdx + 1} / {steps.length}</span>
+              <span>{typeof t.steps.stepLabel === 'function' ? t.steps.stepLabel(activeStepNumber, steps.length) : `Step ${activeStepNumber}/${steps.length}`}</span>
               <span>{elapsedSeconds}s</span>
             </div>
             <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
@@ -137,7 +145,7 @@ export function DebugPanel({
 
         {/* STEPS */}
         <div className="p-4 border-b border-slate-800/60">
-          <div className="text-xs text-slate-500 mb-3">Agent Execution</div>
+          <div className="text-xs text-slate-500 mb-3">{t.debug?.agentExecution || 'Agent Execution'}</div>
           {steps.map((step, i) => (
             <div key={`${step.id}-${i}`} className="flex gap-3 text-sm mb-2">
               <div className="w-5 h-5 flex items-center justify-center rounded-full text-xs bg-slate-800">
@@ -145,7 +153,7 @@ export function DebugPanel({
                   ? '✓'
                   : step.status === 'active'
                   ? '●'
-                  : i + 1}
+                  : Math.max(1, activeStepNumber)}
               </div>
               <div>
                 <div

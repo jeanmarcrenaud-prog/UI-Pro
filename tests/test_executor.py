@@ -12,7 +12,7 @@ import pytest
 from unittest.mock import patch, Mock, MagicMock
 import subprocess
 import os
-from executor import run
+from core.executor import run
 
 
 class TestExecutorBasic:

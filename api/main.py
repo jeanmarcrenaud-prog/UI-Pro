@@ -222,13 +222,6 @@ _log_subscriptions: set = set()
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
-    """WebSocket endpoint with proper auth and session management"""
-    # API key authentication
-    if app_config.api.api_key:
-        provided_key = ws.headers.get(API_KEY_HEADER, "")
-        if provided_key != app_config.api.api_key:
-            await ws.close(code=1008)
-            return
     """WebSocket endpoint for real-time streaming with log events
     
     Accepts: JSON {message: "...", model?: "..."}
@@ -239,7 +232,15 @@ async def ws_endpoint(ws: WebSocket):
       - {type: "done", ...} - Completion
       - {type: "error", ...} - Errors
     """
+    # Accept connection first (before any checks)
     await ws.accept()
+    
+    # API key authentication (optional - after accept to allow connection)
+    if app_config.api.api_key:
+        provided_key = ws.headers.get(API_KEY_HEADER, "")
+        if provided_key != app_config.api.api_key:
+            await ws.close(code=1008)
+            return
     
     # Use client info safely with UUID to avoid collisions
     client_info = str(ws.client.host) if ws.client and ws.client.host else "unknown"

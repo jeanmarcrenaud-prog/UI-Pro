@@ -16,6 +16,14 @@ from core.orchestrator_async import Orchestrator
 from core.state_manager import StateManager
 from core.executor import CodeExecutor
 
+# Translation imports
+from api.translations import (
+    get_current_translations,
+    LANGUAGE_OPTIONS,
+    DEFAULT_LANGUAGE,
+    LANGUAGES,
+)
+
 # Metrics integration
 try:
     from core.metrics import get_dashboard_data, MetricsManager
@@ -57,6 +65,9 @@ def get_orchestrator():
 
 # ---------------- Gradio UI -----------------
 def _build_main_ui():
+    # Get translations for default language
+    t = get_current_translations(DEFAULT_LANGUAGE)
+    
     # Get CSS path if available
     css_file = "assets/styles/dashboard.css"
     css_content = ""
@@ -72,29 +83,38 @@ def _build_main_ui():
         
         with gr.Row():
             with gr.Column(scale=1):  # sidebar
+                # Language selector
+                lang_dropdown = gr.Dropdown(
+                    choices=[opt[1] for opt in LANGUAGE_OPTIONS],
+                    value=DEFAULT_LANGUAGE,
+                    label=t.get("language", "Langue"),
+                    show_label=True,
+                )
                 nav = gr.Radio(
-                    ["Task Input", "Real-time Output", "Live Logs", "Status", "Memory", "Metrics"], 
-                    value="Task Input", 
-                    label="Navigation", 
+                    [t.get("nav_item_task_input", "Task Input"), t.get("nav_item_realtime", "Real-time Output"), 
+                     t.get("nav_item_logs", "Live Logs"), t.get("nav_item_status", "Status"), 
+                     t.get("nav_item_memory", "Memory"), t.get("nav_item_metrics", "Metrics")], 
+                    value=t.get("nav_item_task_input", "Task Input"), 
+                    label=t.get("nav_task_input", "Navigation"), 
                     show_label=False
                 )
             with gr.Column(scale=4):  # main content
                 # Section: Task Input
                 with gr.Column(visible=True, elem_id="section-task-input"):
                     task_input = gr.TextArea(
-                        label="Task Input", 
-                        placeholder="Describe the task to run... (e.g., 'Create a FastAPI app that returns [1,2,3]')", 
+                        label=t.get("task_input_label", "Task Input"), 
+                        placeholder=t.get("task_input_placeholder", "Describe the task..."), 
                         lines=6
                     )
-                    task_id_display = gr.Textbox(label="Current Task ID", value="")
-                    submit_btn = gr.Button("Submit Task")
-                    gr.Markdown("*Task will execute through: Planner → Architect → Coder → Reviewer → Executor (with auto-fix loop)*")
+                    task_id_display = gr.Textbox(label=t.get("current_task_id", "Current Task ID"), value="")
+                    submit_btn = gr.Button(t.get("btn_submit", "Submit Task"))
+                    gr.Markdown(f"*{t.get('pipeline_desc', 'Task will execute through pipeline')}*")
                 
                 # Section: Real-time Output
                 with gr.Column(visible=False, elem_id="section-realtime"):
                     rt_output = gr.Textbox(
-                        label="Execution Output", 
-                        value="No output yet. Submit a task to see real execution.", 
+                        label=t.get("realtime_label", "Execution Output"), 
+                        value=t.get("realtime_placeholder", "No output yet."), 
                         lines=15, 
                         interactive=False
                     )
@@ -102,35 +122,35 @@ def _build_main_ui():
                 # Section: Live Logs
                 with gr.Column(visible=False, elem_id="section-logs"):
                     logs = gr.Textbox(
-                        label="Live Logs", 
-                        value="No logs yet.", 
+                        label=t.get("logs_label", "Live Logs"), 
+                        value=t.get("logs_placeholder", "No logs yet."), 
                         lines=10, 
                         interactive=False
                     )
                 
                 # Section: Status
                 with gr.Column(visible=False, elem_id="section-status"):
-                    status_mark = gr.Markdown("**Status**: idle")
-                    state_json = gr.JSON(label="State")
+                    status_mark = gr.Markdown(f"**{t.get('status_label', 'Status')}**: {t.get('status_idle', 'idle')}")
+                    state_json = gr.JSON(label=t.get("state_label", "State"))
                 
                 # Section: Memory
                 with gr.Column(visible=False, elem_id="section-memory"):
                     if MEMORY_AVAILABLE:
-                        gr.Markdown("### FAISS Memory Search")
-                        mem_q = gr.Textbox(label="Search query", placeholder="Ask about previous tasks...")
-                        mem_res = gr.Textbox(label="Results", value="", lines=6, interactive=False)
+                        gr.Markdown(f"### {t.get('memory_title', 'FAISS Memory Search')}")
+                        mem_q = gr.Textbox(label=t.get("memory_search", "Search query"), placeholder=t.get("memory_placeholder", "Ask about previous tasks..."))
+                        mem_res = gr.Textbox(label=t.get("memory_results", "Results"), value="", lines=6, interactive=False)
                     else:
-                        gr.Markdown("⚠️ Memory not available (FAISS not installed)")
+                        gr.Markdown(t.get("memory_not_available", "⚠️ Memory not available"))
                 
                 # Section: Metrics
                 with gr.Column(visible=False, elem_id="section-metrics"):
                     if METRICS_AVAILABLE:
-                        gr.Markdown("### Execution Metrics")
-                        metrics_success_rate = gr.Number(label="Success Rate %", value=0)
-                        metrics_total = gr.Number(label="Total Executions", value=0)
-                        metrics_avg_time = gr.Number(label="Avg Duration (ms)", value=0)
-                        refresh_metrics_btn = gr.Button("Refresh Metrics")
-                        gr.Markdown("#### Recent Executions")
+                        gr.Markdown(f"### {t.get('metrics_title', 'Execution Metrics')}")
+                        metrics_success_rate = gr.Number(label=t.get("metrics_success_rate", "Success Rate %"), value=0)
+                        metrics_total = gr.Number(label=t.get("metrics_total", "Total Executions"), value=0)
+                        metrics_avg_time = gr.Number(label=t.get("metrics_avg", "Avg Duration (ms)"), value=0)
+                        refresh_metrics_btn = gr.Button(t.get("metrics_refresh", "Refresh Metrics"))
+                        gr.Markdown(f"#### {t.get('metrics_recent', 'Recent Executions')}")
                         metrics_recent = gr.Dataframe(
                             headers=["Task ID", "Task", "Status", "Duration (ms)", "Timestamp"],
                             value=[],
@@ -279,6 +299,30 @@ def _build_main_ui():
                 gr.Column(visible=True, elem_id="section-status"),
                 gr.Column(visible=True, elem_id="section-memory"),
                 gr.Column(visible=True, elem_id="section-metrics"),
+            ]
+        )
+        
+        # Language change handler - update UI labels
+        def _on_lang_change(lang):
+            t = get_current_translations(lang)
+            return (
+                gr.update(label=t.get("language", "Langue")),  # lang_dropdown label
+                gr.update(label=t.get("task_input_label", "Task Input"), placeholder=t.get("task_input_placeholder", "...")),
+                gr.update(label=t.get("current_task_id", "Task ID")),
+                gr.update(label=t.get("btn_submit", "Submit")),
+                # gr.update(value=t.get("pipeline_desc", "...")),  # Markdown - can't update this way
+                gr.update(label=t.get("realtime_label", "Output"), value=t.get("realtime_placeholder", "...")),
+                gr.update(label=t.get("logs_label", "Logs"), value=t.get("logs_placeholder", "...")),
+                gr.update(value=f"**{t.get('status_label', 'Status')}**: {t.get('status_idle', 'idle')}"),
+                gr.update(label=t.get("state_label", "State")),
+            )
+        
+        lang_dropdown.change(
+            _on_lang_change,
+            inputs=lang_dropdown,
+            outputs=[
+                lang_dropdown, task_input, task_id_display, submit_btn,
+                rt_output, logs, status_mark, state_json
             ]
         )
         
