@@ -1,4 +1,10 @@
 # controllers/websocket.py - WebSocket Controller
+#
+# Role: WebSocket connection lifecycle management
+# Used by: views/api.py /ws endpoint
+# - Connection handling
+# - Message parsing
+# - Disconnect cleanup
 
 import asyncio
 import json

@@ -1,4 +1,11 @@
-# 🧪 **Code Executor** (Sandbox + Auto-Fix + Timeout + Code Review)
+# core/executor.py - Code Executor (Sandbox + Auto-Fix + Timeout + Code Review)
+#
+# Role: Secure code execution in isolated sandbox
+# Used by: Agent execution, code review
+# - Temporary directory isolation
+# - Execution timeout (30s default)
+# - Auto-cleanup on completion
+# - Code review integration
 
 import subprocess
 import tempfile

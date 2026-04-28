@@ -1,6 +1,7 @@
 // useChat.ts
 // Role: Core React hook for chat functionality - orchestrates message sending via WebSocket, manages
 // streaming state, agent step lifecycle, error handling, safety timeouts, and token count tracking
+// Includes auto-reconnect with resume support
 
 'use client'
 
@@ -26,6 +27,13 @@ export const useChat = (): UseChatReturn => {
     setLoading,
     setError,
     saveToHistory,
+    // Resume state
+    currentMessageId,
+    lastReceivedChunkIndex,
+    setCurrentMessage,
+    updateLastChunkIndex,
+    resetCurrentMessage,
+    getPromptById,
   } = useChatStore()
 
   const { isActive, steps, start, updateStep, reset } = useAgentStore()
@@ -51,6 +59,69 @@ export const useChat = (): UseChatReturn => {
   updateStepRef.current = updateStep
 
   // =====================
+  // RESUME TRACKING
+  // =====================
+  const streamIndexRef = useRef(0)
+
+  // Track chunk index from incoming messages
+  useEffect(() => {
+    const unsubscribe = chatService.onMessage((msg: Message) => {
+      if (msg.status === 'streaming' && msg.delta) {
+        streamIndexRef.current += 1
+        updateLastChunkIndex(streamIndexRef.current)
+      }
+
+      if (msg.status === 'done') {
+        resetCurrentMessage()
+        streamIndexRef.current = 0
+      }
+    })
+
+    // chatService.onMessage returns () => boolean, but useEffect needs void
+    return () => { unsubscribe() }
+  }, [updateLastChunkIndex, resetCurrentMessage])
+
+  // Listen for status changes (reconnection detection)
+  useEffect(() => {
+    const handleStatus = (data: { status: string }) => {
+      if (data.status === 'idle' && isStreamActiveRef.current && currentMessageId) {
+        console.log('[useChat] Reconnection detected, attempting resume...')
+        attemptResume()
+      }
+    }
+
+    events.on('status', handleStatus)
+    return () => events.off('status', handleStatus)
+  }, [currentMessageId])
+
+  // Attempt to resume after reconnection
+  const attemptResume = useCallback(async () => {
+    if (!currentMessageId || lastReceivedChunkIndex === 0) return
+
+    const originalPrompt = getPromptById(currentMessageId)
+    if (!originalPrompt) {
+      console.log('[useChat] No prompt found for resume')
+      return
+    }
+
+    console.log('[useChat] Attempting resume:', {
+      messageId: currentMessageId,
+      chunkIndex: lastReceivedChunkIndex,
+      prompt: originalPrompt.slice(0, 30) + '...'
+    })
+
+    try {
+      await chatService.sendMessage(
+        originalPrompt,
+        currentMessageId,
+        lastReceivedChunkIndex
+      )
+    } catch (err) {
+      console.error('[useChat] Resume failed:', err)
+    }
+  }, [currentMessageId, lastReceivedChunkIndex, getPromptById])
+
+  // =====================
   // STOP STREAM (centralisé)
   // =====================
   const stopStream = useCallback(() => {
@@ -70,8 +141,7 @@ export const useChat = (): UseChatReturn => {
   }, [setLoading])
 
   // =====================
-  // STEP EVENTS (safe)
-  // =====================
+// STEP EVENTS (safe)
   useEffect(() => {
     const handler = (data: {
       stepId: string
@@ -94,6 +164,7 @@ export const useChat = (): UseChatReturn => {
   // =====================
   const sendMessage = useCallback(
     async (content: string) => {
+      console.log('[useChat] sendMessage called:', content)
       if (isSendingRef.current || !content.trim()) return
 
       // reset previous safety timeout
@@ -113,6 +184,9 @@ export const useChat = (): UseChatReturn => {
       currentRequestIdRef.current = requestId
       assistantMessageIdRef.current = assistantMessageId
 
+      // Store for resume
+      setCurrentMessage(requestId, content)
+
       // reset agent state
       reset()
 
@@ -128,7 +202,7 @@ export const useChat = (): UseChatReturn => {
       setLoading(true)
 
       const stepsData: AgentStep[] = [
-        { id: 'step-analyzing', title: 'Analyzing request', status: 'active' },
+        { id: 'step-analyzing', title: 'Analyzing request', status: 'pending' },
         { id: 'step-planning', title: 'Planning solution', status: 'pending' },
         { id: 'step-executing', title: 'Executing', status: 'pending' },
         { id: 'step-reviewing', title: 'Reviewing', status: 'pending' },
@@ -206,9 +280,9 @@ export const useChat = (): UseChatReturn => {
               return
             }
 
-            // STREAM CONTENT or STREAMING/GENERATING STATUS
+            // STREAM CONTENT or STREAMING STATUS
             // Only append content - steps are managed by backend events
-            if (msg.content || msg.status === 'streaming' || msg.status === 'generating') {
+            if (msg.content || msg.status === 'streaming') {
               if (msg.content) {
                 appendStream(msg.content)
               }
@@ -258,7 +332,7 @@ export const useChat = (): UseChatReturn => {
         )
       }
 
-      // SAFETY TIMEOUT
+      // SAFETY TIMEOUT (5 minutes for slow models)
       safetyTimeoutRef.current = setTimeout(() => {
         if (isSendingRef.current && !isCompletedRef.current) {
           console.warn('[useChat] force cleanup timeout')
@@ -266,7 +340,7 @@ export const useChat = (): UseChatReturn => {
           isCompletedRef.current = true
           stopStream()
         }
-      }, 60000)
+      }, 300000)  // 5 minutes instead of 60s
     },
     [addMessage, updateMessageById, setLoading, setError, start, reset, saveToHistory]
   )

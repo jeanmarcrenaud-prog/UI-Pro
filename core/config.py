@@ -1,6 +1,9 @@
-"""
-Config loader - reads from config.yaml with environment variable overrides.
-"""
+# core/config.py - Configuration Loader
+#
+# Role: Load and merge config from YAML + environment overrides
+# Used by: All modules requiring app configuration
+# - config.yaml as base
+# - Environment variables override
 
 import os
 import yaml

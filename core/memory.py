@@ -1,4 +1,10 @@
-# memory.py
+# core/memory.py - FAISS Memory Store
+#
+# Role: Persistent vector memory using FAISS
+# Used by: Memory service, orchestrator
+# - Semantic search
+# - Index persistence
+
 from .logger import get_logger
 from pathlib import Path
 import os

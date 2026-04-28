@@ -129,19 +129,36 @@ class StreamingService:
     
     def to_dict(self, chunk: StreamChunk) -> dict[str, Any]:
         """Convert chunk to SSE format - FRONTEND COMPATIBLE"""
-        return {
-            "type": self.TO_DICT_MAP.get(chunk.status, "token"),
+        # Map status to frontend event type
+        type_map = {
+            StreamStatus.STARTING: "token",
+            StreamStatus.GENERATING: "token",
+            StreamStatus.COMPLETED: "done",
+            StreamStatus.ERROR: "error",
+            StreamStatus.CANCELLED: "error",
+        }
+        
+        result = {
+            "type": type_map.get(chunk.status, "token"),
             "status": chunk.status.value,
             "stream_id": chunk.stream_id,
             "index": chunk.chunk_index,
             "data": chunk.text,
             "content": chunk.text,
-            "response": chunk.text,  # KEY FIX: Frontend looks for 'response' field
+            "response": chunk.text,
             "tokens": chunk.tokens_generated,
             "latency_ms": chunk.latency_ms,
             "error": chunk.error,
             "timestamp": chunk.timestamp.isoformat(),
         }
+        
+        # Add step events for frontend step tracking
+        if chunk.step_id:
+            result["type"] = "step"
+            result["step_id"] = chunk.step_id
+            result["step_status"] = chunk.step_status
+        
+        return result
     
     def _detect_backend(self, model: str) -> str:
         """Detect which backend to use based on model name patterns."""

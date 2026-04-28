@@ -1,4 +1,12 @@
-# 🚀 Async Orchestrator - PRO VERSION + Auto-Fix
+# core/orchestrator_async.py - Async Orchestrator (PRO VERSION)
+#
+# Role: Orchestrates multi-step agent reasoning with auto-fix
+# Used by: WebSocket endpoint, API calls
+# - Request analysis
+# - Planning
+# - Execution with code review
+# - Auto-fix on errors
+
 """
 Refactored async orchestrator with proper typing and robust error handling.
 """

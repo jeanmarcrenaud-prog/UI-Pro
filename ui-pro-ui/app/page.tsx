@@ -25,7 +25,7 @@ export default function Home() {
   // Stores (MUST come first - isLoading is used below)
   const { selectedModel, availableModels } = useUIStore()
   const { isLoading, logs, tokenCount, clearMessages, messages } = useChatStore()
-  const { steps: storeSteps } = useAgentStore()
+  const { steps: storeSteps, currentStep: storeCurrentStep } = useAgentStore()
 
   const handleNewChat = useCallback(() => {
     clearMessages()

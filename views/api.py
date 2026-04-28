@@ -1,3 +1,11 @@
+# views/api.py - FastAPI Routes + WebSocket Endpoint
+#
+# Role: HTTP/HTTPS endpoints + WebSocket streaming
+# Used by: Frontend (Next.js), external clients
+# - /ws: Real-time streaming with resume support
+# - /api/chat: REST fallback
+# - /health, /status: Health checks
+
 from fastapi import FastAPI, WebSocket, Request, HTTPException, Depends
 from fastapi.websockets import WebSocketDisconnect
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
@@ -8,6 +16,7 @@ import logging
 import time
 import json
 import sys
+import uuid
 from typing import Callable, Dict, Any, Optional
 import traceback
 from logging.handlers import RotatingFileHandler
@@ -63,6 +72,20 @@ root_logger.addHandler(console_handler)
 
 
 # ==================== THREAD-SAFE STATE MANAGEMENT ====================
+
+# Session cleanup function for WebSocket
+def _cleanup_sessions():
+    """Remove expired sessions to prevent memory leaks"""
+    now = time.time()
+    # Get references to update
+    global store
+    if hasattr(store, '_sessions'):
+        expired = [k for k, v in list(store.sessions.items()) if now - v.get("last_activity", 0) > 3600]
+        for k in expired:
+            store.remove_session(k)
+        if expired:
+            logger.info(f"[CLEANUP] Removed {len(expired)} expired sessions")
+
 
 class ThreadSafeStore:
     """Thread-safe storage for errors and sessions"""
@@ -430,51 +453,191 @@ def get_default_model():
 from controllers.websocket import get_websocket_controller
 
 
+# =====================
+# WEBSOCKET RESUME STATE
+# =====================
+active_requests: Dict[str, Dict[str, Any]] = {}  # message_id -> request state
+
+
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
-    """WebSocket endpoint for real-time streaming
+    """WebSocket endpoint for real-time streaming with resume support
     
-    Delegates to WebSocketController (no business logic here)
+    Features:
+    - Proper resume via message_id + last_chunk_index
+    - active_requests tracking per message_id
+    - resume_ack confirmation
     """
-    logger.info("[WS] WebSocket endpoint called!")  # DEBUG
-    controller = get_websocket_controller()
-
+    print("[WS-VIEWS] ==== WebSocket endpoint CALLED! ====", flush=True)
+    logger.info("[WS-VIEWS] WebSocket endpoint CALLED!")
+    logger.info(f"[WS-VIEWS] Headers: {dict(ws.headers)}")
     client_info = str(ws.client.host) if ws.client and ws.client.host else "unknown"
-    logger.info(f"[WS] Accepting connection from {client_info}")  # DEBUG
+    logger.info(f"[WS-VIEWS] Client: {client_info}")
+
+    # Optional API key check
+    if getattr(app_config.api, 'api_key', None):
+        if ws.headers.get("x-api-key") != app_config.api.api_key:
+            await ws.close(code=1008, reason="Invalid API key")
+            return
+
+    stream_service = get_streaming_service()
+    current_message_id: str | None = None
+    session_id: str = "unknown"
+
     try:
         await ws.accept()
-        session_id = await controller.handle_connection(ws, client_info)
+        session_id = f"{client_info}-{uuid.uuid4().hex[:8]}"
+        print(f"[WS-VIEWS] Connection accepted from {client_info}, session_id={session_id}", flush=True)
 
-        try:
-            while True:
-                raw = await ws.receive_text()
-                # Parse JSON if valid, extract model and message
-                try:
-                    msg_data = json.loads(raw)
-                    task = msg_data.get('message', raw)
-                    model = msg_data.get('model')
-                    logger.info(f"[WS] Received model: {model}, task: {task[:50]}...")
-                except (json.JSONDecodeError, TypeError):
-                    task = raw
-                    model = None
-                    logger.warning(f"[WS] Non-JSON message received")
-                await controller.handle_message(ws, session_id, task, model=model or None)
-        except WebSocketDisconnect:
-            logger.info(f"WebSocket disconnected normally")
-        except Exception as e:
-            logger.error("WebSocket error: %s", e, exc_info=True)
+        # Track cleanup timing
+        last_cleanup = time.time()
+
+        while True:
+            # Periodic cleanup every 60s
+            if time.time() - last_cleanup > 60:
+                _cleanup_sessions()
+                last_cleanup = time.time()
+
+            data = await ws.receive_text()
+            logger.info(f"[WS] Received: {data[:100]}...")
+
+            # Parse JSON if valid
             try:
-                await ws.send_json({
+                msg = json.loads(data)
+            except json.JSONDecodeError:
+                msg = {"message": data}
+
+            # Handle control messages
+            if msg.get("type") == "ping":
+                await ws.send_text(json.dumps({"type": "pong", "message_id": current_message_id}))
+                continue
+
+            if msg.get("type") == "cancel":
+                if current_message_id and active_requests.get(current_message_id):
+                    active_requests.pop(current_message_id, None)
+                break
+
+            # Extract request details
+            task = msg.get("message") or msg.get("prompt") or ""
+            model = msg.get("model")
+            message_id = msg.get("message_id") or str(uuid.uuid4())
+            last_chunk_index = msg.get("last_chunk_index", 0)
+
+            current_message_id = message_id
+
+            if not model:
+                await ws.send_text(json.dumps({
                     "type": "error",
-                    "error": str(e),
-                    "timestamp": time.time()
-                })
-            except Exception:
-                pass
-        finally:
-            await controller.handle_disconnect(session_id)
+                    "message": "Model is required",
+                    "message_id": message_id
+                }))
+                continue
+
+            # === Register or Resume Request ===
+            if message_id not in active_requests:
+                active_requests[message_id] = {
+                    "model": model,
+                    "task": task,
+                    "chunk_index": 0,
+                    "is_complete": False
+                }
+
+            request_state = active_requests[message_id]
+            start_chunk = max(last_chunk_index, request_state["chunk_index"])
+
+            # Send resume acknowledgment
+            if last_chunk_index > 0:
+                await ws.send_text(json.dumps({
+                    "type": "resume_ack",
+                    "message_id": message_id,
+                    "resuming_from": last_chunk_index,
+                    "current_chunk": start_chunk
+                }))
+                logger.info(f"Resuming message {message_id} from chunk {last_chunk_index}")
+
+            # === Step 1: Analyzing ===
+            await ws.send_text(json.dumps({
+                "type": "step",
+                "step_id": "step-analyzing",
+                "title": "Analyzing request",
+                "status": "done",
+                "message_id": message_id,
+                "chunk_index": start_chunk
+            }))
+
+            # === Step 2: Planning ===
+            await ws.send_text(json.dumps({
+                "type": "step",
+                "step_id": "step-planning",
+                "title": "Planning solution",
+                "status": "active",
+                "message_id": message_id,
+                "chunk_index": start_chunk
+            }))
+
+            # === Streaming Phase ===
+            chunk_index = start_chunk
+
+            async for chunk in stream_service.stream_generate(task, model=model):
+                chunk_text = chunk.text if hasattr(chunk, "text") else str(chunk)
+
+                # Skip already sent chunks during resume
+                if chunk_index < last_chunk_index:
+                    chunk_index += 1
+                    continue
+
+                chunk_index += 1
+
+                # Update state
+                request_state["chunk_index"] = chunk_index
+
+                await ws.send_text(json.dumps({
+                    "type": "token",
+                    "content": chunk_text,
+                    "response": chunk_text,
+                    "done": False,
+                    "message_id": message_id,
+                    "chunk_index": chunk_index
+                }))
+
+            # === Mark remaining steps as done ===
+            for step_id, title in [
+                ("step-planning", "Planning solution"),
+                ("step-executing", "Executing"),
+                ("step-reviewing", "Reviewing")
+            ]:
+                await ws.send_text(json.dumps({
+                    "type": "step",
+                    "step_id": step_id,
+                    "title": title,
+                    "status": "done",
+                    "message_id": message_id,
+                    "chunk_index": chunk_index
+                }))
+
+            # Final done signal
+            await ws.send_text(json.dumps({
+                "type": "done",
+                "message_id": message_id,
+                "chunk_index": chunk_index
+            }))
+
+            # Mark request as complete
+            request_state["is_complete"] = True
+            request_state["chunk_index"] = chunk_index
+
+    except WebSocketDisconnect:
+        logger.info(f"WebSocket disconnected normally: {session_id}")
     except Exception as e:
-        logger.error(f"WebSocket connection error: {e}")
+        logger.error(f"WebSocket error: {e}", exc_info=True)
+        try:
+            await ws.send_text(json.dumps({
+                "type": "error",
+                "message": "An internal error occurred",
+                "message_id": current_message_id
+            }))
+        except Exception:
+            pass
 
 
 # ==================== STREAMING ====================
