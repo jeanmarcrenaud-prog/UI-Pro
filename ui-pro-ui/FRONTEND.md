@@ -268,6 +268,42 @@ Intelligent filename extraction from code content:
 - Falls back to timestamp-based name
 - Supports 20+ languages with proper extensions
 
+### Auto-Detect Code Blocks
+Added `preprocessContent()` to MarkdownRenderer that automatically detects code-like text and wraps in markdown code blocks:
+- Detects patterns: `def`, `class`, `function`, `const`, `let`, `import`, `if`, `for`, `while`, etc.
+- Auto-detects language: python, javascript, html
+- Enables download button (💾) for plain text code
+
+### MarkdownRenderer Performance & UX (v2)
+Major refactor with improvements:
+- **memo + useMemo** → Prevents unnecessary re-renders
+- **remark-gfm** → Better markdown support (tables, strikethrough, etc.)
+- **Improved code detection** → More patterns, better language detection
+- **Better styling** → rounded-xl, border-slate-700, bg-slate-800/70
+- **Cleaner components** → Separated CodeComponent and PreComponent
+
+### Memory Leak Prevention
+Added limits to prevent OOM crashes:
+- Messages array: max 100 in memory
+- Logs: max 100 entries
+- Chat history: max 50 chats
+- Resume message history: max 20 entries
+- Backend sessions: max 50
+- Backend errors: max 50
+
+### WebSocket Resume Support
+Implemented auto-reconnect with resume capability:
+- Frontend sends `last_chunk_index` on reconnect
+- Backend tracks active requests per message_id
+- Skips already-sent chunks during resume
+- Max 5 reconnect attempts with exponential backoff
+
+### TypeScript Fixes in useChat.ts
+Fixed type comparison errors:
+- `msg.status === 'completed'` → `msg.status === 'done'`
+- Removed invalid `msg.type === 'done'` check
+- Map `MessageStatus` to `AgentStepStatus` properly
+
 ---
 
 ## Bugs Fixed (April 2026)
@@ -317,6 +353,22 @@ This section documents all bugs that were identified and fixed in the frontend c
 ### File Cleanup
 
 - **Deleted**: `components/chat/ChatContainer.tsx` - duplicate file never imported, created confusion
+
+### TypeScript Bugs (useChat.ts)
+
+| # | Bug Description | Root Cause | Fix |
+|-----|----------------|-----------|------|
+| 21 | `msg.status === 'completed'` type error | `'completed'` not in `MessageStatus` type | Changed to `msg.status === 'done'` |
+| 22 | `msg.type === 'done'` type error | `msg.type` is `'step'` not `'done'` | Removed redundant check |
+| 23 | Step status mapping error | `MessageStatus` not assignable to `AgentStepStatus` | Added explicit mapping: `'done'`→`'done'`, otherwise `'active'` |
+
+### Backend Memory Bugs
+
+| # | Bug Description | Root Cause | Fix |
+|-----|----------------|-----------|------|
+| 24 | Unlimited `_errors` list | No size limit on `ThreadSafeStore` | Kept only last 50 errors |
+| 25 | Unlimited WebSocket sessions | No cleanup on session limits | Max 50 sessions, removes oldest |
+| 26 | `chunk_size: 1` causes OOM | Each token = 1 WebSocket message | Batch 5 tokens per message |
 
 ### Known Limitations
 
