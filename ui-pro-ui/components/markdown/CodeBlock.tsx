@@ -1,59 +1,62 @@
 // components/CodeBlock.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, memo } from 'react'
 import { Check, Copy, Download } from 'lucide-react'
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { oneDark } from 'react-syntax-highlighter/dist/cjs/styles/prism'
-import { downloadCode } from '@/lib/download'
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism'
 
-// Type cast to fix React 18 type incompatibility
-const SyntaxHighlighterComponent = SyntaxHighlighter as React.ComponentType<{
-  language?: string
-  style?: object
-  customStyle?: React.CSSProperties
-  children: string
-}>
+import { downloadCode } from '@/lib/download'
 
 interface CodeBlockProps {
   language?: string
   value: string
 }
 
-export function CodeBlock({ language, value }: CodeBlockProps) {
+const SyntaxHighlighterComp = SyntaxHighlighter as React.ComponentType<any>
+
+export const CodeBlock = memo(function CodeBlock({ 
+  language = 'text', 
+  value = '' 
+}: CodeBlockProps) {
   const [copied, setCopied] = useState(false)
 
   const copyToClipboard = async () => {
+    if (!value) return
     try {
       await navigator.clipboard.writeText(value)
       setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      setTimeout(() => setCopied(false), 1800)
     } catch (err) {
-      console.error('Failed to copy:', err)
+      console.error('Copy failed:', err)
     }
   }
 
   const handleDownload = () => {
-    downloadCode(value, language || 'txt')
+    if (!value) return
+    downloadCode(value, language)
   }
 
+  const displayLanguage = language.toUpperCase()
+
   return (
-    <div className="relative group my-3 border border-slate-700 rounded-lg overflow-hidden bg-slate-900">
-      {/* Header with language + copy + download buttons */}
-      <div className="flex items-center justify-between bg-slate-800 px-4 py-2 border-b border-slate-700">
-        <div className="text-xs text-slate-400 font-mono">{language || 'code'}</div>
-        
-        <div className="flex items-center gap-3">
-          {/* Copy button */}
+    <div className="relative my-5 rounded-2xl overflow-hidden border border-slate-700 bg-slate-900 shadow-xl">
+      {/* Header */}
+      <div className="flex items-center justify-between bg-slate-800 px-5 py-3 border-b border-slate-700">
+        <div className="text-sm font-medium text-slate-300 tracking-wide">
+          {displayLanguage}
+        </div>
+
+        <div className="flex items-center gap-2">
+          {/* Copy Button */}
           <button
             onClick={copyToClipboard}
-            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors"
-            aria-label="Copy code"
+            className="flex items-center gap-2 px-4 py-1.5 text-sm rounded-xl bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200"
           >
             {copied ? (
               <>
-                <Check className="w-4 h-4" />
-                Copied!
+                <Check className="w-4 h-4 text-emerald-400" />
+                <span className="text-emerald-400 font-medium">Copied</span>
               </>
             ) : (
               <>
@@ -63,11 +66,10 @@ export function CodeBlock({ language, value }: CodeBlockProps) {
             )}
           </button>
 
-          {/* Download button */}
+          {/* Download Button */}
           <button
             onClick={handleDownload}
-            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors"
-            aria-label="Download code"
+            className="flex items-center gap-2 px-4 py-1.5 text-sm rounded-xl bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200"
           >
             <Download className="w-4 h-4" />
             Save
@@ -75,30 +77,24 @@ export function CodeBlock({ language, value }: CodeBlockProps) {
         </div>
       </div>
 
-      {/* Isolated code container with scrollbar */}
-      <div
-        className="h-64 min-h-[8rem] overflow-auto"
-        style={{
-          maxHeight: '16rem',
-          scrollbarWidth: 'thin',
-          scrollbarColor: '#475569 #1e293b'
-        }}
-      >
-        <SyntaxHighlighterComponent
-          language={language}
-          style={oneDark}
+      {/* Code Area */}
+      <div className="max-h-[520px] overflow-auto bg-[#0d1117]">
+        <SyntaxHighlighterComp
+          language={language.toLowerCase()}
+          style={vscDarkPlus}
           customStyle={{
             margin: 0,
-            padding: '1rem',
+            padding: '1.5rem 1.75rem',
             background: 'transparent',
-            fontSize: '0.875rem',
-            lineHeight: '1.5',
-            minHeight: '8rem'
+            fontSize: '0.92rem',
+            lineHeight: '1.65',
           }}
+          showLineNumbers={value.split('\n').length > 5}
+          wrapLines={true}
         >
           {value}
-        </SyntaxHighlighterComponent>
+        </SyntaxHighlighterComp>
       </div>
     </div>
   )
-}
+})

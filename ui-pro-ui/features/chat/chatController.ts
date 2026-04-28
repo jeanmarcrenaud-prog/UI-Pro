@@ -3,7 +3,7 @@
 // creation, initial agent steps setup, stream service connection, and event-based token/step updates
 
 // Chat Controller - Orchestrates chat flow with events
-import { useChatStore } from '@/stores/chatStore'
+import { useChatStore } from '@/stores'
 import { useAgentStore } from '@/stores/agentStore'
 import { streamService } from '@/services/streamService'
 

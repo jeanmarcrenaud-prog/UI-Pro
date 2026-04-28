@@ -2,7 +2,6 @@
 // Role: Agent execution state store via Zustand - tracks active status, step list and individual step
 // status updates, current step tracking, and agent lifecycle (start/reset)
 
-// Agent Store - Zustand
 import { create } from 'zustand'
 import type { AgentStep, AgentStepStatus } from '@/lib/types'
 
@@ -10,7 +9,7 @@ interface AgentStore {
   isActive: boolean
   steps: AgentStep[]
   currentStep: number
-  currentStepId?: string // Add current step ID
+  currentStepId?: string
   addStep: (step: AgentStep) => void
   updateStep: (id: string, status: AgentStepStatus) => void
   setStep: (step: AgentStep, index: number) => void
@@ -73,3 +72,7 @@ export const useAgentStore = create<AgentStore>((set, _get) => ({
     return state.steps.find(s => s.status === 'active')
   },
 }))
+
+export const agentStore = {
+  getState: () => useAgentStore.getState(),
+}

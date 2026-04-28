@@ -75,6 +75,10 @@ function _initEventListeners() {
 // Initialize on first use (call once)
 _initEventListeners()
 
+export const chatStore = {
+  getState: () => useChatStore.getState(),
+}
+
 export const useChatStore = create<ChatStore>()(
   persist(
     (set, get) => ({

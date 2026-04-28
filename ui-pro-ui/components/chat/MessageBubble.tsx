@@ -5,6 +5,7 @@
 'use client'
 
 import type { Message } from '@/lib/types'
+import { MarkdownRenderer } from '@/components/markdown'
 
 interface MessageBubbleProps {
   message: Message
@@ -45,10 +46,16 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           <span className="mr-2 inline-block animate-pulse">{icon}</span>
         )}
 
-        {/* Message content */}
-        <div className="whitespace-pre-wrap break-words">
-          {message.content}
-        </div>
+        {/* Message content - use MarkdownRenderer for assistant messages */}
+        {isUser ? (
+          <div className="whitespace-pre-wrap break-words">
+            {message.content}
+          </div>
+        ) : (
+          <div className="whitespace-pre-wrap break-words">
+            <MarkdownRenderer content={message.content || ''} />
+          </div>
+        )}
 
         {/* Timestamp */}
         {message.timestamp && (
