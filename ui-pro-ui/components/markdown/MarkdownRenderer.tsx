@@ -1,50 +1,125 @@
 // MarkdownRenderer.tsx
-// Role: Converts markdown content to React elements with syntax-highlighted code blocks and inline code support
+'use client'
 
 import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import { memo, useMemo } from 'react'
 import { CodeBlock } from './CodeBlock'
 
-export function MarkdownRenderer({ content }: { content: string }) {
+interface MarkdownRendererProps {
+  content: string
+}
+
+/**
+ * Détecte automatiquement si le contenu ressemble à du code et l'encadre dans un bloc markdown.
+ * Cela permet d'activer le bouton de téléchargement même quand le LLM ne met pas de ```.
+ */
+function preprocessContent(content: string): string {
+  if (!content?.trim()) return ''
+
+  // Si le contenu contient déjà un ou plusieurs blocs de code → on ne touche à rien
+  if (content.includes('```')) return content
+
+  const trimmed = content.trim()
+  const lines = trimmed.split('\n')
+
+  // Patterns forts indiquant du code
+  const strongCodePatterns = [
+    /^def\s+\w+/,
+    /^async def\s+/,
+    /^class\s+\w+/,
+    /^function\s+\w+/,
+    /^const\s+\w+\s*=/,
+    /^let\s+\w+\s*=/,
+    /^import\s+/,
+    /^from\s+\w+\s+import/,
+    /^#include/,
+    /^printf/,
+    /^console\./,
+    /^print\(/,
+    /^await\s+/,
+    /=>[\s{]/,
+  ]
+
+  const hasStrongCodePattern = strongCodePatterns.some((regex) =>
+    lines.some((line) => regex.test(line))
+  )
+
+  // Détection plus souple
+  const hasCodeLikeContent =
+    trimmed.length > 80 &&
+    (trimmed.includes('def ') ||
+      trimmed.includes('print(') ||
+      trimmed.includes('console.') ||
+      trimmed.includes('function ') ||
+      trimmed.includes('import ') ||
+      /\{\s*\n/.test(trimmed) ||
+      content.split('\n').length > 10)
+
+  if (!hasStrongCodePattern && !hasCodeLikeContent) {
+    return content
+  }
+
+  // Détection du langage
+  let language = 'text'
+  if (/def |print\(|import |from .* import/.test(trimmed)) language = 'python'
+  else if (/function |const |let |console\.|=>/.test(trimmed)) language = 'javascript'
+  else if (/class .*\{|public |private |void /.test(trimmed)) language = 'java'
+  else if (/#include|std::|cout|cin/.test(trimmed)) language = 'cpp'
+  else if (/<\w+.*>.*<\/\w+>/.test(trimmed)) language = 'html'
+
+  return `\`\`\`${language}\n${trimmed}\n\`\`\``
+}
+
+const CodeComponent = ({ className, children, ...props }: any) => {
+  const match = /language-(\w+)/.exec(className || '')
+  const language = match?.[1] || 'text'
+
+  // Détection du code inline
+  const isInline = !match && !String(children).includes('\n')
+
+  if (isInline) {
+    return (
+      <code
+        className="bg-slate-800/80 px-1.5 py-0.5 rounded font-mono text-sm text-slate-200"
+        {...props}
+      >
+        {children}
+      </code>
+    )
+  }
+
+  // Code block
   return (
-    <div className="code-container overflow-hidden">
+    <CodeBlock
+      language={language}
+      value={String(children).replace(/\n$/, '')}
+    />
+  )
+}
+
+const PreComponent = ({ children }: any) => (
+  <div className="my-4 bg-slate-900 rounded-xl overflow-hidden border border-slate-700">
+    {children}
+  </div>
+)
+
+export const MarkdownRenderer = memo(function MarkdownRenderer({
+  content,
+}: MarkdownRendererProps) {
+  const processedContent = useMemo(() => preprocessContent(content), [content])
+
+  return (
+    <div className="markdown-renderer prose prose-invert prose-slate max-w-none">
       <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
         components={{
-          code({ className, children, node, ...props }) {
-            const match = /language-(\w+)/.exec(className || '')
-            const isInline = !match && !String(children).includes('\n')
-
-            if (match) {
-              return (
-                <CodeBlock
-                  language={match[1]}
-                  value={String(children)}
-                />
-              )
-            }
-
-            if (isInline) {
-              return <code className="bg-slate-800 px-1 rounded text-sm" {...props}>{children}</code>
-            }
-
-            // Block code (no language)
-            return (
-              <pre className="overflow-x-auto bg-slate-900 rounded-lg p-4 my-3 max-h-64" {...props}>
-                <code className="text-sm font-mono text-slate-100">{children}</code>
-              </pre>
-            )
-          },
-          pre({ children, ...props }) {
-            // Wrap all pre tags in isolated scrollable container
-            return (
-              <div className="bg-slate-900 rounded-lg overflow-hidden my-3 max-h-64 overflow-y-auto">
-                {children}
-              </div>
-            )
-          },
+          code: CodeComponent,
+          pre: PreComponent,
         }}
       >
-        {content}
+        {processedContent}
       </ReactMarkdown>
     </div>
   )
-}
+})

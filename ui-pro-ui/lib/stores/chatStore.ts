@@ -23,6 +23,7 @@ interface ChatStore extends ChatState {
   setCurrentMessage: (id: string, prompt: string) => void
   updateLastChunkIndex: (index: number) => void
   resetCurrentMessage: () => void
+  trimMessageHistory: () => void
   getPromptById: (id: string) => string | undefined
   // Logs
   logs: string[]
@@ -94,6 +95,12 @@ export const useChatStore = create<ChatStore>()(
 
       resetCurrentMessage: () =>
         set({ currentMessageId: null, lastReceivedChunkIndex: 0 }),
+      // Clear messageHistory periodically - keep only last 20 entries
+      trimMessageHistory: () =>
+        set((state) => {
+          const entries = Object.entries(state.messageHistory).slice(-20)
+          return { messageHistory: Object.fromEntries(entries) }
+        }),
 
       getPromptById: (id) => get().messageHistory[id],
 
@@ -101,7 +108,8 @@ export const useChatStore = create<ChatStore>()(
       logs: [],
       addLog: (message) =>
         set((state) => ({
-          logs: [...state.logs, message],
+          // Keep only last 100 logs to prevent memory bloat
+          logs: [...state.logs, message].slice(-100),
         })),
       clearLogs: () => set({ logs: [] }),
       
@@ -149,8 +157,10 @@ export const useChatStore = create<ChatStore>()(
             createdAt: now,
             updatedAt: now,
           }
+          // Keep only last 50 chats in history to prevent memory bloat
+          const updatedHistory = [newChat, ...history].slice(0, 50)
           set({
-            history: [newChat, ...history],
+            history: updatedHistory,
             currentChatId: newChat.id,
           })
         }
@@ -176,7 +186,8 @@ export const useChatStore = create<ChatStore>()(
 
       addMessage: (message) =>
         set((state) => ({
-          messages: [...state.messages, message],
+          // Keep only last 100 messages in memory to prevent memory bloat
+          messages: [...state.messages, message].slice(-100),
         })),
 
       updateLastMessage: (content, status) =>

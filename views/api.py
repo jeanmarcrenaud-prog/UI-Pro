@@ -105,15 +105,16 @@ class ThreadSafeStore:
         with self._lock:
             self._errors.append(error)
             if len(self._errors) > self._max_size:
-                self._errors.pop(0)
-    
-    @property
-    def sessions(self) -> Dict[str, Dict[str, Any]]:
-        with self._lock:
-            return self._sessions
+                self._errors = self._errors[-50:]  # Keep last 50 errors only
     
     def add_session(self, session_id: str, data: Dict[str, Any]) -> None:
         with self._lock:
+            # Limit total sessions to prevent memory bloat
+            if len(self._sessions) >= 50:
+                # Remove oldest sessions
+                oldest_keys = sorted(self._sessions.keys(), key=lambda k: self._sessions[k].get("last_activity", 0))[:10]
+                for k in oldest_keys:
+                    self._sessions.pop(k, None)
             self._sessions[session_id] = data
     
     def remove_session(self, session_id: str) -> None:
