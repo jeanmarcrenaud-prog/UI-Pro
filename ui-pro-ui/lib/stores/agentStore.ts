@@ -32,6 +32,14 @@ export const useAgentStore = create<AgentStore>((set, _get) => ({
   updateStep: (id, status) =>
     set((state) => {
       const stepIdx = state.steps.findIndex(s => s.id === id)
+      const currentStep = state.steps[stepIdx]
+      
+      // Don't allow status to go backwards (done -> active)
+      if (currentStep && currentStep.status === 'done' && status !== 'done') {
+        console.log('[agentStore] Ignoring backwards status update:', id, currentStep.status, '->', status)
+        return state
+      }
+      
       return {
         steps: state.steps.map((s) =>
           s.id === id ? { ...s, status } : s

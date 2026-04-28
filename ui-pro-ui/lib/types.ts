@@ -19,6 +19,8 @@ export interface Message {
   status?: MessageStatus
   timestamp?: string
   done?: boolean
+  message_id?: string  // For WebSocket message tracking
+  type?: string   // For WebSocket message type (step, token, done, error, etc.)
 }
 
 export interface AgentStep {

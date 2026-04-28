@@ -1,6 +1,7 @@
 // chatStore.ts
 // Role: Chat state store via Zustand with persistence - manages messages, loading state, error state,
 // chat history CRUD, logs, token count, and auto-generates chat titles from user messages
+// Also manages resume state for WebSocket reconnection
 
 // Chat Store - Zustand with event integration and history
 import { create } from 'zustand'
@@ -15,6 +16,14 @@ const LogEvents = {
 } as const
 
 interface ChatStore extends ChatState {
+  // Resume state for WebSocket reconnection
+  currentMessageId: string | null
+  lastReceivedChunkIndex: number
+  messageHistory: Record<string, string> // messageId -> prompt
+  setCurrentMessage: (id: string, prompt: string) => void
+  updateLastChunkIndex: (index: number) => void
+  resetCurrentMessage: () => void
+  getPromptById: (id: string) => string | undefined
   // Logs
   logs: string[]
   addLog: (message: string) => void
@@ -68,6 +77,26 @@ _initEventListeners()
 export const useChatStore = create<ChatStore>()(
   persist(
     (set, get) => ({
+      // Resume state
+      currentMessageId: null,
+      lastReceivedChunkIndex: 0,
+      messageHistory: {},
+
+      setCurrentMessage: (id, prompt) =>
+        set((state) => ({
+          currentMessageId: id,
+          lastReceivedChunkIndex: 0,
+          messageHistory: { ...state.messageHistory, [id]: prompt },
+        })),
+
+      updateLastChunkIndex: (index) =>
+        set({ lastReceivedChunkIndex: index }),
+
+      resetCurrentMessage: () =>
+        set({ currentMessageId: null, lastReceivedChunkIndex: 0 }),
+
+      getPromptById: (id) => get().messageHistory[id],
+
       // Logs
       logs: [],
       addLog: (message) =>

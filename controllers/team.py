@@ -1,3 +1,11 @@
+# controllers/team.py - Team Controller
+#
+# Role: Multi-agent coordination and task distribution
+# Used by: Orchestrator, team-based workflows
+# - Agent selection
+# - Task distribution
+# - Result aggregation
+
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
