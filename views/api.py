@@ -80,7 +80,7 @@ def _cleanup_sessions():
     # Get references to update
     global store
     if hasattr(store, '_sessions'):
-        expired = [k for k, v in list(store.sessions.items()) if now - v.get("last_activity", 0) > 3600]
+        expired = [k for k, v in list(store._sessions.items()) if now - v.get("last_activity", 0) > 3600]
         for k in expired:
             store.remove_session(k)
         if expired:
@@ -160,7 +160,7 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down UI-Pro API...")
     
     # Cleanup sessions
-    store.sessions.clear()
+    store._sessions.clear()
     logger.info("Sessions cleared")
 
 
