@@ -5,53 +5,48 @@
 ```
 ui-pro/
 ├── run.py                      # Launcher principal
-├── settings.py                 # Configuration centralisée
-├── app/
-│   └── launcher.py             # Démarrage des services
+├── models/
+│   └── settings.py             # Configuration centralisée (SOURCE UNIQUE)
 ├── core/                       # Core modules (canonical)
-│   ├── config.py               # Configuration
 │   ├── errors.py              # Hiérarchie d'exceptions
 │   ├── logger.py             # Logging standardisé
-│   ├── memory.py             # FAISS wrapper (canonical)
+│   ├── memory.py            # FAISS wrapper (canonical)
 │   ├── metrics.py           # Métriques
-│   ├── orchestrator_async.py # Pipeline agent
-│   ├── prompts.py            # Prompts centralisés
+│   ├── orchestrator_async.py # Pipeline agent (async)
 │   ├── state_manager.py      # Gestion d'état (canonical)
-│   ├── executor.py           # CodeExecutor (canonical)
-│   ├── code_review.py        # Code review (canonical)
-│   ├── constants.py           # Constantes
-│   └── events.py             # Event bus
-├── controllers/               # Coordination
-│   └── orchestrator.py       # Orchestrateur principal
+│   ├── executor.py         # CodeExecutor (canonical)
+│   ├── prompts.py          # Prompts centralisés
+│   ├── constants.py        # Constantes
+│   └── events.py          # Event bus
 ├── services/                  # Service layer
-│   ├── model_service.py     # Service modèle LLM
-│   ├── memory_service.py    # Service mémoire
-│   ├── streaming.py        # Streaming SSE/WS
-│   ├── tools.py            # Registre d'outils
-│   ├── llm_router.py      # Advanced routing
-│   └── agents.py           # Agent definitions
+│   ├── model_service.py    # Service modèle LLM
+│   ├── memory_service.py  # Service mémoire
+│   ├── streaming.py      # Streaming SSE/WS (async generator)
+│   ├── tools.py          # Registre d'outils
+│   ├── llm_router.py    # Advanced routing
+│   └── error_handler.py  # Error handling
 ├── llm/                     # LLM clients (canonical)
-│   ├── client.py           # OllamaClient (canonical)
-│   └── router.py           # Basic routing (canonical)
+│   ├── router.py          # Multi-model routing + OllamaClient
+│   └── __init__.py       # Re-exports depuis router
+├── controllers/               # Coordination (legacy - en cours de migration)
+│   └── websocket.py       # WebSocket handling
+├── adapters/                  # Adapters
+│   ├── llm/              # Re-exports depuis llm/
+│   └── executor/         # Re-exports depuis core
 ├── models/                   # Types only (NO logic)
-│   ├── settings.py        # Settings
-│   └── metrics.py         # Metrics types
-├── agents/                   # Agent system
-│   ├── agent.py           # Base agent
-│   ├── planner.py         # Planner
-│   └── react.py           # ReAct agent
-├── adapters/                  # Legacy adapters (deprecated)
-│   ├── executor/         # Re-exports from core
-│   ├── llm/             # Re-exports from llm/
-│   └── memory/           # FAISS adapter
-└── tests/                   # Test suite
-```
+│   ├── settings.py        # Settings (SOURCE UNIQUE)
+│   ├── config.py         # Pydantic config
+│   └── metrics.py        # Metrics types
 ├── views/                    # Couche API
-│   ├── api.py              # FastAPI app
-│   ├── dashboard.py        # Gradio UI
-│   └── logger.py
+│   ├── api.py            # FastAPI app
+│   ├── dashboard.py      # Gradio UI
+│   └── components/       # Gradio components
 ├── api/
-│   └── main.py             # FastAPI alternatif
+│   └── main.py          # FastAPI alternatif
+├── agents/                 # Agent system (legacy)
+│   ├── agent.py
+│   ├── planner.py
+│   └── react.py
 └── ui-pro-ui/               # Frontend Next.js
     ├── components/
     ├── features/
@@ -64,25 +59,13 @@ ui-pro/
 ## 🔄 Règles d'Import (Dependency Graph)
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                     DEPENDENCY FLOW                            │
-├─────────────────────────────────────────────────────────────────────────┤
-│  views/api.py ──→ controllers/* ──→ services/* ──→ adapters/*  │
-│       │              │                 │               │          │
-│       └──────────────┴─────────────────┴───────────────┘      │
-│                         ↓                                   │
-│                      core/*                                  │
-│                         ↓                                   │
-│                    models/*                                 │
-└─────────────────────────────────────────────────────────────────────────┘
-
-# TEXTE DIAGRAM EQUIVALENT:
-
-views → controllers → services → adapters
-   ↓       ↓           ↓           ↓
-  core ←──────────────┼───────────┘
-   ↓
-models
+views/api.py ──→ controllers/* ──→ services/* ──→ adapters/*
+     │              │                 │               │
+     └──────────────┴─────────────────┴───────────────┘
+                         ↓
+                      core/*
+                         ↓
+                    models/*
 
 # RÈGLES:
 # - views N'IMPORTE PAS services
@@ -90,7 +73,6 @@ models
 # - services N'IMPORTE PAS views
 # - adapters importé PAR services SEULEMENT
 # - core importé PAR tous
-# - agents N'IMPORTE PAS views
 ```
 
 ### Import autorisées
@@ -102,14 +84,10 @@ models
 | `services/*` | `adapters/*`, `core/*`, `models/*` |
 | `adapters/*` | `core/*`, `models/*` |
 | `core/*` | `models/*` |
-| `agents/*` | `core/*`, `models/*` ( JAMAIS `views/*` ) |
 
 ### Import INTERDITES
 
 ```python
-# ❌ INTERDIT - agents ne doit pas importer views
-from views.api import app  # NON!
-
 # ❌ INTERDIT - views ne doit pas importer services
 from services.chat_service import ChatService  # NON!
 
@@ -120,25 +98,24 @@ from services.chat_service import ChatService  # OUI!
 from core.events import emit_agent_step  # OUI!
 ```
 
-## 🎯 Frontière controllers/ vs services/
+## 🎯 Frontière Controllers/ vs Services/
 
 ### Controllers (coordination requête/réponse)
 - Reçoivent les requêtes HTTP/WS
 - Valident les entrées
-- appellent les services
--_forment les réponses
+- Appellent les services
+- Forment les réponses
 
 ### Services (orchestration pur)
 - Contiennent la logique métier
 - Orchestrent les adapters
 - Ne font PAS d'I/O direct (sauf adapters)
-- stateless
+- Stateless
 
 ## 📦 Constants Centralisées
 
 ### Backend (core/constants.py)
 ```python
-# WebSocket event types
 class WSEvent:
     TOKEN = "token"
     STEP = "step"
@@ -146,19 +123,11 @@ class WSEvent:
     DONE = "done"
     ERROR = "error"
 
-# Agent steps
 class AgentStep:
     ANALYZING = "analyzing"
     PLANNING = "planning"
     EXECUTING = "executing"
     REVIEWING = "reviewing"
-
-# Error codes
-class ErrorCode:
-    INVALID_INPUT = "INVALID_INPUT"
-    LLM_ERROR = "LLM_ERROR"
-    TOOL_ERROR = "TOOL_ERROR"
-    MEMORY_ERROR = "MEMORY_ERROR"
 ```
 
 ### Frontend (ui-pro-ui/lib/constants.ts)
@@ -176,13 +145,6 @@ export const AGENT_STEPS = {
   PLANNING: 'planning', 
   EXECUTING: 'executing',
   REVIEWING: 'reviewing',
-} as const;
-
-export const ERROR_CODES = {
-  INVALID_INPUT: 'INVALID_INPUT',
-  LLM_ERROR: 'LLM_ERROR',
-  TOOL_ERROR: 'TOOL_ERROR',
-  MEMORY_ERROR: 'MEMORY_ERROR',
 } as const;
 ```
 
@@ -221,23 +183,22 @@ async def llm_error_handler(request: Request, exc: LLMError):
 
 ## 📊 Configuration
 
-### Config YAML + .env (settings.py)
+### models/settings.py (Pydantic BaseSettings)
 
-> **config.yaml** est utilise par `settings.py` comme source principale. Les valeurs sont overridees via variables d'environnement (fichier `.env` gitignore).
+> **settings.py** est la SOURCE UNIQUE de configuration. Les valeurs sont overridées via variables d'environnement (fichier `.env` gitignore).
 
 ```
-config.yaml (base) ──→ .env (override) ──→ Settings class
+.env (override) ──→ Settings class
 ```
 
-### settings.py (Pydantic BaseSettings)
 ```python
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     # LLM
-    ollama_url: str = "http://localhost:11434/api/generate"
-    model_fast: str = "qwen3.5:9b"
-    model_reasoning: str = "qwen3.5:9b"
+    ollama_url: str = "http://localhost:11434"
+    model_fast: str = "qwen2.5:7b"
+    model_reasoning: str = "qwen2.5:32b"
     llm_timeout: int = 30
     
     # Executor
@@ -252,22 +213,7 @@ class Settings(BaseSettings):
         env_file_encoding = "utf-8"
 ```
 
-### settings.local.yaml (git ignoré)
-```yaml
-# Override pour développement local
-ollama_url: "http://localhost:11434/api/generate"
-log_level: "DEBUG"
-```
-
 ## 🧪 Tests
-
-### Couverture cible
-| Module | Cible |
-|--------|-------|
-| controllers/executor | 80%+ |
-| services/chat_service | 70%+ |
-| adapters/llm | 70%+ |
-| adapters/faiss | 80%+ |
 
 ### Commandes
 ```bash
@@ -280,27 +226,17 @@ cd ui-pro-ui && npm run lint
 
 ## 🔧 Outils Qualité
 
-### mypy.ini
-```ini
-[mypy]
+### pyproject.toml
+```toml
+[tool.mypy]
 strict = true
 warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = false
 
-[mypy-pytest.*]
-ignore_missing_imports = true
+[tool.black]
+line-length = 120
 
-[mypy-gradio.*]
-ignore_missing_imports = true
-```
-
-### .flake8
-```ini
-[flake8]
-max-line-length = 120
-exclude = .git,__pycache__,.venv
-ignore = E203,W503
+[tool.isort]
+profile = "black"
 ```
 
 ## 📡 Routes API
@@ -312,6 +248,7 @@ ignore = E203,W503
 | `/api/tools` | tools | Outils disponibles |
 | `/api/history` | history | Historique |
 | `/ws` | ws | WebSocket streaming |
+| `/health` | health | Health check |
 
 ## 🔄 Flux Backend
 
@@ -320,11 +257,9 @@ Request HTTP
     ↓
 views/api.py (FastAPI)
     ↓
-controllers/orchestrator.py
+services/streaming.py (async generator)
     ↓
-services/chat_service.py
-    ↓
-adapters/llm/client.py (canonical)
+llm/router.py (OllamaClient)
     ↓
 Ollama API
 ```
@@ -346,11 +281,47 @@ ui-pro-ui/
 | Feature | Implementation |
 |---------|---------------|
 | Sandbox | tempfile.mkdtemp + subprocess |
-| Sanitization | AST-based (eval/exec/open bloqués) |
-| Memory limit | resource.setrlimit (512MB) |
+| Sanitization | AST-based (eval/exec open bloqués) |
+| Memory limit | 512MB cap |
 | API key | Depends(verify_api_key) sur /status |
 | CORS | Middleware configuré via env |
 
+## 📝 Fichiers Supprimés (Refactoring)
+
+| Ancien | Nouveau |
+|--------|---------|
+| `llm/client.py` | `llm/router.py` (OllamaClient, ModelConfig) |
+| `core/config.py` | `models/settings.py` (Settings singleton) |
+| `controllers/orchestrator.py` | `core/orchestrator_async.py` |
+| `controllers/llm_client.py` | `services/model_service.py` |
+| `controllers/team.py` | `services/tools.py` |
+| `config.yaml` | `.env` uniquement |
+
+## 🔥 Streaming Service (services/streaming.py)
+
+### Async Generator Lifecycle
+
+```python
+async def stream_generate(...) -> AsyncIterator[StreamChunk]:
+    # Lifecycle: STARTING → GENERATING → (COMPLETED | ERROR | CANCELLED)
+    
+    yield StreamChunk(status=StreamStatus.STARTING, ...)
+    
+    for chunk in client.stream(...):
+        yield StreamChunk(status=StreamStatus.GENERATING, ...)
+    
+    yield StreamChunk(status=StreamStatus.COMPLETED, ...)
+    # OU
+    yield StreamChunk(status=StreamStatus.ERROR, ...)
+    # OU
+    yield StreamChunk(status=StreamStatus.CANCELLED, ...)
+```
+
+### Guarantees
+- Exactly ONE terminal event (COMPLETED/ERROR/CANCELLED)
+- Proper cleanup in `finally` block
+- Safe cancellation via `current_task.cancelled()`
+
 ---
 
-**Dernière mise à jour**: 2026-04-12
+**Dernière mise à jour**: 2026-04-29
