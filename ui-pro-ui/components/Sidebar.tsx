@@ -7,6 +7,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useUIStore } from '@/lib/stores/uiStore'
 import { useChatStore } from '@/lib/stores/chatStore'
+import { useI18n } from '@/lib/i18n'
 import { modelDiscovery } from '@/services/modelDiscovery'
 import { motion, AnimatePresence } from 'framer-motion'
 
@@ -32,11 +33,10 @@ interface SidebarProps {
   onNewChat?: () => void
 }
 
-// Data: Navigation tabs configuration
-const NAVIGATION_TABS: readonly Tab[] = [
-  { id: 'chat', label: 'Chat', icon: '💬' },
-  { id: 'history', label: 'History', icon: '📜' },
-  { id: 'settings', label: 'Settings', icon: '⚙️' },
+const getNavigationTabs = (t: ReturnType<typeof useI18n>) => [
+  { id: 'chat', label: t.sidebar.chat, icon: '💬' },
+  { id: 'history', label: t.sidebar.history, icon: '📜' },
+  { id: 'settings', label: t.sidebar.settings, icon: '⚙️' },
 ] as const
 
 // Component: LoadingIndicator
@@ -69,7 +69,7 @@ function LoadingIndicator() {
         className="w-3 h-3 border border-slate-400 border-t-transparent rounded-full"
       />
       <span className="flex items-center gap-1.5">
-        Discovering models
+        t.sidebar.discoverModels}
         <motion.span
           animate={{ opacity: [0.3, 1, 0.3] }}
           transition={{
@@ -129,7 +129,7 @@ function ModelSelectDropdown({
           >
             {availableModels.length === 0 ? (
               <option value="" disabled>
-                No models found
+                t.sidebar.noModelsFound
               </option>
             ) : (
               availableModels.map((model) => (
@@ -227,6 +227,7 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
   } = useUIStore()
 
   const { history, loadChat, deleteChat } = useChatStore()
+  const t = useI18n()
 
   const [isLoadingModels, setIsLoadingModels] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -345,7 +346,7 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
           aria-label="Create new chat"
         >
           <span className="text-lg" aria-hidden="true">+</span>
-          New Chat
+t.sidebar.newChat}
         </button>
       </div>
 
@@ -378,13 +379,13 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
           aria-label="Refresh model list"
         >
           <span className="text-sm" aria-hidden="true">↻</span>
-          Refresh models
+          t.sidebar.refreshModels}
         </button>
       </div>
 
       {/* Navigation Tabs */}
       <nav className="px-2 space-y-1" aria-label="Main navigation">
-        {NAVIGATION_TABS.map((tab) => (
+        {getNavigationTabs(t).map((tab) => (
           <button
             key={tab.id}
             onClick={() => onTabChange(tab.id)}
@@ -440,13 +441,13 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
       {/* Chat History */}
       <div className="flex-1 overflow-y-auto mt-2 px-2">
         <div className="px-3 py-2 text-xs text-slate-500 font-medium border-b border-slate-800/60">
-          Recent Chats
+          t.sidebar.recentChats
         </div>
 
         {/* Empty state */}
         {history.length === 0 ? (
           <div className="px-3 py-4 text-xs text-slate-600 text-center italic">
-            No chats yet. Start a new one!
+            t.sidebar.noChatsYet}
           </div>
         ) : (
           /* History items */
@@ -472,7 +473,7 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
           <span className="text-violet-400 font-mono">v1.0</span>
         </div>
         <div className="text-slate-600">
-          {availableModels.length} model{availableModels.length !== 1 ? 's' : ''} • Ollama 🦙
+          {availableModels.length} model{availableModels.length !== 1 ? 's' : ''} • {t.sidebar.ollama} 🦙
         </div>
       </div>
     </aside>

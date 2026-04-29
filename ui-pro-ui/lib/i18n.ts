@@ -52,9 +52,57 @@ codeBlock: {
     running: 'Exécution...'
   }
   history: {
+    title: 'Historique'
+    empty: 'Aucune conversation'
+    confirmDelete: 'Confirmer?'
+  }
+  sidebar: {
+    newChat: 'Nouveau Chat'
+    recentChats: 'Conversations Récentes'
+    noChatsYet: 'Pas encore de conversations. Commencez un nouveau!'
+    discoverModels: 'Détection des modèles...'
+    noModelsFound: 'Aucun modèle trouvé'
+    refreshModels: 'Actualiser les modèles'
+    ollama: 'Ollama'
+    chat: 'Discussion'
+    settings: 'Paramètres'
+    history: 'Historique'
+  }
+}
+  history: {
+    title: 'History'
+    empty: 'No conversations yet'
+    confirmDelete: 'Confirm?'
+  }
+  sidebar: {
+    newChat: 'New Chat'
+    recentChats: 'Recent Chats'
+    noChatsYet: 'No chats yet. Start a new one!'
+    discoverModels: 'Discovering models...'
+    noModelsFound: 'No models found'
+    refreshModels: 'Refresh models'
+    ollama: 'Ollama'
+    chat: 'Chat'
+    settings: 'Settings'
+    history: 'History'
+  }
+}
+  history: {
     title: string
     empty: string
     confirmDelete: string
+  }
+  sidebar: {
+    newChat: string
+    recentChats: string
+    noChatsYet: string
+    discoverModels: string
+    noModelsFound: string
+    refreshModels: string
+    ollama: string
+    chat: string
+    settings: string
+    history: string
   }
 }
 
