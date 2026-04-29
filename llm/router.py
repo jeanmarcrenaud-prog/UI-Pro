@@ -12,10 +12,111 @@
 #   llm = router.get_for_task("debug")    # reasoning
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Optional, Iterator
 import logging
+from models.settings import settings
 
-from llm.client import OllamaClient, ModelConfig
+# Define ModelConfig and OllamaClient locally since we removed llm/client.py
+@dataclass
+class ModelConfig:
+    """Configuration for LLM backend"""
+    url: str = ""
+    model: str = ""
+    timeout: int = 30
+
+    def __post_init__(self):
+        # Values are set explicitly in _create_model_config
+        pass
+
+
+class OllamaClient:
+    """Ollama local LLM client."""
+
+    def __init__(self, config: ModelConfig = None):
+        self.config = config or ModelConfig()
+
+    def generate(
+        self, 
+        prompt: str, 
+        model: str = None,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7
+    ) -> str:
+        """Generate response from Ollama."""
+        import json
+        import requests
+
+        model = model or self.config.model
+        url = self.config.url or f"{settings.ollama_url}/api/generate"
+
+        payload = {
+            "model": model,
+            "prompt": prompt,
+            "system": system_prompt or "",
+            "stream": False,
+            "options": {"temperature": temperature}
+        }
+
+        try:
+            response = requests.post(
+                url, 
+                json=payload, 
+                timeout=self.config.timeout
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data.get('response', '')
+        except requests.RequestException as e:
+            logger.error(f"Ollama request failed: {e}")
+            return f"[OllamaError: {e}]"
+
+    def stream(
+        self, 
+        prompt: str, 
+        model: str = None,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7
+    ) -> Iterator[str]:
+        """Stream response from Ollama."""
+        import json
+        import requests
+
+        model = model or self.config.model
+        url = self.config.url or f"{settings.ollama_url}/api/generate"
+
+        payload = {
+            "model": model,
+            "prompt": prompt,
+            "system": system_prompt or "",
+            "stream": True,
+            "options": {"temperature": temperature}
+        }
+
+        try:
+            with requests.post(
+                url, 
+                json=payload, 
+                stream=True,
+                timeout=self.config.timeout
+            ) as r:
+                r.raise_for_status()
+                for line in r.iter_lines():
+                    if line:
+                        text = line.decode().strip()
+                        if not text:
+                            continue
+                        # Parse JSON line from Ollama
+                        try:
+                            data = json.loads(text)
+                            content = data.get('response', '')
+                            if content:
+                                yield content
+                            if data.get('done', False):
+                                break
+                        except json.JSONDecodeError:
+                            logger.warning(f"Failed to parse stream line: {text[:50]}")
+        except requests.RequestException as e:
+            yield f"[Error: {e}]"
 
 logger = logging.getLogger(__name__)
 

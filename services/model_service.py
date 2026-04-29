@@ -307,7 +307,7 @@ class ModelService(BaseService):
     
     def _get_client_for_model(self, model_config: ModelConfig):
         """Create LLM client for specific model"""
-        from llm.client import OllamaClient, ModelConfig as LlmModelConfig
+        from llm.router import OllamaClient, ModelConfig as LlmModelConfig
         
         return OllamaClient(LlmModelConfig(
             url=model_config.endpoint,
