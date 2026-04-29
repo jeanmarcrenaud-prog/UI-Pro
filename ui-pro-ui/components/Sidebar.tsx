@@ -69,8 +69,8 @@ function LoadingIndicator() {
         className="w-3 h-3 border border-slate-400 border-t-transparent rounded-full"
       />
       <span className="flex items-center gap-1.5">
-        t.sidebar.discoverModels}
-        <motion.span
+          {t.sidebar.discoverModels}
+          <motion.span
           animate={{ opacity: [0.3, 1, 0.3] }}
           transition={{
             repeat: Infinity,
@@ -345,8 +345,8 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
           "
           aria-label="Create new chat"
         >
-          <span className="text-lg" aria-hidden="true">+</span>
-t.sidebar.newChat}
+<span className="text-lg" aria-hidden="true">+</span>
+          {t.sidebar.newChat}
         </button>
       </div>
 
@@ -379,7 +379,7 @@ t.sidebar.newChat}
           aria-label="Refresh model list"
         >
           <span className="text-sm" aria-hidden="true">↻</span>
-          t.sidebar.refreshModels}
+          {t.sidebar.refreshModels}
         </button>
       </div>
 
@@ -447,7 +447,7 @@ t.sidebar.newChat}
         {/* Empty state */}
         {history.length === 0 ? (
           <div className="px-3 py-4 text-xs text-slate-600 text-center italic">
-            t.sidebar.noChatsYet}
+            {t.sidebar.noChatsYet}
           </div>
         ) : (
           /* History items */
