@@ -2,7 +2,7 @@
 
 ## 🎨 Overview
 
-This is the official design system for UI-Pro - a SaaS-level, ChatGPT-like AI chat interface built with Next.js 14, Tailwind CSS 3.8, and TypeScript.
+This is the official design system for UI-Pro - a SaaS-level, ChatGPT-like AI chat interface built with Next.js 16, React 18, Tailwind CSS 4, and TypeScript.
 
 ---
 
@@ -10,11 +10,13 @@ This is the official design system for UI-Pro - a SaaS-level, ChatGPT-like AI ch
 
 ```
 ui-pro-ui/
-├── styles/
-│   └── tokens.ts           # Design system tokens (colors, spacing, typography)
+├── app/
+│   ├── page.tsx            # Main chat page
+│   ├── layout.tsx          # Root layout
+│   └── globals.css          # Global styles with CSS variables
 │
 ├── components/
-│   ├── ui/                # Atomic UI components
+│   ├── ui/                    # Atomic UI components
 │   │   ├── Button.tsx
 │   │   ├── Card.tsx
 │   │   ├── Input.tsx
@@ -23,36 +25,58 @@ ui-pro-ui/
 │   │   ├── Badge.tsx
 │   │   └── index.ts
 │   │
-│   ├── chat/              # Chat-specific components
+│   ├── chat/                  # Chat-specific components
 │   │   ├── MessageBubble.tsx
 │   │   ├── TypingIndicator.tsx
 │   │   ├── ChatMessages.tsx
 │   │   ├── AgentSteps.tsx
+│   │   ├── StepProgress.tsx
 │   │   └── index.ts
 │   │
-│   └── agent/             # Agent workflow components
+│   └── agent/                 # Agent workflow components
 │       ├── StepItem.tsx
 │       ├── AgentSteps.tsx
 │       └── index.ts
 │
-├── tailwind.config.js     # Tailwind extended theme
-└── app/
-    ├── globals.css        # Global styles with CSS variables
-    └── layout.tsx         # Root layout
+├── features/                  # Business logic
+│   ├── chat/
+│   │   ├── ChatInput.tsx
+│   │   └── useChat.ts
+│   └── settings/
+│       └── SettingsModal.tsx
+│
+├── services/                  # API layer
+│   ├── apiClient.ts       # HTTP client
+│   ├── streamService.ts  # WebSocket/SSE streaming
+│   └── wsClient.ts       # WebSocket client
+│
+├── stores/                   # Zustand state management
+│   ├── chatStore.ts      # Chat messages, streaming state
+│   └── settingsStore.ts # User settings
+│
+├── lib/
+│   ├── constants.ts     # Shared constants
+│   ├── types.ts        # TypeScript types
+│   └── utils.ts        # Utility functions
+│
+├── styles/
+│   └── tokens.ts      # Design system tokens
+│
+├── tailwind.config.ts    # Tailwind 4 config
+└── package.json
 ```
 
 ---
 
 ## 🎨 Design Tokens
 
-### Colors
+### Colors (Dark Theme)
 
 ```typescript
-// Dark theme base (SaaS production quality)
 bg: {
   primary: '#020617',     // Deep dark background
-  secondary: '#0f172a',   // Panels and content areas
-  tertiary: '#020617cc',  // Overlays
+  secondary: '#0f172a', // Panels and content areas
+  tertiary: '#0f172acc', // Overlays
 }
 
 surface: {
@@ -69,15 +93,15 @@ border: {
 
 text: {
   primary: '#f8fafc',
-  secondary: '#cbd5f5',
+  secondary: '#cbd5e1',
   muted: '#64748b',
   disabled: '#475569',
 }
 
 accent: {
-  primary: '#7c3aed',      // Violet (brand)
-  hover: '#6d28d9',
-  soft: '#a78bfa33',
+  primary: '#8b5cf6',     // Violet (brand)
+  hover: '#7c3aed',
+  soft: '#8b5cf633',
 }
 
 // Status colors
@@ -88,27 +112,27 @@ error: '#ef4444'
 
 ### Spacing
 
-```
-xs: 4px
-sm: 8px
-md: 12px
-lg: 16px
-xl: 24px
-xxl: 32px
-```
+| Token | Value |
+|-------|-------|
+| xs | 4px |
+| sm | 8px |
+| md | 12px |
+| lg | 16px |
+| xl | 24px |
+| xxl | 32px |
 
 ### Typography
 
-```
-xs: 12px
-sm: 13px
-md: 14px
-lg: 16px
-xl: 18px
-xxl: 20px
+| Token | Value |
+|-------|-------|
+| xs | 12px |
+| sm | 13px |
+| md | 14px |
+| lg | 16px |
+| xl | 18px |
+| xxl | 20px |
 
-font: 'Inter, sans-serif'
-```
+Font: 'Inter, sans-serif'
 
 ---
 
@@ -119,16 +143,17 @@ font: 'Inter, sans-serif'
 ```tsx
 import { Button } from '@/components/ui'
 
-<Button variant="primary">Primary</Button>
-<Button variant="secondary">Secondary</Button>
-<Button variant="ghost">Ghost</Button>
-<Button variant="danger">Danger</Button>
+<Button variant="primary" size="md">
+  Send
+</Button>
 
-// With loading state
-<Button isLoading={true}>Loading...</Button>
+<Button variant="secondary" size="sm">
+  Cancel
+</Button>
 
-// With icon
-<Button icon={<span>➤</span>}>Submit</Button>
+<Button variant="ghost" size="lg">
+  Learn more
+</Button>
 ```
 
 ### Input & Textarea
@@ -160,7 +185,7 @@ import { Badge } from '@/components/ui'
 <Badge variant="processing">⚙️ Processing</Badge>
 ```
 
-### Message Bubble
+### MessageBubble
 
 ```tsx
 import { MessageBubble } from '@/components/chat'
@@ -170,6 +195,82 @@ import { MessageBubble } from '@/components/chat'
   role="assistant" 
   content={<AgentSteps />}
 />
+```
+
+### AgentSteps
+
+```tsx
+import { AgentSteps } from '@/components/chat'
+
+<AgentSteps
+  steps={[
+    { id: 'analyzing', label: 'Analyzing', status: 'completed' },
+    { id: 'planning', label: 'Planning', status: 'active' },
+    { id: 'executing', label: 'Executing', status: 'pending' },
+    { id: 'reviewing', label: 'Reviewing', status: 'pending' },
+  ]}
+/>
+```
+
+---
+
+## 📦 Stores (Zustand)
+
+### chatStore
+
+```typescript
+import { useChatStore } from '@/stores/chatStore'
+
+// State
+messages: Message[]
+isStreaming: boolean
+streamId: string | null
+
+// Actions
+addMessage(message: Message)
+setStreaming(streaming: boolean)
+clearMessages()
+```
+
+### settingsStore
+
+```typescript
+import { useSettingsStore } from '@/stores/settingsStore'
+
+// State
+defaultModel: string
+temperature: number
+maxTokens: number
+
+// Actions
+setDefaultModel(model: string)
+setTemperature(temp: number)
+```
+
+---
+
+## 📡 API Integration
+
+### HTTP Client
+
+```typescript
+import { apiClient } from '@/services/apiClient'
+
+const response = await apiClient.post('/api/chat', {
+  message: 'Hello',
+  model: 'qwen2.5:7b',
+})
+```
+
+### Streaming
+
+```typescript
+import { streamService } from '@/services/streamService'
+
+for await (const chunk of streamService.connect(prompt)) {
+  // StreamStatus: STARTING | GENERATING | COMPLETED | ERROR
+  console.log(chunk.text, chunk.status)
+}
 ```
 
 ---
@@ -210,6 +311,9 @@ npm start
 - ✅ **Responsive** - Mobile-first design
 - ✅ **Micro-interactions** - Hover/active states
 - ✅ **Loading states** - Proper feedback
+- ✅ **WebSocket streaming** - Real-time token streaming
+- ✅ **Step tracking** - Visible agent workflow
+- ✅ **Code highlighting** - Syntax highlighting for code blocks
 
 ---
 
@@ -241,9 +345,13 @@ MIT License
 ## 🤝 Credits
 
 Built with:
-- **Next.js** 14
+- **Next.js** 16
 - **React** 18
-- **Tailwind CSS** 3.8
+- **Tailwind CSS** 4
 - **TypeScript** 5.x
 - **Framer Motion** for animations
 - **Zustand** for state management
+
+---
+
+**Dernière mise à jour**: 2026-04-29
