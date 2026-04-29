@@ -5,13 +5,8 @@
 export type Locale = 'en' | 'fr'
 
 export interface Translations {
-  welcome: {
-    title: string
-    subtitle: string
-  }
-  input: {
-    placeholder: string
-  }
+  welcome: { title: string; subtitle: string }
+  input: { placeholder: string }
   steps: {
     analyzing: string
     planning: string
@@ -22,12 +17,8 @@ export interface Translations {
     processing: string
     stepLabel: (current: number, total: number) => string
   }
-  streaming: {
-    generating: string
-  }
-  loading: {
-    dots: string
-  }
+  streaming: { generating: string }
+  loading: { dots: string }
   settings: {
     title: string
     subtitle: string
@@ -65,14 +56,36 @@ export interface Translations {
   }
 }
 
+// Get current locale from localStorage or default to 'en'
+function getCurrentLocale(): Locale {
+  if (typeof window !== 'undefined') {
+    return (localStorage.getItem('locale') as Locale) || 'en'
+  }
+  return 'en'
+}
+
+// Get translations based on current locale
+export function useI18n(): Translations {
+  return translations[getCurrentLocale()]
+}
+
+// Get translations for specific locale
+export function getTranslations(locale: Locale): Translations {
+  return translations[locale]
+}
+
+// Step ID to translation key mapping
+export const STEP_STATUS_LABELS: Record<string, keyof Translations['steps']> = {
+  'step-analyzing': 'analyzing',
+  'step-planning': 'planning',
+  'step-executing': 'executing',
+  'step-reviewing': 'reviewing',
+}
+
+// ==================== ENGLISH ====================
 const en: Translations = {
-  welcome: {
-    title: 'Welcome to UI-Pro',
-    subtitle: 'AI Agent System',
-  },
-  input: {
-    placeholder: 'Describe your task...',
-  },
+  welcome: { title: 'Welcome to UI-Pro', subtitle: 'AI Agent System' },
+  input: { placeholder: 'Describe your task...' },
   steps: {
     analyzing: 'Analyzing request...',
     planning: 'Planning solution...',
@@ -81,14 +94,10 @@ const en: Translations = {
     complete: 'Complete',
     initializing: 'Initializing...',
     processing: 'Processing step...',
-    stepLabel: (current, total) => `Step ${current}/${total}`,
+    stepLabel: (c, t) => `Step ${c}/${t}`,
   },
-  streaming: {
-    generating: 'Generating response...',
-  },
-  loading: {
-    dots: 'Loading',
-  },
+  streaming: { generating: 'Generating response...' },
+  loading: { dots: 'Loading' },
   settings: {
     title: 'Settings',
     subtitle: 'Configure AI models and backend connections',
@@ -114,26 +123,14 @@ const en: Translations = {
     tokens: 'Tokens',
     agentExecution: 'Agent Execution',
   },
-  codeBlock: {
-    copy: 'Copy',
-    copied: 'Copied',
-    save: 'Save',
-  },
-  history: {
-    title: 'History',
-    empty: 'No conversations yet',
-    confirmDelete: 'Confirm?',
-  },
+  codeBlock: { copy: 'Copy', copied: 'Copied', save: 'Save' },
+  history: { title: 'History', empty: 'No conversations yet', confirmDelete: 'Confirm?' },
 }
 
+// ==================== FRENCH ====================
 const fr: Translations = {
-  welcome: {
-    title: 'Bienvenue sur UI-Pro',
-    subtitle: 'Système d\'Agents IA',
-  },
-  input: {
-    placeholder: 'Décrivez votre tâche...',
-  },
+  welcome: { title: 'Bienvenue sur UI-Pro', subtitle: "Système d'Agents IA" },
+  input: { placeholder: 'Décrivez votre tâche...' },
   steps: {
     analyzing: 'Analyse en cours...',
     planning: 'Planification en cours...',
@@ -142,14 +139,10 @@ const fr: Translations = {
     complete: 'Terminé',
     initializing: 'Initialisation...',
     processing: 'Traitement...',
-    stepLabel: (current, total) => `Étape ${current}/${total}`,
+    stepLabel: (c, t) => `Étape ${c}/${t}`,
   },
-  streaming: {
-    generating: 'Génération en cours...',
-  },
-  loading: {
-    dots: 'Chargement',
-  },
+  streaming: { generating: 'Génération en cours...' },
+  loading: { dots: 'Chargement' },
   settings: {
     title: 'Paramètres',
     subtitle: 'Configurez les modèles IA et les connexions backend',
@@ -175,36 +168,8 @@ const fr: Translations = {
     tokens: 'Tokens',
     agentExecution: 'Exécution Agent',
   },
-  codeBlock: {
-    copy: 'Copier',
-    copied: 'Copié',
-    save: 'Enregistrer',
-  },
-  history: {
-    title: 'Historique',
-    empty: 'Aucune conversation',
-    confirmDelete: 'Confirmer?',
-  },
+  codeBlock: { copy: 'Copier', copied: 'Copié', save: 'Enregistrer' },
+  history: { title: 'Historique', empty: 'Aucune conversation', confirmDelete: 'Confirmer?' },
 }
 
 export const translations = { en, fr }
-
-// Simple hook to get translations with current locale
-import { useStore } from '@/stores/uiStore'
-
-export function useI18n() {
-  const locale = useStore((s) => s.locale) as Locale
-  return translations[locale]
-}
-
-export function getTranslations(locale: Locale): Translations {
-  return translations[locale]
-}
-
-// Step ID to translation key mapping
-export const STEP_STATUS_LABELS: Record<string, keyof Translations['steps']> = {
-  'step-analyzing': 'analyzing',
-  'step-planning': 'planning',
-  'step-executing': 'executing',
-  'step-reviewing': 'reviewing',
-}
