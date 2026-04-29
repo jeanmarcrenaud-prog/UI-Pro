@@ -44,10 +44,12 @@ export interface Translations {
     tokens: string
     agentExecution: string
   }
-  codeBlock: {
-    copy: string
-    copied: string
-    save: string
+codeBlock: {
+    copy: 'Copier'
+    copied: 'Copié'
+    save: 'Enregistrer'
+    run: 'Exécuter'
+    running: 'Exécution...'
   }
   history: {
     title: string

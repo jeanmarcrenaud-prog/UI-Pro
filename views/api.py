@@ -691,6 +691,57 @@ async def stream_endpoint(prompt: str):
 from services.streaming import get_streaming_service
 
 
+class ExecuteRequest(BaseModel):
+    code: str
+    language: str = "python"
+    timeout: int = 30
+
+
+class ExecuteResponse(BaseModel):
+    result: str
+    status: str = "ok"
+    error: Optional[str] = None
+    execution_time_ms: float = 0.0
+
+
+@app.post("/api/execute", response_model=ExecuteResponse)
+async def execute_endpoint(request: ExecuteRequest):
+    """Execute code in sandbox and return output"""
+    import tempfile
+    import asyncio
+    start = time.time()
+    
+    try:
+        if request.language == "python":
+            from core.executor import CodeExecutor
+            executor = CodeExecutor(timeout=request.timeout)
+            
+            # Execute in temp file
+            result = executor.execute(request.code)
+            
+            return ExecuteResponse(
+                result=result["output"],
+                status="ok" if result.get("success", True) else "error",
+                error=result.get("error"),
+                execution_time_ms=(time.time() - start) * 1000
+            )
+        else:
+            return ExecuteResponse(
+                result="",
+                status="error",
+                error=f"Language not supported: {request.language}",
+                execution_time_ms=(time.time() - start) * 1000
+            )
+    except Exception as e:
+        logger.error(f"Execute error: {e}")
+        return ExecuteResponse(
+            result="",
+            status="error",
+            error=str(e),
+            execution_time_ms=(time.time() - start) * 1000
+        )
+
+
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
     """Chat endpoint for REST API (fallback when WebSocket fails)"""
