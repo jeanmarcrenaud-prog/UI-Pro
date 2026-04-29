@@ -42,6 +42,7 @@ const getNavigationTabs = (t: ReturnType<typeof useI18n>) => [
 // Component: LoadingIndicator
 // Displays loading state for model discovery
 function LoadingIndicator() {
+  const t = useI18n()
   return (
     <div
       className="
@@ -69,8 +70,8 @@ function LoadingIndicator() {
         className="w-3 h-3 border border-slate-400 border-t-transparent rounded-full"
       />
       <span className="flex items-center gap-1.5">
-          {t.sidebar.discoverModels}
-          <motion.span
+        {t.sidebar.discoverModels}
+        <motion.span
           animate={{ opacity: [0.3, 1, 0.3] }}
           transition={{
             repeat: Infinity,
