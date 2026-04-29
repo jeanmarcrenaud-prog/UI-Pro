@@ -44,49 +44,13 @@ export interface Translations {
     tokens: string
     agentExecution: string
   }
-codeBlock: {
-    copy: 'Copier'
-    copied: 'Copié'
-    save: 'Enregistrer'
-    run: 'Exécuter'
-    running: 'Exécution...'
+  codeBlock: {
+    copy: string
+    copied: string
+    save: string
+    run: string
+    running: string
   }
-  history: {
-    title: 'Historique'
-    empty: 'Aucune conversation'
-    confirmDelete: 'Confirmer?'
-  }
-  sidebar: {
-    newChat: 'Nouveau Chat'
-    recentChats: 'Conversations Récentes'
-    noChatsYet: 'Pas encore de conversations. Commencez un nouveau!'
-    discoverModels: 'Détection des modèles...'
-    noModelsFound: 'Aucun modèle trouvé'
-    refreshModels: 'Actualiser les modèles'
-    ollama: 'Ollama'
-    chat: 'Discussion'
-    settings: 'Paramètres'
-    history: 'Historique'
-  }
-}
-  history: {
-    title: 'History'
-    empty: 'No conversations yet'
-    confirmDelete: 'Confirm?'
-  }
-  sidebar: {
-    newChat: 'New Chat'
-    recentChats: 'Recent Chats'
-    noChatsYet: 'No chats yet. Start a new one!'
-    discoverModels: 'Discovering models...'
-    noModelsFound: 'No models found'
-    refreshModels: 'Refresh models'
-    ollama: 'Ollama'
-    chat: 'Chat'
-    settings: 'Settings'
-    history: 'History'
-  }
-}
   history: {
     title: string
     empty: string
@@ -173,8 +137,20 @@ const en: Translations = {
     tokens: 'Tokens',
     agentExecution: 'Agent Execution',
   },
-  codeBlock: { copy: 'Copy', copied: 'Copied', save: 'Save' },
+  codeBlock: { copy: 'Copy', copied: 'Copied', save: 'Save', run: 'Run', running: 'Running...' },
   history: { title: 'History', empty: 'No conversations yet', confirmDelete: 'Confirm?' },
+  sidebar: {
+    newChat: 'New Chat',
+    recentChats: 'Recent Chats',
+    noChatsYet: 'No chats yet. Start a new one!',
+    discoverModels: 'Discovering models...',
+    noModelsFound: 'No models found',
+    refreshModels: 'Refresh models',
+    ollama: 'Ollama',
+    chat: 'Chat',
+    settings: 'Settings',
+    history: 'History',
+  },
 }
 
 // ==================== FRENCH ====================
@@ -218,8 +194,20 @@ const fr: Translations = {
     tokens: 'Tokens',
     agentExecution: 'Exécution Agent',
   },
-  codeBlock: { copy: 'Copier', copied: 'Copié', save: 'Enregistrer' },
+  codeBlock: { copy: 'Copier', copied: 'Copié', save: 'Enregistrer', run: 'Exécuter', running: 'Exécution...' },
   history: { title: 'Historique', empty: 'Aucune conversation', confirmDelete: 'Confirmer?' },
+  sidebar: {
+    newChat: 'Nouveau Chat',
+    recentChats: 'Conversations Récentes',
+    noChatsYet: 'Pas encore de conversations. Commencez un nouveau!',
+    discoverModels: 'Détection des modèles...',
+    noModelsFound: 'Aucun modèle trouvé',
+    refreshModels: 'Actualiser les modèles',
+    ollama: 'Ollama',
+    chat: 'Discussion',
+    settings: 'Paramètres',
+    history: 'Historique',
+  },
 }
 
 export const translations = { en, fr }
