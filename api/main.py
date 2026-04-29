@@ -180,6 +180,59 @@ async def chat(request: ChatRequest):
         return ChatResponse(result=f"Error: {str(e)}", status="error")
 
 
+# ===================== EXECUTE ENDPOINT =====================
+class ExecuteRequest(BaseModel):
+    code: str
+    language: str = "python"
+    timeout: int = 30
+
+
+class ExecuteResponse(BaseModel):
+    result: str
+    status: str = "ok"
+    error: Optional[str] = None
+    execution_time_ms: float = 0.0
+
+
+@app.post("/api/execute", response_model=ExecuteResponse)
+async def execute(request: ExecuteRequest):
+    """Execute Python code in sandbox"""
+    start = time.time()
+    logger.info(f"[EXECUTE] received code: {request.code[:50]}...")
+    
+    try:
+        if request.language == "python":
+            from core.executor import CodeExecutor
+            executor = CodeExecutor(timeout=request.timeout)
+            result = executor.run(request.code)
+            
+            logger.info(f"[EXECUTE] result keys: {result.keys()}")
+            logger.info(f"[EXECUTE] stdout: {repr(result.get('stdout', ''))}")
+            logger.info(f"[EXECUTE] success: {result.get('success')}")
+            
+            return ExecuteResponse(
+                result=result.get("stdout", ""),
+                status="ok" if result.get("success", True) else "error",
+                error=result.get("stderr") or result.get("error"),
+                execution_time_ms=(time.time() - start) * 1000
+            )
+        else:
+            return ExecuteResponse(
+                result="",
+                status="error",
+                error=f"Language not supported: {request.language}",
+                execution_time_ms=(time.time() - start) * 1000
+            )
+    except Exception as e:
+        logger.error(f"Execute error: {e}")
+        return ExecuteResponse(
+            result="",
+            status="error",
+            error=str(e),
+            execution_time_ms=(time.time() - start) * 1000
+        )
+
+
 # ===================== WEBSOCKET WITH RESUME SUPPORT =====================
 @app.websocket("/ws")
 async def ws_endpoint(websocket: WebSocket):
