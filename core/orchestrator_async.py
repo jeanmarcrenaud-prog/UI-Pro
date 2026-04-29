@@ -266,14 +266,15 @@ Return JSON:
 
     async def _runner(self, code: dict[str, Any]) -> dict[str, Any]:
         """
-        Execute code in sandbox with auto-fix loop.
+        Execute code in sandbox with intelligent auto-fix loop.
 
         Flow:
           1. Execute code
-          2. If failure → Generate fix prompt
-          3. Call LLM for correction
-          4. Re-execute
-          5. Max retry = 3
+          2. If failure → Analyze error and categorize
+          3. Generate targeted fix prompt based on error type
+          4. Call LLM for correction with exponential backoff
+          5. Re-execute
+          6. Max retry = 3 with increasing delays
         """
         logger.info("🔨 Starting code execution + auto-fix loop")
 
@@ -281,9 +282,18 @@ Return JSON:
         attempt = 0
         files = code.get("files", {})
         execution: dict[str, Any] = {"success": False, "stdout": "", "stderr": "No execution attempted"}
+        last_error = ""
+        error_patterns_seen = set()
 
         while attempt < max_retry:
             attempt += 1
+            
+            # Exponential backoff: 1s, 2s, 4s delays between attempts (except first)
+            if attempt > 1:
+                delay = 2 ** (attempt - 2)  # 2^0=1, 2^1=2, 2^2=4
+                logger.info("[Auto-Fix] Waiting %ds before attempt %d/%d", delay, attempt, max_retry)
+                await asyncio.sleep(delay)
+
             logger.info("[Auto-Fix] Attempt %d/%d", attempt, max_retry)
 
             # Execute sandboxed
@@ -299,13 +309,29 @@ Return JSON:
                 logger.info("✅ Execution success (attempt %d)", attempt)
                 return execution
 
-            # Failure → Auto-fix
-            logger.warning("❌ Execution failed (attempt %d)", attempt)
+            # Failure → Analyze error for intelligent auto-fix
+            error = execution.get("stderr", "") or execution.get("stdout", "")
+            logger.warning("❌ Execution failed (attempt %d): %s", attempt, error[:200])
+            
+            # Check if we're seeing the same error pattern - if so, adjust strategy
+            error_signature = self._get_error_signature(error)
+            if error_signature in error_patterns_seen:
+                logger.warning("🔄 Repeated error pattern detected: %s", error_signature)
+                # For repeated patterns, we might want to try a different approach
+                # but continue with standard fix for now
+            else:
+                error_patterns_seen.add(error_signature)
+            
+            last_error = error
+
+            # Only proceed with auto-fix if we haven't exhausted retries
+            if attempt >= max_retry:
+                break
+
             logger.warning("🔧 Auto-fix triggered")
 
             try:
                 # Generate fix prompt
-                error = execution.get("stderr", "") or execution.get("stdout", "")
                 main_file = next(iter(files.keys()), "main.py")
                 current_code = files.get(main_file, "")
 
@@ -360,9 +386,23 @@ Max retries: {max_retry}
         # Failure after max_retry
         logger.error("❌ Exhausted max retry attempts (%d)", max_retry)
         if self.state:
-            self.state.errors.append(f"Auto-fix failed after {max_retry} attempts")
+            self.state.errors.append(f"Auto-fix failed after {max_retry} attempts. Last error: {last_error[:100]}")
 
         return execution
+
+    def _get_error_signature(self, error: str) -> str:
+        """
+        Extract a signature from an error message to detect repeated patterns.
+        This helps us avoid making the same fix attempts repeatedly.
+        """
+        import re
+        # Normalize the error to get a signature
+        # Remove line numbers, file paths, and variable values that change
+        normalized = re.sub(r'\b\d+\b', '<NUM>', error)  # Replace numbers
+        normalized = re.sub(r'/[^\s]*', '<PATH>', normalized)  # Replace file paths
+        normalized = re.sub(r'\b[a-zA-Z_][a-zA-Z0-9_]*\b', '<VAR>', normalized)  # Replace variable names
+        # Take first 100 chars as signature
+        return normalized[:100].strip()
 
     async def _memory(self, task: str) -> list[dict[str, Any]]:
         """

@@ -8,6 +8,7 @@
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
 from datetime import datetime
+import uuid
 import json
 import logging
 
@@ -141,11 +142,10 @@ class StateManager:
         if task_id:
             state_id = task_id
         else:
-            import uuid
             state_id = str(uuid.uuid4())[:8]
         
         state.task_id = state_id
-        self._states[task_id] = state
+        self._states[state_id] = state
         
         if self.auto_save:
             state.save_json(f"{self.save_dir}/{state_id}.json")

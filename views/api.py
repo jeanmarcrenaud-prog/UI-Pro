@@ -132,7 +132,6 @@ store = ThreadSafeStore(max_size=100)
 
 # ==================== TOP-LEVEL IMPORTS ====================
 
-from core.config import config as app_config
 from models.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -286,7 +285,7 @@ async def add_observability(request: Request, call_next: Callable):
 
 def verify_api_key(request: Request) -> bool:
     """Verify API key if configured"""
-    api_key = getattr(app_config.api, 'api_key', "") if hasattr(app_config, 'api') else ""
+    api_key = getattr(settings, 'api_key', "")
 
     if not api_key:
         return True
@@ -351,7 +350,7 @@ def health_check():
     return {
         "status": "healthy",
         "timestamp": time.time(),
-        "version": getattr(app_config, 'version', "1.0.0"),
+        "version": getattr(settings, 'version', "1.0.0"),
         "services": {
             "api": "ok",
             "llm": _check_ollama(),
@@ -476,8 +475,9 @@ async def ws_endpoint(ws: WebSocket):
     logger.info(f"[WS-VIEWS] Client: {client_info}")
 
     # Optional API key check
-    if getattr(app_config.api, 'api_key', None):
-        if ws.headers.get("x-api-key") != app_config.api.api_key:
+    api_key = getattr(settings, 'api_key', None)
+    if api_key:
+        if ws.headers.get("x-api-key") != api_key:
             await ws.close(code=1008, reason="Invalid API key")
             return
 

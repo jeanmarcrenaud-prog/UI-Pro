@@ -53,6 +53,16 @@ export interface Translations {
     tokens: string
     agentExecution: string
   }
+  codeBlock: {
+    copy: string
+    copied: string
+    save: string
+  }
+  history: {
+    title: string
+    empty: string
+    confirmDelete: string
+  }
 }
 
 const en: Translations = {
@@ -103,6 +113,16 @@ const en: Translations = {
     elapsed: 'Elapsed',
     tokens: 'Tokens',
     agentExecution: 'Agent Execution',
+  },
+  codeBlock: {
+    copy: 'Copy',
+    copied: 'Copied',
+    save: 'Save',
+  },
+  history: {
+    title: 'History',
+    empty: 'No conversations yet',
+    confirmDelete: 'Confirm?',
   },
 }
 
@@ -155,9 +175,31 @@ const fr: Translations = {
     tokens: 'Tokens',
     agentExecution: 'Exécution Agent',
   },
+  codeBlock: {
+    copy: 'Copier',
+    copied: 'Copié',
+    save: 'Enregistrer',
+  },
+  history: {
+    title: 'Historique',
+    empty: 'Aucune conversation',
+    confirmDelete: 'Confirmer?',
+  },
 }
 
 export const translations = { en, fr }
+
+// Simple hook to get translations with current locale
+import { useStore } from '@/stores/uiStore'
+
+export function useI18n() {
+  const locale = useStore((s) => s.locale) as Locale
+  return translations[locale]
+}
+
+export function getTranslations(locale: Locale): Translations {
+  return translations[locale]
+}
 
 // Step ID to translation key mapping
 export const STEP_STATUS_LABELS: Record<string, keyof Translations['steps']> = {

@@ -25,13 +25,10 @@ logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
 logger = logging.getLogger(__name__)
 
 # Import config
-from core.config import config as app_config
 from settings import settings
 from services.streaming import get_streaming_service
 
-# ===================== CONFIG & LOGGING =====================
-
-# ===================== CONSTANTS =====================
+# === CONSTANTS ===
 API_KEY_HEADER = "x-api-key"
 SESSION_TTL = 3600
 MAX_MESSAGES_PER_SESSION = 20
@@ -78,7 +75,7 @@ class ChatResponse(BaseModel):
 
 # ===================== DEPENDENCIES =====================
 def verify_api_key(request: Request):
-    api_key = getattr(app_config.api, "api_key", None) if hasattr(app_config, "api") else None
+    api_key = getattr(settings, "api_key", None)
     if not api_key:
         return True
     if request.headers.get(API_KEY_HEADER) != api_key:
@@ -190,8 +187,9 @@ async def ws_endpoint(websocket: WebSocket):
     await websocket.accept()
 
     # API Key check (after accept)
-    if getattr(app_config.api, "api_key", None):
-        if websocket.headers.get(API_KEY_HEADER) != app_config.api.api_key:
+    api_key = getattr(settings, "api_key", None)
+    if api_key:
+        if websocket.headers.get(API_KEY_HEADER) != api_key:
             await websocket.close(code=1008, reason="Invalid API key")
             return
 

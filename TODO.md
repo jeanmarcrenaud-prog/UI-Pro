@@ -1,19 +1,28 @@
 # TODO - UI-Pro Project
 
-> **Liste des tâches de refactoring et d'amélioration** du projet `ui-pro`.
-
-Statut: ✅ COMPLÉTÉ - 2026-04-24
+> **Liste des tâches en cours et à venir** du projet `ui-pro`.
 
 ## ✅ COMPLÉTÉ (Terminé)
 
-### Refactoring Terminé (2026-04-24)
+### Refactoring Terminé (2026-04-28)
 
-| Tâche | Description | Status |
-|-------|-------------|--------|
-| **Code Deduplication** | Supprimé 9 fichiers doublons (models/llm_router.py, models/memory.py, etc.) | ✅ DONE |
-| **Router Fix** |Corrigé llm/router.py avec imports corrects | ✅ DONE |
-| **services/llm_router.py Fix** | Restauré version fonctionnelle | ✅ DONE |
-| **Docstrings** | Ajoutés Role/Function dans services/*.py | ✅ DONE |
+| # | Tâche | Statut |
+|---|-----|-|------|
+| 1 | Code Deduplication: Supprimé 10 fichiers | ✅ |
+| 2 | Cleanup: Supprimé dead code, obsolètes | ✅ |
+| 3 | Fixes: pyproject.toml, config.yaml.example | ✅ |
+
+## 🔧 EN COURS
+
+| # | Tâche | Priorité | Statut |
+|---|-----|-|-|------|
+| 4 | Supprimer core/config.py | High | ✅ DONE |
+| 5 | Supprimer llm/client.py | High | ✅ DONE |
+| 6 | Nettoyage docs obsolètes | High | 🟡 TODO |
+| 7 | Fixer settings.py wrapper | Med | ✅ DONE |
+| 8 | Add missing docstrings | Low | 🟡 TODO |
+| 9 | Standardize comment language | Low | 🟡 TODO |
+| 10 | Cleanup test.txt | Low | 🟡 TODO |
 
 ### Core Implementation
 
