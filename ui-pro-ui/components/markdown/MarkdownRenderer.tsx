@@ -50,7 +50,10 @@ function preprocessContent(content: string): string {
     trimmed.includes('return ')
   )
   
-  if (!looksLikeCode) {
+  // NEVER wrap if starts with prose (natural language explanation)
+  const startsWithNaturalLanguage = /^Here's|^This is|^Below is|^Here is|^The following|^I'll|I will|^Let me|^To get/i.test(trimmed)
+  
+  if (startsWithNaturalLanguage || !looksLikeCode) {
     return content
   }
   
