@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 🚀 UI-Pro Launcher
-=================
 
 Entry point for UI-Pro application.
 Handles:
@@ -215,7 +214,7 @@ def start_api(block: bool = True):
     import sys
     venv_python = sys.executable
     subprocess.run([
-        venv_python, "-m", "uvicorn", "views.api:app", 
+        venv_python, "-m", "uvicorn", "api.main:app", 
         "--host", "0.0.0.0", 
         "--port", str(API_PORT)
     ])
@@ -308,8 +307,8 @@ Exemples:
   python run.py             Lance tous les services
   python run.py --api         FastAPI uniquement
   python run.py --ui          Next.js UI uniquement
-  python run.py --status      Vérifie status des services
-  python run.py --check        Vérifie les dépendances
+  python run.py --status      Vér status
+  python run.py --check        Vérifie dépendances
   python run.py --test       Lance les tests
         """
     )

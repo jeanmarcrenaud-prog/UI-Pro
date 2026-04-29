@@ -21,6 +21,48 @@ ui-pro/
 │   ├── executor.py        # CodeExecutor (sandbox with auto-fix loop)
 │   ├── state_manager.py  # StateManager
 │   ├── memory.py         # FAISS memory
+│   ├── metrics.py         # MetricsManager
+│   ├── logger.py          # Logging + rotation
+│   ├── events.py          # Thread-safe event pub/sub
+│   ├── orchestrator_async.py  # Async orchestrator
+│   └── config.py          # YAML loader + env overrides
+├── controllers/            # Business logic
+│   ├── orchestrator.py    # Pipeline orchestrator (DEPRECATED)
+│   ├── websocket.py       # WebSocket handling
+│   ├── code_review.py     # Code review logic
+│   └── executor.py        # CodeExecutor
+├── services/               # Service layer
+│   ├── llm_router.py      # Advanced LLM routing
+│   ├── model_service.py   # Model management
+│   ├── memory_service.py  # Memory with compression
+│   ├── streaming.py       # Token streaming
+│   ├── tools.py           # Tool execution
+│   └── error_handler.py   # Error handling
+├── llm/                    # LLM clients
+│   ├── router.py          # Basic model routing
+│   └── client.py          # OllamaClient
+├── models/                 # Data models (schemas)
+│   ├── settings.py        # Configuration (SOURCE OF TRUTH)
+│   ├── config.py          # Pydantic config models
+│   ├── metrics.py         # Metrics dataclasses
+│   └── memory.py          # Memory dataclasses
+├── app/                    # App layer
+│   └── launcher.py        # Multi-service launcher
+├── views/                  # View layer
+│   ├── api.py             # Main API
+│   ├── dashboard.py       # Dashboard
+│   └── components/        # Gradio components
+├── templates/             # Static templates
+├── tests/                 # Test suite (85+ tests)
+├── workspace/             # Generated code
+└── configs/               # YAML/JSON configs
+```
+ui-pro/
+├── run.py                  # Entry point
+├── core/                   # Core modules
+│   ├── executor.py        # CodeExecutor (sandbox with auto-fix loop)
+│   ├── state_manager.py  # StateManager
+│   ├── memory.py         # FAISS memory
 │   └── orchestrator_async.py  # Async orchestrator
 ├── controllers/            # Business logic
 │   └── orchestrator.py  # Pipeline: planner → architect → coder → reviewer → executor

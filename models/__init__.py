@@ -6,20 +6,17 @@ Ce dossier contient les types Pydantic/dataclass qui décrivent les structures
 de données de l'application (et NON la logique).
 
  POUR LA LOGIQUE, utiliser :
-- core/memory.py    : FAISS memory integration
-- core/state_manager.py : State management  
-- core/config.py    : Configuration
-- core/executor.py : Code execution
-- llm/router.py   : LLM routing
-- services/*     : Services
+ - core/memory.py    : FAISS memory integration
+ - core/state_manager.py : State management  
+ - core/executor.py : Code execution
+ - llm/router.py   : LLM routing
+ - services/*     : Services
 
- Exports:
-- Configuration: Settings, settings (NOTE: import depuis .settings)
-- Metrics: Metrics, MetricsManager (NOTE: import depuis .metrics)
-- LLM: LLMRouter, ModelsConfig (NOTE: import depuis llm.router)
+  Exports:
+ - Configuration: Settings, settings (NOTE: import depuis .settings)
+ - Metrics: Metrics, MetricsManager (NOTE: import depuis .metrics)
+ - LLM: LLMRouter, ModelsConfig (NOTE: import depuis llm.router)
 """
-
-from core.config import Config, get_config
 from core.metrics import Metrics, MetricsManager
 from .settings import Settings, settings
 
@@ -28,8 +25,6 @@ from .settings import Settings, settings
 # LLMRouter et ModelsConfig sont dans llm.router
 
 __all__ = [ 
-    "Config",
-    "get_config",
     "Metrics",
     "MetricsManager",
     "Settings",

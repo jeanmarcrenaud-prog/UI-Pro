@@ -7,6 +7,7 @@ import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism'
 
 import { downloadCode } from '@/lib/download'
+import { useI18n } from '@/lib/i18n'
 
 interface CodeBlockProps {
   language?: string
@@ -20,6 +21,7 @@ export const CodeBlock = memo(function CodeBlock({
   value = '' 
 }: CodeBlockProps) {
   const [copied, setCopied] = useState(false)
+  const t = useI18n()
 
   const copyToClipboard = async () => {
     if (!value) return
@@ -56,12 +58,12 @@ export const CodeBlock = memo(function CodeBlock({
             {copied ? (
               <>
                 <Check className="w-4 h-4 text-emerald-400" />
-                <span className="text-emerald-400 font-medium">Copied</span>
+                <span className="text-emerald-400 font-medium">{t.codeBlock.copied}</span>
               </>
             ) : (
               <>
                 <Copy className="w-4 h-4" />
-                Copy
+                {t.codeBlock.copy}
               </>
             )}
           </button>
@@ -72,7 +74,7 @@ export const CodeBlock = memo(function CodeBlock({
             className="flex items-center gap-2 px-4 py-1.5 text-sm rounded-xl bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200"
           >
             <Download className="w-4 h-4" />
-            Save
+            {t.codeBlock.save}
           </button>
         </div>
       </div>
