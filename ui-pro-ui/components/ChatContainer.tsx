@@ -23,33 +23,43 @@ interface ChatContainerProps {
 const DEFAULT_EXAMPLES = [
   {
     icon: '🐍',
-    text: 'Create a Python script for weather data',
-    prompt: 'Create a Python script that fetches weather data from Open-Meteo API',
+    text: 'Create a Python script',
+    prompt: 'Write a Python script that fetches weather data from Open-Meteo API and displays it with a nice formatted output',
   },
   {
     icon: '📊',
-    text: 'Analyze my code for bugs',
-    prompt: 'Analyze this code and identify bugs',
+    text: 'Analyze code for bugs',
+    prompt: 'Write a Python function to calculate fibonacci numbers and analyze it for performance issues and bugs',
   },
   {
     icon: '🔧',
-    text: 'Explain async in Python',
-    prompt: 'Explain async/await in Python with examples',
-  },
-  {
-    icon: '🌐',
     text: 'REST API with FastAPI',
-    prompt: 'Help me build a FastAPI todo API',
+    prompt: 'Write a FastAPI application with CRUD endpoints for a todo list, including models, routes, and error handling',
   },
   {
     icon: '🎨',
     text: 'React component',
-    prompt: 'Create a React + TypeScript component',
+    prompt: 'Write a React TypeScript component for a todo list with add, delete, and toggle completion features',
   },
   {
     icon: '🧪',
-    text: 'Write unit tests',
-    prompt: 'Write unit tests with edge cases',
+    text: 'Unit tests',
+    prompt: 'Write pytest unit tests for a Python function that validates email addresses, including edge cases',
+  },
+  {
+    icon: '🌐',
+    text: 'JavaScript utility',
+    prompt: 'Write a JavaScript utility function to debounce API calls with cancellation support',
+  },
+  {
+    icon: '📦',
+    text: 'Package structure',
+    prompt: 'Write a Python package with __init__.py, main modules, and setup.py for distribution',
+  },
+  {
+    icon: '🔒',
+    text: 'Auth middleware',
+    prompt: 'Write a FastAPI dependency for JWT authentication with token validation and error handling',
   },
 ]
 
