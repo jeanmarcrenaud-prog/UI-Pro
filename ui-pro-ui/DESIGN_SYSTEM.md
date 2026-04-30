@@ -6,352 +6,319 @@ This is the official design system for UI-Pro - a SaaS-level, ChatGPT-like AI ch
 
 ---
 
-## 📁 File Structure
+## 📁 File Structure (Recommended)
 
 ```
 ui-pro-ui/
-├── app/
-│   ├── page.tsx            # Main chat page
-│   ├── layout.tsx          # Root layout
-│   └── globals.css          # Global styles with CSS variables
-│
-├── components/
-│   ├── ui/                    # Atomic UI components
-│   │   ├── Button.tsx
-│   │   ├── Card.tsx
-│   │   ├── Input.tsx
-│   │   ├── Textarea.tsx
-│   │   ├── Select.tsx
-│   │   ├── Badge.tsx
-│   │   └── index.ts
-│   │
-│   ├── chat/                  # Chat-specific components
-│   │   ├── MessageBubble.tsx
-│   │   ├── TypingIndicator.tsx
-│   │   ├── ChatMessages.tsx
-│   │   ├── AgentSteps.tsx
-│   │   ├── StepProgress.tsx
-│   │   └── index.ts
-│   │
-│   └── agent/                 # Agent workflow components
-│       ├── StepItem.tsx
-│       ├── AgentSteps.tsx
-│       └── index.ts
-│
-├── features/                  # Business logic
+├── app/                          # Next.js App Router
+│   ├── (chat)/                   # Grouped routes
+│   │   ├── page.tsx              # Main chat interface
+│   │   └── layout.tsx
+│   ├── layout.tsx
+│   └── globals.css
+├── components/                   # Reusable, presentational UI
+│   ├── ui/                       # Primitive components (Button, Input, Card, etc.)
+│   ├── chat/                     # Chat-specific UI (MessageBubble, ChatInput, etc.)
+│   └── common/                   # Layout, Toast, MarkdownRenderer, CodeBlock
+├── features/                     # Feature modules (business logic + smart components)
 │   ├── chat/
-│   │   ├── ChatInput.tsx
-│   │   └── useChat.ts
+│   │   ├── components/
+│   │   ├── hooks/
+│   │   └── store.ts              # Or slice in global store
+│   ├── agent/
 │   └── settings/
-│       └── SettingsModal.tsx
-│
-├── services/                  # API layer
-│   ├── apiClient.ts       # HTTP client
-│   ├── streamService.ts  # WebSocket/SSE streaming
-│   └── wsClient.ts       # WebSocket client
-│
-├── stores/                   # Zustand state management
-│   ├── chatStore.ts      # Chat messages, streaming state
-│   └── settingsStore.ts # User settings
-│
+├── hooks/                        # Custom hooks
+│   ├── useChat.ts
+│   ├── useStream.ts
+│   ├── useWebSocket.ts           # Recommended: dedicated WS hook
+│   └── useModelDiscovery.ts
 ├── lib/
-│   ├── constants.ts     # Shared constants
-│   ├── types.ts        # TypeScript types
-│   └── utils.ts        # Utility functions
-│
-├── styles/
-│   └── tokens.ts      # Design system tokens
-│
-├── tailwind.config.ts    # Tailwind 4 config
-└── package.json
+│   ├── stores/                   # Zustand stores
+│   │   ├── chatStore.ts
+│   │   ├── agentStore.ts
+│   │   └── uiStore.ts
+│   ├── types/
+│   ├── events.ts
+│   ├── utils.ts
+│   └── constants.ts
+├── services/                     # API layer
+│   ├── api.ts                    # REST client (fetch wrapper)
+│   ├── streamService.ts          # WebSocket / SSE abstraction
+│   ├── chatService.ts
+│   └── modelDiscovery.ts
+├── public/
+└── types/                        # Global TypeScript definitions (if needed)
 ```
 
 ---
 
-## 🎨 Design Tokens
+## Key Recommendations
 
-### Colors (Dark Theme)
+### 1. Streaming Layer (services/streamService.ts + hooks/useStream.ts)
+
+Your backend guarantees one final event (`done` / `error` / `cancelled`). Leverage that.
+
+**Best practice:**
+
+- Abstract WebSocket / SSE behind a single service that normalizes events to `StreamChunk`-like shape
+- Use a dedicated `useWebSocket` hook with:
+  - Exponential backoff reconnection (max 5-7 attempts)
+  - Heartbeat (ping every 25-30s)
+  - Resume capability using `last_chunk_index` or `message_id` + `last_index`
+  - Proper cleanup on unmount
+
+### 2. Zustand Stores
+
+Keep them focused. Consider Zustand slices or create multiple stores for better scalability.
+
+**Add to chatStore:**
 
 ```typescript
-bg: {
-  primary: '#020617',     // Deep dark background
-  secondary: '#0f172a', // Panels and content areas
-  tertiary: '#0f172acc', // Overlays
-}
-
-surface: {
-  primary: '#0f172a',
-  secondary: '#1e293b',
-  hover: '#334155',
-}
-
-border: {
-  subtle: '#1e293b',
-  default: '#334155',
-  strong: '#475569',
-}
-
-text: {
-  primary: '#f8fafc',
-  secondary: '#cbd5e1',
-  muted: '#64748b',
-  disabled: '#475569',
-}
-
-accent: {
-  primary: '#8b5cf6',     // Violet (brand)
-  hover: '#7c3aed',
-  soft: '#8b5cf633',
-}
-
-// Status colors
-success: '#22c55e'
-warning: '#eab308'
-error: '#ef4444'
+currentStreamId: string | null
+abortCurrentStream: () => void
+resumeFromIndex: (index: number) => void
 ```
 
-### Spacing
+### 3. Event Handling
 
-| Token | Value |
-|-------|-------|
-| xs | 4px |
-| sm | 8px |
-| md | 12px |
-| lg | 16px |
-| xl | 24px |
-| xxl | 32px |
+Update `lib/events.ts`:
+
+```typescript
+export const STREAM_EVENTS = {
+  TOKEN: 'token',
+  STEP: 'step',
+  TOOL: 'tool',
+  DONE: 'done',
+  ERROR: 'error',
+  CANCELLED: 'cancelled',
+} as const;
+
+export type StreamEventType = typeof STREAM_EVENTS[keyof typeof STREAM_EVENTS];
+```
+
+In `useStream.ts`, map backend `StreamChunk.to_dict()` directly and handle the guaranteed final event to set `isStreaming: false`.
+
+### 4. Cancellation
+
+Since your backend supports `cancel_stream(stream_id)`, expose a clean `stopGeneration()` that sends a cancellation message over WebSocket and calls the service.
+
+### 5. SSE vs WebSocket
+
+For pure token streaming + steps:
+
+- **SSE** is often simpler, more reliable (auto-reconnect), and sufficient
+- Use **WebSocket** only if you need real bidirectional features (immediate cancel, tool calls, multiple concurrent streams)
+
+Many production LLM UIs use SSE for the stream and a separate lightweight WS for control signals.
+
+---
+
+## Quick Wins & Improvements
+
+| Area | Improvement |
+|------|-------------|
+| **Type Safety** | Create shared `StreamEvent` interface matching backend `StreamChunk.to_dict()` |
+| **Performance** | Continue using `React.memo` + `useMemo` in `MarkdownRenderer` and `CodeBlock` |
+| **Resume Logic** | On reconnect, send `{ action: "resume", stream_id, last_index }` — backend already tracks active streams |
+| **Error UX** | Centralize error display using Toast component subscribed to `chatStore.lastError` |
+| **Loading States** | Only stop "Generating..." indicator when terminal event received (`done`, `error`, or `cancelled`) |
+
+---
+
+## 🎨 UI/UX Principles
+
+### Visual Design
+
+| Element | Value |
+|---------|-------|
+| **Primary Color** | `#6366f1` (Indigo-500) |
+| **Background** | `#0f172a` (Slate-900) |
+| **Surface** | `#1e293b` (Slate-800) |
+| **Text Primary** | `#f1f5f9` (Slate-100) |
+| **Text Secondary** | `#94a3b8` (Slate-400) |
+| **Border** | `#334155` (Slate-700) |
+| **Accent** | `#22c55e` (Green-500 for success) |
+
+### Spacing System
+
+- Base unit: `4px`
+- Common values: `4`, `8`, `12`, `16`, `24`, `32`, `48`
 
 ### Typography
 
-| Token | Value |
-|-------|-------|
-| xs | 12px |
-| sm | 13px |
-| md | 14px |
-| lg | 16px |
-| xl | 18px |
-| xxl | 20px |
+| Element | Font | Size | Weight |
+|--------|------|------|--------|
+| **Heading 1** | Inter | 24px | 600 |
+| **Heading 2** | Inter | 20px | 600 |
+| **Body** | Inter | 14px | 400 |
+| **Code** | JetBrains Mono | 13px | 400 |
 
-Font: 'Inter, sans-serif'
+### Component Patterns
 
----
+#### Button Variants
 
-## 🧩 Components
+- **Primary**: `bg-indigo-600 hover:bg-indigo-700 text-white`
+- **Secondary**: `bg-slate-700 hover:bg-slate-600 text-slate-100`
+- **Ghost**: `bg-transparent hover:bg-slate-800 text-slate-300`
+- **Danger**: `bg-red-600 hover:bg-red-700 text-white`
 
-### Button
+#### Input Fields
 
-```tsx
-import { Button } from '@/components/ui'
-
-<Button variant="primary" size="md">
-  Send
-</Button>
-
-<Button variant="secondary" size="sm">
-  Cancel
-</Button>
-
-<Button variant="ghost" size="lg">
-  Learn more
-</Button>
-```
-
-### Input & Textarea
-
-```tsx
-import { Input, Textarea } from '@/components/ui'
-
-<Input
-  label="Username"
-  error="This field is required"
-  helperText="Enter your username"
-/>
-
-<Textarea
-  label="Task description"
-  rows={4}
-  placeholder="Describe your task..."
-/>
-```
-
-### Badge
-
-```tsx
-import { Badge } from '@/components/ui'
-
-<Badge variant="success">✓ Success</Badge>
-<Badge variant="error">✗ Error</Badge>
-<Badge variant="warning">⚠ Warning</Badge>
-<Badge variant="processing">⚙️ Processing</Badge>
-```
-
-### MessageBubble
-
-```tsx
-import { MessageBubble } from '@/components/chat'
-
-<MessageBubble role="user" content="Hello!" />
-<MessageBubble 
-  role="assistant" 
-  content={<AgentSteps />}
-/>
-```
-
-### AgentSteps
-
-```tsx
-import { AgentSteps } from '@/components/chat'
-
-<AgentSteps
-  steps={[
-    { id: 'analyzing', label: 'Analyzing', status: 'completed' },
-    { id: 'planning', label: 'Planning', status: 'active' },
-    { id: 'executing', label: 'Executing', status: 'pending' },
-    { id: 'reviewing', label: 'Reviewing', status: 'pending' },
-  ]}
-/>
-```
+- Background: `bg-slate-800/80`
+- Border: `border-slate-700`
+- Focus: `ring-2 ring-indigo-500/50`
+- Placeholder: `text-slate-500`
 
 ---
 
-## 📦 Stores (Zustand)
+## 🔧 Technical Stack
 
-### chatStore
-
-```typescript
-import { useChatStore } from '@/stores/chatStore'
-
-// State
-messages: Message[]
-isStreaming: boolean
-streamId: string | null
-
-// Actions
-addMessage(message: Message)
-setStreaming(streaming: boolean)
-clearMessages()
-```
-
-### settingsStore
-
-```typescript
-import { useSettingsStore } from '@/stores/settingsStore'
-
-// State
-defaultModel: string
-temperature: number
-maxTokens: number
-
-// Actions
-setDefaultModel(model: string)
-setTemperature(temp: number)
-```
+| Layer | Technology |
+|-------|------------|
+| **Framework** | Next.js 16 (App Router) |
+| **UI Library** | React 18 |
+| **Styling** | Tailwind CSS 4 |
+| **Animations** | Framer Motion |
+| **State** | Zustand |
+| **Types** | TypeScript 5 |
+| **Icons** | Lucide React |
+| **Markdown** | react-markdown + rehype-highlight |
 
 ---
 
-## 📡 API Integration
+## ♿ Accessibility
 
-### HTTP Client
+- All interactive elements have `aria-label` or accessible name
+- Focus visible: `ring-2 ring-indigo-500`
+- Color contrast: WCAG AA compliant
+- Screen reader live regions for streaming content
+
+---
+
+## 📱 Responsive Breakpoints
+
+| Breakpoint | Width | Layout |
+|-----------|-------|--------|
+| **Mobile** | < 768px | Single column, bottom nav |
+| **Tablet** | 768-1024px | Sidebar collapsed |
+| **Desktop** | > 1024px | Full sidebar |
+
+---
+
+## 🔄 State Management
+
+### Zustand Store Structure
 
 ```typescript
-import { apiClient } from '@/services/apiClient'
+// lib/stores/chatStore.ts
+interface ChatState {
+  messages: Message[]
+  isStreaming: boolean
+  currentStreamId: string | null
+  
+  addMessage: (msg: Message) => void
+  appendToken: (token: string) => void
+  setStreaming: (streaming: boolean) => void
+  abortCurrentStream: () => void
+  resumeFromIndex: (index: number) => void
+}
 
-const response = await apiClient.post('/api/chat', {
-  message: 'Hello',
-  model: 'qwen2.5:7b',
-})
-```
+// lib/stores/agentStore.ts
+interface AgentState {
+  currentStep: number
+  steps: AgentStep[]
+  isThinking: boolean
+  
+  setStep: (step: number) => void
+  addStep: (step: AgentStep) => void
+  setThinking: (thinking: boolean) => void
+}
 
-### Streaming
-
-```typescript
-import { streamService } from '@/services/streamService'
-
-for await (const chunk of streamService.connect(prompt)) {
-  // StreamStatus: STARTING | GENERATING | COMPLETED | ERROR
-  console.log(chunk.text, chunk.status)
+// lib/stores/uiStore.ts
+interface UIState {
+  activeTab: 'chat' | 'history' | 'settings'
+  sidebarOpen: boolean
+  
+  setActiveTab: (tab: string) => void
+  toggleSidebar: () => void
 }
 ```
 
 ---
 
-## 🚀 Usage
+## 🎬 Animations
 
-### Installation
+### Framer Motion Patterns
 
-```bash
-cd ui-pro-ui
-npm install
-npm run dev
-```
+```typescript
+// Fade in
+<motion.div
+  initial={{ opacity: 0 }}
+  animate={{ opacity: 1 }}
+  exit={{ opacity: 0 }}
+/>
 
-### Development Server
+// Slide up
+<motion.div
+  initial={{ opacity: 0, y: 10 }}
+  animate={{ opacity: 1, y: 0 }}
+  transition={{ duration: 0.2 }}
+/>
 
-```bash
-npm run dev
-# http://localhost:3000
-```
-
-### Build
-
-```bash
-npm run build
-npm start
-```
-
----
-
-## 🎯 Key Features
-
-- ✅ **Dark theme** - SaaS production quality
-- ✅ **TypeScript** - Full type safety
-- ✅ **Design tokens** - Consistent styling
-- ✅ **Animations** - Framer Motion for smooth transitions
-- ✅ **Accessibility** - ARIA labels, keyboard navigation
-- ✅ **Responsive** - Mobile-first design
-- ✅ **Micro-interactions** - Hover/active states
-- ✅ **Loading states** - Proper feedback
-- ✅ **WebSocket streaming** - Real-time token streaming
-- ✅ **Step tracking** - Visible agent workflow
-- ✅ **Code highlighting** - Syntax highlighting for code blocks
-
----
-
-## 🧪 Testing
-
-```bash
-npm run test
-npm run test:coverage
+// Typing cursor
+<motion.span
+  animate={{ opacity: [0, 1, 0] }}
+  transition={{ repeat: Infinity, duration: 0.8 }}
+/>
 ```
 
 ---
 
-## 📝 Contributing
+## 📦 Bundle Optimization
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run tests
-5. Submit a pull request
-
----
-
-## 📄 License
-
-MIT License
+- Use `next/dynamic` for lazy loading heavy components
+- Code split by route
+- Prefer `import` statements over require
+- Use `turbopack` in development
 
 ---
 
-## 🤝 Credits
+## 🧪 Testing Strategy
 
-Built with:
-- **Next.js** 16
-- **React** 18
-- **Tailwind CSS** 4
-- **TypeScript** 5.x
-- **Framer Motion** for animations
-- **Zustand** for state management
+| Test Type | Tool | Coverage Target |
+|----------|------|--------------|
+| **Unit** | Vitest | Utility functions, hooks |
+| **Component** | Testing Library | UI components |
+| **E2E** | Playwright | Critical flows |
 
 ---
 
-**Dernière mise à jour**: 2026-04-29
+## 📖 Documentation Standards
+
+- JSDoc for public APIs
+- TypeScript interfaces documented
+- README in each major directory
+- Component prop tables in Storybook
+
+---
+
+## 🔐 Security
+
+- No API keys in client code
+- Sanitize user input in markdown rendering
+- Escape HTML in code blocks
+- CSP headers configured
+
+---
+
+## 🚀 Deployment
+
+| Environment | Target |
+|-------------|-------|
+| **Development** | `localhost:3000` |
+| **Staging** | Vercel Preview |
+| **Production** | Vercel |
+
+Environment variables:
+- `NEXT_PUBLIC_API_URL` - Backend URL
+- `NEXT_PUBLIC_WS_URL` - WebSocket URL
