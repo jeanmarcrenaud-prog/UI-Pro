@@ -1,10 +1,12 @@
-// streamService.ts
-// Role: Streaming service abstraction - normalizes SSE/WS events to StreamEvent shape
-// Aligns with backend StreamChunk structure
+// services/streamService.ts
+/**
+ * Streaming Service Abstraction
+ * Normalizes backend StreamChunk → frontend StreamEvent
+ * Supports SSE (preferred) and WebSocket fallback
+ */
 
 import { STREAM_EVENTS } from '@/lib/events'
 
-// Backend StreamChunk structure (from Python backend)
 export interface BackendStreamChunk {
   type: string
   status?: string
@@ -14,12 +16,13 @@ export interface BackendStreamChunk {
   content?: string
   response?: string
   tokens?: number
+  latency_ms?: number
   error?: string
   step_id?: string
   step_status?: string
+  timestamp?: string
 }
 
-// Normalized frontend stream event
 export interface StreamEvent {
   type: 'token' | 'step' | 'tool' | 'done' | 'error' | 'cancelled'
   content: string
@@ -29,71 +32,98 @@ export interface StreamEvent {
   stepId?: string
   stepStatus?: string
   streamId?: string
+  latencyMs?: number
 }
 
-export interface StreamServiceOptions {
+export interface StreamOptions {
   onChunk?: (event: StreamEvent) => void
   onDone?: () => void
   onError?: (error: Error) => void
   onCancelled?: () => void
+  temperature?: number
 }
 
 class StreamService {
   private eventSource: EventSource | null = null
   private ws: WebSocket | null = null
+  private currentStreamId: string | null = null
 
-  // Callbacks
-  private handlers: StreamServiceOptions = {}
-
-  constructor(options?: StreamServiceOptions) {
-    this.handlers = options || {}
+  private handlers: Required<StreamOptions> = {
+    onChunk: () => {},
+    onDone: () => {},
+    onError: () => {},
+    onCancelled: () => {},
+    temperature: 0.7,
   }
 
-  setHandlers(handlers: Partial<StreamServiceOptions>) {
-    Object.assign(this.handlers, handlers)
+  constructor() {
+    // Singleton - no initial options
   }
 
-  async startStream(prompt: string, model?: string, options?: { temperature?: number }) {
-    // Prefer SSE for streaming
-    const url = new URL('/api/stream', window.location.origin)
-    url.searchParams.set('prompt', prompt)
-    if (model) url.searchParams.set('model', model)
-    if (options?.temperature) url.searchParams.set('temperature', options.temperature.toString())
+  /**
+   * Start a new streaming request
+   */
+  async startStream(
+    prompt: string,
+    model: string,
+    options: Partial<StreamOptions> = {}
+  ): Promise<void> {
+    this.close() // Close any existing stream
 
+    // Merge handlers
+    this.handlers = { ...this.handlers, ...options }
+
+    const url = this.buildStreamUrl(prompt, model, options.temperature)
+
+    // Prefer SSE (simpler, auto-reconnect friendly)
     this.eventSource = new EventSource(url.toString())
 
-    this.eventSource.onmessage = (e) => {
+    this.eventSource.onmessage = (event) => {
       try {
-        const data: BackendStreamChunk = JSON.parse(e.data)
+        const data: BackendStreamChunk = JSON.parse(event.data)
         const normalized = this.normalizeChunk(data)
 
-        if (normalized.type === 'done') {
-          this.handlers.onDone?.()
-        } else if (normalized.type === 'error') {
-          this.handlers.onError?.(new Error(normalized.error))
-        } else if (normalized.type === 'cancelled') {
-          this.handlers.onCancelled?.()
-        } else {
-          this.handlers.onChunk?.(normalized)
-        }
-      } catch {
-        // Non-JSON fallback - treat as token
-        this.handlers.onChunk?.({
+        this.dispatchEvent(normalized)
+      } catch (err) {
+        // Fallback: raw text as token
+        this.handlers.onChunk({
           type: 'token',
-          content: e.data,
+          content: event.data,
         })
       }
     }
 
-    this.eventSource.onerror = () => {
-      this.handlers.onError?.(new Error('Stream connection failed'))
+    this.eventSource.onerror = (err) => {
+      console.error('[StreamService] SSE Error:', err)
+      this.handlers.onError(new Error('Stream connection error'))
+      this.close()
+    }
+
+    this.eventSource.onopen = () => {
+      console.log('[StreamService] Stream connected')
     }
   }
 
-  // Normalize backend chunk to frontend event
+  private buildStreamUrl(prompt: string, model: string, temperature?: number): URL {
+    const url = new URL('/api/stream', window.location.origin)
+
+    url.searchParams.set('prompt', prompt)
+    url.searchParams.set('model', model)
+    if (temperature !== undefined) {
+      url.searchParams.set('temperature', temperature.toString())
+    }
+
+    return url
+  }
+
+  /**
+   * Normalize backend StreamChunk → clean frontend StreamEvent
+   */
   private normalizeChunk(data: BackendStreamChunk): StreamEvent {
-    // Handle step events
-    if (data.type === STREAM_EVENTS.STEP || data.step_id) {
+    const content = data.response || data.content || data.data || ''
+
+    // Step event
+    if (data.type === 'step' || data.step_id) {
       return {
         type: 'step',
         content: '',
@@ -103,52 +133,92 @@ class StreamService {
       }
     }
 
-    // Handle tool events
-    if (data.type === STREAM_EVENTS.TOOL) {
+    // Terminal events
+    if (data.status === 'completed' || data.type === 'done') {
+      return { type: 'done', content }
+    }
+
+    if (data.status === 'error' || data.type === 'error') {
       return {
-        type: 'tool',
-        content: data.data || '',
+        type: 'error',
+        content: '',
+        error: data.error || 'Unknown error occurred',
       }
     }
 
-    // Handle terminal states
-    if (data.status === 'completed' || data.type === STREAM_EVENTS.DONE) {
-      return { type: 'done', content: data.response || '' }
-    }
-
-    if (data.status === 'error' || data.type === STREAM_EVENTS.ERROR) {
-      return { type: 'error', content: '', error: data.error }
-    }
-
-    if (data.type === STREAM_EVENTS.CANCELLED) {
+    if (data.type === 'cancelled' || data.status === 'cancelled') {
       return { type: 'cancelled', content: '' }
     }
 
-    // Default: token content
+    // Default: token
     return {
       type: 'token',
-      content: data.response || data.content || data.data || '',
+      content,
       index: data.index,
       tokens: data.tokens,
       streamId: data.stream_id,
+      latencyMs: data.latency_ms,
     }
   }
 
-  close() {
+  private dispatchEvent(event: StreamEvent): void {
+    if (event.type === 'done') {
+      this.handlers.onDone()
+    } else if (event.type === 'error') {
+      this.handlers.onError(new Error(event.error || 'Stream error'))
+    } else if (event.type === 'cancelled') {
+      this.handlers.onCancelled()
+    } else {
+      this.handlers.onChunk(event)
+    }
+  }
+
+  /**
+   * Cancel current stream (if backend supports it)
+   */
+  async cancelCurrentStream(): Promise<void> {
+    if (!this.currentStreamId) return
+
+    try {
+      await fetch('/api/stream/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stream_id: this.currentStreamId }),
+      })
+    } catch (e) {
+      console.warn('[StreamService] Failed to cancel stream:', e)
+    }
+
+    this.close()
+  }
+
+  /**
+   * Close active connection
+   */
+  close(): void {
     this.eventSource?.close()
     this.ws?.close()
-    this.eventSource = this.ws = null
+
+    this.eventSource = null
+    this.ws = null
+    this.currentStreamId = null
+  }
+
+  // For future WebSocket support
+  private connectWebSocket() {
+    // Implementation can be added later if needed for bidirectional features
+    console.warn('[StreamService] WebSocket mode not yet implemented')
   }
 }
 
-// Singleton for app-wide streaming
+// ====================== Exports ======================
+
 export const streamService = new StreamService()
 
-// Export factory and types
-export const createStreamService = (options?: StreamServiceOptions) => new StreamService(options)
+export const createStreamService = (options?: StreamOptions) => new StreamService()
 
 export type {
-  StreamServiceOptions as StreamOpts,
-  BackendStreamChunk as BackendChunk,
-  StreamEvent as StreamMsg
+  StreamEvent,
+  BackendStreamChunk,
+  StreamOptions,
 }
