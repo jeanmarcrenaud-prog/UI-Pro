@@ -144,4 +144,11 @@ class StreamService {
 // Singleton for app-wide streaming
 export const streamService = new StreamService()
 
-export type { StreamService, StreamServiceOptions, BackendStreamChunk, StreamEvent }
+// Export singleton
+export const createStreamService = (options?: StreamServiceOptions) => new StreamService(options)
+
+export type {
+  StreamServiceOptions as IStreamServiceOptions,
+  BackendStreamChunk,
+  StreamEvent
+}

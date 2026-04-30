@@ -6,5 +6,5 @@ export { chatService } from './chatService'
 export { modelDiscovery } from './modelDiscovery'
 
 // Streaming service
-export { streamService } from './streamService'
-export type { StreamService, StreamServiceOptions, BackendStreamChunk, StreamEvent } from './streamService'
+export { streamService, createStreamService } from './streamService'
+export type { IStreamServiceOptions, BackendStreamChunk, StreamEvent } from './streamService'
