@@ -202,19 +202,25 @@ const translations: Record<Locale, Translations> = {
 // ==================== HOOK ====================
 
 export function useI18n() {
-  const [locale, setLocale] = useState<Locale>('en')
-  const [isClient, setIsClient] = useState(false)
+  // Default to English, then try to load from localStorage on client
+  const [locale, setLocale] = useState<Locale>(() => {
+    if (typeof window === 'undefined') return 'en'
+    try {
+      const saved = localStorage.getItem('locale') as Locale
+      return (saved === 'en' || saved === 'fr') ? saved : 'en'
+    } catch {
+      return 'en'
+    }
+  })
 
   useEffect(() => {
-    setIsClient(true)
-    // Only run on client (SSR safe)
     try {
-      const savedLocale = localStorage.getItem('locale') as Locale | null
-      if (savedLocale && (savedLocale === 'en' || savedLocale === 'fr')) {
+      const savedLocale = localStorage.getItem('locale') as Locale
+      if (savedLocale === 'en' || savedLocale === 'fr') {
         setLocale(savedLocale)
       }
     } catch {
-      // localStorage not available
+      // ignore
     }
   }, [])
 
@@ -224,14 +230,13 @@ export function useI18n() {
       try {
         localStorage.setItem('locale', newLocale)
       } catch {
-        // localStorage not available
+        // ignore
       }
     }
   }
 
-  // Return translations directly 
-  const currentTranslations = isClient ? translations[locale] : translations.en
-  const t = currentTranslations || translations.en
+  // Get translations - ensure we always have valid object
+  const t = translations[locale] ?? translations.en
 
   return {
     t,
