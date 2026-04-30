@@ -33,7 +33,9 @@ interface SidebarProps {
   onNewChat?: () => void
 }
 
-const getNavigationTabs = (t: ReturnType<typeof useI18n>) => [
+import type { Translations } from '@/lib/i18n'
+
+const getNavigationTabs = (t: Translations) => [
   { id: 'chat', label: t.sidebar.chat, icon: '💬' },
   { id: 'history', label: t.sidebar.history, icon: '📜' },
   { id: 'settings', label: t.sidebar.settings, icon: '⚙️' },
