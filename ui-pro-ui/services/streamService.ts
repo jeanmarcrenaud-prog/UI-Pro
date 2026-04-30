@@ -61,6 +61,36 @@ class StreamService {
   }
 
   /**
+   * Register event handler (backward compat)
+   */
+  on(handler: (event: StreamEvent) => void): () => void {
+    // Store original handler, wrap with user handler
+    const original = this.handlers.onChunk
+    this.handlers.onChunk = (event) => {
+      original(event)
+      handler(event)
+    }
+    // Return unsubscribe function
+    return () => {
+      this.handlers.onChunk = original
+    }
+  }
+
+  /**
+   * Alias for on() - backward compat
+   */
+  onEvent(handler: (event: StreamEvent) => void): () => void {
+    return this.on(handler)
+  }
+
+  /**
+   * Connect alias for startStream (backward compat)
+   */
+  async connect(content: string, model?: string): Promise<void> {
+    return this.startStream(content, model || 'llama3', this.handlers)
+  }
+
+  /**
    * Start a new streaming request
    */
   async startStream(

@@ -73,11 +73,6 @@ class ModelDiscoveryService {
     return allModels
   }
 
-  // Public: Get models for caller to use
-  getModels(): Model[] {
-    return [...this.models]
-  }
-
   private async fetchFromBackend(
     provider: string,
     url: string

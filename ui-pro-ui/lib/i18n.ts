@@ -190,33 +190,25 @@ export const translations = { en, fr }
 // ==================== HOOK ====================
 
 export function useI18n() {
-  const [locale, setLocale] = useState<Locale>('en')
+  const [locale, setLocaleState] = useState<Locale>('en')
   
-  // ALWAYS return valid translations object - start with English
-  const t: Translations = { ...en }
-
+  // Load locale from localStorage on mount
   useEffect(() => {
     try {
       const savedLocale = localStorage.getItem('locale') as Locale
       if (savedLocale === 'en' || savedLocale === 'fr') {
-        setLocale(savedLocale)
+        setLocaleState(savedLocale)
       }
     } catch {
       // ignore
     }
   }, [])
 
-  // Sync t when locale changes
-  useEffect(() => {
-    if (locale === 'fr') {
-      Object.assign(t, fr)
-    } else {
-      Object.assign(t, en)
-    }
-  }, [locale])
+  // Get current translations based on locale
+  const t = translations[locale]
 
   const changeLocale = (newLocale: Locale) => {
-    setLocale(newLocale)
+    setLocaleState(newLocale)
     try {
       localStorage.setItem('locale', newLocale)
     } catch {

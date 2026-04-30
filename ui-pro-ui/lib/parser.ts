@@ -31,14 +31,14 @@ export interface IDeltaExtractor {
 }
 
 export interface IProviderAdapter extends IDeltaExtractor {
-  readonly provider: LLMProvider
+  readonly provider: string  // Allow any provider string
   canHandle(parsed: unknown): boolean
 }
 
 // ==================== BASE ADAPTER ====================
 
 abstract class BaseAdapter implements IProviderAdapter {
-  abstract readonly provider: LLMProvider
+  abstract readonly provider: string  // Allow any provider string
 
   canHandle(_parsed: unknown): boolean {
     return false
@@ -66,18 +66,23 @@ abstract class BaseAdapter implements IProviderAdapter {
     // 2. OpenAI-style
     if (Array.isArray(p.choices)) {
       const choice = p.choices[0] as Record<string, unknown> | undefined
-      if (choice?.delta?.content) return String(choice.delta.content)
-      if (choice?.message?.content) return String(choice.message.content)
+      if (choice && typeof choice === 'object' && 'delta' in choice) {
+        const c = choice as Record<string, unknown>
+        if (c.delta && typeof c.delta === 'object' && 'content' in c.delta) {
+          return String((c.delta as Record<string, unknown>).content)
+        }
+      }
+      if (choice && typeof choice === 'object' && 'message' in choice) {
+        return String((choice as Record<string, unknown>).message)
+      }
     }
 
     // 3. Anthropic-style
-    if (p.delta && typeof p.delta === 'object') {
-      const d = p.delta as Record<string, unknown>
-      if (d.text) return String(d.text)
-      if ((d.delta as Record<string, unknown>)?.text) return String((d.delta as Record<string, unknown>).text)
+    if (p.delta && typeof p.delta === 'object' && 'text' in p.delta) {
+      return String((p.delta as Record<string, unknown>).text)
     }
 
-    if (Array.isArray(p.content) && (p.content[0] as Record<string, unknown>)?.text) {
+    if (Array.isArray(p.content) && p.content.length > 0 && typeof p.content[0] === 'object' && 'text' in p.content[0]) {
       return String((p.content[0] as Record<string, unknown>).text)
     }
 
@@ -160,13 +165,26 @@ class OllamaAdapter extends BaseAdapter {
   }
 }
 
-// Grok and Mistral mostly follow OpenAI format
-class GrokAdapter extends OpenAIAdapter {
+// Grok mostly follows OpenAI format but needs separate class
+class GrokAdapter extends BaseAdapter {
   readonly provider = 'grok' as const
+
+  canHandle(parsed: unknown): boolean {
+    if (!parsed || typeof parsed !== 'object') return false
+    const p = parsed as Record<string, unknown>
+    return Array.isArray(p.choices)
+  }
 }
 
-class MistralAdapter extends OpenAIAdapter {
+// Mistral mostly follows OpenAI format
+class MistralAdapter extends BaseAdapter {
   readonly provider = 'mistral' as const
+
+  canHandle(parsed: unknown): boolean {
+    if (!parsed || typeof parsed !== 'object') return false
+    const p = parsed as Record<string, unknown>
+    return Array.isArray(p.choices)
+  }
 }
 
 // ==================== REGISTRY & FACTORY ====================

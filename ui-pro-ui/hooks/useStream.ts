@@ -4,12 +4,10 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useChatStore } from '@/lib/stores/chatStore'
-import { createStreamService, type StreamChunk } from '@/services/streamService'
-import { STREAM_EVENTS } from '@/lib/events'
+import { streamService } from '@/services/streamService'
 
 interface UseStreamOptions {
   url: string
-  mode?: 'websocket' | 'sse'
   onToken?: (token: string) => void
   onStep?: (step: string) => void
   onDone?: () => void
@@ -24,48 +22,40 @@ interface UseStreamReturn {
 }
 
 export function useStream({ url, onToken, onStep, onDone, onError }: UseStreamOptions): UseStreamReturn {
-  const serviceRef = useRef<ReturnType<typeof createStreamService> | null>(null)
+  const serviceRef = useRef<typeof streamService | null>(null)
   const [isStreaming, setIsStreaming] = useState(false)
   const [streamId, setStreamId] = useState<string | null>(null)
   const { setCurrentStreamId, resetCurrentMessage } = useChatStore()
 
+  // Register handlers and start stream
   const start = useCallback(async (prompt: string) => {
     setIsStreaming(true)
     setStreamId(`stream-${Date.now()}`)
     setCurrentStreamId(streamId)
 
-    const service = createStreamService({
-      url,
-      mode: 'sse',
-      onChunk: (chunk: StreamChunk) => {
-        if (chunk.type === STREAM_EVENTS.TOKEN && chunk.content) {
-          onToken?.(chunk.content)
-        }
-        if (chunk.type === STREAM_EVENTS.STEP && chunk.step) {
-          onStep?.(chunk.step)
-        }
-      },
-      onDone: () => {
-        setIsStreaming(false)
-        setCurrentStreamId(null)
-        onDone?.()
-      },
-      onError: (error: Error) => {
-        setIsStreaming(false)
-        setCurrentStreamId(null)
-        onError?.(error)
-      },
-      onCancelled: () => {
-        setIsStreaming(false)
-        setCurrentStreamId(null)
-      },
-    })
-
-    serviceRef.current = service
+    serviceRef.current = streamService
 
     try {
-      await service.connect()
-      service.send({ prompt, stream_id: streamId })
+      await streamService.connect(prompt)
+      
+      streamService.onEvent((event) => {
+        if (event.type === 'token' && event.content) {
+          onToken?.(event.content)
+        }
+        if (event.type === 'step' && event.stepId) {
+          onStep?.(event.stepId)
+        }
+        if (event.type === 'done') {
+          setIsStreaming(false)
+          setCurrentStreamId(null)
+          onDone?.()
+        }
+        if (event.type === 'error') {
+          setIsStreaming(false)
+          setCurrentStreamId(null)
+          onError?.(new Error(event.error || 'Stream error'))
+        }
+      })
     } catch (err) {
       setIsStreaming(false)
       setCurrentStreamId(null)
@@ -74,15 +64,14 @@ export function useStream({ url, onToken, onStep, onDone, onError }: UseStreamOp
   }, [url])
 
   const stop = useCallback(() => {
-    serviceRef.current?.close()
+    streamService.close()
     setIsStreaming(false)
     setCurrentStreamId(null)
-    resetCurrentMessage()
   }, [])
 
   useEffect(() => {
     return () => {
-      serviceRef.current?.close()
+      streamService.close()
     }
   }, [])
 

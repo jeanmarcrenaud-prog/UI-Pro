@@ -32,7 +32,7 @@ interface EventMap {
   
   // Model events
   modelChange: { model: string }
-  modelsDiscovered: { models: Array<{ id: string; name: string; provider: string }> }
+  modelsDiscovered: { models: Array<{ id: string; name: string; provider: string }>; errors?: string[] }
   error: { message: string }
   
   // Custom store events
