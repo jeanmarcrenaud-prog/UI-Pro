@@ -34,9 +34,9 @@ interface SidebarProps {
 }
 
 const getNavigationTabs = (t: ReturnType<typeof useI18n>) => [
-  { id: 'chat', label: t.t.t.sidebar.chat, icon: '💬' },
-  { id: 'history', label: t.t.t.sidebar.history, icon: '📜' },
-  { id: 'settings', label: t.t.t.sidebar.settings, icon: '⚙️' },
+  { id: 'chat', label: t.t.sidebar.chat, icon: '💬' },
+  { id: 'history', label: t.t.sidebar.history, icon: '📜' },
+  { id: 'settings', label: t.t.sidebar.settings, icon: '⚙️' },
 ] as const
 
 // Component: LoadingIndicator
