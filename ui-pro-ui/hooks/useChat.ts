@@ -243,6 +243,7 @@ export const useChat = () => {
     currentStep: steps.find((s) => s.status === 'active'),
     sendMessage,
     cancel,
+    stopGeneration: cancel,  // Alias for backward compatibility
     clear,
   }
 }
