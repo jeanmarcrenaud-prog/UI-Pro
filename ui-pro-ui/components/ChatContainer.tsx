@@ -11,7 +11,7 @@ import { ExamplesList } from './chat/ExamplesList'
 import { LoadingIndicator } from './chat/LoadingIndicator'
 import { StepProgress } from './chat/StepProgress'
 import { motion } from 'framer-motion'
-import { translations } from '@/lib/i18n'
+import { useI18n } from '@/lib/i18n'
 import { useUIStore } from '@/lib/stores/uiStore'
 
 interface ChatContainerProps {
@@ -75,15 +75,13 @@ export function ChatContainer({
   } = useChat()
 
   const { locale = 'fr' } = useUIStore()
+  const { t, setLocale } = useI18n()
 
   const [inputValue, setInputValue] = useState('')
 
   // Source priority: props > hook
   const messages = propMessages.length > 0 ? propMessages : hookMessages
   const agentSteps = propAgentSteps.length > 0 ? propAgentSteps : steps
-
-  // Translations
-  const t = translations[locale]
 
   // Step progress visibility
   const stepsMessage = useMemo(() => {
