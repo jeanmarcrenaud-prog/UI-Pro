@@ -218,7 +218,7 @@ export const streamService = new StreamService()
 export const createStreamService = (options?: StreamOptions) => new StreamService()
 
 export type {
-  StreamEvent,
-  BackendStreamChunk,
-  StreamOptions,
+  StreamEvent as IStreamEvent,
+  BackendStreamChunk as IBackendChunk,
+  StreamOptions as IStreamOpts,
 }
