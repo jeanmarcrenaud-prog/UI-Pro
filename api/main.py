@@ -206,6 +206,7 @@ class ExecuteRequest(BaseModel):
     timeout: int = 30
     args: Optional[str] = None  # Command line arguments
     env: Optional[dict] = None  # Environment variables
+    validate: bool = False  # Run validation check
 
 
 class ExecuteResponse(BaseModel):
@@ -213,6 +214,8 @@ class ExecuteResponse(BaseModel):
     status: str = "ok"
     error: Optional[str] = None
     execution_time_ms: float = 0.0
+    errors: List[str] = []
+    warnings: List[str] = []
 
 
 @app.post("/api/execute", response_model=ExecuteResponse)
@@ -231,11 +234,32 @@ async def execute(request: ExecuteRequest):
             logger.info(f"[EXECUTE] stdout: {repr(result.get('stdout', ''))}")
             logger.info(f"[EXECUTE] success: {result.get('success')}")
             
+            # Run validation if requested
+            errors = []
+            warnings = []
+            if request.validate:
+                import ast
+                try:
+                    tree = ast.parse(request.code)
+                    for node in ast.walk(tree):
+                        if isinstance(node, ast.ExceptHandler) and node.type is None:
+                            warnings.append("Bare 'except:' clause caught. Consider specifying exception types.")
+                        if isinstance(node, ast.Call):
+                            if isinstance(node.func, ast.Name):
+                                if node.func.id == 'print':
+                                    warnings.append("print() statement detected.")
+                                elif node.func.id in ('eval', 'exec'):
+                                    warnings.append(f"Potential security issue: {node.func.id}()")
+                except SyntaxError as e:
+                    errors.append(f"Syntax error: {e.msg} at line {e.lineno}")
+            
             return ExecuteResponse(
                 result=result.get("stdout", ""),
                 status="ok" if result.get("success", True) else "error",
                 error=result.get("stderr") or result.get("error"),
-                execution_time_ms=(time.time() - start) * 1000
+                execution_time_ms=(time.time() - start) * 1000,
+                errors=errors,
+                warnings=warnings
             )
         else:
             return ExecuteResponse(
@@ -251,6 +275,84 @@ async def execute(request: ExecuteRequest):
             status="error",
             error=str(e),
             execution_time_ms=(time.time() - start) * 1000
+        )
+
+
+# ===================== VALIDATE ENDPOINT =====================
+class ValidateRequest(BaseModel):
+    code: str
+    language: str = "python"
+
+
+class ValidateResponse(BaseModel):
+    errors: List[str] = []
+    warnings: List[str] = []
+    status: str = "ok"
+    error: Optional[str] = None
+
+
+@app.post("/api/validate", response_model=ValidateResponse)
+async def validate(request: ValidateRequest):
+    """Analyze Python code for errors and warnings without execution"""
+    logger.info(f"[VALIDATE] analyzing code...")
+    
+    try:
+        if request.language == "python":
+            import ast
+            import warnings as py_warnings
+            
+            errors: List[str] = []
+            warnings: List[str] = []
+            
+            try:
+                tree = ast.parse(request.code)
+                
+                # Check for common issues
+                for node in ast.walk(tree):
+                    # Check for bare except
+                    if isinstance(node, ast.ExceptHandler):
+                        if node.type is None:
+                            warnings.append("Bare 'except:' clause caught. Consider specifying exception types.")
+                    
+                    # Check for print statements (often used for debugging)
+                    if isinstance(node, ast.Call):
+                        if isinstance(node.func, ast.Name) and node.func.id == 'print':
+                            warnings.append("print() statement detected. Consider using a logging module instead.")
+                    
+                    # Check for eval/use
+                    if isinstance(node, ast.Call):
+                        if isinstance(node.func, ast.Name) and node.func.id in ('eval', 'exec'):
+                            warnings.append(f"Potential security issue: {node.func.id}() can be dangerous.")
+                    
+                    # Check for unused imports
+                    # Note: This is a simplified check - real linters do more
+                
+            except SyntaxError as e:
+                errors.append(f"Syntax error: {e.msg} at line {e.lineno}")
+            
+            # Run with python -m py_compile for additional checks
+            import py_compile
+            try:
+                py_compile.compile(request.code, '<string>', doraise=True)
+            except py_compile.PyCompileError as e:
+                errors.append(f"Compilation error: {str(e)}")
+            
+            return ValidateResponse(
+                errors=errors,
+                warnings=warnings,
+                status="ok"
+            )
+        else:
+            return ValidateResponse(
+                status="error",
+                error=f"Language not supported: {request.language}"
+            )
+            
+    except Exception as e:
+        logger.error(f"Validate error: {e}")
+        return ValidateResponse(
+            status="error",
+            error=str(e)
         )
 
 
