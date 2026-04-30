@@ -26,6 +26,8 @@ export const CodeBlock = memo(function CodeBlock({
   const [error, setError] = useState<string | null>(null)
   const [showParams, setShowParams] = useState(false)
   const [params, setParams] = useState('')
+  const [validating, setValidating] = useState(false)
+  const [validationResult, setValidationResult] = useState<{errors: string[]; warnings: string[]} | null>(null)
   const { t } = useI18n()
 
   const copyToClipboard = async () => {
@@ -58,13 +60,18 @@ export const CodeBlock = memo(function CodeBlock({
         body: JSON.stringify({ 
           code: value, 
           language: language,
-          args: params || undefined
+          args: params || undefined,
+          validate: true  // Enable error detection
         })
       })
       const data = await res.json()
       
       if (data.status === 'ok') {
         setOutput(data.result)
+        // Check for errors/warnings in output
+        if (data.errors || data.warnings) {
+          setValidationResult({ errors: data.errors || [], warnings: data.warnings || [] })
+        }
       } else {
         setError(data.error || 'Execution failed')
       }
@@ -72,6 +79,36 @@ export const CodeBlock = memo(function CodeBlock({
       setError(String(err))
     } finally {
       setRunning(false)
+    }
+  }
+
+  // Quick validation without full execution
+  const handleValidate = async () => {
+    if (!value || language !== 'python') return
+    
+    setValidating(true)
+    setValidationResult(null)
+    
+    try {
+      const res = await fetch('http://localhost:8000/api/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: value })
+      })
+      const data = await res.json()
+      
+      if (data.status === 'ok') {
+        setValidationResult({ 
+          errors: data.errors || [], 
+          warnings: data.warnings || [] 
+        })
+      } else {
+        setError(data.error || 'Validation failed')
+      }
+    } catch (err) {
+      setError(String(err))
+    } finally {
+      setValidating(false)
     }
   }
 
@@ -97,6 +134,21 @@ export const CodeBlock = memo(function CodeBlock({
             >
               <span className="text-xs">⚙</span>
               <span className="text-xs">Params</span>
+            </button>
+          )}
+          {/* Validate Button */}
+          {canRun && (
+            <button
+              onClick={handleValidate}
+              disabled={validating}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-xl bg-amber-600 hover:bg-amber-500 disabled:bg-slate-600 transition-colors text-white"
+            >
+              {validating ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <span className="text-xs">✓</span>
+              )}
+              <span className="text-xs">Check</span>
             </button>
           )}
           {/* Run Button */}
@@ -184,13 +236,44 @@ export const CodeBlock = memo(function CodeBlock({
       )}
 
       {/* Output Area */}
-      {(output !== null || error !== null) && (
-        <div className="border-t border-slate-700 bg-slate-800 p-4">
-          <div className="text-xs font-medium text-slate-400 mb-2">Output:</div>
-          {error ? (
-            <pre className="text-red-400 text-sm font-mono whitespace-pre-wrap">{error}</pre>
-          ) : (
-            <pre className="text-emerald-400 text-sm font-mono whitespace-pre-wrap">{output || '(no output)'}</pre>
+      {(output !== null || error !== null || validationResult) && (
+        <div className="border-t border-slate-700 bg-slate-800 p-4 space-y-3">
+          {/* Validation Results */}
+          {validationResult && (
+            <div>
+              <div className="text-xs font-medium text-slate-400 mb-2">Analysis:</div>
+              {validationResult.errors.length > 0 && (
+                <div className="bg-red-950/50 border border-red-900/50 rounded-lg p-2 mb-2">
+                  <div className="text-xs font-medium text-red-400 mb-1">Errors:</div>
+                  {validationResult.errors.map((err, i) => (
+                    <pre key={i} className="text-red-300 text-xs font-mono whitespace-pre-wrap ml-2">{err}</pre>
+                  ))}
+                </div>
+              )}
+              {validationResult.warnings.length > 0 && (
+                <div className="bg-amber-950/50 border border-amber-900/50 rounded-lg p-2">
+                  <div className="text-xs font-medium text-amber-400 mb-1">Warnings:</div>
+                  {validationResult.warnings.map((warn, i) => (
+                    <pre key={i} className="text-amber-300 text-xs font-mono whitespace-pre-wrap ml-2">{warn}</pre>
+                  ))}
+                </div>
+              )}
+              {validationResult.errors.length === 0 && validationResult.warnings.length === 0 && (
+                <div className="text-emerald-400 text-xs">✓ No issues found</div>
+              )}
+            </div>
+          )}
+          
+          {/* Execution Output */}
+          {(output !== null || error !== null) && (
+            <div>
+              <div className="text-xs font-medium text-slate-400 mb-2">Output:</div>
+              {error ? (
+                <pre className="text-red-400 text-sm font-mono whitespace-pre-wrap">{error}</pre>
+              ) : (
+                <pre className="text-emerald-400 text-sm font-mono whitespace-pre-wrap">{output || '(no output)'}</pre>
+              )}
+            </div>
           )}
         </div>
       )}
