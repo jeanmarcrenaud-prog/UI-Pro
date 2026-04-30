@@ -1,7 +1,4 @@
-// SettingsView.tsx
-// Role: Settings page - displays model selector, backend status indicators, system resource metrics,
-// language selector, and About info
-
+// components/settings/SettingsView.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -21,194 +18,184 @@ interface BackendInfo {
 export function SettingsView() {
   const { availableModels, selectedModel, setSelectedModel } = useUIStore()
   const { t, locale, setLocale } = useI18n()
-  
+
   const [isRefreshLoading, setIsRefreshLoading] = useState(false)
   const [refreshError, setRefreshError] = useState<string | null>(null)
-  const [mounted, setMounted] = useState(false)
 
-  // Initialize on mount
-  useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  // Backend status check with browser-compatible timeout
   const [backendInfo, setBackendInfo] = useState<BackendInfo[]>([
-    { name: 'Ollama', url: LLM_CONFIG.ollamaUrl, status: 'inactive' as const },
-    { name: 'LM Studio', url: LLM_CONFIG.lmstudioUrl, status: 'inactive' as const },
-    { name: 'llama.cpp', url: LLM_CONFIG.llamacppUrl, status: 'inactive' as const },
-    { name: 'Lemonade', url: LLM_CONFIG.lemonadeUrl, status: 'inactive' as const },
+    { name: 'Ollama', url: LLM_CONFIG.ollamaUrl, status: 'inactive' },
+    { name: 'LM Studio', url: LLM_CONFIG.lmstudioUrl, status: 'inactive' },
+    { name: 'llama.cpp', url: LLM_CONFIG.llamacppUrl, status: 'inactive' },
+    { name: 'Lemonade', url: LLM_CONFIG.lemonadeUrl, status: 'inactive' },
   ])
 
-  // Test backend connectivity with manual timeout (browser-compatible)
+  // Check backend connectivity once on mount
   useEffect(() => {
-    const checkBackend = async (backend: BackendInfo): Promise<BackendInfo> => {
-      try {
-        // Try /api/tags first (Ollama)
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 2000)
-        const response = await fetch(`${backend.url}/api/tags`, { signal: controller.signal })
-        clearTimeout(timeoutId)
-        if (response.ok) return { ...backend, status: 'active' as const }
-      } catch {
-        // Try /api/v1/models (OpenAI-compatible)
-        try {
-          const controller = new AbortController()
-          const timeoutId = setTimeout(() => controller.abort(), 2000)
-          const response = await fetch(`${backend.url}/api/v1/models`, { signal: controller.signal })
-          clearTimeout(timeoutId)
-          if (response.ok) return { ...backend, status: 'active' as const }
-        } catch {
-          // Both failed
-        }
-      }
-      return backend
-    }
-
     const checkBackends = async () => {
-      const results = await Promise.all(backendInfo.map(checkBackend))
+      const results = await Promise.all(
+        backendInfo.map(async (backend): Promise<BackendInfo> => {
+          const endpoints = [`${backend.url}/api/tags`, `${backend.url}/api/v1/models`]
+
+          for (const endpoint of endpoints) {
+            try {
+              const controller = new AbortController()
+              const timeoutId = setTimeout(() => controller.abort(), 2500)
+
+              const res = await fetch(endpoint, { signal: controller.signal })
+              clearTimeout(timeoutId)
+
+              if (res.ok) {
+                return { ...backend, status: 'active' }
+              }
+            } catch {
+              // Try next endpoint
+            }
+          }
+          return backend // remains 'inactive'
+        })
+      )
       setBackendInfo(results)
     }
-    checkBackends()
-  }, [])
 
-  const handleLocaleChange = (newLocale: Locale) => {
-    setLocale(newLocale)
-  }
+    checkBackends()
+  }, []) // Empty dependency array = run once
 
   const handleRefreshModels = async () => {
     setIsRefreshLoading(true)
     setRefreshError(null)
+
     try {
       await modelDiscovery.discover()
-    } catch (error) {
-      console.error('Failed to discover models:', error)
-      setRefreshError(error instanceof Error ? error.message : 'Unknown error')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to refresh models'
+      setRefreshError(message)
+      console.error('Model discovery failed:', err)
     } finally {
       setIsRefreshLoading(false)
     }
   }
 
-  const modelCount = availableModels.length
+  const handleLocaleChange = (newLocale: Locale) => {
+    setLocale(newLocale)
+  }
 
-  if (!mounted) return null
+  const modelCount = availableModels.length
 
   return (
     <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.3 }}
-      className="flex-1 p-4 overflow-y-auto"
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35 }}
+      className="flex-1 p-6 overflow-y-auto"
     >
       {/* Header */}
-      <div className="mb-4">
-        <h2 className="text-xl font-semibold text-white mb-1">
+      <div className="mb-8">
+        <h2 className="text-2xl font-semibold text-white tracking-tight">
           {t.settings.title}
         </h2>
-        <p className="text-xs text-slate-500">
+        <p className="text-slate-400 mt-1 text-[15px]">
           {t.settings.subtitle}
         </p>
       </div>
 
-      {/* Grid Layout - 2 columns on md+, stack on mobile */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Section: Language */}
-        <section className="bg-slate-800/50 rounded-xl p-4 border border-slate-800/60">
-          <h3 className="text-xs font-semibold text-slate-400 mb-3 flex items-center gap-2">
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 5h12M9 3v2m1.048 9.5A18.023 18.023 0 016.412 9m6.088 9h7M11 21l5-10 5 10" />
-            </svg>
-            {t.settings.language}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Language */}
+        <section className="bg-slate-800/70 rounded-2xl p-6 border border-slate-700">
+          <h3 className="text-sm font-medium text-slate-300 mb-4 flex items-center gap-2">
+            🌐 {t.settings.language}
           </h3>
           <select
             value={locale}
             onChange={(e) => handleLocaleChange(e.target.value as Locale)}
-            className="w-full bg-slate-700/80 border border-slate-600 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500 appearance-none"
+            className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-violet-500 transition-colors"
           >
             <option value="fr">🇫🇷 Français</option>
             <option value="en">🇬🇧 English</option>
           </select>
         </section>
-        <section className="bg-slate-800/50 rounded-xl p-4 border border-slate-800/60">
-          <h3 className="text-xs font-semibold text-slate-400 mb-3 flex items-center gap-2">
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            {t.settings.about}
+
+        {/* About */}
+        <section className="bg-slate-800/70 rounded-2xl p-6 border border-slate-700">
+          <h3 className="text-sm font-medium text-slate-300 mb-4 flex items-center gap-2">
+            ℹ️ {t.settings.about}
           </h3>
-          <div className="flex items-center justify-between">
+          <div className="flex justify-between items-start">
             <div>
-              <p className="text-sm text-white font-semibold">UI-Pro</p>
-              <p className="text-xs text-slate-500">v1.0.0</p>
+              <p className="text-lg font-semibold text-white">UI-Pro</p>
+              <p className="text-xs text-slate-500 mt-0.5">Version 1.0.0 • Built with Next.js + Ollama</p>
             </div>
-            <span className="text-xs text-slate-500">✓</span>
+            <span className="text-emerald-400 text-2xl">✓</span>
           </div>
-          <p className="text-xs text-slate-500 mt-2">
-            Ollama + Next.js
-          </p>
         </section>
 
-        {/* Section: Models - Full width */}
-        <section className="md:col-span-2 bg-slate-800/50 rounded-xl p-4 border border-slate-800/60">
-          <h3 className="text-xs font-semibold text-slate-400 mb-3 flex items-center gap-2">
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-            </svg>
-            {t.settings.modelsSection}
+        {/* Models Section */}
+        <section className="lg:col-span-2 bg-slate-800/70 rounded-2xl p-6 border border-slate-700">
+          <h3 className="text-sm font-medium text-slate-300 mb-4 flex items-center gap-2">
+            🤖 {t.settings.modelsSection}
           </h3>
 
-          <div className="flex items-center gap-3 mb-3">
-            <div className="flex-1">
-              <select
-                value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
-                className="w-full bg-slate-700/80 border border-slate-600 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
-              >
-                {availableModels.length === 0 ? (
-                  <option value="">No models</option>
-                ) : (
-                  availableModels.map((model) => (
-                    <option key={model} value={model}>{model}</option>
-                  ))
-                )}
-              </select>
-            </div>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <select
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value)}
+              className="flex-1 bg-slate-900 border border-slate-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-violet-500"
+            >
+              {modelCount === 0 ? (
+                <option value="">Aucun modèle disponible</option>
+              ) : (
+                availableModels.map((model) => (
+                  <option key={model} value={model}>
+                    {model}
+                  </option>
+                ))
+              )}
+            </select>
+
             <button
               onClick={handleRefreshModels}
               disabled={isRefreshLoading}
-              className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-xs px-3 py-2 rounded-lg transition-all"
+              className="px-6 py-3 bg-violet-600 hover:bg-violet-700 disabled:bg-violet-800/70 disabled:cursor-wait text-white text-sm font-medium rounded-xl transition-all flex items-center justify-center gap-2 whitespace-nowrap min-w-[120px]"
             >
-              {isRefreshLoading ? '⟳' : '↻'} {t.settings.refresh}
+              {isRefreshLoading ? (
+                <>⟳ {t.settings.refreshing}</>
+              ) : (
+                <>↻ {t.settings.refresh}</>
+              )}
             </button>
           </div>
+
           {refreshError && (
-            <p className="text-xs text-red-400 mt-2">Error: {refreshError}</p>
+            <p className="mt-3 text-sm text-red-400 bg-red-950/50 border border-red-900/50 rounded-lg px-4 py-2">
+              ⚠️ {refreshError}
+            </p>
           )}
-          <p className="text-xs text-slate-500">{modelCount} model{modelCount !== 1 ? 's' : ''} available</p>
+
+          <p className="mt-4 text-xs text-slate-500">
+            {modelCount} modèle{modelCount !== 1 ? 's' : ''} disponible{modelCount !== 1 ? 's' : ''}
+          </p>
         </section>
 
-        {/* Section: Backend Connections - Full width */}
-        <section className="md:col-span-2 bg-slate-800/50 rounded-xl border border-slate-800/60 overflow-hidden">
-          <h3 className="text-xs font-semibold text-slate-400 p-3 border-b border-slate-700/50 flex items-center gap-2">
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2m-2-4h.01M17 16h.01" />
-            </svg>
-            {t.settings.backendConnections}
+        {/* Backend Connections */}
+        <section className="lg:col-span-2 bg-slate-800/70 rounded-2xl border border-slate-700 overflow-hidden">
+          <h3 className="text-sm font-medium text-slate-300 p-6 border-b border-slate-700 flex items-center gap-2">
+            🔌 {t.settings.backendConnections}
           </h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-slate-700/30">
+          <div className="grid grid-cols-2 md:grid-cols-4">
             {backendInfo.map((backend) => (
-              <div key={backend.name} className="p-3 text-center">
-                <p className="text-xs text-slate-400 mb-1">{backend.name}</p>
-                <span className={`inline-flex items-center gap-1 text-xs ${backend.status === 'active' ? 'text-emerald-400' : 'text-slate-500'}`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${backend.status === 'active' ? 'bg-emerald-400' : 'bg-slate-600'}`} />
+              <div key={backend.name} className="p-6 text-center border-b border-slate-700 last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0">
+                <p className="font-medium text-white mb-2">{backend.name}</p>
+                <div className={`inline-flex items-center gap-2 text-sm ${backend.status === 'active' ? 'text-emerald-400' : 'text-slate-500'}`}>
+                  <div className={`w-2.5 h-2.5 rounded-full ${backend.status === 'active' ? 'bg-emerald-400' : 'bg-slate-600'}`} />
                   {backend.status === 'active' ? t.settings.active : t.settings.inactive}
-                </span>
+                </div>
+                <p className="text-[10px] text-slate-600 mt-3 truncate font-mono">{backend.url}</p>
               </div>
             ))}
           </div>
         </section>
 
-        {/* Section: System Stats - Full width */}
-        <section className="md:col-span-2">
+        {/* System Stats */}
+        <section className="lg:col-span-2 pt-2">
           <SystemStats />
         </section>
       </div>
