@@ -24,6 +24,8 @@ export const CodeBlock = memo(function CodeBlock({
   const [running, setRunning] = useState(false)
   const [output, setOutput] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [showParams, setShowParams] = useState(false)
+  const [params, setParams] = useState('')
   const { t } = useI18n()
 
   const copyToClipboard = async () => {
@@ -53,7 +55,11 @@ export const CodeBlock = memo(function CodeBlock({
       const res = await fetch('http://localhost:8000/api/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: value, language: language })
+        body: JSON.stringify({ 
+          code: value, 
+          language: language,
+          args: params || undefined
+        })
       })
       const data = await res.json()
       
@@ -81,6 +87,18 @@ export const CodeBlock = memo(function CodeBlock({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Parameters Toggle */}
+          {canRun && (
+            <button
+              onClick={() => setShowParams(!showParams)}
+              className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-xl transition-colors ${
+                showParams ? 'bg-violet-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+              }`}
+            >
+              <span className="text-xs">⚙</span>
+              <span className="text-xs">Params</span>
+            </button>
+          )}
           {/* Run Button */}
           {canRun && (
             <button
@@ -148,6 +166,22 @@ export const CodeBlock = memo(function CodeBlock({
           {value}
         </SyntaxHighlighterComp>
       </div>
+
+      {/* Parameters Input */}
+      {showParams && canRun && (
+        <div className="border-t border-slate-700 bg-slate-800/50 p-4">
+          <div className="flex items-center gap-3">
+            <label className="text-xs font-medium text-slate-400">Args:</label>
+            <input
+              type="text"
+              value={params}
+              onChange={(e) => setParams(e.target.value)}
+              placeholder="arg1 arg2 --flag value"
+              className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
+            />
+          </div>
+        </div>
+      )}
 
       {/* Output Area */}
       {(output !== null || error !== null) && (

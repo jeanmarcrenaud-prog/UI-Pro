@@ -204,6 +204,8 @@ class ExecuteRequest(BaseModel):
     code: str
     language: str = "python"
     timeout: int = 30
+    args: Optional[str] = None  # Command line arguments
+    env: Optional[dict] = None  # Environment variables
 
 
 class ExecuteResponse(BaseModel):
