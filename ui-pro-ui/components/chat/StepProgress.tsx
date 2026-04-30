@@ -4,7 +4,7 @@
 import { memo, useMemo, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { AgentStep } from '@/lib/types';
-import { STEP_STATUS_LABELS, translations } from '@/lib/i18n';
+import { STEP_STATUS_LABELS, useI18n } from '@/lib/i18n';
 
 interface StepProgressProps {
   steps: AgentStep[];
@@ -88,7 +88,7 @@ export function StepProgress({
   currentStep = 0,
   showStepList = true,
 }: StepProgressProps) {
-  const t = translations[locale];
+  const { t } = useI18n();
   
   // Detect if we're streaming via uiStore status
   const [isStreaming, setIsStreaming] = useState(false);
