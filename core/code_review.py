@@ -1,187 +1,179 @@
 """
-Code Review Module - Run bandit/pylint before code execution.
+Code Review Module - Static analysis before executing LLM-generated code.
+Supports: Bandit (security) and Pylint (style & bugs).
 """
 
 import subprocess
-import tempfile
+import json
 import logging
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class ReviewResult:
-    """Code review result"""
+    """Result of code review"""
     success: bool
-    issues: list
+    issues: List[Dict[str, Any]]
     tool: str
-    output: str
+    summary: str
+    raw_output: str = ""
 
 
 class CodeReviewer:
-    """Run static analysis tools on code before execution"""
-    
+    """Runs security and quality checks on Python code before execution."""
+
     def __init__(
         self,
-        tools: list[str] | None = None,
-        fail_on: list[str] | None = None
+        tools: List[str] | None = None,
+        fail_on: List[str] | None = None,
+        bandit_config: Optional[Path] = None,
     ):
-        """
-        Initialize code reviewer.
-        
-        Args:
-            tools: List of tools to run (bandit, pylint)
-            fail_on: Severity levels to fail on (high, medium, low)
-        """
         self.tools = tools or ["bandit"]
-        self.fail_on = fail_on or ["high", "medium"]
-    
+        self.fail_on = {level.lower() for level in (fail_on or ["high", "medium"])}
+        self.bandit_config = bandit_config
+
     def review(self, code: str) -> ReviewResult:
-        """
-        Run code review on provided code.
-        
-        Args:
-            code: Python code to review
-            
-        Returns:
-            ReviewResult with success status and issues
-        """
-        all_issues = []
-        
-        # Use TemporaryDirectory for automatic cleanup
-        with tempfile.TemporaryDirectory(suffix=".py") as tmpdir:
-            temp_path = Path(tmpdir) / "code.py"
-            temp_path.write_text(code, encoding="utf-8")
-            
-            # Run each tool
+        """Review code using configured tools."""
+        if not code or not code.strip():
+            return ReviewResult(success=True, issues=[], tool="", summary="Empty code")
+
+        all_issues: List[Dict[str, Any]] = []
+
+        with NamedTemporaryFile(mode="w", suffix=".py", delete=True, encoding="utf-8") as tmp:
+            tmp.write(code)
+            tmp.flush()
+            filepath = tmp.name
+
             for tool in self.tools:
                 if tool == "bandit":
-                    result = self._run_bandit(str(temp_path))
-                    all_issues.extend(result.get("issues", []))
+                    issues = self._run_bandit(filepath)
+                    all_issues.extend(issues)
                 elif tool == "pylint":
-                    result = self._run_pylint(str(temp_path))
-                    all_issues.extend(result.get("issues", []))
-            
-            # Check if any issues should fail the build
-            has_failures = any(
-                issue.get("severity", "").lower() in self.fail_on
-                for issue in all_issues
-            )
-            
-            return ReviewResult(
-                success=not has_failures,
-                issues=all_issues,
-                tool=", ".join(self.tools),
-                output=f"Found {len(all_issues)} issues"
-            )
-    
-    def _run_bandit(self, filepath: str) -> dict:
-        """Run bandit static analysis"""
-        issues = []
-        
+                    issues = self._run_pylint(filepath)
+                    all_issues.extend(issues)
+
+        # Determine if we should fail
+        has_critical_issues = any(
+            issue.get("severity", "").lower() in self.fail_on for issue in all_issues
+        )
+
+        return ReviewResult(
+            success=not has_critical_issues,
+            issues=all_issues,
+            tool=", ".join(self.tools),
+            summary=f"Found {len(all_issues)} issue(s)",
+            raw_output="",
+        )
+
+    def _run_bandit(self, filepath: str) -> List[Dict[str, Any]]:
+        """Run Bandit security linter."""
+        issues: List[Dict[str, Any]] = []
+        cmd = ["bandit", "-f", "json", "-r", filepath]
+
+        if self.bandit_config and self.bandit_config.exists():
+            cmd.extend(["--configfile", str(self.bandit_config)])
+
         try:
             result = subprocess.run(
-                ["bandit", "-f", "json", filepath],
+                cmd,
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=25,
             )
-            
-            # Bandit returns non-zero if issues found - that's not an error
-            if result.stdout:
-                import json
+
+            if result.stdout.strip():
                 try:
                     data = json.loads(result.stdout)
                     for finding in data.get("results", []):
                         issues.append({
                             "tool": "bandit",
-                            "severity": finding.get("issue_severity", "medium"),
+                            "severity": finding.get("issue_severity", "medium").lower(),
                             "message": finding.get("issue_text", ""),
-                            "line": finding.get("line_number", 0),
+                            "line": finding.get("line_number"),
+                            "code": finding.get("code"),
+                            "test_id": finding.get("test_id"),
                         })
                 except json.JSONDecodeError:
-                    # Non-JSON output - may be error message
-                    if result.stderr:
-                        logger.warning(f"Bandit error: {result.stderr}")
-            
-            return {"issues": issues}
-            
+                    logger.warning("Failed to parse bandit JSON output")
+
+            # If bandit failed for other reasons
+            if result.returncode not in (0, 1):  # 1 = issues found
+                logger.warning(f"Bandit exited with code {result.returncode}: {result.stderr}")
+
         except FileNotFoundError:
-            logger.warning("bandit not installed - skipping")
-            return {"issues": []}
+            logger.warning("bandit not installed. Skipping security scan.")
         except subprocess.TimeoutExpired:
             logger.warning("Bandit timed out")
-            return {"issues": []}
         except Exception as e:
-            logger.warning(f"Bandit error: {e}")
-            return {"issues": []}
-    
-    def _run_pylint(self, filepath: str) -> dict:
-        """Run pylint static analysis"""
-        issues = []
-        
+            logger.error(f"Unexpected error running bandit: {e}")
+
+        return issues
+
+    def _run_pylint(self, filepath: str) -> List[Dict[str, Any]]:
+        """Run Pylint for code quality."""
+        issues: List[Dict[str, Any]] = []
         try:
             result = subprocess.run(
                 ["pylint", "--output-format=json", filepath],
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
             )
-            
-            # Pylint returns non-zero if issues found - that's not an error
-            if result.stdout:
-                import json
+
+            if result.stdout.strip():
                 try:
                     data = json.loads(result.stdout)
                     for msg in data:
                         severity = "low"
-                        if msg.get("type") == "error":
+                        msg_type = msg.get("type", "")
+                        if msg_type == "error":
                             severity = "high"
-                        elif msg.get("type") == "warning":
+                        elif msg_type in ("warning", "refactor"):
                             severity = "medium"
-                        
+
                         issues.append({
                             "tool": "pylint",
                             "severity": severity,
                             "message": msg.get("message", ""),
-                            "line": msg.get("line", 0),
+                            "line": msg.get("line"),
+                            "column": msg.get("column"),
+                            "symbol": msg.get("symbol"),
                         })
                 except json.JSONDecodeError:
-                    # Non-JSON output - may be error message
-                    if result.stderr:
-                        logger.warning(f"Pylint error: {result.stderr}")
-            
-            return {"issues": issues}
-            
+                    logger.warning("Failed to parse pylint JSON output")
+
         except FileNotFoundError:
-            logger.warning("pylint not installed - skipping")
-            return {"issues": []}
+            logger.warning("pylint not installed. Skipping linting.")
         except subprocess.TimeoutExpired:
             logger.warning("Pylint timed out")
-            return {"issues": []}
         except Exception as e:
-            logger.warning(f"Pylint error: {e}")
-            return {"issues": []}
+            logger.error(f"Unexpected error running pylint: {e}")
+
+        return issues
 
 
-# Singleton instance
+# ====================== Singleton ======================
+
 _reviewer: Optional[CodeReviewer] = None
 
 
 def get_reviewer(
-    tools: list[str] | None = None,
-    fail_on: list[str] | None = None
+    tools: List[str] | None = None,
+    fail_on: List[str] | None = None,
+    bandit_config: Optional[Path] = None,
 ) -> CodeReviewer:
-    """Get singleton code reviewer"""
+    """Get or create the singleton CodeReviewer."""
     global _reviewer
     if _reviewer is None:
-        _reviewer = CodeReviewer(tools=tools, fail_on=fail_on)
+        _reviewer = CodeReviewer(tools=tools, fail_on=fail_on, bandit_config=bandit_config)
     return _reviewer
 
 
 def review_code(code: str) -> ReviewResult:
-    """Convenience function to review code"""
+    """Convenience function to review code before execution."""
     return get_reviewer().review(code)
