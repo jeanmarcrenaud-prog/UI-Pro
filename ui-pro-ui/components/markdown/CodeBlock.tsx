@@ -246,7 +246,7 @@ export const CodeBlock = memo(function CodeBlock({
                 <div className="bg-red-950/50 border border-red-900/50 rounded-lg p-2 mb-2">
                   <div className="text-xs font-medium text-red-400 mb-1">Errors:</div>
                   {validationResult.errors.map((err, i) => (
-                    <pre key={i} className="text-red-300 text-xs font-mono whitespace-pre-wrap ml-2">{err}</pre>
+                    <pre key={i} className="text-red-300 text-xs font-mono whitespace-pre-wrap ml-2 max-h-40 overflow-auto">{err}</pre>
                   ))}
                 </div>
               )}
@@ -254,7 +254,7 @@ export const CodeBlock = memo(function CodeBlock({
                 <div className="bg-amber-950/50 border border-amber-900/50 rounded-lg p-2">
                   <div className="text-xs font-medium text-amber-400 mb-1">Warnings:</div>
                   {validationResult.warnings.map((warn, i) => (
-                    <pre key={i} className="text-amber-300 text-xs font-mono whitespace-pre-wrap ml-2">{warn}</pre>
+                    <pre key={i} className="text-amber-300 text-xs font-mono whitespace-pre-wrap ml-2 max-h-40 overflow-auto">{warn}</pre>
                   ))}
                 </div>
               )}
@@ -269,9 +269,9 @@ export const CodeBlock = memo(function CodeBlock({
             <div>
               <div className="text-xs font-medium text-slate-400 mb-2">Output:</div>
               {error ? (
-                <pre className="text-red-400 text-sm font-mono whitespace-pre-wrap">{error}</pre>
+                <pre className="text-red-400 text-sm font-mono whitespace-pre-wrap max-h-64 overflow-auto">{error}</pre>
               ) : (
-                <pre className="text-emerald-400 text-sm font-mono whitespace-pre-wrap">{output || '(no output)'}</pre>
+                <pre className="text-emerald-400 text-sm font-mono whitespace-pre-wrap max-h-64 overflow-auto">{output || '(no output)'}</pre>
               )}
             </div>
           )}
