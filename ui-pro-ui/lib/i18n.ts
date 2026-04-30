@@ -203,8 +203,10 @@ const translations: Record<Locale, Translations> = {
 
 export function useI18n() {
   const [locale, setLocale] = useState<Locale>('en')
+  const [isClient, setIsClient] = useState(false)
 
   useEffect(() => {
+    setIsClient(true)
     // Only run on client (SSR safe)
     const savedLocale = localStorage.getItem('locale') as Locale | null
     if (savedLocale && (savedLocale === 'en' || savedLocale === 'fr')) {
@@ -214,10 +216,13 @@ export function useI18n() {
 
   const changeLocale = (newLocale: Locale) => {
     setLocale(newLocale)
-    localStorage.setItem('locale', newLocale)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('locale', newLocale)
+    }
   }
 
-  const t = translations[locale]
+  // Fallback to default translations if not loaded yet
+  const t = translations[locale] || translations.en
 
   return {
     t,
