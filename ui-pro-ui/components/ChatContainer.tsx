@@ -1,24 +1,15 @@
-// ChatContainer.tsx
-// Role: Main chat container with messages, step progress, and input
-
+// components/chat/ChatContainer.tsx
 'use client'
 
-import { useMemo, useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import type { Message, AgentStep } from '@/lib/types'
 import { useChat } from '@/hooks/useChat'
 import { ChatMessages } from './chat/ChatMessages'
 import { ExamplesList } from './chat/ExamplesList'
 import { LoadingIndicator } from './chat/LoadingIndicator'
 import { StepProgress } from './chat/StepProgress'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useI18n } from '@/lib/i18n'
-import { useUIStore } from '@/lib/stores/uiStore'
-
-interface ChatContainerProps {
-  messages?: Message[]
-  agentSteps?: AgentStep[]
-  locale?: 'en' | 'fr'
-}
 
 const DEFAULT_EXAMPLES = [
   {
@@ -63,35 +54,32 @@ const DEFAULT_EXAMPLES = [
   },
 ]
 
-export function ChatContainer({
-  messages: propMessages = [],
-  agentSteps: propAgentSteps = [],
+interface ChatContainerProps {
+  messages?: Message[]
+  agentSteps?: AgentStep[]
+}
+
+export function ChatContainer({ 
+  messages: propMessages = [], 
+  agentSteps: propAgentSteps = [] 
 }: ChatContainerProps) {
-  const {
-    messages: hookMessages,
-    isLoading,
-    sendMessage,
-    steps,
+  const { 
+    messages: hookMessages, 
+    isLoading, 
+    sendMessage, 
+    steps 
   } = useChat()
 
-  const { locale = 'fr' } = useUIStore()
-  const { t, setLocale } = useI18n()
+  const { t, locale } = useI18n()
 
   const [inputValue, setInputValue] = useState('')
 
-  // Source priority: props > hook
+  // Priority: props > hook (useful for modal/preview modes)
   const messages = propMessages.length > 0 ? propMessages : hookMessages
   const agentSteps = propAgentSteps.length > 0 ? propAgentSteps : steps
 
-  // Step progress visibility
-  const stepsMessage = useMemo(() => {
-    if (!agentSteps?.length) return null
-    return agentSteps
-  }, [agentSteps])
+  const isEmpty = messages.length === 0
 
-  // =====================
-  // HANDLERS
-  // =====================
   const handleSend = useCallback(() => {
     const trimmed = inputValue.trim()
     if (!trimmed || isLoading) return
@@ -104,84 +92,81 @@ export function ChatContainer({
     sendMessage(prompt)
   }, [sendMessage])
 
+  // Auto-resize textarea
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const textarea = e.target
+    textarea.style.height = 'auto'
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 180)}px`
+    setInputValue(e.target.value)
+  }
+
+  const showStreamingIndicator = useMemo(() => {
+    return messages.some(m => m.status === 'streaming')
+  }, [messages])
+
   return (
-    <div className="flex-1 flex flex-col">
+    <div className="flex flex-col h-full">
+      {/* Messages Area */}
+      <div className="flex-1 overflow-y-auto px-4 py-6 space-y-6 scrollbar-thin scrollbar-thumb-slate-700">
+        <AnimatePresence mode="wait">
+          {isEmpty ? (
+            <ExamplesList
+              examples={DEFAULT_EXAMPLES}
+              onSelect={handleExampleSelect}
+              disabled={isLoading}
+            />
+          ) : (
+            <ChatMessages messages={messages} />
+          )}
+        </AnimatePresence>
 
-      {/* ===================== */}
-      {/* MESSAGES AREA */}
-      {/* ===================== */}
-      <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
+        {/* Step Progress */}
+        <AnimatePresence>
+          {agentSteps.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+            >
+              <StepProgress steps={agentSteps} locale={locale} />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-        {/* Empty state - show examples */}
-        {messages.length === 0 ? (
-          <ExamplesList
-            examples={DEFAULT_EXAMPLES}
-            onSelect={handleExampleSelect}
-            disabled={isLoading}
-          />
-        ) : (
-          <ChatMessages messages={messages} />
-        )}
+        {/* Loading / Streaming Indicators */}
+        <AnimatePresence>
+          {isLoading && !showStreamingIndicator && (
+            <LoadingIndicator label={t.loading?.dots || 'Thinking...'} />
+          )}
 
-        {/* Agent step progress */}
-        {stepsMessage && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-          >
-            <StepProgress steps={stepsMessage} locale={locale} />
-          </motion.div>
-        )}
-
-        {/* Loading state (before streaming starts) */}
-        {isLoading && !messages.some(m => m.status === 'streaming') && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-          >
-            <LoadingIndicator label={t.loading?.dots || 'Loading'} />
-          </motion.div>
-        )}
-
-        {/* Streaming status */}
-        {messages.some(m => m.status === 'streaming') && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex gap-3"
-          >
-            <div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-xs">
-              ✨
-            </div>
-            <div className="bg-slate-800 rounded-2xl px-4 py-2">
-              <span className="text-sm text-slate-300 flex items-center gap-2">
-                <motion.span
-                  animate={{ rotate: 360 }}
-                  transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
-                  className="text-xs"
-                >
-                  ⚡
-                </motion.span>
+          {showStreamingIndicator && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex items-center gap-3 pl-2"
+            >
+              <div className="w-7 h-7 rounded-full bg-emerald-600/20 flex items-center justify-center">
+                <span className="text-emerald-400 text-lg">✦</span>
+              </div>
+              <div className="bg-slate-800 rounded-2xl px-5 py-2.5 text-sm text-slate-300">
                 {t.streaming.generating}
-              </span>
-            </div>
-          </motion.div>
-        )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
-      {/* ===================== */}
-      {/* INPUT AREA */}
-      {/* ===================== */}
-      <div className="sticky bottom-0 bg-slate-950/80 backdrop-blur border-t border-slate-800 p-4">
-        <div className="max-w-3xl mx-auto flex gap-2">
-          <div className="flex-1 bg-[#0f172a] rounded-xl p-2 border border-slate-700 focus-within:border-violet-500">
+      {/* Input Area */}
+      <div className="sticky bottom-0 bg-gradient-to-t from-slate-950 via-slate-950 to-transparent pt-4 pb-6 px-4 border-t border-slate-800">
+        <div className="max-w-4xl mx-auto">
+          <div className="relative bg-slate-900 rounded-3xl border border-slate-700 focus-within:border-violet-500 transition-colors">
             <textarea
               value={inputValue}
+              onChange={handleTextareaChange}
               disabled={isLoading}
-              onChange={(e) => setInputValue(e.target.value)}
               placeholder={t.input?.placeholder || 'Describe your task...'}
               rows={1}
-              className="w-full bg-transparent text-white outline-none px-3 resize-none"
+              className="w-full bg-transparent text-white placeholder-slate-500 px-6 py-4 pr-20 resize-y min-h-[56px] max-h-[180px] outline-none text-[15px]"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault()
@@ -189,14 +174,20 @@ export function ChatContainer({
                 }
               }}
             />
+
             <button
               onClick={handleSend}
-              disabled={isLoading}
-              className="bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white px-4 py-1.5 rounded-lg ml-1"
+              disabled={!inputValue.trim() || isLoading}
+              className="absolute bottom-4 right-4 bg-violet-600 hover:bg-violet-700 disabled:bg-slate-700 disabled:text-slate-500 text-white p-3 rounded-2xl transition-all disabled:cursor-not-allowed"
+              aria-label="Send message"
             >
-              ➤
+              <span className="text-xl leading-none">↑</span>
             </button>
           </div>
+
+          <p className="text-center text-[10px] text-slate-500 mt-3">
+            UI-Pro can make mistakes. Consider checking important information.
+          </p>
         </div>
       </div>
     </div>
