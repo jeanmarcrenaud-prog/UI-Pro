@@ -1,9 +1,8 @@
 // modelDiscovery.ts
 // Role: Singleton service that discovers available LLM models from backends (Ollama, LMStudio, 
-// llama.cpp, Lemonade), updates the UI store, fetches default model from settings, and polls for updates
+// llama.cpp, Lemonade), and emits events for the UI to consume
 
 // Model Discovery Service - Discovers available models from different backends
-import { useUIStore } from '@/lib/stores/uiStore'
 import { events } from '@/lib/events'
 import { LLM_CONFIG } from '@/lib/config'
 
@@ -67,45 +66,16 @@ class ModelDiscoveryService {
 
     this.models = allModels
     
-    // Update UI store - use store defaults if no models found
-    const modelIds = allModels.length > 0 
-      ? allModels.map(m => m.id)
-      : useUIStore.getState().availableModels // Keep defaults
-    
-    useUIStore.getState().setAvailableModels(modelIds)
-    
-    // Fetch default model from backend settings and use as initial selection
-    // ONLY if no model is already selected (preserve user choice!)
-    try {
-      const settingsController = new AbortController()
-      const settingsTimeout = setTimeout(() => settingsController.abort(), 5000)
-      const response = await fetch('/api/settings/default-model', {
-        signal: settingsController.signal,
-      })
-      clearTimeout(settingsTimeout)
-
-      if (response.ok) {
-        const data = await response.json()
-        const defaultModel = data?.model_fast
-        // Only set if no model (strict null check, allow empty string)
-        const current = useUIStore.getState().selectedModel
-        if (!current && current !== '' && defaultModel) {
-          useUIStore.getState().setSelectedModel(defaultModel)
-        }
-      }
-    } catch {
-      // Fallback: use first available model, but ONLY if nothing selected
-      const current = useUIStore.getState().selectedModel
-      if (modelIds.length > 0 && (!current || current === '')) {
-        useUIStore.getState().setSelectedModel(modelIds[0])
-      }
-    }
-    
-    // Emit event
+    // Emit event - let caller update UI store
     events.emit('modelsDiscovered', { models: allModels, errors })
     
     this.isDiscovering = false
     return allModels
+  }
+
+  // Public: Get models for caller to use
+  getModels(): Model[] {
+    return [...this.models]
   }
 
   private async fetchFromBackend(
