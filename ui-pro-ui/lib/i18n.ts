@@ -71,147 +71,129 @@ export interface Translations {
   }
 }
 
-// ==================== TRANSLATIONS ====================
-
-const translations: Record<Locale, Translations> = {
-  en: {
-    welcome: { title: 'Welcome to UI-Pro', subtitle: 'AI Agent System' },
-    input: { placeholder: 'Describe your task...' },
-    steps: {
-      analyzing: 'Analyzing request...',
-      planning: 'Planning solution...',
-      executing: 'Executing code...',
-      reviewing: 'Reviewing results...',
-      complete: 'Complete',
-      initializing: 'Initializing...',
-      processing: 'Processing step...',
-      stepLabel: (c, t) => `Step ${c}/${t}`,
-    },
-    streaming: { generating: 'Generating response...' },
-    loading: { dots: 'Loading' },
-    settings: {
-      title: 'Settings',
-      subtitle: 'Configure AI models and backend connections',
-      modelsSection: 'Models',
-      defaultModel: 'Default Model',
-      modelHelp: 'This model will be used for all new chats',
-      availableModels: 'Available Models',
-      refresh: 'Refresh',
-      refreshing: 'Refreshing...',
-      backendConnections: 'Backend Connections',
-      systemResources: 'System Resources',
-      about: 'About',
-      language: 'Language',
-      active: 'Active',
-      inactive: 'Inactive',
-    },
-    debug: {
-      title: 'Debug Panel',
-      status: 'Status',
-      model: 'Model',
-      backend: 'Backend',
-      elapsed: 'Elapsed',
-      tokens: 'Tokens',
-      agentExecution: 'Agent Execution',
-    },
-    codeBlock: {
-      copy: 'Copy',
-      copied: 'Copied',
-      save: 'Save',
-      run: 'Run',
-      running: 'Running...',
-    },
-    history: { title: 'History', empty: 'No conversations yet', confirmDelete: 'Confirm?' },
-    sidebar: {
-      newChat: 'New Chat',
-      recentChats: 'Recent Chats',
-      noChatsYet: 'No chats yet. Start a new one!',
-      discoverModels: 'Discovering models...',
-      noModelsFound: 'No models found',
-      refreshModels: 'Refresh models',
-      ollama: 'Ollama',
-      chat: 'Chat',
-      settings: 'Settings',
-      history: 'History',
-    },
+// ==================== ENGLISH ====================
+const en: Translations = {
+  welcome: { title: 'Welcome to UI-Pro', subtitle: 'AI Agent System' },
+  input: { placeholder: 'Describe your task...' },
+  steps: {
+    analyzing: 'Analyzing request...',
+    planning: 'Planning solution...',
+    executing: 'Executing code...',
+    reviewing: 'Reviewing results...',
+    complete: 'Complete',
+    initializing: 'Initializing...',
+    processing: 'Processing step...',
+    stepLabel: (c, t) => `Step ${c}/${t}`,
   },
-
-  fr: {
-    welcome: { title: 'Bienvenue sur UI-Pro', subtitle: "Système d'Agents IA" },
-    input: { placeholder: 'Décrivez votre tâche...' },
-    steps: {
-      analyzing: 'Analyse en cours...',
-      planning: 'Planification en cours...',
-      executing: 'Exécution en cours...',
-      reviewing: 'Vérification en cours...',
-      complete: 'Terminé',
-      initializing: 'Initialisation...',
-      processing: 'Traitement...',
-      stepLabel: (c, t) => `Étape ${c}/${t}`,
-    },
-    streaming: { generating: 'Génération en cours...' },
-    loading: { dots: 'Chargement' },
-    settings: {
-      title: 'Paramètres',
-      subtitle: 'Configurez les modèles IA et les connexions backend',
-      modelsSection: 'Modèles',
-      defaultModel: 'Modèle par défaut',
-      modelHelp: 'Ce modèle sera utilisé pour tous les nouveaux chats',
-      availableModels: 'Modèles disponibles',
-      refresh: 'Actualiser',
-      refreshing: 'Actualisation...',
-      backendConnections: 'Connexions Backend',
-      systemResources: 'Ressources Système',
-      about: 'À propos',
-      language: 'Langue',
-      active: 'Actif',
-      inactive: 'Inactif',
-    },
-    debug: {
-      title: 'Panneau Debug',
-      status: 'Statut',
-      model: 'Modèle',
-      backend: 'Backend',
-      elapsed: 'Temps',
-      tokens: 'Tokens',
-      agentExecution: 'Exécution Agent',
-    },
-    codeBlock: {
-      copy: 'Copier',
-      copied: 'Copié',
-      save: 'Enregistrer',
-      run: 'Exécuter',
-      running: 'Exécution...',
-    },
-    history: { title: 'Historique', empty: 'Aucune conversation', confirmDelete: 'Confirmer ?' },
-    sidebar: {
-      newChat: 'Nouveau Chat',
-      recentChats: 'Conversations Récentes',
-      noChatsYet: 'Pas encore de conversations. Commencez un nouveau !',
-      discoverModels: 'Détection des modèles...',
-      noModelsFound: 'Aucun modèle trouvé',
-      refreshModels: 'Actualiser les modèles',
-      ollama: 'Ollama',
-      chat: 'Discussion',
-      settings: 'Paramètres',
-      history: 'Historique',
-    },
+  streaming: { generating: 'Generating response...' },
+  loading: { dots: 'Loading' },
+  settings: {
+    title: 'Settings',
+    subtitle: 'Configure AI models and backend connections',
+    modelsSection: 'Models',
+    defaultModel: 'Default Model',
+    modelHelp: 'This model will be used for all new chats',
+    availableModels: 'Available Models',
+    refresh: 'Refresh',
+    refreshing: 'Refreshing...',
+    backendConnections: 'Backend Connections',
+    systemResources: 'System Resources',
+    about: 'About',
+    language: 'Language',
+    active: 'Active',
+    inactive: 'Inactive',
+  },
+  debug: {
+    title: 'Debug Panel',
+    status: 'Status',
+    model: 'Model',
+    backend: 'Backend',
+    elapsed: 'Elapsed',
+    tokens: 'Tokens',
+    agentExecution: 'Agent Execution',
+  },
+  codeBlock: { copy: 'Copy', copied: 'Copied', save: 'Save', run: 'Run', running: 'Running...' },
+  history: { title: 'History', empty: 'No conversations yet', confirmDelete: 'Confirm?' },
+  sidebar: {
+    newChat: 'New Chat',
+    recentChats: 'Recent Chats',
+    noChatsYet: 'No chats yet. Start a new one!',
+    discoverModels: 'Discovering models...',
+    noModelsFound: 'No models found',
+    refreshModels: 'Refresh models',
+    ollama: 'Ollama',
+    chat: 'Chat',
+    settings: 'Settings',
+    history: 'History',
   },
 }
+
+// ==================== FRENCH ====================
+const fr: Translations = {
+  welcome: { title: 'Bienvenue sur UI-Pro', subtitle: "Système d'Agents IA" },
+  input: { placeholder: 'Décrivez votre tâche...' },
+  steps: {
+    analyzing: 'Analyse en cours...',
+    planning: 'Planification en cours...',
+    executing: 'Exécution en cours...',
+    reviewing: 'Vérification en cours...',
+    complete: 'Terminé',
+    initializing: 'Initialisation...',
+    processing: 'Traitement...',
+    stepLabel: (c, t) => `Étape ${c}/${t}`,
+  },
+  streaming: { generating: 'Génération en cours...' },
+  loading: { dots: 'Chargement' },
+  settings: {
+    title: 'Paramètres',
+    subtitle: 'Configurez les modèles IA et les connexions backend',
+    modelsSection: 'Modèles',
+    defaultModel: 'Modèle par défaut',
+    modelHelp: 'Ce modèle sera utilisé pour tous les nouveaux chats',
+    availableModels: 'Modèles disponibles',
+    refresh: 'Actualiser',
+    refreshing: 'Actualisation...',
+    backendConnections: 'Connexions Backend',
+    systemResources: 'Ressources Système',
+    about: 'À propos',
+    language: 'Langue',
+    active: 'Actif',
+    inactive: 'Inactif',
+  },
+  debug: {
+    title: 'Panneau Debug',
+    status: 'Statut',
+    model: 'Modèle',
+    backend: 'Backend',
+    elapsed: 'Temps',
+    tokens: 'Tokens',
+    agentExecution: 'Exécution Agent',
+  },
+  codeBlock: { copy: 'Copier', copied: 'Copié', save: 'Enregistrer', run: 'Exécuter', running: 'Exécution...' },
+  history: { title: 'Historique', empty: 'Aucune conversation', confirmDelete: 'Confirmer ?' },
+  sidebar: {
+    newChat: 'Nouveau Chat',
+    recentChats: 'Conversations Récentes',
+    noChatsYet: 'Pas encore de conversations. Commencez un nouveau !',
+    discoverModels: 'Détection des modèles...',
+    noModelsFound: 'Aucun modèle trouvé',
+    refreshModels: 'Actualiser les modèles',
+    ollama: 'Ollama',
+    chat: 'Discussion',
+    settings: 'Paramètres',
+    history: 'Historique',
+  },
+}
+
+export const translations = { en, fr }
 
 // ==================== HOOK ====================
 
 export function useI18n() {
-  // Default to English, then try to load from localStorage on client
-  const [locale, setLocale] = useState<Locale>(() => {
-    if (typeof window === 'undefined') return 'en'
-    try {
-      const saved = localStorage.getItem('locale') as Locale
-      return (saved === 'en' || saved === 'fr') ? saved : 'en'
-    } catch {
-      return 'en'
-    }
-  })
+  const [locale, setLocale] = useState<Locale>('en')
+  
+  // ALWAYS return valid translations object - start with English
+  const t = { ...en }
 
   useEffect(() => {
     try {
@@ -224,19 +206,23 @@ export function useI18n() {
     }
   }, [])
 
+  // Sync t when locale changes
+  useEffect(() => {
+    if (locale === 'fr') {
+      Object.assign(t, fr)
+    } else {
+      Object.assign(t, en)
+    }
+  }, [locale])
+
   const changeLocale = (newLocale: Locale) => {
     setLocale(newLocale)
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem('locale', newLocale)
-      } catch {
-        // ignore
-      }
+    try {
+      localStorage.setItem('locale', newLocale)
+    } catch {
+      // ignore
     }
   }
-
-  // Get translations - ensure we always have valid object
-  const t = translations[locale] ?? translations.en
 
   return {
     t,
@@ -245,15 +231,13 @@ export function useI18n() {
   }
 }
 
-// ==================== UTILITIES ====================
-
-export function getTranslations(locale: Locale): Translations {
-  return translations[locale]
+// Alias for getTranslations
+export function getTranslations(loc: Locale): Translations {
+  return translations[loc]
 }
 
 export const defaultLocale: Locale = 'en'
 
-// Mapping pour les steps du backend
 export const STEP_STATUS_LABELS: Record<string, keyof Translations['steps']> = {
   'step-analyzing': 'analyzing',
   'step-planning': 'planning',
