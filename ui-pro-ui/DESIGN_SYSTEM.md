@@ -62,9 +62,9 @@ Your backend guarantees one final event (`done` / `error` / `cancelled`). Levera
 
 - Abstract WebSocket / SSE behind a single service that normalizes events to `StreamChunk`-like shape
 - Use a dedicated `useWebSocket` hook with:
-  - Exponential backoff reconnection (max 5-7 attempts)
-  - Heartbeat (ping every 25-30s)
-  - Resume capability using `last_chunk_index` or `message_id` + `last_index`
+  - Exponential backoff reconnection (max 6 attempts)
+  - Heartbeat (ping/pong every 25s)
+  - Resume capability using `stream_id` + `last_index`
   - Proper cleanup on unmount
 
 ### 2. Zustand Stores

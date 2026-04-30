@@ -6,8 +6,8 @@ import { useEffect, useRef, useCallback, useState } from 'react'
 import { useChatStore } from '@/lib/stores/chatStore'
 import { STREAM_EVENTS } from '@/lib/events'
 
-const MAX_RECONNECT_ATTEMPTS = 5
-const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 16000] // Exponential backoff
+const MAX_RECONNECT_ATTEMPTS = 6
+const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 16000, 32000] // Exponential backoff
 const HEARTBEAT_INTERVAL = 25000 // 25s
 
 interface UseWebSocketOptions {
