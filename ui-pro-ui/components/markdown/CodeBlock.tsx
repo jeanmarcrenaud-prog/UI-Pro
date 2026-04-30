@@ -24,7 +24,7 @@ export const CodeBlock = memo(function CodeBlock({
   const [running, setRunning] = useState(false)
   const [output, setOutput] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const t = useI18n()
+  const { t } = useI18n()
 
   const copyToClipboard = async () => {
     if (!value) return

@@ -42,7 +42,7 @@ const getNavigationTabs = (t: ReturnType<typeof useI18n>) => [
 // Component: LoadingIndicator
 // Displays loading state for model discovery
 function LoadingIndicator() {
-  const t = useI18n()
+  const { t } = useI18n()
   return (
     <div
       className="
@@ -228,7 +228,7 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
   } = useUIStore()
 
   const { history, loadChat, deleteChat } = useChatStore()
-  const t = useI18n()
+  const { t } = useI18n()
 
   const [isLoadingModels, setIsLoadingModels] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)

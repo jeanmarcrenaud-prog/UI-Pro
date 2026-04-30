@@ -17,7 +17,7 @@ interface HistoryViewProps {
 export function HistoryView({ onSelectChat, onClose }: HistoryViewProps) {
   const { history, loadChat, deleteChat } = useChatStore()
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
-  const t = useI18n()
+  const { t } = useI18n()
 
   // Sort by updatedAt
   const sortedHistory = [...history].sort(
