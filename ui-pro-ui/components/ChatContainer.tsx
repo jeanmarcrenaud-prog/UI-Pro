@@ -63,11 +63,12 @@ export function ChatContainer({
   messages: propMessages = [], 
   agentSteps: propAgentSteps = [] 
 }: ChatContainerProps) {
-  const { 
-    messages: hookMessages, 
-    isLoading, 
-    sendMessage, 
-    steps 
+  const {
+    messages: hookMessages,
+    isLoading,
+    sendMessage,
+    stopGeneration,
+    steps,
   } = useChat()
 
   const { t, locale } = useI18n()
@@ -91,6 +92,10 @@ export function ChatContainer({
   const handleExampleSelect = useCallback((prompt: string) => {
     sendMessage(prompt)
   }, [sendMessage])
+
+  const handleStop = useCallback(() => {
+    stopGeneration?.()
+  }, [stopGeneration])
 
   // Auto-resize textarea
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -143,13 +148,20 @@ export function ChatContainer({
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="flex items-center gap-3 pl-2"
+              className="flex items-center gap-3 pl-3"
             >
-              <div className="w-7 h-7 rounded-full bg-emerald-600/20 flex items-center justify-center">
+              <div className="w-7 h-7 rounded-full bg-emerald-600/20 flex items-center justify-center flex-shrink-0">
                 <span className="text-emerald-400 text-lg">✦</span>
               </div>
-              <div className="bg-slate-800 rounded-2xl px-5 py-2.5 text-sm text-slate-300">
+              <div className="bg-slate-800 rounded-2xl px-5 py-2.5 text-sm text-slate-300 flex items-center gap-3">
                 {t.streaming.generating}
+                
+                <button
+                  onClick={handleStop}
+                  className="ml-2 px-3 py-1 text-xs font-medium bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+                >
+                  Stop
+                </button>
               </div>
             </motion.div>
           )}
