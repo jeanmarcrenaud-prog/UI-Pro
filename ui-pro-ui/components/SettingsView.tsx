@@ -10,8 +10,7 @@ import { modelDiscovery } from '@/services/modelDiscovery'
 import { LLM_CONFIG } from '@/lib/config'
 import { motion } from 'framer-motion'
 import { SystemStats } from './SystemStats'
-import { translations } from '@/lib/i18n'
-import type { Locale } from '@/lib/i18n'
+import { useI18n, type Locale } from '@/lib/i18n'
 
 interface BackendInfo {
   name: string
@@ -21,7 +20,7 @@ interface BackendInfo {
 
 export function SettingsView() {
   const { availableModels, selectedModel, setSelectedModel, locale = 'fr', setLocale } = useUIStore()
-  const t = translations[locale as Locale]
+  const { t } = useI18n()
   
   const [isRefreshLoading, setIsRefreshLoading] = useState(false)
   const [hasLoaded, setHasLoaded] = useState(false)
