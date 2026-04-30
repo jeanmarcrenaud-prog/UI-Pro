@@ -91,10 +91,10 @@ export function SettingsView() {
       {/* Header */}
       <div className="mb-4">
         <h2 className="text-xl font-semibold text-white mb-1">
-          {t.t.settings.title}
+          {t.settings.title}
         </h2>
         <p className="text-xs text-slate-500">
-          {t.t.settings.subtitle}
+          {t.settings.subtitle}
         </p>
       </div>
 
@@ -106,7 +106,7 @@ export function SettingsView() {
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 5h12M9 3v2m1.048 9.5A18.023 18.023 0 016.412 9m6.088 9h7M11 21l5-10 5 10" />
             </svg>
-            {t.t.settings.language}
+            {t.settings.language}
           </h3>
           <select
             value={locale}
@@ -122,7 +122,7 @@ export function SettingsView() {
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            {t.t.settings.about}
+            {t.settings.about}
           </h3>
           <div className="flex items-center justify-between">
             <div>
@@ -142,7 +142,7 @@ export function SettingsView() {
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
-            {t.t.settings.modelsSection}
+            {t.settings.modelsSection}
           </h3>
 
           <div className="flex items-center gap-3 mb-3">
@@ -166,7 +166,7 @@ export function SettingsView() {
               disabled={isRefreshLoading}
               className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-xs px-3 py-2 rounded-lg transition-all"
             >
-              {isRefreshLoading ? '⟳' : '↻'} {t.t.settings.refresh}
+              {isRefreshLoading ? '⟳' : '↻'} {t.settings.refresh}
             </button>
           </div>
           <p className="text-xs text-slate-500">{modelCount} model{modelCount !== 1 ? 's' : ''} available</p>
@@ -178,7 +178,7 @@ export function SettingsView() {
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2m-2-4h.01M17 16h.01" />
             </svg>
-            {t.t.settings.backendConnections}
+            {t.settings.backendConnections}
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-slate-700/30">
             {backendInfo.map((backend) => (
@@ -186,7 +186,7 @@ export function SettingsView() {
                 <p className="text-xs text-slate-400 mb-1">{backend.name}</p>
                 <span className={`inline-flex items-center gap-1 text-xs ${backend.status === 'active' ? 'text-emerald-400' : 'text-slate-500'}`}>
                   <span className={`w-1.5 h-1.5 rounded-full ${backend.status === 'active' ? 'bg-emerald-400' : 'bg-slate-600'}`} />
-                  {backend.status === 'active' ? t.t.settings.active : t.t.settings.inactive}
+                  {backend.status === 'active' ? t.settings.active : t.settings.inactive}
                 </span>
               </div>
             ))}

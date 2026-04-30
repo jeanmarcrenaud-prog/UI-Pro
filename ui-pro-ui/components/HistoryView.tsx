@@ -47,7 +47,7 @@ export function HistoryView({ onSelectChat, onClose }: HistoryViewProps) {
     const diffHours = Math.floor(diffMs / 3600000)
     const diffDays = Math.floor(diffMs / 86400000)
 
-    if (diffMins < 1) return t.t.history.empty // Use translation or a generic
+    if (diffMins < 1) return t.history.empty // Use translation or a generic
     if (diffMins < 60) return `${diffMins}m ago`
     if (diffHours < 24) return `${diffHours}h ago`
     if (diffDays < 7) return `${diffDays}d ago`
@@ -59,7 +59,7 @@ export function HistoryView({ onSelectChat, onClose }: HistoryViewProps) {
       <div className="max-w-2xl mx-auto">
         {/* Header */}
         <div className="p-4 border-b border-slate-800">
-          <h2 className="text-xl font-semibold text-white">{t.t.history.title}</h2>
+          <h2 className="text-xl font-semibold text-white">{t.history.title}</h2>
           <p className="text-sm text-slate-500">
             {history.length} chat{history.length !== 1 ? 's' : ''} saved
           </p>
@@ -69,7 +69,7 @@ export function HistoryView({ onSelectChat, onClose }: HistoryViewProps) {
         {sortedHistory.length === 0 ? (
           <div className="p-8 text-center">
             <div className="text-4xl mb-4">📜</div>
-            <p className="text-slate-400">{t.t.history.empty}</p>
+            <p className="text-slate-400">{t.history.empty}</p>
             <p className="text-sm text-slate-600 mt-2">
               Start a conversation and it will be saved automatically
             </p>
@@ -114,7 +114,7 @@ export function HistoryView({ onSelectChat, onClose }: HistoryViewProps) {
                           : 'text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100'
                       }`}
                     >
-                      {confirmDelete === chat.id ? t.t.history.confirmDelete : '🗑️'}
+                      {confirmDelete === chat.id ? t.history.confirmDelete : '🗑️'}
                     </button>
                   </div>
                 </motion.div>

@@ -91,12 +91,12 @@ export const CodeBlock = memo(function CodeBlock({
               {running ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>{t.t.codeBlock.running}</span>
+                  <span>{t.codeBlock.running}</span>
                 </>
               ) : (
                 <>
                   <Play className="w-4 h-4" />
-                  <span>{t.t.codeBlock.run}</span>
+                  <span>{t.codeBlock.run}</span>
                 </>
               )}
             </button>
@@ -109,12 +109,12 @@ export const CodeBlock = memo(function CodeBlock({
             {copied ? (
               <>
                 <Check className="w-4 h-4 text-emerald-400" />
-                <span className="text-emerald-400 font-medium">{t.t.codeBlock.copied}</span>
+                <span className="text-emerald-400 font-medium">{t.codeBlock.copied}</span>
               </>
             ) : (
               <>
                 <Copy className="w-4 h-4" />
-                {t.t.codeBlock.copy}
+                {t.codeBlock.copy}
               </>
             )}
           </button>
@@ -125,7 +125,7 @@ export const CodeBlock = memo(function CodeBlock({
             className="flex items-center gap-2 px-4 py-1.5 text-sm rounded-xl bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200"
           >
             <Download className="w-4 h-4" />
-            {t.t.codeBlock.save}
+            {t.codeBlock.save}
           </button>
         </div>
       </div>
