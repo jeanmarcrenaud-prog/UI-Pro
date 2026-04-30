@@ -7,4 +7,4 @@ export { modelDiscovery } from './modelDiscovery'
 
 // Streaming service
 export { streamService, createStreamService } from './streamService'
-export type { IStreamServiceOptions, BackendStreamChunk, StreamEvent } from './streamService'
+export type { StreamOpts, BackendChunk, StreamEvent } from './streamService'
