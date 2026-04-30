@@ -13,6 +13,7 @@ interface AgentStore {
   addStep: (step: AgentStep) => void
   updateStep: (id: string, status: AgentStepStatus) => void
   setStep: (step: AgentStep, index: number) => void
+  setSteps: (steps: AgentStep[]) => void
   reset: () => void
   start: (steps: AgentStep[]) => void
   getActiveStep: () => AgentStep | undefined
@@ -54,6 +55,8 @@ export const useAgentStore = create<AgentStore>((set, _get) => ({
       newSteps[index] = step
       return { steps: newSteps, currentStep: index, currentStepId: step.id }
     }),
+
+  setSteps: (steps) => set({ steps, currentStep: 0, currentStepId: steps[0]?.id }),
 
   reset: () => set({ isActive: false, steps: [], currentStep: 0, currentStepId: undefined }),
 

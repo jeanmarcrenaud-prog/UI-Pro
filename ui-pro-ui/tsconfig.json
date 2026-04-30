@@ -21,12 +21,27 @@
         "name": "next"
       }
     ],
-    "paths": {
+"paths": {
       "@/*": [
         "./*"
+      ],
+      "@/stores/*": [
+        "./lib/stores/*"
+      ],
+      "@/lib/stores/*": [
+        "./lib/stores/*"
+      ],
+      "@/lib/services/*": [
+        "./services/*"
+      ],
+      "@/lib/*": [
+        "./lib/*"
+      ],
+      "@/hooks/*": [
+        "./hooks/*"
       ]
     },
-    "target": "ES2017"
+    "target": "ES2018"
   },
   "include": [
     "next-env.d.ts",
@@ -35,7 +50,10 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts"
   ],
-  "exclude": [
-    "node_modules"
+"exclude": [
+    "node_modules",
+    "jest.config.ts",
+    "jest.setup.ts",
+    "styles/tokens.ts"
   ]
 }

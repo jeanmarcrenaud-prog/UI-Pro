@@ -3,7 +3,6 @@
 
 // Hooks index
 export { useChat } from './useChat'
-export type { UseChatReturn } from './useChat'
 
 // Streaming hooks
 export { useStream } from './useStream'

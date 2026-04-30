@@ -3,8 +3,8 @@
 // creation, initial agent steps setup, stream service connection, and event-based token/step updates
 
 // Chat Controller - Orchestrates chat flow with events
-import { useChatStore } from '@/stores/chatStore'
-import { useAgentStore } from '@/stores/agentStore'
+import { useChatStore } from '@/lib/stores/chatStore'
+import { useAgentStore } from '@/lib/stores/agentStore'
 import { streamService } from '@/services/streamService'
 
 function generateId(): string {
@@ -74,7 +74,7 @@ export function useChatController() {
             useChatStore.setState({
               messages: [
                 ...msgs.slice(0, lastIdx),
-                { ...msgs[lastIdx], content: currentContent + event.data },
+                { ...msgs[lastIdx], content: currentContent + event.content },
               ],
             })
           }
@@ -82,7 +82,7 @@ export function useChatController() {
 
         case 'step':
           if (event.stepId) {
-            updateStep(event.stepId, event.data as 'active' | 'done')
+            updateStep(event.stepId, event.stepStatus as 'active' | 'done')
           }
           break
 
