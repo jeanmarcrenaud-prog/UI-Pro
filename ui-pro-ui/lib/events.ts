@@ -2,6 +2,18 @@
 // Role: Type-safe event emitter - provides central pub/sub system for app-wide events covering
 // chat, agent, model, and custom store lifecycle events
 
+// Stream event types (for streaming layer)
+export const STREAM_EVENTS = {
+  TOKEN: 'token',
+  STEP: 'step',
+  TOOL: 'tool',
+  DONE: 'done',
+  ERROR: 'error',
+  CANCELLED: 'cancelled',
+} as const
+
+export type StreamEventType = typeof STREAM_EVENTS[keyof typeof STREAM_EVENTS]
+
 // Event Emitter - Simple event-driven architecture
 type EventHandler<T = unknown> = (data: T) => void
 

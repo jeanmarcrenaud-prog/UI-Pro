@@ -19,9 +19,13 @@ interface ChatStore extends ChatState {
   // Resume state for WebSocket reconnection
   currentMessageId: string | null
   lastReceivedChunkIndex: number
+  currentStreamId: string | null
   messageHistory: Record<string, string> // messageId -> prompt
   setCurrentMessage: (id: string, prompt: string) => void
   updateLastChunkIndex: (index: number) => void
+  setCurrentStreamId: (id: string | null) => void
+  abortCurrentStream: () => void
+  resumeFromIndex: (index: number) => void
   resetCurrentMessage: () => void
   trimMessageHistory: () => void
   getPromptById: (id: string) => string | undefined
@@ -85,6 +89,7 @@ export const useChatStore = create<ChatStore>()(
       // Resume state
       currentMessageId: null,
       lastReceivedChunkIndex: 0,
+      currentStreamId: null,
       messageHistory: {},
 
       setCurrentMessage: (id, prompt) =>
@@ -96,6 +101,22 @@ export const useChatStore = create<ChatStore>()(
 
       updateLastChunkIndex: (index) =>
         set({ lastReceivedChunkIndex: index }),
+
+      setCurrentStreamId: (id) =>
+        set({ currentStreamId: id }),
+
+      abortCurrentStream: () => {
+        const streamId = get().currentStreamId
+        if (streamId) {
+          // TODO: call cancel_stream API when implemented
+          set({ currentStreamId: null })
+        }
+      },
+
+      resumeFromIndex: (index) => {
+        // TODO: implement resume logic
+        set({ lastReceivedChunkIndex: index })
+      },
 
       resetCurrentMessage: () =>
         set({ currentMessageId: null, lastReceivedChunkIndex: 0 }),
