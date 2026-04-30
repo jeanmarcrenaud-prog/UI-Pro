@@ -139,7 +139,7 @@ export function ChatContainer({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
           >
-            <LoadingIndicator label={t.t.loading.dots} />
+            <LoadingIndicator label={t.t?.loading?.dots || 'Loading'} />
           </motion.div>
         )}
 
@@ -179,7 +179,7 @@ export function ChatContainer({
               value={inputValue}
               disabled={isLoading}
               onChange={(e) => setInputValue(e.target.value)}
-              placeholder={t.t.input.placeholder}
+              placeholder={t.t?.input?.placeholder || 'Describe your task...'}
               rows={1}
               className="w-full bg-transparent text-white outline-none px-3 resize-none"
               onKeyDown={(e) => {
