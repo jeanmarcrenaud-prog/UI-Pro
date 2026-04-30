@@ -19,20 +19,19 @@ interface BackendInfo {
 }
 
 export function SettingsView() {
-  const { availableModels, selectedModel, setSelectedModel, locale = 'fr', setLocale } = useUIStore()
-  const { t } = useI18n()
+  const { availableModels, selectedModel, setSelectedModel } = useUIStore()
+  const { t, locale, setLocale } = useI18n()
   
   const [isRefreshLoading, setIsRefreshLoading] = useState(false)
-  const [hasLoaded, setHasLoaded] = useState(false)
+  const [refreshError, setRefreshError] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
 
   // Initialize on mount
   useEffect(() => {
     setMounted(true)
-    setHasLoaded(true)
   }, [])
 
-  // Backend status check
+  // Backend status check with browser-compatible timeout
   const [backendInfo, setBackendInfo] = useState<BackendInfo[]>([
     { name: 'Ollama', url: LLM_CONFIG.ollamaUrl, status: 'inactive' as const },
     { name: 'LM Studio', url: LLM_CONFIG.lmstudioUrl, status: 'inactive' as const },
@@ -40,41 +39,53 @@ export function SettingsView() {
     { name: 'Lemonade', url: LLM_CONFIG.lemonadeUrl, status: 'inactive' as const },
   ])
 
-  // Test backend connectivity
+  // Test backend connectivity with manual timeout (browser-compatible)
   useEffect(() => {
+    const checkBackend = async (backend: BackendInfo): Promise<BackendInfo> => {
+      try {
+        // Try /api/tags first (Ollama)
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 2000)
+        const response = await fetch(`${backend.url}/api/tags`, { signal: controller.signal })
+        clearTimeout(timeoutId)
+        if (response.ok) return { ...backend, status: 'active' as const }
+      } catch {
+        // Try /api/v1/models (OpenAI-compatible)
+        try {
+          const controller = new AbortController()
+          const timeoutId = setTimeout(() => controller.abort(), 2000)
+          const response = await fetch(`${backend.url}/api/v1/models`, { signal: controller.signal })
+          clearTimeout(timeoutId)
+          if (response.ok) return { ...backend, status: 'active' as const }
+        } catch {
+          // Both failed
+        }
+      }
+      return backend
+    }
+
     const checkBackends = async () => {
-      const results = await Promise.all(
-        backendInfo.map(async (backend) => {
-          try {
-            const response = await fetch(`${backend.url}/api/tags`, { signal: AbortSignal.timeout(2000) })
-            if (response.ok) return { ...backend, status: 'active' as const }
-          } catch {
-            try {
-              const response = await fetch(`${backend.url}/api/v1/models`, { signal: AbortSignal.timeout(2000) })
-              if (response.ok) return { ...backend, status: 'active' as const }
-            } catch {}
-          }
-          return backend
-        })
-      )
+      const results = await Promise.all(backendInfo.map(checkBackend))
       setBackendInfo(results)
     }
     checkBackends()
   }, [])
 
+  const handleLocaleChange = (newLocale: Locale) => {
+    setLocale(newLocale)
+  }
+
   const handleRefreshModels = async () => {
     setIsRefreshLoading(true)
+    setRefreshError(null)
     try {
       await modelDiscovery.discover()
     } catch (error) {
       console.error('Failed to discover models:', error)
+      setRefreshError(error instanceof Error ? error.message : 'Unknown error')
     } finally {
       setIsRefreshLoading(false)
     }
-  }
-
-  const handleLocaleChange = (newLocale: Locale) => {
-    setLocale(newLocale)
   }
 
   const modelCount = availableModels.length
@@ -129,7 +140,7 @@ export function SettingsView() {
               <p className="text-sm text-white font-semibold">UI-Pro</p>
               <p className="text-xs text-slate-500">v1.0.0</p>
             </div>
-            <span className="text-xs text-slate-500">{hasLoaded ? '✓' : '...'}</span>
+            <span className="text-xs text-slate-500">✓</span>
           </div>
           <p className="text-xs text-slate-500 mt-2">
             Ollama + Next.js
@@ -169,6 +180,9 @@ export function SettingsView() {
               {isRefreshLoading ? '⟳' : '↻'} {t.settings.refresh}
             </button>
           </div>
+          {refreshError && (
+            <p className="text-xs text-red-400 mt-2">Error: {refreshError}</p>
+          )}
           <p className="text-xs text-slate-500">{modelCount} model{modelCount !== 1 ? 's' : ''} available</p>
         </section>
 
