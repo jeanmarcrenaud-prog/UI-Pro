@@ -150,5 +150,5 @@ export const createStreamService = (options?: StreamServiceOptions) => new Strea
 export type {
   StreamServiceOptions as StreamOpts,
   BackendStreamChunk as BackendChunk,
-  StreamEvent
+  StreamEvent as StreamMsg
 }
