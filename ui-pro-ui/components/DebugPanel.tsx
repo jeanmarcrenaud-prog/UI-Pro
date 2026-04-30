@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
-import { translations, type Translations } from '@/lib/i18n'
+import { useI18n, type Translations } from '@/lib/i18n'
 import { useUIStore } from '@/lib/stores/uiStore'
 
 interface AgentStep {
@@ -50,7 +50,7 @@ export function DebugPanel({
   locale = 'en',
 }: DebugPanelProps) {
   const { locale: storeLocale = 'fr' } = useUIStore()
-  const t: Translations = translations[storeLocale]
+  const { t } = useI18n()
   
   const [localTokenCount, setLocalTokenCount] = useState(propTokenCount)
   const logsEndRef = useRef<HTMLDivElement>(null)
