@@ -107,7 +107,7 @@ export function DebugPanel({
     >
       {/* HEADER */}
       <div className="bg-slate-900/50 px-4 py-3 border-b border-slate-800/60 flex items-center justify-between">
-        <span className="text-sm font-semibold">🔧 {t.t.debug?.title || 'Debug Panel'}</span>
+        <span className="text-sm font-semibold">🔧 {t.debug?.title || 'Debug Panel'}</span>
         <button
           onClick={closeFn}
           className="text-slate-400 hover:text-white text-xs"
@@ -119,11 +119,11 @@ export function DebugPanel({
       <div className="flex-1 overflow-y-auto">
         {/* STATUS */}
         <div className="p-4 space-y-3 border-b border-slate-800/60">
-          <Row label={t.t.debug?.status || 'Status'} value={status.toUpperCase()} />
-          <Row label={t.t.debug?.model || 'Model'} value={modelName} color="violet" />
-          <Row label={t.t.debug?.backend || 'Backend'} value="🦙 Ollama" />
-          <Row label={t.t.debug?.elapsed || 'Elapsed'} value={`${elapsedSeconds}s`} />
-          <Row label={t.t.debug?.tokens || 'Tokens'} value={localTokenCount} color="violet" bold />
+          <Row label={t.debug?.status || 'Status'} value={status.toUpperCase()} />
+          <Row label={t.debug?.model || 'Model'} value={modelName} color="violet" />
+          <Row label={t.debug?.backend || 'Backend'} value="🦙 Ollama" />
+          <Row label={t.debug?.elapsed || 'Elapsed'} value={`${elapsedSeconds}s`} />
+          <Row label={t.debug?.tokens || 'Tokens'} value={localTokenCount} color="violet" bold />
         </div>
 
         {/* PROGRESS - only show when agent is actively running (not idle/error) */}
@@ -145,7 +145,7 @@ export function DebugPanel({
 
         {/* STEPS */}
         <div className="p-4 border-b border-slate-800/60">
-          <div className="text-xs text-slate-500 mb-3">{t.t.debug?.agentExecution || 'Agent Execution'}</div>
+          <div className="text-xs text-slate-500 mb-3">{t.debug?.agentExecution || 'Agent Execution'}</div>
           {steps.map((step, i) => (
             <div key={`${step.id}-${i}`} className="flex gap-3 text-sm mb-2">
               <div className="w-5 h-5 flex items-center justify-center rounded-full text-xs bg-slate-800">

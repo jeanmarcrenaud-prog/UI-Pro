@@ -208,21 +208,30 @@ export function useI18n() {
   useEffect(() => {
     setIsClient(true)
     // Only run on client (SSR safe)
-    const savedLocale = localStorage.getItem('locale') as Locale | null
-    if (savedLocale && (savedLocale === 'en' || savedLocale === 'fr')) {
-      setLocale(savedLocale)
+    try {
+      const savedLocale = localStorage.getItem('locale') as Locale | null
+      if (savedLocale && (savedLocale === 'en' || savedLocale === 'fr')) {
+        setLocale(savedLocale)
+      }
+    } catch {
+      // localStorage not available
     }
   }, [])
 
   const changeLocale = (newLocale: Locale) => {
     setLocale(newLocale)
     if (typeof window !== 'undefined') {
-      localStorage.setItem('locale', newLocale)
+      try {
+        localStorage.setItem('locale', newLocale)
+      } catch {
+        // localStorage not available
+      }
     }
   }
 
-  // Fallback to default translations if not loaded yet
-  const t = translations[locale] || translations.en
+  // Return translations directly 
+  const currentTranslations = isClient ? translations[locale] : translations.en
+  const t = currentTranslations || translations.en
 
   return {
     t,

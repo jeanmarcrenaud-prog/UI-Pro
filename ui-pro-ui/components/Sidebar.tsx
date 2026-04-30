@@ -34,9 +34,9 @@ interface SidebarProps {
 }
 
 const getNavigationTabs = (t: ReturnType<typeof useI18n>) => [
-  { id: 'chat', label: t.t.sidebar.chat, icon: '💬' },
-  { id: 'history', label: t.t.sidebar.history, icon: '📜' },
-  { id: 'settings', label: t.t.sidebar.settings, icon: '⚙️' },
+  { id: 'chat', label: t.sidebar.chat, icon: '💬' },
+  { id: 'history', label: t.sidebar.history, icon: '📜' },
+  { id: 'settings', label: t.sidebar.settings, icon: '⚙️' },
 ] as const
 
 // Component: LoadingIndicator
@@ -70,7 +70,7 @@ function LoadingIndicator() {
         className="w-3 h-3 border border-slate-400 border-t-transparent rounded-full"
       />
       <span className="flex items-center gap-1.5">
-        {t.t.sidebar.discoverModels}
+        {t.sidebar.discoverModels}
         <motion.span
           animate={{ opacity: [0.3, 1, 0.3] }}
           transition={{
@@ -130,7 +130,7 @@ function ModelSelectDropdown({
           >
             {availableModels.length === 0 ? (
               <option value="" disabled>
-                t.t.sidebar.noModelsFound
+                t.sidebar.noModelsFound
               </option>
             ) : (
               availableModels.map((model) => (
@@ -347,7 +347,7 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
           aria-label="Create new chat"
         >
 <span className="text-lg" aria-hidden="true">+</span>
-          {t.t.sidebar.newChat}
+          {t.sidebar.newChat}
         </button>
       </div>
 
@@ -380,7 +380,7 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
           aria-label="Refresh model list"
         >
           <span className="text-sm" aria-hidden="true">↻</span>
-          {t.t.sidebar.refreshModels}
+          {t.sidebar.refreshModels}
         </button>
       </div>
 
@@ -442,13 +442,13 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
       {/* Chat History */}
       <div className="flex-1 overflow-y-auto mt-2 px-2">
         <div className="px-3 py-2 text-xs text-slate-500 font-medium border-b border-slate-800/60">
-          t.t.sidebar.recentChats
+          t.sidebar.recentChats
         </div>
 
         {/* Empty state */}
         {history.length === 0 ? (
           <div className="px-3 py-4 text-xs text-slate-600 text-center italic">
-            {t.t.sidebar.noChatsYet}
+            {t.sidebar.noChatsYet}
           </div>
         ) : (
           /* History items */
@@ -474,7 +474,7 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
           <span className="text-violet-400 font-mono">v1.0</span>
         </div>
         <div className="text-slate-600">
-          {availableModels.length} model{availableModels.length !== 1 ? 's' : ''} • {t.t.sidebar.ollama} 🦙
+          {availableModels.length} model{availableModels.length !== 1 ? 's' : ''} • {t.sidebar.ollama} 🦙
         </div>
       </div>
     </aside>
