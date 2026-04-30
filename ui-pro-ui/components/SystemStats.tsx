@@ -132,8 +132,8 @@ export function SystemStats() {
   const fetchStats = async () => {
     console.log('[SystemStats] Starting fetch...')
     try {
-      // Use explicit localhost to avoid any proxy issues
-      const url = 'http://127.0.0.1:8000/health'
+      // Use relative URL to avoid CORS issues
+      const url = '/health'
       console.log('[SystemStats] Fetching:', url)
       const res = await fetch(url)
       console.log('[SystemStats] Response status:', res.status, res.statusText)
