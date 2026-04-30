@@ -193,7 +193,7 @@ export function useI18n() {
   const [locale, setLocale] = useState<Locale>('en')
   
   // ALWAYS return valid translations object - start with English
-  const t = { ...en }
+  const t: Translations = { ...en }
 
   useEffect(() => {
     try {
