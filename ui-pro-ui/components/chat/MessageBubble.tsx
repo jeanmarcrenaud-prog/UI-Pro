@@ -1,13 +1,18 @@
 // components/MessageBubble.tsx
 'use client'
 
+import { useState, memo } from 'react'
 import type { Message } from '@/lib/types'
 import { MarkdownRenderer } from '@/components/markdown'
-import { memo } from 'react'
 import { motion } from 'framer-motion'
+import { Copy, Check, RefreshCw, ArrowDown, Play } from 'lucide-react'
+import { MessageSuggestions } from './MessageSuggestions'
 
 interface MessageBubbleProps {
   message: Message
+  onRegenerate?: () => void  // Optional callback for regenerate
+  onContinue?: () => void   // Optional callback for continue
+  onSuggestion?: (prompt: string) => void  // Optional callback for suggestions
 }
 
 const statusIcons: Record<string, string> = {
@@ -48,13 +53,31 @@ const assistantVariants = {
 }
 
 export const MessageBubble = memo(function MessageBubble({ 
-  message 
+  message,
+  onRegenerate,
+  onContinue,
+  onSuggestion,
 }: MessageBubbleProps) {
+  const [copied, setCopied] = useState(false)
+
   if (!message?.role) return null
 
   const isUser = message.role === 'user'
+  const isAssistant = message.role === 'assistant'
   const statusIcon = message.status ? statusIcons[message.status] : null
   const isStreaming = message.status === 'streaming'
+  const isDone = message.status === 'done' || !message.status
+
+  const handleCopyMessage = async () => {
+    if (!message.content) return
+    try {
+      await navigator.clipboard.writeText(message.content)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1800)
+    } catch (err) {
+      console.error('Copy failed:', err)
+    }
+  }
 
   return (
     <motion.div
@@ -78,7 +101,7 @@ export const MessageBubble = memo(function MessageBubble({
 
       {/* Message Bubble */}
       <motion.div
-        className={`relative max-w-[82%] px-5 py-3.5 rounded-3xl break-words shadow-sm ${
+        className={`relative max-w-[90%] px-5 py-3.5 rounded-3xl break-words shadow-sm group ${
           isUser
             ? 'bg-violet-600 text-white rounded-br-none'
             : 'bg-slate-800 text-slate-100 rounded-bl-none'
@@ -108,6 +131,11 @@ export const MessageBubble = memo(function MessageBubble({
           </div>
         )}
 
+        {/* Contextual Suggestions (below assistant messages) */}
+        {!isUser && isDone && onSuggestion && (
+          <MessageSuggestions onSuggestion={onSuggestion} />
+        )}
+
         {/* Timestamp */}
         {message.timestamp && (
           <motion.div 
@@ -124,6 +152,46 @@ export const MessageBubble = memo(function MessageBubble({
               })}
             </span>
           </motion.div>
+        )}
+
+        {/* Copy Button (assistant messages only) */}
+        {!isUser && isDone && (
+          <div className="absolute -top-2 -right-2 flex items-center gap-1">
+            {/* Regenerate Button */}
+            {onRegenerate && (
+              <button
+                onClick={onRegenerate}
+                className="p-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-400 hover:text-white opacity-0 group-hover:opacity-100 transition-all"
+                title="Regenerate response"
+              >
+                <RefreshCw className="w-3 h-3" />
+              </button>
+            )}
+            
+            {/* Continue Button */}
+            {onContinue && (
+              <button
+                onClick={onContinue}
+                className="p-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-400 hover:text-white opacity-0 group-hover:opacity-100 transition-all"
+                title="Continue generating"
+              >
+                <ArrowDown className="w-3 h-3" />
+              </button>
+            )}
+            
+            {/* Copy Button */}
+            <button
+              onClick={handleCopyMessage}
+              className="p-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-400 hover:text-white opacity-0 group-hover:opacity-100 transition-all"
+              aria-label="Copy message"
+            >
+              {copied ? (
+                <Check className="w-3 h-3 text-emerald-400" />
+              ) : (
+                <Copy className="w-3 h-3" />
+              )}
+            </button>
+          </div>
         )}
       </motion.div>
 
