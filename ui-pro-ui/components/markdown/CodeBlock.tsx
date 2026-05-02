@@ -1,13 +1,14 @@
 // components/CodeBlock.tsx
 'use client'
 
-import { useState, memo } from 'react'
+import { useState, memo, useRef } from 'react'
 import { Check, Copy, Download, Play, Loader2 } from 'lucide-react'
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism'
 
 import { downloadCode } from '@/lib/download'
 import { useI18n } from '@/lib/i18n'
+import { CodeMinimap } from './CodeMinimap'
 
 interface CodeBlockProps {
   language?: string
@@ -29,6 +30,8 @@ export const CodeBlock = memo(function CodeBlock({
   const [validating, setValidating] = useState(false)
   const [validationResult, setValidationResult] = useState<{errors: string[]; warnings: string[]} | null>(null)
   const { t } = useI18n()
+  
+  const codeContainerRef = useRef<HTMLDivElement>(null)
 
   const copyToClipboard = async () => {
     if (!value) return
@@ -201,8 +204,10 @@ export const CodeBlock = memo(function CodeBlock({
       </div>
 
       {/* Code Area */}
-      <div className="max-h-[520px] overflow-auto bg-[#0d1117]">
-        <SyntaxHighlighterComp
+      <div className="relative max-h-[520px] overflow-y-auto bg-[#0d1117]">
+        <CodeMinimap code={value} containerRef={codeContainerRef} />
+        <div ref={codeContainerRef}>
+          <SyntaxHighlighterComp
           language={language.toLowerCase()}
           style={vscDarkPlus}
           customStyle={{
@@ -217,6 +222,7 @@ export const CodeBlock = memo(function CodeBlock({
         >
           {value}
         </SyntaxHighlighterComp>
+        </div>
       </div>
 
       {/* Parameters Input */}
