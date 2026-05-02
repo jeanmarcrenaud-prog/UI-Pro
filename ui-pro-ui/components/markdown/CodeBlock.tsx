@@ -204,9 +204,14 @@ export const CodeBlock = memo(function CodeBlock({
       </div>
 
       {/* Code Area */}
-      <div className="relative max-h-[520px] overflow-y-auto bg-[#0d1117]">
-        <CodeMinimap code={value} containerRef={codeContainerRef} />
-        <div ref={codeContainerRef}>
+      <div className="relative bg-[#0d1117]">
+        {/* Minimap - fixed outside scroll area */}
+        <div className="absolute right-0 top-0 bottom-0 w-14 z-10">
+          <CodeMinimap code={value} containerRef={codeContainerRef} />
+        </div>
+        
+        {/* Scrollable code */}
+        <div ref={codeContainerRef} className="max-h-[520px] overflow-y-auto mr-14">
           <SyntaxHighlighterComp
           language={language.toLowerCase()}
           style={vscDarkPlus}
@@ -222,7 +227,7 @@ export const CodeBlock = memo(function CodeBlock({
         >
           {value}
         </SyntaxHighlighterComp>
-        </div>
+      </div>
       </div>
 
       {/* Parameters Input */}
