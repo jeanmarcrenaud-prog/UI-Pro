@@ -3,8 +3,16 @@
 
 import { MessageBubble } from './MessageBubble'
 import type { Message } from '@/lib/types'
+import { useChatStore } from '@/lib/stores/chatStore'
 
-export function ChatMessages({ messages }: { messages: Message[] }) {
+interface ChatMessagesProps {
+  messages: Message[]
+  onRegenerate?: (messageId: string) => void
+  onContinue?: (messageId: string) => void
+  onSuggestion?: (messageId: string, prompt: string) => void
+}
+
+export function ChatMessages({ messages, onRegenerate, onContinue, onSuggestion }: ChatMessagesProps) {
   // Filter out null/undefined messages
   const displayMessages = messages
     .filter(m => 
@@ -16,12 +24,21 @@ export function ChatMessages({ messages }: { messages: Message[] }) {
     return null
   }
 
+  // Get the last user message for regenerate action
+  const lastUserMessage = [...displayMessages].reverse().find(m => m.role === 'user')
+
   return (
     <div className="flex-1 overflow-y-auto space-y-4 p-4">
       {displayMessages.map((msg, i) => (
         <MessageBubble
           key={`${msg.id ?? `msg-${i}`}`}
           message={msg}
+          onRegenerate={msg.role === 'assistant' && msg.status === 'done' && lastUserMessage ? 
+            () => onRegenerate?.(lastUserMessage.id) : undefined}
+          onContinue={msg.role === 'assistant' && msg.status === 'done' ? 
+            () => onContinue?.(msg.id) : undefined}
+          onSuggestion={msg.role === 'assistant' && msg.status === 'done' ? 
+            (prompt: string) => onSuggestion?.(msg.id, prompt) : undefined}
         />
       ))}
     </div>

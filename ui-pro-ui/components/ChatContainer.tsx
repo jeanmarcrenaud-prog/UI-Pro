@@ -5,6 +5,7 @@ import { useState, useCallback, useMemo } from 'react'
 import type { Message, AgentStep } from '@/lib/types'
 import { useChat } from '@/hooks/useChat'
 import { ChatMessages } from './chat/ChatMessages'
+import { ChatSuggestions } from './chat/ChatSuggestions'
 import { ExamplesList } from './chat/ExamplesList'
 import { LoadingIndicator } from './chat/LoadingIndicator'
 import { StepProgress } from './chat/StepProgress'
@@ -93,6 +94,16 @@ export function ChatContainer({
     sendMessage(prompt)
   }, [sendMessage])
 
+  const handleSuggestion = useCallback((messageId: string, prompt: string) => {
+    // Prepend the suggestion prompt to the existing message content
+    const message = messages.find(m => m.id === messageId)
+    if (!message?.content) return
+    
+    // Prepend to input for review instead of sending immediately
+    const enhancedPrompt = prompt + message.content
+    setInputValue(enhancedPrompt)
+  }, [messages])
+
   const handleStop = useCallback(() => {
     stopGeneration?.()
   }, [stopGeneration])
@@ -121,7 +132,7 @@ export function ChatContainer({
               disabled={isLoading}
             />
           ) : (
-            <ChatMessages messages={messages} />
+            <ChatMessages messages={messages} onSuggestion={handleSuggestion} />
           )}
         </AnimatePresence>
 
@@ -200,6 +211,14 @@ export function ChatContainer({
           <p className="text-center text-[10px] text-slate-500 mt-3">
             UI-Pro can make mistakes. Consider checking important information.
           </p>
+
+          {/* Contextual Suggestions */}
+          <ChatSuggestions
+            onSelect={(suggestion) => {
+              // Prepend suggestion to current input
+              setInputValue(prev => prev ? `${prev} ${suggestion}` : suggestion)
+            }}
+          />
         </div>
       </div>
     </div>

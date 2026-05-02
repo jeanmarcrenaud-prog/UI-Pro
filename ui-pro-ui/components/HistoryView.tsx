@@ -1,13 +1,44 @@
 // HistoryView.tsx
-// Role: History page - displays saved chat list with timestamps, previews, and delete functionality
-// with confirm-on-second-click pattern and localStorage persistence via chatStore
+// Role: History page with search, filters, grouping, tags, archive, pin, rename, export and multi-select
 
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { useChatStore } from '@/lib/stores/chatStore'
+import { useUIStore } from '@/lib/stores/uiStore'
 import { useI18n } from '@/lib/i18n'
 import { motion } from 'framer-motion'
+import { FileText, Calendar } from 'lucide-react'
+
+// Sub-components
+import { HistoryItem } from './chat/HistoryItem'
+import { HistoryFilters } from './chat/HistoryFilters'
+import { HistoryBatchActions } from './chat/HistoryBatchActions'
+
+import type { SortOption, DateGroup } from './chat/HistoryFilters'
+
+// Date grouping logic
+function getDateGroup(dateStr: string): DateGroup {
+  const date = new Date(dateStr)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffDays = Math.floor(diffMs / 86400000)
+  
+  if (diffDays === 0) return 'today'
+  if (diffDays === 1) return 'yesterday'
+  if (diffDays < 7) return 'this_week'
+  return 'older'
+}
+
+function getDateGroupLabel(group: DateGroup): string {
+  const labels: Record<DateGroup, string> = {
+    today: "Today",
+    yesterday: "Yesterday",
+    this_week: "This Week",
+    older: "Older",
+  }
+  return labels[group]
+}
 
 interface HistoryViewProps {
   onSelectChat?: (chatId: string) => void
@@ -15,109 +46,268 @@ interface HistoryViewProps {
 }
 
 export function HistoryView({ onSelectChat, onClose }: HistoryViewProps) {
-  const { history, loadChat, deleteChat } = useChatStore()
+  const { 
+    history, loadChat, deleteChat, renameChat, archiveChat, unarchiveChat, 
+    togglePinChat, addTagToChat, removeTagFromChat 
+  } = useChatStore()
+  const { selectedModel } = useUIStore()
+  
+  // Edit state
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  
+  // Filter state
+  const [showArchived, setShowArchived] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [sortBy, setSortBy] = useState<SortOption>('date_desc')
+  const [filterModel, setFilterModel] = useState<string>('')
+  const [filterTag, setFilterTag] = useState<string>('')
+  const [showFilters, setShowFilters] = useState(false)
+  
+  // Multi-select state
+  const [selectedChats, setSelectedChats] = useState<Set<string>>(new Set())
+  const [selectMode, setSelectMode] = useState(false)
+  
   const { t } = useI18n()
 
-  // Sort by updatedAt
-  const sortedHistory = [...history].sort(
-    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-  )
+  // --- Computed (before actions that depend on them) ---
+  
+  const allTags = useMemo(() => {
+    const tags = new Set<string>()
+    history.forEach(c => c.tags?.forEach(tag => tags.add(tag)))
+    return Array.from(tags).sort()
+  }, [history])
 
-  const handleSelect = (chatId: string) => {
+  const filteredHistory = useMemo(() => {
+    let chats = [...history]
+    
+    if (!showArchived) chats = chats.filter(c => !c.archived)
+    
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase()
+      chats = chats.filter(c => 
+        c.title.toLowerCase().includes(q) || 
+        c.messages?.some(m => m.content?.toLowerCase().includes(q))
+      )
+    }
+    
+    if (filterTag) chats = chats.filter(c => c.tags?.includes(filterTag))
+    
+    return chats.sort((a, b) => {
+      if (a.isPinned && !b.isPinned) return -1
+      if (!a.isPinned && b.isPinned) return 1
+      
+      switch (sortBy) {
+        case 'date_desc': return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        case 'date_asc': return new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()
+        case 'title': return a.title.localeCompare(b.title)
+        default: return 0
+      }
+    })
+  }, [history, showArchived, searchQuery, sortBy, filterTag])
+
+  const groupedHistory = useMemo(() => {
+    const groups: Record<DateGroup, typeof filteredHistory> = { today: [], yesterday: [], this_week: [], older: [] }
+    filteredHistory.forEach(chat => groups[getDateGroup(chat.updatedAt)].push(chat))
+    return groups
+  }, [filteredHistory])
+
+  // --- Actions ---
+  
+  const toggleSelect = useCallback((chatId: string) => {
+    setSelectedChats(prev => {
+      const next = new Set(prev)
+      next.has(chatId) ? next.delete(chatId) : next.add(chatId)
+      return next
+    })
+  }, [])
+
+  const selectAll = useCallback(() => {
+    setSelectedChats(prev => 
+      prev.size === filteredHistory.length 
+        ? new Set() 
+        : new Set(filteredHistory.map(c => c.id))
+    )
+  }, [filteredHistory])
+
+  const deleteSelected = useCallback(() => {
+    selectedChats.forEach(id => deleteChat(id))
+    setSelectedChats(new Set())
+    setSelectMode(false)
+  }, [selectedChats])
+
+  const archiveSelected = useCallback(() => {
+    selectedChats.forEach(id => archiveChat(id))
+    setSelectedChats(new Set())
+    setSelectMode(false)
+  }, [selectedChats])
+
+  const pinSelected = useCallback(() => {
+    selectedChats.forEach(id => togglePinChat(id))
+    setSelectedChats(new Set())
+    setSelectMode(false)
+  }, [selectedChats])
+
+  const exportSelected = useCallback(() => {
+    let combinedMd = '# UI-Pro Conversations Export\n\n---\n\n'
+    filteredHistory
+      .filter(c => selectedChats.has(c.id))
+      .forEach(chat => {
+        combinedMd += `## ${chat.title}\n\n`
+        combinedMd += `*${new Date(chat.updatedAt).toLocaleString()}*\n\n---\n\n`
+        chat.messages?.forEach(msg => {
+          const role = msg.role === 'user' ? '**User**' : '**Assistant**'
+          combinedMd += `${role}: ${msg.content || ''}\n\n`
+        })
+        combinedMd += '---\n\n'
+      })
+    
+    const blob = new Blob([combinedMd], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `ui-pro-export-${Date.now()}.md`
+    a.click()
+    URL.revokeObjectURL(url)
+    setSelectedChats(new Set())
+    setSelectMode(false)
+  }, [filteredHistory, selectedChats])
+
+  // --- Handlers ---
+  
+  const handleSelect = useCallback((chatId: string) => {
     loadChat(chatId)
     onSelectChat?.(chatId)
-  }
+  }, [loadChat, onSelectChat])
 
-  const handleDelete = (chatId: string, e: React.MouseEvent) => {
-    e.stopPropagation()
+  const handleDelete = useCallback((chatId: string) => {
     if (confirmDelete === chatId) {
       deleteChat(chatId)
       setConfirmDelete(null)
     } else {
       setConfirmDelete(chatId)
     }
-  }
+  }, [confirmDelete, deleteChat])
 
-  const formatTime = (dateStr: string) => {
-    const date = new Date(dateStr)
-    const now = new Date()
-    const diffMs = now.getTime() - date.getTime()
-    const diffMins = Math.floor(diffMs / 60000)
-    const diffHours = Math.floor(diffMs / 3600000)
-    const diffDays = Math.floor(diffMs / 86400000)
+  const handleRename = useCallback((chatId: string) => {
+    if (editTitle.trim()) renameChat(chatId, editTitle.trim())
+    setEditingId(null)
+  }, [editTitle, renameChat])
 
-    if (diffMins < 1) return t.history.empty // Use translation or a generic
-    if (diffMins < 60) return `${diffMins}m ago`
-    if (diffHours < 24) return `${diffHours}h ago`
-    if (diffDays < 7) return `${diffDays}d ago`
-    return date.toLocaleDateString()
-  }
+  const handleArchive = useCallback((chatId: string) => {
+    const chat = history.find(c => c.id === chatId)
+    chat?.archived ? unarchiveChat(chatId) : archiveChat(chatId)
+  }, [history, archiveChat, unarchiveChat])
+
+  const handlePin = useCallback((chatId: string) => {
+    togglePinChat(chatId)
+  }, [togglePinChat])
+
+  const handleExport = useCallback((chatId: string) => {
+    const chat = history.find(c => c.id === chatId)
+    if (!chat) return
+    
+    let md = `# ${chat.title}\n\n---\n\n`
+    chat.messages?.forEach(msg => {
+      const role = msg.role === 'user' ? 'User' : 'Assistant'
+      md += `${role}: ${msg.content || ''}\n\n`
+    })
+    
+    const blob = new Blob([md], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${chat.title.replace(/[^a-z0-9]/gi, '_')}.md`
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [history])
+
+  // --- Render ---
+  
+  const dateGroups: DateGroup[] = ['today', 'yesterday', 'this_week', 'older']
 
   return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="max-w-2xl mx-auto">
-        {/* Header */}
-        <div className="p-4 border-b border-slate-800">
-          <h2 className="text-xl font-semibold text-white">{t.history.title}</h2>
-          <p className="text-sm text-slate-500">
-            {history.length} chat{history.length !== 1 ? 's' : ''} saved
-          </p>
-        </div>
+    <div className="h-full flex flex-col overflow-hidden">
+      {/* Filters & Controls */}
+      <div className="p-4 border-b border-slate-800">
+        <HistoryFilters
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          showFilters={showFilters}
+          onToggleFilters={() => setShowFilters(!showFilters)}
+          sortBy={sortBy}
+          onSortChange={setSortBy}
+          showArchived={showArchived}
+          onToggleArchived={setShowArchived}
+          selectMode={selectMode}
+          onToggleSelectMode={() => setSelectMode(!selectMode)}
+          selectedCount={selectedChats.size}
+          totalCount={filteredHistory.length}
+          onSelectAll={selectAll}
+          allTags={allTags}
+          filterTag={filterTag}
+          onFilterTagChange={setFilterTag}
+        />
+      </div>
 
-        {/* Chat List */}
-        {sortedHistory.length === 0 ? (
-          <div className="p-8 text-center">
-            <div className="text-4xl mb-4">📜</div>
-            <p className="text-slate-400">{t.history.empty}</p>
-            <p className="text-sm text-slate-600 mt-2">
-              Start a conversation and it will be saved automatically
-            </p>
+      {/* Batch Actions */}
+      <div className="px-4">
+        <HistoryBatchActions
+          selectedCount={selectedChats.size}
+          totalCount={filteredHistory.length}
+          onExport={exportSelected}
+          onArchive={archiveSelected}
+          onPin={pinSelected}
+          onDelete={deleteSelected}
+        />
+      </div>
+
+      {/* Chat List */}
+      <div className="flex-1 overflow-y-auto">
+        {filteredHistory.length === 0 ? (
+          <div className="p-8 text-center text-slate-500">
+            <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
+            <p>No conversations yet</p>
           </div>
         ) : (
           <div className="divide-y divide-slate-800">
-            {sortedHistory.map((chat, index) => {
-              const msgCount = chat.messages?.length ?? 0
-              const previewMessage = chat.messages?.find(m => m.role === 'assistant')
-              const preview = previewMessage?.content?.slice(0, 100) || '...'
-
+            {dateGroups.map(group => {
+              const chats = groupedHistory[group]
+              if (chats.length === 0) return null
+              
               return (
-                <motion.div
-                  key={chat.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.05 }}
-                  className="p-4 hover:bg-slate-800/30 transition-colors cursor-pointer group min-h-[4rem]"
-                  onClick={() => handleSelect(chat.id)}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-medium text-white truncate">
-                        {chat.title}
-                      </h3>
-                      <p className="text-xs text-slate-500 mt-1">
-                        {msgCount} message{msgCount !== 1 ? 's' : ''} • {formatTime(chat.updatedAt)}
-                      </p>
-                      {msgCount > 0 && (
-                        <p className="text-sm text-slate-500 mt-2 line-clamp-2">
-                          {preview}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Delete button */}
-                    <button
-                      onClick={(e) => handleDelete(chat.id, e)}
-                      className={`px-2 py-1 rounded text-xs transition-colors shrink-0 mt-1 ${
-                        confirmDelete === chat.id
-                          ? 'bg-red-600 text-white'
-                          : 'text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100'
-                      }`}
-                    >
-                      {confirmDelete === chat.id ? t.history.confirmDelete : '🗑️'}
-                    </button>
+                <div key={group}>
+                  <div className="px-4 py-2 sticky top-0 bg-slate-900/95 backdrop-blur-sm border-b border-slate-800">
+                    <h3 className="text-xs font-medium text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                      <Calendar className="w-3 h-3" />
+                      {getDateGroupLabel(group)}
+                      <span className="text-slate-600">({chats.length})</span>
+                    </h3>
                   </div>
-                </motion.div>
+                  
+                  {chats.map((chat, index) => (
+                    <HistoryItem
+                      key={chat.id}
+                      chat={chat}
+                      isSelected={selectedChats.has(chat.id)}
+                      selectMode={selectMode}
+                      editingId={editingId}
+                      editTitle={editTitle}
+                      filterTag={filterTag}
+                      onSelect={() => handleSelect(chat.id)}
+                      onToggleSelect={() => toggleSelect(chat.id)}
+                      onRename={() => handleRename(chat.id)}
+                      onEditTitle={setEditTitle}
+                      onCancelEdit={() => setEditingId(null)}
+                      onArchive={() => handleArchive(chat.id)}
+                      onPin={() => handlePin(chat.id)}
+                      onExport={() => handleExport(chat.id)}
+                      onDelete={() => handleDelete(chat.id)}
+                      onSetFilterTag={setFilterTag}
+                    />
+                  ))}
+                </div>
               )
             })}
           </div>
