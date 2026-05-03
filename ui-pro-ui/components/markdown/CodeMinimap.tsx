@@ -1,114 +1,138 @@
 // CodeMinimap.tsx
-// Role: Fixed minimap that stays visible while scrolling
+// Role: Canvas-based minimap with syntax highlighting and viewport
 
 'use client'
 
-import { useCallback, memo, useMemo, useState, useEffect, useRef } from 'react'
+import { useEffect, useRef, memo, useCallback } from 'react'
 
 interface CodeMinimapProps {
   code: string
-  containerRef?: React.RefObject<HTMLDivElement | null>
+  containerRef: React.RefObject<HTMLDivElement>
+  width?: number
+  height?: number
+  className?: string
 }
 
-export const CodeMinimap = memo(function CodeMinimap({ code, containerRef }: CodeMinimapProps) {
-  const localRef = useRef<HTMLDivElement>(null)
-  const [scrollRatio, setScrollRatio] = useState(0)
-  
-  // Get container - prefer prop ref, fallback to local
-  const getContainer = useCallback(() => {
-    return containerRef?.current || localRef.current?.parentElement?.querySelector('.overflow-y-auto')
-  }, [containerRef])
-  
-  // Always call hooks first
-  const lines = useMemo(() => code.split('\n').filter(l => l.trim()), [code])
-  const totalLines = lines.length
-  const shouldRender = totalLines >= 15
-  
-  // Track scroll
+export const CodeMinimap = memo(function CodeMinimap({
+  code,
+  containerRef,
+  width = 56,
+  height = '100%',
+  className = ''
+}: CodeMinimapProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const animationFrameRef = useRef<number | null>(null)
+
+  const drawMinimap = useCallback(() => {
+    const canvas = canvasRef.current
+    if (!canvas || !code) return
+
+    const ctx = canvas.getContext('2d', { alpha: true })
+    if (!ctx) return
+
+    const lines = code.split('\n')
+    const totalLines = lines.length
+    if (totalLines === 0) return
+
+    // Set canvas dimensions
+    canvas.width = width
+    canvas.height = containerRef.current?.clientHeight || 520
+
+    const lineHeight = canvas.height / Math.max(totalLines, 50) // Minimum visible lines
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+    // Draw code density map
+    for (let i = 0; i < totalLines; i++) {
+      const line = lines[i]
+      const y = i * lineHeight
+      const lineLength = line.length
+
+      // Intensity based on content density
+      let intensity = 0.15 // base
+
+      if (lineLength > 60) intensity = 0.75
+      else if (lineLength > 30) intensity = 0.55
+      else if (line.includes('def ') || line.includes('class ') || line.includes('import ')) 
+        intensity = 0.85
+      else if (line.includes('return ') || line.includes('if ') || line.includes('//')) 
+        intensity = 0.45
+
+      // Color based on content type
+      let hue = 210 // default blue-ish
+      if (line.includes('def ') || line.includes('class ')) hue = 280   // purple
+      else if (line.includes('import ') || line.includes('from ')) hue = 160 // green
+      else if (line.trim().startsWith('#')) hue = 40 // orange (comments)
+
+      ctx.fillStyle = `hsla(${hue}, 85%, 65%, ${intensity})`
+      ctx.fillRect(2, y, width - 6, Math.max(1, lineHeight - 1))
+    }
+
+    // Draw viewport indicator (current scroll position)
+    if (containerRef.current) {
+      const scrollTop = containerRef.current.scrollTop
+      const scrollHeight = containerRef.current.scrollHeight
+      const clientHeight = containerRef.current.clientHeight
+
+      if (scrollHeight > clientHeight) {
+        const indicatorHeight = (clientHeight / scrollHeight) * canvas.height
+        const indicatorTop = (scrollTop / scrollHeight) * canvas.height
+
+        ctx.fillStyle = 'rgba(167, 139, 250, 0.7)' // violet-400
+        ctx.fillRect(0, indicatorTop, width, indicatorHeight)
+      }
+    }
+  }, [code, width, containerRef])
+
+  // Redraw on code change or scroll
   useEffect(() => {
-    const container = getContainer()
-    if (!container || !shouldRender) return
-    
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current)
+    }
+
+    animationFrameRef.current = requestAnimationFrame(drawMinimap)
+
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current)
+      }
+    }
+  }, [drawMinimap])
+
+  // Listen to scroll on container
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+
     const handleScroll = () => {
-      const maxScroll = container.scrollHeight - container.clientHeight
-      const ratio = maxScroll > 0 ? container.scrollTop / maxScroll : 0
-      setScrollRatio(Math.max(0, Math.min(1, ratio)))
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
+      animationFrameRef.current = requestAnimationFrame(drawMinimap)
     }
-    
-    handleScroll()
+
     container.addEventListener('scroll', handleScroll, { passive: true })
-    return () => container.removeEventListener('scroll', handleScroll)
-  }, [getContainer, shouldRender])
-  
-const handleClick = useCallback((e: React.MouseEvent) => {
-    const container = getContainer()
-    if (!container) return
-    
-    const minimapRect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    const ratio = Math.max(0, Math.min(1, (e.clientY - minimapRect.top) / minimapRect.height))
-    const targetScroll = ratio * (container.scrollHeight - container.clientHeight)
-    
-    container.scrollTo({ top: targetScroll, behavior: 'smooth' })
-  }, [getContainer])
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    const container = getContainer()
-    if (!container) return
-    
-    const startY = e.clientY
-    const startScrollTop = container.scrollTop
-    
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaY = moveEvent.clientY - startY
-      const containerHeight = container.clientHeight
-      const containerScrollHeight = container.scrollHeight
-      const maxScroll = containerScrollHeight - containerHeight
-      
-      if (maxScroll <= 0) return
-      
-      // Convert pixel delta to scroll ratio
-      const scrollDelta = (deltaY / containerHeight) * maxScroll
-      container.scrollTop = Math.max(0, Math.min(maxScroll, startScrollTop + scrollDelta))
+    return () => {
+      container.removeEventListener('scroll', handleScroll)
     }
-    
-    const handleMouseUp = () => {
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
-    }
-    
-    document.addEventListener('mousemove', handleMouseMove)
-    document.addEventListener('mouseup', handleMouseUp)
-  }, [getContainer])
-
-  if (!shouldRender) return null
+  }, [drawMinimap, containerRef])
 
   return (
-    <div 
-      onClick={handleClick}
-      onMouseDown={handleMouseDown}
-      className="w-full h-full bg-slate-950/90 border-l border-slate-800 cursor-pointer select-none hover:bg-slate-900 transition-colors"
-      title="Click or drag to navigate"
-    >
-      {/* Code lines */}
-      <div className="w-full h-full overflow-hidden opacity-50">
-        {lines.slice(0, 80).map((line, i) => (
-          <div 
-            key={i}
-            className="w-full"
-            style={{ 
-              height: `${100 / Math.min(lines.length, 80)}%`,
-              backgroundColor: line.trim() ? '#94a3b8' : 'transparent'
-            }}
-          />
-        ))}
-      </div>
-      
-      {/* Viewport indicator */}
-      <div 
-        className="absolute left-0 right-0 bg-violet-500/40 border border-violet-400/60 pointer-events-none"
-        style={{
-          top: `${scrollRatio * 100}%`,
-          height: `${Math.min(100, (20 / lines.length) * 100)}%`,
+    <div className={`absolute right-0 top-0 bottom-0 bg-slate-950 border-l border-slate-700 ${className}`}>
+      <canvas
+        ref={canvasRef}
+        className="cursor-pointer hover:brightness-110 transition-all"
+        width={width}
+        height={500}
+        onClick={(e) => {
+          // Click to scroll to position
+          const rect = e.currentTarget.getBoundingClientRect()
+          const clickY = e.clientY - rect.top
+          const percentage = clickY / rect.height
+
+          if (containerRef.current) {
+            const scrollHeight = containerRef.current.scrollHeight
+            containerRef.current.scrollTop = percentage * scrollHeight
+          }
         }}
       />
     </div>
