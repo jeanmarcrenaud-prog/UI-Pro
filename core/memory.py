@@ -142,10 +142,11 @@ class MemoryManager:
     def _should_compress(self) -> bool:
         """Check if we should compress old memories"""
         return (self.compression_enabled and 
-len(self.documents) > self.comPRESSION_THRESHOLD)
+len(self.documents) > self.compression_threshold)
     
     def _rebuild_index(self):
-        """Rebuild the entire FAISS index from current documents"""
+        """Rebuild the entire FAISS index from current documents.
+        MUST be called with lock already held."""
         with self._lock:
             if not self.documents:
                 base = faiss.IndexFlatL2(self.d)
