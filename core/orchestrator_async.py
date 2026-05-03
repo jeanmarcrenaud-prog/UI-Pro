@@ -25,77 +25,7 @@ import asyncio
 from core.state_manager import StateManager
 from core.executor import CodeExecutor
 from llm.router import LLMRouter
-
-# Try to import centralized prompts
-try:
-    from core.prompts import (
-        PLANNER_PROMPT,
-        ARCHITECT_PROMPT,
-        CODER_PROMPT,
-        REVIEWER_PROMPT,
-        FIX_PROMPT,
-    )
-except ImportError:
-    # Fallback prompts with proper {task} placeholders
-    PLANNER_PROMPT = """You are a senior planner.
-Return JSON:
-{{
-  "goal": "...",
-  "steps": ["...", "..."]
-}}
-
-Task:
-{task}
-"""
-    ARCHITECT_PROMPT = """You are a software architect.
-Plan:
-{plan}
-
-Return JSON:
-{{
-  "files": [
-    {{"name": "main.py", "role": "..."}}
-  ]
-}}
-"""
-    CODER_PROMPT = """You are a senior Python engineer.
-Architecture:
-{architecture}
-
-Return JSON:
-{{
-  "files": {{
-    "main.py": "code here"
-  }}
-}}
-"""
-    REVIEWER_PROMPT = """Review this code and detect issues.
-Code:
-{code}
-
-Return JSON:
-{{
-  "issues": ["..."],
-  "fixes": ["..."]
-}}
-"""
-    FIX_PROMPT = """Fix this Python code.
-Error:
-{error}
-
-Current code:
-{code_content}
-
-Return ONLY JSON:
-{{
-  "files": {{
-    "main.py": "fixed code here"
-  }}
-}}
-
-Retry count: {attempt}
-Max retries: {max_retry}
-"""
+from core.prompts import get_prompt  # Centralized prompts
 
 logger = logging.getLogger(__name__)
 
@@ -203,65 +133,23 @@ class Orchestrator:
     # ================= AGENTS =================
 
     async def _planner(self, task: str) -> dict[str, Any]:
-        """Planning agent - uses centralized prompts if available."""
-        base_prompt = PLANNER_PROMPT or """You are a senior planner.
-Return JSON:
-{
-  "goal": "...",
-  "steps": ["...", "..."]
-}
-
-Task:
-{task}
-"""
-        prompt = base_prompt.replace("{task}", task)
+        """Planning agent - uses centralized prompts."""
+        prompt = get_prompt("planner", task=task)
         return await self._llm_call(prompt, mode="fast")
 
     async def _architect(self, task: str, plan: dict[str, Any]) -> dict[str, Any]:
-        """Architecture agent - uses centralized prompts if available."""
-        base_prompt = ARCHITECT_PROMPT or """You are a software architect.
-Plan:
-{plan}
-
-Return JSON:
-{{
-  "files": [
-    {{"name": "main.py", "role": "..."}}
-  ]
-}}
-"""
-        prompt = base_prompt.replace("{plan}", str(plan))
+        """Architecture agent - uses centralized prompts."""
+        prompt = get_prompt("architect", plan=str(plan))
         return await self._llm_call(prompt, mode="reasoning")
 
     async def _coder(self, task: str, architecture: dict[str, Any]) -> dict[str, Any]:
-        """Code generation agent - uses centralized prompts if available."""
-        base_prompt = CODER_PROMPT or """You are a senior Python engineer.
-Architecture:
-{architecture}
-
-Return JSON:
-{{
-  "files": {{
-    "main.py": "code here"
-  }}
-}}
-"""
-        prompt = base_prompt.replace("{architecture}", str(architecture))
+        """Code generation agent - uses centralized prompts."""
+        prompt = get_prompt("coder", architecture=str(architecture))
         return await self._llm_call(prompt, mode="code")
 
     async def _reviewer(self, code: dict[str, Any]) -> dict[str, Any]:
-        """Code review agent - uses centralized prompts if available."""
-        base_prompt = REVIEWER_PROMPT or """Review this code and detect issues.
-Code:
-{code}
-
-Return JSON:
-{{
-  "issues": ["..."],
-  "fixes": ["..."]
-}}
-"""
-        prompt = base_prompt.replace("{code}", str(code))
+        """Code review agent - uses centralized prompts."""
+        prompt = get_prompt("reviewer", code=str(code))
         return await self._llm_call(prompt, mode="fast")
 
     async def _runner(self, code: dict[str, Any]) -> dict[str, Any]:
@@ -331,28 +219,12 @@ Return JSON:
             logger.warning("🔧 Auto-fix triggered")
 
             try:
-                # Generate fix prompt
+                # Generate fix prompt using centralized prompts
                 main_file = next(iter(files.keys()), "main.py")
                 current_code = files.get(main_file, "")
 
-                base_fix = FIX_PROMPT or """Fix this Python code.
-Error:
-{error}
-
-Current code:
-{current_code}
-
-Return ONLY JSON:
-{{
-  "files": {{
-    "{main_file}": "fixed code here"
-  }}
-}}
-
-Retry count: {attempt}
-Max retries: {max_retry}
-"""
-                fix_prompt = base_fix.format(
+                fix_prompt = get_prompt(
+                    "fix",
                     error=error,
                     current_code=current_code,
                     main_file=main_file,
