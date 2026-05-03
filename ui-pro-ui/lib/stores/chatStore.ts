@@ -42,6 +42,12 @@ interface ChatStore extends ChatState {
   saveToHistory: (title?: string) => void
   loadChat: (id: string) => void
   deleteChat: (id: string) => void
+  renameChat: (id: string, title: string) => void
+  archiveChat: (id: string) => void
+  unarchiveChat: (id: string) => void
+  togglePinChat: (id: string) => void
+  addTagToChat: (id: string, tag: string) => void
+  removeTagFromChat: (id: string, tag: string) => void
   // Messages
   addMessage: (message: Message) => void
   updateLastMessage: (content: string, status?: Message['status']) => void
@@ -206,6 +212,60 @@ export const useChatStore = create<ChatStore>()(
         set({
           history: history.filter(c => c.id !== id),
           currentChatId: currentChatId === id ? null : currentChatId,
+        })
+      },
+
+      renameChat: (id: string, title: string) => {
+        const { history } = get()
+        set({
+          history: history.map(c => 
+            c.id === id ? { ...c, title, updatedAt: new Date().toISOString() } : c
+          ),
+        })
+      },
+
+      archiveChat: (id: string) => {
+        const { history } = get()
+        set({
+          history: history.map(c => 
+            c.id === id ? { ...c, archived: true, updatedAt: new Date().toISOString() } : c
+          ),
+        })
+      },
+
+      unarchiveChat: (id: string) => {
+        const { history } = get()
+        set({
+          history: history.map(c => 
+            c.id === id ? { ...c, archived: false, updatedAt: new Date().toISOString() } : c
+          ),
+        })
+      },
+
+      togglePinChat: (id: string) => {
+        const { history } = get()
+        set({
+          history: history.map(c => 
+            c.id === id ? { ...c, isPinned: !c.isPinned, updatedAt: new Date().toISOString() } : c
+          ),
+        })
+      },
+
+      addTagToChat: (id: string, tag: string) => {
+        const { history } = get()
+        set({
+          history: history.map(c => 
+            c.id === id ? { ...c, tags: [...(c.tags || []), tag], updatedAt: new Date().toISOString() } : c
+          ),
+        })
+      },
+
+      removeTagFromChat: (id: string, tag: string) => {
+        const { history } = get()
+        set({
+          history: history.map(c => 
+            c.id === id ? { ...c, tags: (c.tags || []).filter(t => t !== tag), updatedAt: new Date().toISOString() } : c
+          ),
         })
       },
 

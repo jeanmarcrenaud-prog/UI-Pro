@@ -40,14 +40,6 @@ dev = [
 line-length = 88
 target-version = ["py310", "py311", "py312"]
 include = '\.pyi?$'
-extend-exclude = '''
-/(
-    \.git
-    | \.venv
-    | venv
-    | build
-    | dist
-)/'
 
 [tool.isort]
 # isort configuration

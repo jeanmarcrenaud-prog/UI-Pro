@@ -1,9 +1,9 @@
-# 🧠 **State Manager** (Gestion d'état global)
+# **State Manager** - Global State Management
 #
 # ✅ State object
-# ✅ Trace complète
+# ✅ Full trace
 # ✅ Debug possible
-# ✅ Reprise après crash
+# ✅ Crash recovery
 
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field

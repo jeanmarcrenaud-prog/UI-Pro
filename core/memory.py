@@ -35,7 +35,7 @@ from sentence_transformers import SentenceTransformer
 
 logger.info("Memory module initialized")
 
-# modèle pour embeddings
+# Model for embeddings
 model = SentenceTransformer("all-MiniLM-L6-v2")
 
 # Enhanced MemoryManager class with LRU eviction and compression

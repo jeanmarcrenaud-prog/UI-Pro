@@ -51,6 +51,8 @@ export interface Translations {
     save: string
     run: string
     running: string
+    installing: string
+    dependencies: string
   }
   history: {
     title: string
@@ -112,7 +114,7 @@ const en: Translations = {
     tokens: 'Tokens',
     agentExecution: 'Agent Execution',
   },
-  codeBlock: { copy: 'Copy', copied: 'Copied', save: 'Save', run: 'Run', running: 'Running...' },
+  codeBlock: { copy: 'Copy', copied: 'Copied', save: 'Save', run: 'Run', running: 'Running...', installing: 'Installing...', dependencies: 'Deps' },
   history: { title: 'History', empty: 'No conversations yet', confirmDelete: 'Confirm?' },
   sidebar: {
     newChat: 'New Chat',
@@ -169,7 +171,7 @@ const fr: Translations = {
     tokens: 'Tokens',
     agentExecution: 'Exécution Agent',
   },
-  codeBlock: { copy: 'Copier', copied: 'Copié', save: 'Enregistrer', run: 'Exécuter', running: 'Exécution...' },
+  codeBlock: { copy: 'Copier', copied: 'Copié', save: 'Enregistrer', run: 'Exécuter', running: 'Exécution...', installing: 'Installation...', dependencies: 'Deps' },
   history: { title: 'Historique', empty: 'Aucune conversation', confirmDelete: 'Confirmer ?' },
   sidebar: {
     newChat: 'Nouveau Chat',

@@ -80,4 +80,8 @@ export interface ChatHistoryItem {
   messages: Message[]
   createdAt: string
   updatedAt: string
+  // NEW: Enhanced history features
+  tags?: string[]
+  archived?: boolean
+  isPinned?: boolean
 }

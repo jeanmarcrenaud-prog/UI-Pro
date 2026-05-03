@@ -270,7 +270,7 @@ class ModelService(BaseService):
     async def initialize(self) -> None:
         """Initialize model service"""
         try:
-            from adapters.llm import OllamaClient
+            from llm import OllamaClient
             self._llm_client = OllamaClient()
             self.logger.info(f"ModelService initialized with models: {list(self.models.keys())}")
             

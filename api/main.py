@@ -11,7 +11,7 @@ from fastapi import FastAPI, WebSocket, Request, WebSocketDisconnect, HTTPExcept
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import logging
 import json
 import time
@@ -206,7 +206,7 @@ class ExecuteRequest(BaseModel):
     timeout: int = 30
     args: Optional[str] = None  # Command line arguments
     env: Optional[dict] = None  # Environment variables
-    validate: bool = False  # Run validation check
+    run_validation: bool = False  # Run validation check
 
 
 class ExecuteResponse(BaseModel):
@@ -301,8 +301,8 @@ async def validate(request: ValidateRequest):
             import ast
             import warnings as py_warnings
             
-            errors: List[str] = []
-            warnings: List[str] = []
+            errors: List[str] = []  # type: ignore[annotation-type-check]
+            warnings: List[str] = []  # type: ignore[annotation-type-check]
             
             try:
                 tree = ast.parse(request.code)
@@ -354,6 +354,99 @@ async def validate(request: ValidateRequest):
             status="error",
             error=str(e)
         )
+
+
+# ===================== INSTALL DEPENDENCIES ENDPOINT =====================
+class InstallDepsRequest(BaseModel):
+    code: str
+
+
+class InstallDepsResponse(BaseModel):
+    status: str = "ok"
+    message: Optional[str] = None
+    installed: Optional[List[str]] = None
+    missing: Optional[List[str]] = None
+    error: Optional[str] = None
+
+
+@app.post("/api/install-deps", response_model=InstallDepsResponse)
+async def install_deps(request: InstallDepsRequest):
+    """Parse imports and auto-install missing packages"""
+    logger.info(f"[INSTALL-DEPS] analyzing code...")
+    
+    try:
+        import ast
+        import subprocess
+        import sys
+        
+        # Parse the code to extract imports
+        imports = set()
+        try:
+            tree = ast.parse(request.code)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        imports.add(alias.name.split('.')[0])
+                elif isinstance(node, ast.ImportFrom):
+                    if node.module:
+                        imports.add(node.module.split('.')[0])
+        except SyntaxError:
+            return InstallDepsResponse(status="error", error="Invalid Python syntax")
+        
+        # Filter out standard library modules
+        stdlib = {'os', 'sys', 'json', 're', 'math', 'time', 'datetime', 'random', 'collections', 
+                 'itertools', 'functools', 'operator', 'string', 'io', 'logging', 'typing'}
+        external = [imp for imp in imports if imp not in stdlib and not imp.startswith('_')]
+        
+        if not external:
+            return InstallDepsResponse(
+                status="ok",
+                message="No external dependencies found",
+                installed=[]
+            )
+        
+        # Check which are already installed
+        missing = []
+        installed = []
+        for pkg in external:
+            try:
+                __import__(pkg)
+                installed.append(pkg)
+            except ImportError:
+                missing.append(pkg)
+        
+        if not missing:
+            return InstallDepsResponse(
+                status="ok",
+                message=f"All dependencies already installed: {', '.join(installed)}",
+                installed=installed
+            )
+        
+        # Install missing packages
+        logger.info(f"[INSTALL-DEPS] Installing: {missing}")
+        install_results = []
+        for pkg in missing:
+            try:
+                subprocess.check_call(
+                    [sys.executable, "-m", "pip", "install", pkg, "-q"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+                install_results.append(pkg)
+                logger.info(f"[INSTALL-DEPS] Installed: {pkg}")
+            except Exception as e:
+                logger.warning(f"[INSTALL-DEPS] Failed to install {pkg}: {e}")
+        
+        return InstallDepsResponse(
+            status="ok",
+            message=f"Installed {len(install_results)} package(s)",
+            installed=install_results,
+            missing=[p for p in missing if p not in install_results]
+        )
+        
+    except Exception as e:
+        logger.error(f"Install deps error: {e}")
+        return InstallDepsResponse(status="error", error=str(e))
 
 
 # ===================== WEBSOCKET WITH RESUME SUPPORT =====================
@@ -480,6 +573,9 @@ async def ws_endpoint(websocket: WebSocket):
 
                 chunk_index += 1
                 request_state["chunk_index"] = chunk_index
+                
+                # Track token count (approximate by counting chunks)
+                token_count = chunk_index
 
                 await websocket.send_text(json.dumps({
                     "type": "token",
@@ -487,7 +583,8 @@ async def ws_endpoint(websocket: WebSocket):
                     "response": chunk_text,
                     "done": False,
                     "message_id": message_id,
-                    "chunk_index": chunk_index
+                    "chunk_index": chunk_index,
+                    "tokens": token_count
                 }))
 
                 # Also emit to log subscribers
@@ -519,7 +616,8 @@ async def ws_endpoint(websocket: WebSocket):
             await websocket.send_text(json.dumps({
                 "type": "done",
                 "message_id": message_id,
-                "chunk_index": chunk_index
+                "chunk_index": chunk_index,
+                "tokens": chunk_index
             }))
 
             request_state["is_complete"] = True

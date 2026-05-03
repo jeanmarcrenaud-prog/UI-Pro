@@ -12,69 +12,113 @@
 | 2 | Cleanup: Supprimé dead code, obsolètes | ✅ |
 | 3 | Fixes: pyproject.toml, config.yaml.example | ✅ |
 
+### Features Mai 2026
+
+| # | Tâche | Statut |
+|---|-----|-|------|
+| 1 | Command Palette (Ctrl+K) | ✅ |
+| 2 | Focus Mode toggle | ✅ |
+| 3 | History multi-select | ✅ |
+| 4 | Batch actions (pin/export/archive/delete) | ✅ |
+| 5 | Contextual suggestions | ✅ |
+| 6 | Code Minimap (VS Code-style) | ✅ |
+| 7 | Minimap click+drag navigation | ✅ |
+| 8 | Model description (GitHub/Ollama API) | ✅ |
+| 9 | About link to GitHub | ✅ |
+| 10 | Keyboard shortcuts on buttons | ✅ |
+| 11 | Visual code improvements | ✅ |
+| 12 | Update ARCHITECTURE.md | ✅ |
+| 13 | Update requirements.txt | ✅ |
+
+---
+
 ## 🔧 EN COURS
 
-| # | Tâche | Priorité | Statut |
-|---|-----|-|-|------|
-| 4 | Supprimer core/config.py | High | ✅ DONE |
-| 5 | Supprimer llm/client.py | High | ✅ DONE |
-| 6 | Nettoyage docs obsolètes | High | 🟡 TODO |
-| 7 | Fixer settings.py wrapper | Med | ✅ DONE |
-| 8 | Add missing docstrings | Low | 🟡 TODO |
-| 9 | Standardize comment language | Low | 🟡 TODO |
-| 10 | Cleanup test.txt | Low | 🟡 TODO |
+| # | Tâche | Priorité |
+|---|-----|---------|
+| 1 | Refactor HistoryView (trop long) | ✅ DONE |
+| 2 | Fix Minimap scroll (fixed) | ✅ DONE |
+| 3 | Add Status indicator to code | ✅ DONE |
 
-### Core Implementation
+---
 
-| # | Tâche | Description | Status |
-|---|-------|-------------|--------|
-| 1 | **CodeExecutor** | Classe avec sandbox, timeout, sanitization, auto-fix loop | ✅ DONE |
-| 2 | **StateManager** | Typage complet, task_id, tests, review, metrics (retry_count) | ✅ DONE |
-| 3 | **orchestrator_async.py** | Pipeline async avec CodeExecutor et boucle auto-fix (max 3) | ✅ DONE |
-| 4 | **logger.py** | Rotation logs (RotatingFileHandler), JSON formatting | ✅ DONE |
-| 5 | **memory.py** | FAISS + SentenceTransformer pour embeddings | ✅ DONE |
-| 6 | **tests/test_execution.py** | Tests unitaires 100% coverage (13 tests) | ✅ DONE |
-| 7 | **dashboard.py** | Gradio UI connectée au pipeline OrchestratorAsync | ✅ DONE |
-| 8 | **requirements.txt** | Ajouté gradio et websockets | ✅ DONE |
+## Nouvelles Features (Mai 2026)
 
-### Features Implémentées
+### Command Palette
+- **Ctrl+K** / **Cmd+K** pour ouvrir
+- **Focus Mode** (Ctrl+Shift+F) - cache sidebar/header
+- **Theme toggle** temporairement désactivé
 
-- ✅ **Sandbox**: tempfile.TemporaryDirectory isolation
-- ✅ **Timeout**: Configurable (défaut 30s)
-- ✅ **Sanitization**: Désactive eval, exec, subprocess.Popen
-- ✅ **Auto-fix loop**: Max 3 tentatives avec génération prompt LLM
-- ✅ **State typing**: Complete annotations, task_id, metrics
-- ✅ **JSON serialization**: to_dict(), to_json(), save_json(), load_state()
-- ✅ **Log rotation**: 10MB max, 3 backups, seuil 1MB
-- ✅ **Windows compatibility**: subprocess.DEVNULL pour éviter handle errors
-- ✅ **Dashboard integrated**: Gradio → OrchestratorAsync → CodeExecutor
-- ✅ **FAISS dimension sync**: Auto-resize on first add, sync on load
-- ✅ **Thread-safe events**: Lock pour pub/concurrence
-- ✅ **Lazy config**: _LazyConfig évite circular imports
+### History Multi-Select
+- Bouton "Select" pour activer mode sélection
+- Checkbox sur chaque chat
+- "Select All" / "Deselect All"
+- Indicateur visuel **"X/Y selected"**
+- Bouton Delete rouge vif
+
+### Batch Actions
+- **Pin** - Épingler les chats sélectionnés
+- **Export** - Exporter en Markdown combiné
+- **Archive** - Archiver les chats
+- **Delete** - Supprimer (danger rouge)
+
+### Contextual Suggestions
+5 suggestions sous chaque réponse IA:
+- "Improve code" - Améliorer le code
+- "Add tests" - Ajouter des tests
+- "FastAPI version" - Créer endpoint FastAPI
+- "Make robust" - Rendre plus robuste
+- "Convert to package" - Convertir en package
+
+### Code Minimap
+- Affichée si **> 15 lignes**
+- **Fixed** pendant scroll (absolute)
+- **Click** pour naviguer vers ligne
+- **Click + drag** pour scrolling continu
+- Indicateur violet de position
+
+### Settings Améliorations
+- Description du modèle via **GitHub/Ollama API**
+- Lien "À propos" → **https://github.com/jeanmarcrenaud-prog/UI-Pro**
+
+### Code Action Buttons
+- **Copy** - Bouton violet avec raccourci **Ctrl+C**
+- **Download** - Bouton gris avec raccourci **Ctrl+S**
 
 ---
 
 ## Structure Actuelle
 
 ```
-ui-pro/
-├── run.py                   # Launcher (THIS NEW)
-├── executor.py              # CodeExecutor (sandbox, timeout, auto-fix)
-├── state_manager.py         # State + StateManager (typing complet)
-├── orchestrator_async.py    # Pipeline async avec auto-fix loop
-├── logger.py                # Logging + rotation + JSON
-├── memory.py                # FAISS + SentenceTransformer
-├── settings.py              # Configuration externalisée
-├── dashboard.py             # Gradio UI (INTÉGRÉ au pipeline)
-├── main.py                  # FastAPI entry point
-├── llm_client.py            # Interface LLMClient (DI)
-├── llm_router.py            # Multi-model routing
-├── agents.py                # Agents (planner, architect, coder...)
-├── requirements.txt         # + gradio, websockets
-├── tests/                   # Test suite (85+ tests)
-│   ├── test_execution.py    # 13 tests - TOUS PASSENT ✅
-│   └── ...
-└── workspace/               # Code généré
+ui-pro/                           # 65 fichiers Python
+├── run.py                        # Launcher principal
+├── app/launcher.py              # Multi-service launcher
+├── api/                          # API routes
+│   ├── main.py                   # FastAPI alternatif
+│   ├── dashboard.py             # Gradio dashboard
+│   ├── web.py                   # Web endpoints
+│   └── translations.py          # i18n
+├── core/                         # Core modules (10 fichiers)
+│   ├── executor.py              # CodeExecutor (sandbox)
+│   ├── code_review.py           # Code review
+│   ├── constants.py             # WSEvent, AgentStep
+│   ├── errors.py                # DomainError
+│   ├── events.py                # Event bus
+│   ├── logger.py                # Logging
+│   ├── memory.py                # FAISS
+│   ├── metrics.py               # Métriques
+│   ├── orchestrator_async.py    # Async pipeline
+│   └── state_manager.py        # État
+├── services/                     # Service layer (10 fichiers)
+├── llm/                          # LLM clients
+├── controllers/                  # HTTP/WS
+├── views/api.py                  # FastAPI app
+├── tests/                        # 11 tests
+├── ui-pro-ui/                    # Next.js frontend
+│   └── components/
+│       ├── chat/                # 7 composants
+│       └── markdown/             # 3 composants
+└── workspace/                   # Code généré
 ```
 
 ---
@@ -83,10 +127,10 @@ ui-pro/
 
 ### ExecutionConfig (executor.py)
 ```python
-timeout: int = 30          # Timeout en secondes
+timeout: int = 30           # Timeout en secondes
 workspace_dir: str = "workspace"
 cleanup: bool = True
-max_fix_attempts: int = 3   # Tentatives auto-fix
+max_fix_attempts: int = 3    # Tentatives auto-fix
 ```
 
 ### State Metrics
@@ -100,26 +144,22 @@ metrics = {
 }
 ```
 
-### Logger
-```python
-MAX_LOG_SIZE = 10 MB
-BACKUP_COUNT = 5
-```
-
 ---
 
 ## Lancement
 
-### Dashboard Gradio
 ```bash
-python dashboard.py
-# → http://localhost:7860
-```
+# FastAPI + Gradio
+python run.py --all
 
-### FastAPI
-```bash
-uvicorn main:app --reload
-# → http://localhost:8000
+# FastAPI uniquement
+python run.py --api
+
+# Next.js uniquement
+python run.py --ui
+
+#Vérifier status
+python run.py --status
 ```
 
 ---
@@ -127,13 +167,11 @@ uvicorn main:app --reload
 ## Tests
 
 ```bash
-# Tous les tests passent
+# Tous les tests
 pytest tests/ -v
-# 85+ tests
 
 # Tests spécifiques
 pytest tests/test_execution.py -v
-# 13 passed
 ```
 
 ---
@@ -144,9 +182,11 @@ pytest tests/test_execution.py -v
 - **Auto-fix**: Boucle génère prompt LLM pour corriger les erreurs
 - **State**: Persistence JSON optionnelle via save_json()
 - **Memory**: Recherche vectorielle via FAISS
-- **Dashboard**: Connecté en temps réel à OrchestratorAsync
+- **Next.js**: Frontend sur port 3000
+- **FastAPI**: Backend sur port 8000
+- **Gradio**: Dashboard sur port 7860
 
 ---
 
-**Dernière mise à jour**: 2026-04-24  
+**Dernière mise à jour**: 2026-05-03
 **Status**: Complété ✅
