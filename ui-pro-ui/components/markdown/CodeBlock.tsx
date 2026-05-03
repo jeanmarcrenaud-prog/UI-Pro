@@ -206,14 +206,14 @@ export const CodeBlock = memo(function CodeBlock({
       </div>
 
       {/* Code Area */}
-      <div className="relative bg-[#0d1117]">
+      <div className="relative bg-[#0d1117] overflow-x-auto">
         {/* Minimap - fixed outside scroll area */}
         <div className="absolute right-0 top-0 bottom-0 w-14 z-10">
           <CodeMinimap code={value} containerRef={codeContainerRef} />
         </div>
         
         {/* Scrollable code */}
-        <div ref={codeContainerRef} className="max-h-[520px] overflow-y-auto mr-14">
+        <div ref={codeContainerRef} className="max-h-[520px] overflow-y-auto overflow-x-auto mr-14">
           <SyntaxHighlighterComp
           language={language.toLowerCase()}
           style={vscDarkPlus}
@@ -223,6 +223,17 @@ export const CodeBlock = memo(function CodeBlock({
             background: 'transparent',
             fontSize: '0.92rem',
             lineHeight: '1.65',
+            overflowX: 'auto',
+            whiteSpace: 'pre-wrap',
+            wordWrap: 'break-word',
+            overflowWrap: 'break-word',
+          }}
+          codeTagProps={{
+            style: {
+              fontFamily: 'inherit',
+              whiteSpace: 'pre-wrap',
+              wordWrap: 'break-word',
+            }
           }}
           showLineNumbers={value.split('\n').length > 5}
           wrapLines={true}
