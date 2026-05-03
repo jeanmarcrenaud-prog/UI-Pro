@@ -93,7 +93,7 @@ export function DebugPanel({
         onClick={closeFn}
         className="fixed right-4 top-4 bg-slate-800 border border-slate-700 text-slate-400 px-3 py-2 rounded-lg text-xs hover:bg-slate-700 z-50"
       >
-        🔧 Debug {status === 'running' && '●'}
+        🔧 {t.debug?.title || 'Debug'} {status === 'running' && '●'}
       </button>
     )
   }
@@ -107,7 +107,7 @@ export function DebugPanel({
     >
       {/* HEADER */}
       <div className="bg-slate-900/50 px-4 py-3 border-b border-slate-800/60 flex items-center justify-between">
-        <span className="text-sm font-semibold">🔧 {t.debug?.title || 'Debug Panel'}</span>
+        <span className="text-sm font-semibold">🔧 {t.debug?.title || 'Debug'}</span>
         <button
           onClick={closeFn}
           className="text-slate-400 hover:text-white text-xs"
@@ -172,17 +172,17 @@ export function DebugPanel({
         {/* LOGS */}
         <div className="flex-1 flex flex-col min-h-0">
           <div className="px-4 py-2 border-b border-slate-800 flex justify-between">
-            <span className="text-xs text-slate-500">Live Logs</span>
+            <span className="text-xs text-slate-500">{t.debug?.liveLogs || 'Logs'}</span>
             <button
               onClick={onClearLogs}
               className="text-[10px] text-slate-500"
             >
-              Clear
+              {t.debug?.clear || 'Clear'}
             </button>
           </div>
           <div className="flex-1 p-4 font-mono text-[10px] overflow-y-auto">
             {logs.length === 0 ? (
-              <span className="text-slate-600 italic">Waiting...</span>
+              <span className="text-slate-600 italic">{t.debug?.waiting || 'Waiting...'}</span>
             ) : (
               logs.map((l, i) => <div key={`log-${i}-${l.slice(0, 10)}`}>{l}</div>)
             )}
