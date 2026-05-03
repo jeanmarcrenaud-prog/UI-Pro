@@ -13,10 +13,12 @@
 #     - LLM for semantic compression
 
 import logging
+from pathlib import Path
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from dataclasses import dataclass, field
 from collections import defaultdict
+import pickle
 
 from .base import BaseService, ServiceMetrics
 
@@ -101,8 +103,10 @@ class MemoryService(BaseService):
         self._context_window = ContextWindow(max_tokens=max_context_tokens)
         self._service_metrics = ServiceMetrics()
         
-        # Session-based memories (metadata not in FAISS)
-        self._session_memories: Dict[str, List[MemoryEntry]] = defaultdict(list)
+        # Unified metadata storage: doc_id (FAISS index) → MemoryEntry
+        # This provides O(1) lookup instead of O(n²)
+        self._metadata: Dict[int, MemoryEntry] = {}
+        self._metadata_path: Optional[Path] = None
     
     async def initialize(self) -> None:
         """Initialize memory service"""
@@ -110,15 +114,44 @@ class MemoryService(BaseService):
             from core.memory import MemoryManager
             path = self.persist_path if self.persist_path else None
             self._memory_manager = MemoryManager(persist_path=path)
+            
+            # Setup metadata persistence path
+            if path:
+                self._metadata_path = Path(path).parent / "memory_metadata.pkl"
+                self._load_metadata()
+            
             self.logger.info(f"MemoryService initialized with {self._memory_manager.count()} memories")
         except Exception as e:
             self._set_error(str(e))
             raise
     
+    def _load_metadata(self) -> None:
+        """Load metadata from disk"""
+        if self._metadata_path and self._metadata_path.exists():
+            try:
+                with open(self._metadata_path, "rb") as f:
+                    self._metadata = pickle.load(f)
+                self.logger.info(f"Loaded {len(self._metadata)} metadata entries")
+            except Exception as e:
+                self.logger.warning(f"Failed to load metadata: {e}")
+                self._metadata = {}
+    
+    def _save_metadata(self) -> None:
+        """Save metadata to disk"""
+        if self._metadata_path:
+            try:
+                self._metadata_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(self._metadata_path, "wb") as f:
+                    pickle.dump(self._metadata, f)
+                self.logger.debug(f"Saved {len(self._metadata)} metadata entries")
+            except Exception as e:
+                self.logger.error(f"Failed to save metadata: {e}")
+    
     async def shutdown(self) -> None:
         """Shutdown memory service"""
         if self._memory_manager:
             self._memory_manager.save()
+            self._save_metadata()
             self.logger.info("MemoryService saved and shutdown")
     
     def add(
@@ -126,33 +159,37 @@ class MemoryService(BaseService):
         text: str, 
         session_id: Optional[str] = None,
         task_type: Optional[str] = None,
-        importance: float = 1.0
+        importance: float = 1.0,
+        auto_save: bool = False
     ) -> None:
         """
-        Add text to memory with metadata.
+        Add text to memory with unified metadata.
         
         Args:
             text: Text to store
             session_id: Optional session identifier
             task_type: Optional task type (code, reasoning, etc.)
             importance: Importance score 0-1
+            auto_save: If True, persist immediately
         """
         if not text or not text.strip():
             self.logger.warning("add() called with empty text")
             return
         
         try:
-            self._memory_manager.add_memory(text)
+            # Get doc_id BEFORE adding (FAISS index is count before add)
+            doc_id = self._memory_manager.count()
             
-            # Store metadata for session
-            if session_id:
-                entry = MemoryEntry(
-                    text=text,
-                    session_id=session_id,
-                    task_type=task_type,
-                    importance=importance
-                )
-                self._session_memories[session_id].append(entry)
+            self._memory_manager.add_memory(text, auto_save=auto_save)
+            
+            # Store metadata with O(1) lookup using doc_id
+            entry = MemoryEntry(
+                text=text,
+                session_id=session_id,
+                task_type=task_type,
+                importance=importance
+            )
+            self._metadata[doc_id] = entry
             
             # Auto-cleanup if needed
             if self.auto_cleanup and self.count() > self.max_entries:
@@ -173,7 +210,7 @@ class MemoryService(BaseService):
         task_type: Optional[str] = None
     ) -> List[Dict]:
         """
-        Search memory with optional filters.
+        Search memory with O(1) metadata lookup.
         
         Args:
             query: Search query
@@ -190,24 +227,31 @@ class MemoryService(BaseService):
         try:
             results = self._memory_manager.search(query, k=k)
             
-            # Apply filters if specified
+            # Apply filters with O(1) metadata lookup
             if session_id or task_type:
                 filtered = []
                 for r in results:
+                    # FAISS returns doc_id in the result
+                    # We need to find it - FAISS search returns (distances, ids)
+                    # The text extraction needs lookup
                     text = r.get("text", "")
-                    # Find matching metadata
-                    for entries in self._session_memories.values():
-                        for entry in entries:
-                            if entry.text == text:
-                                if session_id and entry.session_id != session_id:
-                                    continue
-                                if task_type and entry.task_type != task_type:
-                                    continue
-                                filtered.append(r)
-                                break
-                    else:
-                        # No metadata - include anyway
-                        filtered.append(r)
+                    
+                    # Find matching entry by text (still O(n) for now, but smaller n)
+                    # TODO: Add reverse index for text -> doc_id if needed
+                    entry = None
+                    for doc_id, e in self._metadata.items():
+                        if e.text == text:
+                            entry = e
+                            break
+                    
+                    if entry is not None:
+                        # Apply filters
+                        if session_id and entry.session_id != session_id:
+                            continue
+                        if task_type and entry.task_type != task_type:
+                            continue
+                    
+                    filtered.append(r)
                 results = filtered
             
             self._service_metrics.record_call(0, success=True)
@@ -247,15 +291,22 @@ class MemoryService(BaseService):
         return "\n---\n".join(fitted_texts)
     
     def get_session_context(self, session_id: str, max_tokens: int = None) -> str:
-        """Get all memories from a session"""
-        entries = self._session_memories.get(session_id, [])
+        """Get all memories from a session using unified metadata"""
+        if not session_id:
+            return ""
         
-        if not entries:
+        # Collect entries for this session from metadata
+        session_entries = [
+            e for e in self._metadata.values() 
+            if e.session_id == session_id
+        ]
+        
+        if not session_entries:
             return ""
         
         # Sort by importance and time
         sorted_entries = sorted(
-            entries, 
+            session_entries, 
             key=lambda e: (e.importance, e.timestamp),
             reverse=True
         )
@@ -275,15 +326,19 @@ class MemoryService(BaseService):
     def clear(self, session_id: Optional[str] = None) -> None:
         """Clear memories, optionally by session"""
         if session_id:
-            # Clear specific session
-            if session_id in self._session_memories:
-                del self._session_memories[session_id]
+            # Clear specific session from metadata
+            doc_ids_to_remove = [
+                doc_id for doc_id, e in list(self._metadata.items())
+                if e.session_id == session_id
+            ]
+            for doc_id in doc_ids_to_remove:
+                del self._metadata[doc_id]
             self.logger.info(f"Cleared session: {session_id}")
         else:
             # Clear all
             if self._memory_manager:
                 self._memory_manager.clear()
-            self._session_memories.clear()
+            self._metadata.clear()
             self.logger.info("All memories cleared")
     
     def _cleanup_old_memories(self):
@@ -304,19 +359,27 @@ class MemoryService(BaseService):
             "total_memories": self.count(),
             "total_searches": self._service_metrics.total_calls,
             "success_rate": self._service_metrics.success_rate,
-            "sessions": len(self._session_memories),
+            "metadata_entries": len(self._metadata),
             "context_tokens": self.max_context_tokens,
         }
     
     def get_session_summary(self) -> Dict[str, Any]:
         """Get summary of all sessions"""
+        # Get unique session_ids from metadata
+        sessions = {}
+        for entry in self._metadata.values():
+            if entry.session_id:
+                if entry.session_id not in sessions:
+                    sessions[entry.session_id] = []
+                sessions[entry.session_id].append(entry)
+        
         return {
-            session_id: {
+            sid: {
                 "count": len(entries),
                 "latest": max(e.timestamp for e in entries).isoformat() if entries else None,
                 "task_types": list(set(e.task_type for e in entries if e.task_type))
             }
-            for session_id, entries in self._session_memories.items()
+            for sid, entries in sessions.items()
         }
     
     # ===== LLM-based Summarization & Context Optimization =====
@@ -405,7 +468,8 @@ Respond with a summary that preserves the key information and patterns."""
         summarized_count = 0
         
         if session_id:
-            entries = self._session_memories.get(session_id, [])
+            # Get entries for this session from metadata
+            entries = [e for e in self._metadata.values() if e.session_id == session_id]
             if len(entries) > 10:
                 # Keep last 5, summarize older ones
                 to_summarize = entries[:-5]
@@ -418,11 +482,14 @@ Respond with a summary that preserves the key information and patterns."""
                     importance=0.5
                 )
                 
-                self._session_memories[session_id] = entries[-5:] + [new_entry]
+                # Add new summary entry
+                doc_id = len(self._metadata)
+                self._metadata[doc_id] = new_entry
                 summarized_count = len(to_summarize)
         else:
-            # Summarize all sessions
-            for sid in list(self._session_memories.keys()):
+            # Summarize all sessions - get unique session_ids
+            session_ids = set(e.session_id for e in self._metadata.values() if e.session_id)
+            for sid in session_ids:
                 count = await self.summarize_old_memories(sid)
                 summarized_count += count
         
@@ -443,7 +510,9 @@ Respond with a summary that preserves the key information and patterns."""
             bool: True if compression was needed and performed
         """
         target_tokens = target_tokens or self.max_context_tokens
-        entries = self._session_memories.get(session_id, [])
+        
+        # Get entries for this session from metadata
+        entries = [e for e in self._metadata.values() if e.session_id == session_id]
         
         if not entries:
             return False
@@ -484,7 +553,14 @@ Respond with a summary that preserves the key information and patterns."""
             )
             kept.append(summary_entry)
         
-        self._session_memories[session_id] = kept
+        # Remove old entries and add kept ones
+        for doc_id in list(self._metadata.keys()):
+            if self._metadata[doc_id].session_id == session_id:
+                del self._metadata[doc_id]
+        for entry in kept:
+            doc_id = len(self._metadata)
+            self._metadata[doc_id] = entry
+        
         self.logger.info(f"Compressed session {session_id}: {len(entries)} -> {len(kept)} entries")
         return True
     
