@@ -66,6 +66,11 @@ export interface Translations {
     api: string
     tests: string
     types: string
+    improvePrompt: string
+    loggingPrompt: string
+    apiPrompt: string
+    testsPrompt: string
+    typesPrompt: string
   }
   sidebar: {
     newChat: string
@@ -124,7 +129,7 @@ const en: Translations = {
   },
   codeBlock: { copy: 'Copy', copied: 'Copied', save: 'Save', run: 'Run', running: 'Running...', installing: 'Installing...', dependencies: 'Deps' },
   history: { title: 'History', empty: 'No conversations yet', confirmDelete: 'Confirm?' },
-  suggestions: { title: 'Suggestions', improve: 'Improve script', logging: 'Add logging', api: 'Convert to API', tests: 'Add tests', types: 'Add types' },
+  suggestions: { title: 'Suggestions', improve: 'Improve script', logging: 'Add logging', api: 'Convert to API', tests: 'Add tests', types: 'Add types', improvePrompt: 'Improve this script:\n{code}\n\nImprove with better performance and best practices.', loggingPrompt: 'Add logging and error handling:\n{code}\n\nAdd proper logging and exception handling.', apiPrompt: 'Convert to FastAPI:\n{code}\n\nConvert this to a FastAPI endpoint with proper routing.', testsPrompt: 'Add unit tests:\n{code}\n\nWrite pytest unit tests for this code.', typesPrompt: 'Add TypeScript:\n{code}\n\nAdd proper TypeScript types and interfaces.' },
   sidebar: {
     newChat: 'New Chat',
     recentChats: 'Recent Chats',
@@ -182,7 +187,7 @@ const fr: Translations = {
   },
   codeBlock: { copy: 'Copier', copied: 'Copié', save: 'Enregistrer', run: 'Exécuter', running: 'Exécution...', installing: 'Installation...', dependencies: 'Deps' },
   history: { title: 'Historique', empty: 'Aucune conversation', confirmDelete: 'Confirmer ?' },
-  suggestions: { title: 'Suggestions', improve: 'Améliorer', logging: 'Ajouter log', api: 'Convertir API', tests: 'Ajouter tests', types: 'Ajouter types' },
+  suggestions: { title: 'Suggestions', improve: 'Améliorer', logging: 'Ajouter log', api: 'Convertir API', tests: 'Ajouter tests', types: 'Ajouter types', improvePrompt: 'Améliorer ce script:\n{code}\n\nAméliorer avec de meilleures performances et pratiques.', loggingPrompt: 'Ajouter logging et gestion erreurs:\n{code}\n\nAjouter un logging propre et la gestion des exceptions.', apiPrompt: 'Convertir en FastAPI:\n{code}\n\nConvertir en endpoint FastAPI avec routage approprié.', testsPrompt: 'Ajouter tests unitaires:\n{code}\n\nÉcrire des tests pytest pour ce code.', typesPrompt: 'Ajouter TypeScript:\n{code}\n\nAjouter les types et interfaces TypeScript appropriés.' },
   sidebar: {
     newChat: 'Nouveau Chat',
     recentChats: 'Conversations Récentes',
