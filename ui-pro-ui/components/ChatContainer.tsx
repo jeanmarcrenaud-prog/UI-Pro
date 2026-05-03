@@ -76,6 +76,12 @@ export function ChatContainer({
 
   const [inputValue, setInputValue] = useState('')
 
+  // Get last assistant message with code for suggestions
+  const lastAssistantCode = useMemo(() => {
+    const last = [...messages].reverse().find(m => m.role === 'assistant' && m.content?.includes('```'))
+    return last?.content || undefined
+  }, [messages])
+
   // Priority: props > hook (useful for modal/preview modes)
   const messages = propMessages.length > 0 ? propMessages : hookMessages
   const agentSteps = propAgentSteps.length > 0 ? propAgentSteps : steps
@@ -214,9 +220,9 @@ export function ChatContainer({
 
           {/* Contextual Suggestions */}
           <ChatSuggestions
+            lastCode={lastAssistantCode}
             onSelect={(suggestion) => {
-              // Prepend suggestion to current input
-              setInputValue(prev => prev ? `${prev} ${suggestion}` : suggestion)
+              setInputValue(suggestion)
             }}
           />
         </div>
