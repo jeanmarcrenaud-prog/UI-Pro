@@ -248,6 +248,11 @@ class ModelService(BaseService):
             for name, config in self.models.items()
         }
         
+        # Per-model locks for thread safety
+        self._model_locks: dict[str, threading.RLock] = {
+            name: threading.RLock() for name in self.models.keys()
+        }
+        
         # Service metrics
         self.service_metrics = ServiceMetrics()
         
@@ -284,22 +289,27 @@ class ModelService(BaseService):
     async def _warmup_models(self) -> None:
         """Warm up models to avoid cold start"""
         def _do_warmup():
-            with self._warmup_lock:
-                for mode, model_config in self.models.items():
+            # Double-checked locking for warmup
+            for mode, model_config in self.models.items():
+                with self._warmup_lock:
                     if model_config.name in self._warmup_done:
                         continue
-                    
-                    try:
-                        # Quick warmup call
-                        client = self._get_client_for_model(model_config)
-                        client.generate("ok", model=model_config.name)
-                        self._warmup_done.add(model_config.name)
-                        logging.getLogger("services").info(f"Warmed up model: {model_config.name}")
-                    except Exception as e:
-                        logging.getLogger("services").warning(f"Warmup failed for {model_config.name}: {e}")
+                    # Mark as done before starting to prevent re-entry
+                    self._warmup_done.add(model_config.name)
+                
+                try:
+                    # Quick warmup call
+                    client = self._get_client_for_model(model_config)
+                    client.generate("ok", model=model_config.name)
+                    logging.getLogger("services").info(f"Warmed up model: {model_config.name}")
+                except Exception as e:
+                    logging.getLogger("services").warning(f"Warmup failed for {model_config.name}: {e}")
         
         # Run warmup in background thread (non-blocking)
-        threading.Thread(target=_do_warmup, daemon=True).start()
+        # Only if not already done
+        with self._warmup_lock:
+            if not self._warmup_done:
+                threading.Thread(target=_do_warmup, daemon=True).start()
     
     async def shutdown(self) -> None:
         """Shutdown model service"""
@@ -362,50 +372,52 @@ class ModelService(BaseService):
                 self.logger.debug(f"Skipping {try_mode} - recently failed")
                 continue
             
-            # Try with retries
-            for attempt in range(max_retries):
-                try:
-                    self.logger.debug(f"Trying model {model_config.name} (attempt {attempt + 1})")
-                    client = self._get_client_for_model(model_config)
-                    
-                    # Use timeout in client
-                    original_timeout = getattr(client, 'timeout', 60)
-                    client.timeout = timeout
-                    
-                    response = client.generate(
-                        prompt, 
-                        model=model_config.name, 
-                        system_prompt=system_prompt, 
-                        temperature=temperature
-                    )
-                    
-                    # Restore timeout
-                    client.timeout = original_timeout
-                    
-                    # Check for error response
-                    if response.startswith("[ModelService Error") or response.startswith("[OllamaError"):
-                        if attempt < max_retries - 1:
-                            continue  # Retry
-                    
-                    # Record success
-                    latency_ms = (time.time() - start_time) * 1000
-                    self.model_metrics[try_mode].record(latency_ms, success=True)
-                    self.service_metrics.record_call(latency_ms, success=True)
-                    
-                    # Clear failure status on success
-                    self.model_metrics[try_mode].reset_failure_status()
-                    
-                    return response
-                    
-                except Exception as e:
-                    last_error = str(e)
-                    self.logger.warning(f"Model {model_config.name} attempt {attempt + 1} failed: {e}")
-                    # Record failure
-                    self.model_metrics[try_mode].record(0, success=False)
-                    
-                    # Don't retry on timeout
-                    if "timeout" in last_error.lower():
-                        break
+            # Use per-model lock for thread safety
+            with self._model_locks[try_mode]:
+                # Try with retries
+                for attempt in range(max_retries):
+                    try:
+                        self.logger.debug(f"Trying model {model_config.name} (attempt {attempt + 1})")
+                        client = self._get_client_for_model(model_config)
+                        
+                        # Use timeout in client
+                        original_timeout = getattr(client, 'timeout', 60)
+                        client.timeout = timeout
+                        
+                        response = client.generate(
+                            prompt, 
+                            model=model_config.name, 
+                            system_prompt=system_prompt, 
+                            temperature=temperature
+                        )
+                        
+                        # Restore timeout
+                        client.timeout = original_timeout
+                        
+                        # Check for error response
+                        if response.startswith("[ModelService Error") or response.startswith("[OllamaError"):
+                            if attempt < max_retries - 1:
+                                continue  # Retry
+                        
+                        # Record success
+                        latency_ms = (time.time() - start_time) * 1000
+                        self.model_metrics[try_mode].record(latency_ms, success=True)
+                        self.service_metrics.record_call(latency_ms, success=True)
+                        
+                        # Clear failure status on success
+                        self.model_metrics[try_mode].reset_failure_status()
+                        
+                        return response
+                        
+                    except Exception as e:
+                        last_error = str(e)
+                        self.logger.warning(f"Model {model_config.name} attempt {attempt + 1} failed: {e}")
+                        # Record failure
+                        self.model_metrics[try_mode].record(0, success=False)
+                        
+                        # Don't retry on timeout
+                        if "timeout" in last_error.lower():
+                            break
         
         # All models failed
         latency_ms = (time.time() - start_time) * 1000
