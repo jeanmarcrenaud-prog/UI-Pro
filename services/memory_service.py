@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from collections import defaultdict
 import pickle
 import uuid
+import threading
 
 from .base import BaseService, ServiceMetrics
 
@@ -91,11 +92,17 @@ class MemoryService(BaseService):
         self.max_tokens = max_tokens
         self.auto_compress = auto_compress
         
+        # Thread safety
+        self._lock = threading.RLock()
+        
         # Core storage
         self._vector_store = None
         
         # Unified entry storage: id -> MemoryEntry
         self._entries: Dict[str, MemoryEntry] = {}
+        
+        # Text to ID mapping for O(1) lookup
+        self._text_to_id: Dict[str, str] = {}
         
         # Session index: session_id -> list[entry_id]
         self._session_index: Dict[str, List[str]] = defaultdict(list)
@@ -134,6 +141,8 @@ class MemoryService(BaseService):
                 with open(self._entries_path, "rb") as f:
                     data = pickle.load(f)
                     self._entries = {k: MemoryEntry.from_dict(v) for k, v in data.items()}
+                    # Rebuild text to ID mapping
+                    self._text_to_id = {entry.text: entry.id for entry in self._entries.values()}
                     # Rebuild session index
                     for entry in self._entries.values():
                         if entry.session_id:
@@ -162,49 +171,57 @@ class MemoryService(BaseService):
         self._save_entries()
         self.logger.info("MemoryService shutdown completed")
 
-    # ====================== CORE OPERATIONS ======================
+# ====================== CORE OPERATIONS ======================
 
     async def add(
         self,
         text: str,
         session_id: Optional[str] = None,
         task_type: Optional[str] = None,
-        importance: float = 1.0,
-        metadata: Optional[Dict] = None,
+        importance: float = 0.5,
+        metadata: Optional[Dict[str, Any]] = None,
         auto_save: bool = False
     ) -> Optional[str]:
-        """Add memory with metadata"""
+        """Add memory entry"""
         if not text or not text.strip():
             return None
+        
+        with self._lock:
+            try:
+                # Generate stable UUID
+                entry_id = str(uuid.uuid4())
+                
+                entry = MemoryEntry(
+                    id=entry_id,
+                    text=text.strip(),
+                    session_id=session_id,
+                    task_type=task_type,
+                    importance=importance,
+                    timestamp=datetime.now()
+                )
+                
+                # Add to vector store
+                self._vector_store.add_memory(entry.text, auto_save=auto_save)
+                
+                # Store entry
+                self._entries[entry.id] = entry
+                
+                # Text to ID mapping for O(1) lookup
+                self._text_to_id[entry.text] = entry.id
+                
+                # Update session index
+                if session_id:
+                    self._session_index[session_id].append(entry.id)
+                
+                self._service_metrics.record_call(0, success=True)
+                self.logger.debug(f"Memory added [{entry.id[:8]}] session={session_id}")
+                
+                return entry.id
 
-        entry = MemoryEntry(
-            text=text.strip(),
-            session_id=session_id,
-            task_type=task_type,
-            importance=importance,
-            metadata=metadata or {}
-        )
-
-        try:
-            # Add to vector store
-            self._vector_store.add_memory(entry.text, auto_save=auto_save)
-            
-            # Store entry
-            self._entries[entry.id] = entry
-            
-            # Update session index
-            if session_id:
-                self._session_index[session_id].append(entry.id)
-            
-            self._service_metrics.record_call(0, success=True)
-            self.logger.debug(f"Memory added [{entry.id[:8]}] session={session_id}")
-            
-            return entry.id
-
-        except Exception as e:
-            self._service_metrics.record_call(0, success=False)
-            self.logger.error(f"Failed to add memory: {e}")
-            return None
+            except Exception as e:
+                self._service_metrics.record_call(0, success=False)
+                self.logger.error(f"Failed to add memory: {e}")
+                return None
 
     async def search(
         self,
@@ -221,14 +238,19 @@ class MemoryService(BaseService):
             # Get more results for filtering
             vector_results = self._vector_store.search(query, k=k * 2)
             
-            # Match with entries (text -> entry lookup would be O(n))
-            # For now, iterate through vector results and find matching entries
+            # O(1) lookup using _text_to_id mapping
             results = []
-            result_texts = {r.get("text", ""): r for r in vector_results}
             
-            for entry in self._entries.values():
-                text = entry.text
-                if text not in result_texts:
+            for vr in vector_results:
+                text = vr.get("text", "")
+                
+                # Fast lookup via mapping
+                entry_id = self._text_to_id.get(text)
+                if not entry_id:
+                    continue
+                    
+                entry = self._entries.get(entry_id)
+                if not entry:
                     continue
                 
                 # Apply filters
@@ -240,7 +262,7 @@ class MemoryService(BaseService):
                 results.append({
                     "id": entry.id,
                     "text": entry.text,
-                    "score": result_texts[text].get("score", 0.0),
+                    "score": vr.get("score", 0.0),
                     "session_id": entry.session_id,
                     "task_type": entry.task_type,
                     "importance": entry.importance
