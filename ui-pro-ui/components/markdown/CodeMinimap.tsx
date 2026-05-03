@@ -1,15 +1,14 @@
 // CodeMinimap.tsx
-// Role: Canvas-based minimap with syntax highlighting and viewport
+// Role: Canvas-based minimap with semantic syntax highlighting
 
 'use client'
 
-import { useEffect, useRef, memo, useCallback } from 'react'
+import { useEffect, useRef, memo, useCallback, useMemo } from 'react'
 
 interface CodeMinimapProps {
   code: string
   containerRef: React.RefObject<HTMLDivElement>
   width?: number
-  height?: number
   className?: string
 }
 
@@ -17,121 +16,111 @@ export const CodeMinimap = memo(function CodeMinimap({
   code,
   containerRef,
   width = 56,
-  height = '100%',
   className = ''
 }: CodeMinimapProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const animationFrameRef = useRef<number | null>(null)
+  const rafRef = useRef<number | null>(null)
 
-  const drawMinimap = useCallback(() => {
+  // Memoized lines for performance
+  const lines = useMemo(() => code.split('\n'), [code])
+  const totalLines = lines.length
+
+  const draw = useCallback(() => {
     const canvas = canvasRef.current
-    if (!canvas || !code) return
+    if (!canvas || totalLines === 0) return
 
     const ctx = canvas.getContext('2d', { alpha: true })
     if (!ctx) return
 
-    const lines = code.split('\n')
-    const totalLines = lines.length
-    if (totalLines === 0) return
+    const container = containerRef.current
+    if (!container) return
 
-    // Set canvas dimensions
     canvas.width = width
-    canvas.height = containerRef.current?.clientHeight || 520
+    canvas.height = container.clientHeight || 520
 
-    const lineHeight = canvas.height / Math.max(totalLines, 50) // Minimum visible lines
+    const lineHeight = canvas.height / Math.max(totalLines, 60)
 
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-    // Draw code density map
+    // Draw each line with semantic coloring
     for (let i = 0; i < totalLines; i++) {
       const line = lines[i]
       const y = i * lineHeight
-      const lineLength = line.length
+      const trimmed = line.trim()
 
-      // Intensity based on content density
-      let intensity = 0.15 // base
+      let intensity = 0.12
+      let hue = 210 // default
 
-      if (lineLength > 60) intensity = 0.75
-      else if (lineLength > 30) intensity = 0.55
-      else if (line.includes('def ') || line.includes('class ') || line.includes('import ')) 
-        intensity = 0.85
-      else if (line.includes('return ') || line.includes('if ') || line.includes('//')) 
-        intensity = 0.45
-
-      // Color based on content type
-      let hue = 210 // default blue-ish
-      if (line.includes('def ') || line.includes('class ')) hue = 280   // purple
-      else if (line.includes('import ') || line.includes('from ')) hue = 160 // green
-      else if (line.trim().startsWith('#')) hue = 40 // orange (comments)
-
-      ctx.fillStyle = `hsla(${hue}, 85%, 65%, ${intensity})`
-      ctx.fillRect(2, y, width - 6, Math.max(1, lineHeight - 1))
-    }
-
-    // Draw viewport indicator (current scroll position)
-    if (containerRef.current) {
-      const scrollTop = containerRef.current.scrollTop
-      const scrollHeight = containerRef.current.scrollHeight
-      const clientHeight = containerRef.current.clientHeight
-
-      if (scrollHeight > clientHeight) {
-        const indicatorHeight = (clientHeight / scrollHeight) * canvas.height
-        const indicatorTop = (scrollTop / scrollHeight) * canvas.height
-
-        ctx.fillStyle = 'rgba(167, 139, 250, 0.7)' // violet-400
-        ctx.fillRect(0, indicatorTop, width, indicatorHeight)
+      // Semantic coloring
+      if (trimmed.startsWith('def ') || trimmed.startsWith('class ')) {
+        hue = 270
+        intensity = 0.9
+      } else if (trimmed.startsWith('import ') || trimmed.startsWith('from ')) {
+        hue = 160
+        intensity = 0.75
+      } else if (trimmed.startsWith('#')) {
+        hue = 35
+        intensity = 0.4
+      } else if (trimmed.includes('return ') || trimmed.includes('if ') || trimmed.includes('else')) {
+        hue = 200
+        intensity = 0.65
+      } else if (line.length > 70) {
+        intensity = 0.8
       }
-    }
-  }, [code, width, containerRef])
 
-  // Redraw on code change or scroll
+      ctx.fillStyle = `hsla(${hue}, 88%, 68%, ${intensity})`
+      ctx.fillRect(3, Math.floor(y), width - 7, Math.max(1.2, lineHeight - 0.8))
+    }
+
+    // Viewport indicator
+    const scrollTop = container.scrollTop
+    const scrollHeight = container.scrollHeight
+    const clientHeight = container.clientHeight
+
+    if (scrollHeight > clientHeight) {
+      const indicatorHeight = (clientHeight / scrollHeight) * canvas.height
+      const indicatorTop = (scrollTop / scrollHeight) * canvas.height
+
+      ctx.fillStyle = 'rgba(167, 139, 250, 0.85)'
+      ctx.fillRect(0, indicatorTop, width, Math.max(18, indicatorHeight))
+    }
+  }, [lines, totalLines, width, containerRef])
+
+  // Redraw when code changes or scroll happens
   useEffect(() => {
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current)
-    }
-
-    animationFrameRef.current = requestAnimationFrame(drawMinimap)
+    if (rafRef.current) cancelAnimationFrame(rafRef.current)
+    rafRef.current = requestAnimationFrame(draw)
 
     return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current)
-      }
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
     }
-  }, [drawMinimap])
+  }, [draw])
 
-  // Listen to scroll on container
+  // Scroll listener
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
 
-    const handleScroll = () => {
-      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
-      animationFrameRef.current = requestAnimationFrame(drawMinimap)
-    }
+    const onScroll = () => requestAnimationFrame(draw)
 
-    container.addEventListener('scroll', handleScroll, { passive: true })
-
-    return () => {
-      container.removeEventListener('scroll', handleScroll)
-    }
-  }, [drawMinimap, containerRef])
+    container.addEventListener('scroll', onScroll, { passive: true })
+    return () => container.removeEventListener('scroll', onScroll)
+  }, [draw, containerRef])
 
   return (
-    <div className={`absolute right-0 top-0 bottom-0 bg-slate-950 border-l border-slate-700 ${className}`}>
+    <div className={`absolute right-0 top-0 bottom-0 bg-[#0a0f1a] border-l border-slate-700 overflow-hidden ${className}`}>
       <canvas
         ref={canvasRef}
-        className="cursor-pointer hover:brightness-110 transition-all"
+        className="cursor-pointer hover:brightness-105 active:brightness-90 transition-all"
         width={width}
-        height={500}
+        height={520}
         onClick={(e) => {
-          // Click to scroll to position
           const rect = e.currentTarget.getBoundingClientRect()
-          const clickY = e.clientY - rect.top
-          const percentage = clickY / rect.height
+          const clickPercent = (e.clientY - rect.top) / rect.height
 
           if (containerRef.current) {
-            const scrollHeight = containerRef.current.scrollHeight
-            containerRef.current.scrollTop = percentage * scrollHeight
+            containerRef.current.scrollTop = 
+              clickPercent * containerRef.current.scrollHeight
           }
         }}
       />
