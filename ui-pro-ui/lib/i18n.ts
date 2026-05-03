@@ -59,6 +59,14 @@ export interface Translations {
     empty: string
     confirmDelete: string
   }
+  suggestions: {
+    title: string
+    improve: string
+    logging: string
+    api: string
+    tests: string
+    types: string
+  }
   sidebar: {
     newChat: string
     recentChats: string
@@ -116,6 +124,7 @@ const en: Translations = {
   },
   codeBlock: { copy: 'Copy', copied: 'Copied', save: 'Save', run: 'Run', running: 'Running...', installing: 'Installing...', dependencies: 'Deps' },
   history: { title: 'History', empty: 'No conversations yet', confirmDelete: 'Confirm?' },
+  suggestions: { title: 'Suggestions', improve: 'Improve script', logging: 'Add logging', api: 'Convert to API', tests: 'Add tests', types: 'Add types' },
   sidebar: {
     newChat: 'New Chat',
     recentChats: 'Recent Chats',
@@ -173,6 +182,7 @@ const fr: Translations = {
   },
   codeBlock: { copy: 'Copier', copied: 'Copié', save: 'Enregistrer', run: 'Exécuter', running: 'Exécution...', installing: 'Installation...', dependencies: 'Deps' },
   history: { title: 'Historique', empty: 'Aucune conversation', confirmDelete: 'Confirmer ?' },
+  suggestions: { title: 'Suggestions', improve: 'Améliorer', logging: 'Ajouter log', api: 'Convertir API', tests: 'Ajouter tests', types: 'Ajouter types' },
   sidebar: {
     newChat: 'Nouveau Chat',
     recentChats: 'Conversations Récentes',
