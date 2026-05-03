@@ -1,30 +1,48 @@
-# Requirements
+# UI-Pro Requirements
 
-python-dotenv==1.0.1  
-httpx==0.27.2
-requests==2.31.0
-beautifulsoup4==4.12.3
-faiss-cpu==1.13.2
-numpy==1.26.3
-sentence-transformers==2.4.0
+## Core
+fastapi==0.135.3
+uvicorn[standard]==0.44.0
+pydantic==2.12.5
+pydantic-settings>=2.0.0
+python-dotenv>=1.0.0
 python-multipart>=0.0.9
-uvicorn[standard]==0.27.0
-fastapi==0.109.1
-jinja2==3.1.3
-gradio==4.19.2
-websockets==11.0.3
-PyYAML==6.0.1
-pytest==8.1.1
-pytest-mock==3.14.0
-psutil==5.9.8
-pynvml>=11.0.0
 
-# Development
-black==24.3.0
-isort==5.13.2
-flake8==7.0.0
-mypy==1.9.0
+## HTTP/Client
+httpx>=0.27.0
+requests>=2.31.0
 
-# Optional but recommended
-pre-commit==3.7.0
-watchdog==4.0.0
+## LLM/ML
+torch>=2.0.0
+faiss-cpu>=1.13.0
+numpy>=1.26.0
+sentence-transformers>=2.4.0
+
+## Web
+jinja2>=3.1.0
+websockets>=11.0.0
+
+## UI
+gradio>=4.19.0
+gradio-client>=2.4.0
+
+## Testing
+pytest>=8.0.0
+pytest-mock>=3.14.0
+pytest-cov>=7.0.0
+
+## Dev Tools
+black>=24.3.0
+isort>=5.13.0
+flake8>=7.0.0
+mypy>=1.9.0
+
+## Optional
+psutil>=5.9.0
+watchdog>=4.0.0
+pre-commit>=3.7.0
+beautifulsoup4>=4.12.0
+
+# Notes
+# - pynvml optional for GPU monitoring (nvidia-ml-py)
+# - Run: pip install -r requirements.txt
