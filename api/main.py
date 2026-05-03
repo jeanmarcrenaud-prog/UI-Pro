@@ -16,8 +16,9 @@ import logging
 import json
 import time
 import asyncio
-import httpx
 import uuid
+import shlex
+from pathlib import Path
 
 # Suppress noise
 logging.getLogger("transformers").setLevel(logging.ERROR)
@@ -221,6 +222,7 @@ class ExecuteResponse(BaseModel):
 @app.post("/api/execute", response_model=ExecuteResponse)
 async def execute(request: ExecuteRequest):
     """Execute Python code in sandbox"""
+    import tempfile
     start = time.time()
     logger.info(f"[EXECUTE] received code: {request.code[:50]}...")
     
@@ -228,7 +230,18 @@ async def execute(request: ExecuteRequest):
         if request.language == "python":
             from core.executor import CodeExecutor
             executor = CodeExecutor(timeout=request.timeout)
-            result = executor.run(request.code)
+            
+            # Log the execution command (useful for debugging)
+            main_file = Path(__file__).parent.parent.parent / "main.py"
+            cmd = ["python", str(main_file)]
+            if request.args:
+                cmd.extend(shlex.split(request.args))
+                logger.info(f"[EXECUTE] running command: {' '.join(cmd)}")
+            
+            result = executor.run(
+                code=request.code,
+                args=request.args or "",
+            )
             
             logger.info(f"[EXECUTE] result keys: {result.keys()}")
             logger.info(f"[EXECUTE] stdout: {repr(result.get('stdout', ''))}")

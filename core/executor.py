@@ -12,6 +12,7 @@ import tempfile
 import time
 import logging
 import sys
+import shlex
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Dict, Any, Optional
@@ -112,7 +113,8 @@ class CodeExecutor:
             # Execute - different approach for Windows
             proc_cmd = ["python", str(main_file)]
             if args:
-                proc_cmd.extend(args.split())
+                proc_cmd.extend(shlex.split(args))
+                logger.info(f"[EXECUTOR] command: {' '.join(proc_cmd)}")
             
             if sys.platform == "win32":
                 # Run with stdin explicitly closed to avoid handle issues
