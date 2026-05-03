@@ -142,57 +142,55 @@ class MemoryManager:
     def _should_compress(self) -> bool:
         """Check if we should compress old memories"""
         return (self.compression_enabled and 
-                len(self.documents) > self.compression_threshold)
+len(self.documents) > self.comPRESSION_THRESHOLD)
     
     def _rebuild_index(self):
         """Rebuild the entire FAISS index from current documents"""
-        if not self.documents:
+        with self._lock:
+            if not self.documents:
+                base = faiss.IndexFlatL2(self.d)
+                self.index = faiss.IndexIDMap(base)
+                self.access_order.clear()
+                return
+            
+            vecs = model.encode(self.documents)
+            if vecs.ndim == 1:
+                vecs = vecs.reshape(1, -1)
+            
             base = faiss.IndexFlatL2(self.d)
-            self.index = faiss.IndexIDMap(base)
-            self.access_order.clear()
-            return
-        
-        vecs = model.encode(self.documents)
-        if vecs.ndim == 1:
-            vecs = vecs.reshape(1, -1)
-        
-        base = faiss.IndexFlatL2(self.d)
-        new_index = faiss.IndexIDMap(base)
-        ids = np.arange(len(self.documents), dtype=np.int64)
-        new_index.add_with_ids(vecs, ids)
-        self.index = new_index
-        
-        # Rebuild access_order with new indices
-        new_access_order = OrderedDict()
-        for i in range(len(self.documents)):
-            new_access_order[i] = self.timestamps[i]
-        self.access_order = new_access_order
+            new_index = faiss.IndexIDMap(base)
+            ids = np.arange(len(self.documents), dtype=np.int64)
+            new_index.add_with_ids(vecs, ids)
+            self.index = new_index
+            
+            # Rebuild access_order with new indices
+            new_access_order = OrderedDict()
+            for i in range(len(self.documents)):
+                new_access_order[i] = self.timestamps[i]
+            self.access_order = new_access_order
     
     def _compress_old_memories(self):
         """Compress memories by removing less recently used ones"""
         if len(self.documents) <= self.max_memories // 2:
             return
-            
+        
         target_size = self.max_memories // 2
         if len(self.documents) <= target_size:
             return
         
+        # Sort by access time (least recently used first)
+        sorted_by_access = sorted(self.access_order.items(), key=lambda x: x[1])
+        
+        to_remove = len(self.documents) - target_size
+        removed_indices = [idx for idx, _ in sorted_by_access[:to_remove]]
+        
         with self._lock:
-            # Sort by access time (least recently used first)
-            sorted_by_access = sorted(self.access_order.items(), key=lambda x: x[1])
-            
-            # Remove least recently used documents
-            to_remove = len(self.documents) - target_size
-            removed_indices = [idx for idx, _ in sorted_by_access[:to_remove]]
-            
-            # Remove from documents, timestamps, and access_order (in reverse order to maintain indices)
             for idx in sorted(removed_indices, reverse=True):
                 self.documents.pop(idx)
                 self.timestamps.pop(idx)
             
-            # Rebuild index using helper method
             self._rebuild_index()
-            logger.info(f"Compressed memory from {len(self.documents) + to_remove} to {len(self.documents)} documents")
+            logger.info(f"Compressed memory from {len(self.documents) + to_remove} → {len(self.documents)} documents")
     
     def add_memory(self, text: str, auto_save: bool = False) -> None:
         """Add memory to index with LRU eviction
