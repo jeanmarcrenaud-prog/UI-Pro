@@ -717,12 +717,12 @@ async def execute_endpoint(request: ExecuteRequest):
             executor = CodeExecutor(timeout=request.timeout)
             
             # Execute in temp file
-            result = executor.execute(request.code)
+            result = executor.run(request.code)
             
             return ExecuteResponse(
-                result=result["output"],
+                result=result.get("stdout", result.get("output", "")),
                 status="ok" if result.get("success", True) else "error",
-                error=result.get("error"),
+                error=result.get("stderr", result.get("error")),
                 execution_time_ms=(time.time() - start) * 1000
             )
         else:

@@ -1,40 +1,31 @@
 # llm/__init__.py - LLM Package Entry Point
 #
-# Role: Public API for LLM agents (planner, architect, coder, etc.)
-# Exports: call, smart_call, research_and_call, MODELS, agent functions
+# Role: Public API for LLM agents
+# Exports: OllamaClient, ModelConfig, LLMRouter from router
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from llm.models import call, smart_call, research_and_call, OLLAMA_URL, MODELS
+from llm.router import OllamaClient, ModelConfig, LLMRouter
 from models.settings import settings
 
+# Convenience: get default client instance
+_client = None
+
+def get_client() -> OllamaClient:
+    """Get default Ollama client instance"""
+    global _client
+    if _client is None:
+        _client = OllamaClient()
+    return _client
+
+def call(model: str, prompt: str) -> str:
+    """Simple wrapper: call model with prompt"""
+    client = get_client()
+    return client.generate(prompt, model=model)
+
+# Alias for settings
 MODELS = {
     "fast": settings.model_fast,
     "reasoning": settings.model_reasoning
 }
-
-def planner(task):
-    return call(MODELS.get("reasoning", settings.model_reasoning), f"Plan task:\n{task}")
-
-def architect(task):
-    return call(MODELS.get("reasoning", settings.model_reasoning), f"Design architecture:\n{task}")
-
-def coder(task):
-    return call(MODELS.get("fast", settings.model_fast), f"Write clean Python project:\n{task}")
-
-def reviewer(code):
-    return call(MODELS.get("reasoning", settings.model_reasoning), f"Review and improve code:\n{code}")
-
-def tester(code):
-    return call(MODELS.get("reasoning", settings.model_reasoning), f"Write pytest tests:\n{code}")
-
-def debugger(code, error):
-    return call(MODELS.get("reasoning", settings.model_reasoning), f"Fix error:\n{error}\nCode:\n{code}")
-
-def devops(code):
-    return call(MODELS.get("reasoning", settings.model_reasoning), f"Create Dockerfile + deployment:\n{code}")
-
-def research(task):
-    print("Researching...")
-    return research_and_call(task)

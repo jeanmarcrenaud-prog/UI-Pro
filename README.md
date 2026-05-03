@@ -129,11 +129,10 @@ ui-pro/
 ├── core/                   # Core modules (memory, state, executor, config)
 ├── controllers/            # Business logic (orchestrator)
 ├── services/              # Service layer (LLM routing, streaming, tools)
-├── llm/                   # LLM clients and routing
+├── llm/                   # LLM clients (router.py only)
 ├── models/                # Types Python (settings only)
 ├── views/                 # API views
-├── agents/                # Agent system (agent, planner, react)
-├── adapters/              # Adapters (LLM, memory, executor)
+├── adapters/              # Adapters (memory only)
 ├── ui-pro-ui/             # Next.js frontend
 │   ├── app/
 │   │   ├── page.tsx       # Page principale

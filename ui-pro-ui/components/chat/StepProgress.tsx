@@ -5,6 +5,7 @@ import { memo, useMemo, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { AgentStep } from '@/lib/types';
 import { STEP_STATUS_LABELS, useI18n } from '@/lib/i18n';
+import { useChatStore } from '@/lib/stores/chatStore';
 
 interface StepProgressProps {
   steps: AgentStep[];
@@ -94,20 +95,14 @@ export function StepProgress({
   const [isStreaming, setIsStreaming] = useState(false);
   
   useEffect(() => {
-    // Poll for streaming status (loading from chatStore)
+    // Get streaming status from chatStore
     const checkStatus = () => {
-      try {
-        // @ts-ignore - dynamic import
-        const { useChatStore } = require('@/lib/stores/chatStore');
-        const loading = useChatStore?.getState?.()?.loading;
-        setIsStreaming(loading === true);
-      } catch {
-        // Store not available
-      }
+      const state = useChatStore.getState();
+      setIsStreaming(state.isLoading === true);
     };
     
-    const interval = setInterval(checkStatus, 500);
     checkStatus();
+    const interval = setInterval(checkStatus, 500);
     return () => clearInterval(interval);
   }, []);
 

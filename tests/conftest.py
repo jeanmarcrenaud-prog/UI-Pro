@@ -13,7 +13,8 @@ import shutil
 # Import project modules for testing
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from llm import call, smart_call, OLLAMA_URL
+from llm import call, MODELS
+from models.settings import OLLAMA_URL
 from core.memory import MemoryManager
 from settings import settings
 

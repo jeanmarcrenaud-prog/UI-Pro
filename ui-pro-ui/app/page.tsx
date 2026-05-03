@@ -8,6 +8,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { ChatContainer } from '@/components/ChatContainer'
+import { CommandPalette, useKeyboardShortcuts } from '@/components/CommandPalette'
 import { Sidebar } from '@/components/Sidebar'
 import { DebugPanel } from '@/components/DebugPanel'
 import { SettingsView } from '@/components/SettingsView'
@@ -21,9 +22,10 @@ export default function Home() {
   const [showDebug, setShowDebug] = useState(true)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const hasLoggedModel = useRef(false) // Stable ref - persists across renders
+  const { paletteOpen, setPaletteOpen } = useKeyboardShortcuts()
   
   // Stores (MUST come first - isLoading is used below)
-  const { selectedModel, availableModels } = useUIStore()
+  const { selectedModel, availableModels, focusMode, sidebarOpen } = useUIStore()
   const { isLoading, logs, tokenCount, clearMessages, messages } = useChatStore()
   const { steps: storeSteps, currentStep: storeCurrentStep } = useAgentStore()
 
@@ -70,14 +72,20 @@ export default function Home() {
 
   return (
     <div className="flex h-screen bg-gradient-to-br from-slate-950 to-slate-900">
-      <Sidebar 
-        activeTab={activeTab} 
-        onTabChange={setActiveTab} 
-        onNewChat={handleNewChat}
-      />
-      <main className="flex-1 flex flex-col">
-        {/* Header */}
-        <header className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+      {/* Sidebar - hidden in focus mode */}
+      {!focusMode && (
+<Sidebar 
+          activeTab={activeTab} 
+          onTabChange={setActiveTab} 
+          onNewChat={handleNewChat}
+        />
+      )}
+      
+      {/* Main Content - full width in focus mode */}
+      <main className={`flex-1 flex flex-col ${focusMode ? 'w-full' : ''}`}>
+        {/* Header - hidden in focus mode */}
+        {!focusMode && (
+          <header className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img src="/logo.png" alt="UI-Pro" className="h-8 w-auto" />
             <div>
@@ -100,6 +108,7 @@ export default function Home() {
             )}
           </div>
         </header>
+        )}
         
         {/* Content based on active tab */}
         {activeTab === 'chat' ? (
@@ -135,6 +144,9 @@ export default function Home() {
           logs={logs}
         />
       )}
+
+      {/* Command Palette */}
+      <CommandPalette isOpen={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>
   )
 }

@@ -1,4 +1,4 @@
-# core/constants.py - Constants centralisées pour UI-Pro
+# core/constants.py - Centralized Constants for UI-Pro
 
 # ==================== WebSocket Events ====================
 
@@ -48,7 +48,7 @@ class ConfigKey:
 
 # ==================== Model Names ====================
 
-# Modèles disponibles sur Ollama
+# Available models on Ollama
 AVAILABLE_MODELS = [
     "qwen3.5:9b",
     "qwen3.5:0.8b",

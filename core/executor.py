@@ -187,7 +187,7 @@ class CodeExecutor:
 
 # ==================== **3. EXISTING COMPATIBILITY** ====================
 
-# Compatibilité avec ancien code
+# Backward compatibility with legacy code
 def run():
     """Legacy API"""
     return "executor.py has been updated to CodeExecutor pattern"

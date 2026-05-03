@@ -444,7 +444,7 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
       {/* Chat History */}
       <div className="flex-1 overflow-y-auto mt-2 px-2">
         <div className="px-3 py-2 text-xs text-slate-500 font-medium border-b border-slate-800/60">
-          t.sidebar.recentChats
+          {t.sidebar.recentChats}
         </div>
 
         {/* Empty state */}

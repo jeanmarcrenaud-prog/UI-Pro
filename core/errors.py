@@ -1,4 +1,4 @@
-# core/errors.py - Hiérarchie d'exceptions métier pour UI-Pro
+# core/errors.py - Business Exception Hierarchy for UI-Pro
 
 from typing import Optional
 

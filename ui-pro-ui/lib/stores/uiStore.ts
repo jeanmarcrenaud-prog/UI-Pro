@@ -7,6 +7,7 @@ import { persist } from 'zustand/middleware'
 import { LLM_CONFIG } from '@/lib/config'
 
 type Locale = 'en' | 'fr'
+type Theme = 'dark' | 'light'
 
 interface UIState {
   sidebarOpen: boolean
@@ -19,6 +20,13 @@ interface UIState {
   setLocale: (locale: Locale) => void
   availableModels: string[]
   setAvailableModels: (models: string[]) => void
+  // Theme
+  theme: Theme
+  setTheme: (theme: Theme) => void
+  toggleTheme: () => void
+  // Focus mode
+  focusMode: boolean
+  toggleFocusMode: () => void
 }
 
 export const useUIStore = create<UIState>()(
@@ -40,6 +48,13 @@ export const useUIStore = create<UIState>()(
       },
       availableModels: LLM_CONFIG.defaultModels,
       setAvailableModels: (availableModels) => set({ availableModels }),
+      // Theme
+      theme: 'dark',
+      setTheme: (theme) => set({ theme }),
+      toggleTheme: () => set((state) => ({ theme: state.theme === 'dark' ? 'light' : 'dark' })),
+      // Focus mode
+      focusMode: false,
+      toggleFocusMode: () => set((state) => ({ focusMode: !state.focusMode })),
     }),
     {
       name: 'ui-pro-storage',

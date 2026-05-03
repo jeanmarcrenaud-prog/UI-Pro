@@ -1,13 +1,7 @@
 # adapters/ - External Integrations
 
-from .llm import OllamaClient, ModelConfig
-from .memory import FAISSAdapter
-from .executor import CodeExecutor, ExecutionConfig
+from .memory.faiss import FAISSAdapter
 
 __all__ = [
-    "OllamaClient",
-    "ModelConfig",
     "FAISSAdapter",
-    "CodeExecutor",
-    "ExecutionConfig",
 ]
