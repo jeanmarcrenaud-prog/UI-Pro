@@ -76,15 +76,15 @@ export function ChatContainer({
 
   const [inputValue, setInputValue] = useState('')
 
+  // Priority: props > hook (useful for modal/preview modes)
+  const messages = propMessages.length > 0 ? propMessages : hookMessages
+  const agentSteps = propAgentSteps.length > 0 ? propAgentSteps : steps
+
   // Get last assistant message with code for suggestions
   const lastAssistantCode = useMemo(() => {
     const last = [...messages].reverse().find(m => m.role === 'assistant' && m.content?.includes('```'))
     return last?.content || undefined
   }, [messages])
-
-  // Priority: props > hook (useful for modal/preview modes)
-  const messages = propMessages.length > 0 ? propMessages : hookMessages
-  const agentSteps = propAgentSteps.length > 0 ? propAgentSteps : steps
 
   const isEmpty = messages.length === 0
 
