@@ -21,6 +21,8 @@ export function SettingsView() {
 
   const [isRefreshLoading, setIsRefreshLoading] = useState(false)
   const [refreshError, setRefreshError] = useState<string | null>(null)
+  const [modelDescription, setModelDescription] = useState<string | null>(null)
+  const [isLoadingDescription, setIsLoadingDescription] = useState(false)
 
   const [backendInfo, setBackendInfo] = useState<BackendInfo[]>([
     { name: 'Ollama', url: LLM_CONFIG.ollamaUrl, status: 'inactive' },
@@ -59,6 +61,50 @@ export function SettingsView() {
 
     checkBackends()
   }, []) // Empty dependency array = run once
+
+  // Fetch model description when selected model changes
+  useEffect(() => {
+    const fetchDescription = async () => {
+      if (!selectedModel || selectedModel === 'default') {
+        setModelDescription(null)
+        return
+      }
+      
+      setIsLoadingDescription(true)
+      try {
+        // Try GitHub API first
+        const res = await fetch(`https://api.github.com/search/repositories?q=${encodeURIComponent(selectedModel)}+in:name&per_page=1`, {
+          headers: { Accept: 'application/vnd.github.v3+json' }
+        })
+        if (res.ok) {
+          const data = await res.json()
+          if (data.items?.[0]?.description) {
+            setModelDescription(data.items[0].description)
+            setIsLoadingDescription(false)
+            return
+          }
+        }
+        // Try Ollama API as fallback
+        const ollamaRes = await fetch('http://localhost:11434/api/tags')
+        if (ollamaRes.ok) {
+          const ollamaData = await ollamaRes.json()
+          const model = ollamaData.models?.find((m: any) => m.name === selectedModel)
+          if (model?.details?.description) {
+            setModelDescription(model.details.description)
+            setIsLoadingDescription(false)
+            return
+          }
+        }
+        setModelDescription('Large language model from Ollama')
+      } catch {
+        setModelDescription('Large language model')
+      } finally {
+        setIsLoadingDescription(false)
+      }
+    }
+    
+    fetchDescription()
+  }, [selectedModel])
 
   const handleRefreshModels = async () => {
     setIsRefreshLoading(true)
@@ -119,13 +165,18 @@ export function SettingsView() {
           <h3 className="text-sm font-medium text-slate-300 mb-4 flex items-center gap-2">
             ℹ️ {t.settings.about}
           </h3>
-          <div className="flex justify-between items-start">
+          <a 
+            href="https://github.com/jeanmarcrenaud-prog/UI-Pro" 
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex justify-between items-start hover:bg-slate-700/50 p-2 -m-2 rounded-xl transition-colors cursor-pointer group"
+          >
             <div>
-              <p className="text-lg font-semibold text-white">UI-Pro</p>
+              <p className="text-lg font-semibold text-white group-hover:text-violet-300 transition-colors">UI-Pro</p>
               <p className="text-xs text-slate-500 mt-0.5">Version 1.0.0 • Built with Next.js + Ollama</p>
             </div>
             <span className="text-emerald-400 text-2xl">✓</span>
-          </div>
+          </a>
         </section>
 
         {/* Models Section */}
@@ -163,6 +214,21 @@ export function SettingsView() {
               )}
             </button>
           </div>
+
+          {/* Model Description */}
+          {selectedModel && selectedModel !== 'default' && (
+            <div className="mt-4 p-4 bg-slate-900/50 rounded-xl border border-slate-700/50">
+              {isLoadingDescription ? (
+                <div className="flex items-center gap-2 text-slate-500 text-sm">
+                  <span className="animate-pulse">Loading description...</span>
+                </div>
+              ) : modelDescription ? (
+                <p className="text-sm text-slate-300 leading-relaxed">{modelDescription}</p>
+              ) : (
+                <p className="text-sm text-slate-500">Large language model</p>
+              )}
+            </div>
+          )}
 
           {refreshError && (
             <p className="mt-3 text-sm text-red-400 bg-red-950/50 border border-red-900/50 rounded-lg px-4 py-2">

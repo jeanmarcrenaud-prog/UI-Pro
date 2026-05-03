@@ -177,17 +177,18 @@ export const CodeBlock = memo(function CodeBlock({
           {/* Copy Button */}
           <button
             onClick={copyToClipboard}
-            className="flex items-center gap-2 px-4 py-1.5 text-sm rounded-xl bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200"
+            className="flex items-center gap-2 px-4 py-1.5 text-sm rounded-xl bg-violet-600 hover:bg-violet-500 transition-colors text-white font-medium shadow-lg"
           >
             {copied ? (
               <>
-                <Check className="w-4 h-4 text-emerald-400" />
-                <span className="text-emerald-400 font-medium">{t.codeBlock.copied}</span>
+                <Check className="w-4 h-4" />
+                <span className="font-medium">{t.codeBlock.copied}</span>
               </>
             ) : (
               <>
                 <Copy className="w-4 h-4" />
                 {t.codeBlock.copy}
+                <span className="text-xs opacity-60 ml-1">Ctrl+C</span>
               </>
             )}
           </button>
@@ -199,6 +200,7 @@ export const CodeBlock = memo(function CodeBlock({
           >
             <Download className="w-4 h-4" />
             {t.codeBlock.save}
+            <span className="text-xs opacity-60 ml-1">Ctrl+S</span>
           </button>
         </div>
       </div>
