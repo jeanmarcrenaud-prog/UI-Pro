@@ -73,12 +73,13 @@ class CodeExecutor:
             except ImportError:
                 logger.warning("Code review not available")
     
-    def run(self, code: str) -> Dict[str, Any]:
+    def run(self, code: str, args: Optional[str] = None) -> Dict[str, Any]:
         """
         Exécuter code sandboxed avec code review optionnel.
         
         Args:
             code: Code Python à exécuter
+            args: Arguments optionnels passés à python (ex: --flag value)
             
         Returns:
             Dict {"success": bool, "stdout": ..., "stderr": ..., "duration_ms": ..., "review": ...}
@@ -109,10 +110,14 @@ class CodeExecutor:
             main_file.write_text(sanitized_code, encoding="utf-8")
             
             # Execute - different approach for Windows
+            proc_cmd = ["python", str(main_file)]
+            if args:
+                proc_cmd.extend(args.split())
+            
             if sys.platform == "win32":
                 # Run with stdin explicitly closed to avoid handle issues
                 cp = subprocess.run(
-                    ["python", str(main_file)],
+                    proc_cmd,
                     capture_output=True,
                     text=True,
                     timeout=self.config.timeout,
@@ -120,7 +125,7 @@ class CodeExecutor:
                 )
             else:
                 cp = subprocess.run(
-                    ["python", str(main_file)],
+                    proc_cmd,
                     cwd=workspace,
                     capture_output=True,
                     text=True,
