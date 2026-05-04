@@ -34,9 +34,14 @@ class ModelDiscovery:
     """
     
     # Backend endpoints for model listing
+    # Note: llama.cpp uses the same API as Ollama (/api/tags), so we detect it as "ollama"
     ENDPOINTS = {
         "ollama": {
             "url": "http://localhost:11434/api/tags",
+            "model_path": "models",
+        },
+        "llamacpp": {
+            "url": "http://localhost:8080/api/tags",  # llama.cpp uses Ollama-compatible API
             "model_path": "models",
         },
         "lmstudio": {
@@ -76,6 +81,30 @@ class ModelDiscovery:
             logger.info(f"[ModelDiscovery] Ollama: found {len(models)} models")
         except requests.RequestException as e:
             logger.debug(f"[ModelDiscovery] Ollama unavailable: {e}")
+        return models
+    
+    def _discover_llamacpp(self) -> List[DiscoveredModel]:
+        """Discover models from llama.cpp (uses Ollama-compatible API)"""
+        models = []
+        try:
+            response = requests.get(
+                self.ENDPOINTS["llamacpp"]["url"],
+                timeout=self.timeout
+            )
+            response.raise_for_status()
+            data = response.json()
+            
+            # llama.cpp returns same format as Ollama
+            for model in data.get("models", []):
+                models.append(DiscoveredModel(
+                    name=model.get("name", ""),
+                    backend="ollama",  # Treat as Ollama - same API
+                    size=model.get("size"),
+                    modified_at=model.get("modified_at"),
+                ))
+            logger.info(f"[ModelDiscovery] llama.cpp: found {len(models)} models")
+        except requests.RequestException as e:
+            logger.debug(f"[ModelDiscovery] llama.cpp unavailable: {e}")
         return models
     
     def _discover_lmstudio(self) -> List[DiscoveredModel]:
@@ -133,9 +162,10 @@ class ModelDiscovery:
         all_models = []
         
         # Run all discovery methods in parallel
-        with ThreadPoolExecutor(max_workers=3) as executor:
+        with ThreadPoolExecutor(max_workers=4) as executor:
             futures = {
                 executor.submit(self._discover_ollama): "ollama",
+                executor.submit(self._discover_llamacpp): "llamacpp",
                 executor.submit(self._discover_lmstudio): "lmstudio",
                 executor.submit(self._discover_lemonade): "lemonade",
             }
