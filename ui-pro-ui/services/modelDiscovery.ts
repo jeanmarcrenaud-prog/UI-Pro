@@ -1,15 +1,33 @@
 // modelDiscovery.ts
 // Role: Singleton service that discovers available LLM models from backends (Ollama, LMStudio, 
 // llama.cpp, Lemonade), and emits events for the UI to consume
+// Features: Rich metadata (size, quantization, speed tier, capabilities)
 
 // Model Discovery Service - Discovers available models from different backends
 import { events } from '@/lib/events'
 import { LLM_CONFIG } from '@/lib/config'
 
+// Speed tiers
+export type SpeedTier = 'very_fast' | 'fast' | 'medium' | 'slow'
+
+// Task capabilities
+export type ModelCapability = 'code' | 'reasoning' | 'fast' | 'creative' | 'analysis' | 'vision'
+
 interface Model {
   id: string
   name: string
-  provider: 'ollama' | 'lmstudio' | 'llama.cpp' | 'lemonade'
+  provider: 'ollama' | 'lmstudio' | 'lemonade'
+  // Rich metadata
+  parameterSize?: string      // ex: "8.0B", "70B"
+  quantization?: string       // ex: "Q4_K_M", "FP16"
+  sizeGb?: number             // Size in GB
+  family?: string             // Model family
+  maxContext?: number         // Estimated context window
+  speedTier?: SpeedTier       // very_fast, fast, medium, slow
+  isCoder?: boolean          // Code capability
+  isReasoning?: boolean      // Reasoning capability
+  isVision?: boolean         // Vision capability
+  capabilities?: ModelCapability[]  // List of capabilities
 }
 
 interface BackendConfig {
@@ -129,14 +147,84 @@ class ModelDiscoveryService {
     
     // Handle both direct ollama format and proxy format
     if (data.models) {
-      return data.models.map((m: { name: string }) => ({
-        id: m.name,
-        name: m.name,
-        provider: 'ollama' as const,
-      }))
+      return data.models.map((m: { name: string; size?: number; details?: Record<string, unknown> }) => {
+        const details = m.details || {}
+        const paramSize = details.parameter_size as string | undefined
+        const quant = details.quantization_level as string | undefined
+        const family = details.family as string | undefined
+        const sizeBytes = m.size || 0
+        
+        return {
+          id: m.name,
+          name: m.name,
+          provider: 'ollama' as const,
+          parameterSize: paramSize,
+          quantization: quant,
+          sizeGb: sizeBytes > 0 ? Math.round(sizeBytes / 1024 / 1024 / 1024 * 100) / 100 : undefined,
+          family: family,
+          maxContext: this.estimateMaxContext(paramSize || '', family || ''),
+          speedTier: this.estimateSpeed(quant || '', paramSize || ''),
+          isCoder: this.isCoder(m.name),
+          isReasoning: this.isReasoning(m.name),
+          isVision: this.isVision(m.name),
+          capabilities: this.inferCapabilities(m.name, paramSize || '', family || ''),
+        }
+      })
     }
     // Proxy returned { model_fast: ... } - not a model list
     return []
+  }
+
+  // Helper methods for model enrichment
+  private estimateMaxContext(paramSize: string, family: string): number {
+    const size = paramSize.toLowerCase()
+    const fam = family.toLowerCase()
+    
+    if (size.includes('70b') || size.includes('72b')) return 32768
+    if (size.includes('32b')) return fam.includes('gemma') ? 8192 : 16384
+    if (size.includes('13b') || size.includes('14b') || size.includes('8b')) return 8192
+    if (size.includes('3b') || size.includes('4b') || size.includes('2b') || size.includes('1b') || size.includes('0.8b')) return 4096
+    return 8192
+  }
+
+  private estimateSpeed(quantization: string, paramSize: string): SpeedTier {
+    const q = quantization.toUpperCase()
+    const s = paramSize.toLowerCase()
+    
+    if (q.includes('Q2') || q.includes('Q3') || q.includes('IQ3') || s.includes('1b') || s.includes('0.8b')) {
+      return 'very_fast'
+    }
+    if (q.includes('Q4') || s.includes('7b') || s.includes('8b')) return 'fast'
+    if (q.includes('Q5') || q.includes('Q6')) return 'medium'
+    return 'slow'
+  }
+
+  private isCoder(name: string): boolean {
+    const n = name.toLowerCase()
+    return n.includes('coder') || n.includes('code') || (n.includes('qwen') && n.includes('2.5'))
+  }
+
+  private isReasoning(name: string): boolean {
+    const n = name.toLowerCase()
+    return n.includes('deepseek') || n.includes('llama') || n.includes('mistral') || n.includes('opus')
+  }
+
+  private isVision(name: string): boolean {
+    const n = name.toLowerCase()
+    return n.includes('vision') || n.includes('llava') || n.includes('moondream')
+  }
+
+  private inferCapabilities(name: string, paramSize: string, family: string): ModelCapability[] {
+    const caps: ModelCapability[] = ['fast']
+    const n = name.toLowerCase()
+    
+    if (this.isCoder(n)) caps.push('code')
+    if (this.isReasoning(n)) caps.push('reasoning')
+    if (this.isVision(n)) caps.push('vision', 'analysis')
+    if (n.includes('gemma')) caps.push('creative')
+    
+    // Deduplicate
+    return [...new Set(caps)]
   }
 
   private async fetchLMStudio(url: string): Promise<Model[]> {

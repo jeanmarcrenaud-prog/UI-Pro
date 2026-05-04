@@ -9,10 +9,20 @@ import { LLM_CONFIG } from '@/lib/config'
 type Locale = 'en' | 'fr'
 type Theme = 'dark' | 'light'
 
-// Model with provider info
+// Model with provider and rich metadata info
 export interface ModelInfo {
   name: string
-  provider: 'ollama' | 'lmstudio' | 'lemonade' | 'llamacpp'
+  provider: 'ollama' | 'lmstudio' | 'lemonade'
+  // Rich metadata
+  parameterSize?: string      // ex: "8.0B", "70B"
+  quantization?: string       // ex: "Q4_K_M", "FP16"
+  sizeGb?: number            // Size in GB
+  maxContext?: number        // Estimated context window
+  speedTier?: 'very_fast' | 'fast' | 'medium' | 'slow'
+  isCoder?: boolean
+  isReasoning?: boolean
+  isVision?: boolean
+  capabilities?: string[]     // List of capabilities
 }
 
 interface UIState {
