@@ -138,21 +138,22 @@ class ModelsConfig:
     
     def __post_init__(self):
         from models.settings import settings
-        # Utiliser settings comme source unique
+        # Utiliser settings comme source unique - pas de fallback codé en dur
         self.fast = self.fast or settings.model_fast
         self.reasoning = self.reasoning or settings.model_reasoning
-        self.code = self.code or getattr(settings, 'model_code', 'deepseek-coder:33b')
+        self.code = self.code or settings.model_code
         self.reasoner = self.reasoner or settings.model_reasoning
         if not self.ollama_url:
             self.ollama_url = f"{settings.ollama_url}/api/generate"
 
 # Singleton settings - utilise settings.py comme source unique
+# Models MUST be set via environment variables - no hardcoded defaults
 try:
     from models.settings import settings as _app_settings
     _settings = ModelsConfig(
         fast=_app_settings.model_fast,
         reasoning=_app_settings.model_reasoning,
-        code=getattr(_app_settings, 'model_code', 'deepseek-coder:33b'),
+        code=_app_settings.model_code,
         reasoner=_app_settings.model_reasoning,
         ollama_url=f"{_app_settings.ollama_url}/api/generate",
     )

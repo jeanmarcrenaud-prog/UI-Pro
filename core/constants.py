@@ -48,10 +48,5 @@ class ConfigKey:
 
 # ==================== Model Names ====================
 
-# Available models on Ollama
-AVAILABLE_MODELS = [
-    "qwen3.5:9b",
-    "qwen3.5:0.8b",
-    "gemma4:latest",
-    "minimax-m2:cloud",
-]
+# Available models are dynamically detected via Ollama /api/tags
+# No hardcoded model names - detection is automatic

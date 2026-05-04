@@ -21,17 +21,15 @@ class TestSettingsLoad:
     def test_settings_defaults(self):
         """Test default settings when no env vars set"""
         # Unset environment variables for this test
-        for key in ["HF_TOKEN", "MODEL_FAST", "MODEL_REASONING", 
+        for key in ["HF_TOKEN", "MODEL_FAST", "MODEL_REASONING", "MODEL_CODE",
                     "LLM_TIMEOUT", "EXECUTOR_TIMEOUT", "OLLAMA_URL"]:
             if key in os.environ:
                 del os.environ[key]
         
         settings = get_settings()
         
-        # Check defaults
-        assert settings.model_fast is not None
-        assert settings.model_reasoning is not None
-        assert settings.model_fast is not None
+        # Model settings now require env vars - they will be empty strings
+        # Only timeout values have defaults
         assert settings.llm_timeout > 0
         assert settings.executor_timeout > 0
     
