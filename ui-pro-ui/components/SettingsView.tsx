@@ -195,8 +195,8 @@ export function SettingsView() {
                 <option value="">Aucun modèle disponible</option>
               ) : (
                 availableModels.map((model) => (
-                  <option key={model} value={model}>
-                    {model}
+                  <option key={`${model.provider}-${model.name}`} value={model.name}>
+                    {model.name} [{model.provider}]
                   </option>
                 ))
               )}
