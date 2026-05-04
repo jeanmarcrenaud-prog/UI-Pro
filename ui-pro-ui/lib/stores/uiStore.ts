@@ -9,6 +9,12 @@ import { LLM_CONFIG } from '@/lib/config'
 type Locale = 'en' | 'fr'
 type Theme = 'dark' | 'light'
 
+// Model with provider info
+export interface ModelInfo {
+  name: string
+  provider: 'ollama' | 'lmstudio' | 'lemonade' | 'llamacpp'
+}
+
 interface UIState {
   sidebarOpen: boolean
   toggleSidebar: () => void
@@ -18,8 +24,8 @@ interface UIState {
   setSelectedModel: (model: string) => void
   locale: Locale
   setLocale: (locale: Locale) => void
-  availableModels: string[]
-  setAvailableModels: (models: string[]) => void
+  availableModels: ModelInfo[]
+  setAvailableModels: (models: ModelInfo[]) => void
   // Theme
   theme: Theme
   setTheme: (theme: Theme) => void
@@ -46,7 +52,7 @@ export const useUIStore = create<UIState>()(
         console.log('[useUIStore] setLocale called:', locale)
         set({ locale })
       },
-      availableModels: LLM_CONFIG.defaultModels,
+      availableModels: [],  // Dynamically discovered, no defaults
       setAvailableModels: (availableModels) => set({ availableModels }),
       // Theme
       theme: 'dark',

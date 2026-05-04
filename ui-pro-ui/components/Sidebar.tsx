@@ -92,6 +92,8 @@ function LoadingIndicator() {
 
 // Component: ModelSelectDropdown
 // Dropdown component for model selection
+import type { ModelInfo } from '@/lib/stores/uiStore'
+
 function ModelSelectDropdown({
   isLoading,
   availableModels,
@@ -99,7 +101,7 @@ function ModelSelectDropdown({
   onModelChange
 }: {
   isLoading: boolean
-  availableModels: string[]
+  availableModels: ModelInfo[]
   selectedModel: string
   onModelChange: (model: string) => void
 }) {
@@ -138,11 +140,10 @@ function ModelSelectDropdown({
             ) : (
               availableModels.map((model) => (
                 <option
-                  key={model}
-                  value={model}
-                  disabled={model === ''}
+                  key={`${model.provider}-${model.name}`}
+                  value={model.name}
                 >
-                  {model}
+                  {model.name} [{model.provider}]
                 </option>
               ))
             )}
@@ -245,9 +246,14 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
     const initModels = async () => {
       try {
         const models = await modelDiscovery.discover()
-        // Update store with discovered models
+        // Update store with discovered models including provider info
         if (isMounted && models.length > 0) {
-          setAvailableModels(models.map(m => m.name))
+          // Map provider to match ModelInfo type
+          const mappedModels: ModelInfo[] = models.map(m => ({
+            name: m.name,
+            provider: (m.provider === 'llama.cpp' ? 'llamacpp' : m.provider) as ModelInfo['provider']
+          }))
+          setAvailableModels(mappedModels)
         }
       } catch (error) {
         console.error('Failed to discover models:', error)
@@ -269,9 +275,12 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
     initModels()
 
     // Listen for model discovery events to update store
-    const handleModelsDiscovered = (data: { models: Array<{ name: string }> }) => {
+    const handleModelsDiscovered = (data: { models: Array<{ name: string; provider: string }> }) => {
       if (data.models && data.models.length > 0) {
-        setAvailableModels(data.models.map(m => m.name))
+        setAvailableModels(data.models.map(m => ({ 
+          name: m.name, 
+          provider: m.provider as 'ollama' | 'lmstudio' | 'lemonade' | 'llamacpp'
+        })))
       }
     }
     events.on('modelsDiscovered', handleModelsDiscovered)
