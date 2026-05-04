@@ -144,7 +144,8 @@ class ModelDiscoveryService {
     const timeout = setTimeout(() => controller.abort(), 5000)
     
     try {
-      const response = await fetch(`${url}/api/models`, {
+      // LM Studio uses /api/v1/models endpoint
+      const response = await fetch(`${url}/api/v1/models`, {
         method: 'GET',
         signal: controller.signal,
       })
@@ -152,11 +153,15 @@ class ModelDiscoveryService {
       if (!response.ok) return []
       
       const data = await response.json()
-      return (data.data || []).map((m: { id: string; name: string }) => ({
-        id: m.id,
-        name: m.name,
+      // LM Studio returns { models: [...] }
+      return (data.models || []).map((m: { key: string; display_name?: string }) => ({
+        id: m.key,
+        name: m.display_name || m.key,
         provider: 'lmstudio' as const,
       }))
+    } catch (e) {
+      console.debug('[ModelDiscovery] LM Studio fetch failed:', e)
+      return []
     } finally {
       clearTimeout(timeout)
     }

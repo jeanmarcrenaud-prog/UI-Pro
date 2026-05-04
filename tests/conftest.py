@@ -84,12 +84,14 @@ def config_override(monkeypatch):
     monkeypatch.setenv("HF_TOKEN", "test_token")
     monkeypatch.setenv("MODEL_FAST", "qwen2.5-coder:32b")
     monkeypatch.setenv("MODEL_REASONING", "qwen-opus")
+    monkeypatch.setenv("MODEL_CODE", "qwen2.5-coder:32b")
     monkeypatch.setenv("LLM_TIMEOUT", "10")
     monkeypatch.setenv("EXECUTOR_TIMEOUT", "30")
     yield
     monkeypatch.delenv("HF_TOKEN", raising=False)
     monkeypatch.delenv("MODEL_FAST", raising=False)
     monkeypatch.delenv("MODEL_REASONING", raising=False)
+    monkeypatch.delenv("MODEL_CODE", raising=False)
     monkeypatch.delenv("LLM_TIMEOUT", raising=False)
     monkeypatch.delenv("EXECUTOR_TIMEOUT", raising=False)
 

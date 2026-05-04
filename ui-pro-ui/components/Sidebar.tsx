@@ -9,6 +9,7 @@ import { useUIStore } from '@/lib/stores/uiStore'
 import { useChatStore } from '@/lib/stores/chatStore'
 import { useI18n } from '@/lib/i18n'
 import { modelDiscovery } from '@/services/modelDiscovery'
+import { events } from '@/lib/events'
 import { motion, AnimatePresence } from 'framer-motion'
 
 /**
@@ -236,12 +237,18 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
   const [isRefreshing, setIsRefreshing] = useState(false)
 
   // Discover models on mount
+  const { setAvailableModels } = useUIStore()
+  
   useEffect(() => {
     let isMounted = true
     
     const initModels = async () => {
       try {
-        await modelDiscovery.discover()
+        const models = await modelDiscovery.discover()
+        // Update store with discovered models
+        if (isMounted && models.length > 0) {
+          setAvailableModels(models.map(m => m.name))
+        }
       } catch (error) {
         console.error('Failed to discover models:', error)
       } finally {
@@ -261,6 +268,14 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
 
     initModels()
 
+    // Listen for model discovery events to update store
+    const handleModelsDiscovered = (data: { models: Array<{ name: string }> }) => {
+      if (data.models && data.models.length > 0) {
+        setAvailableModels(data.models.map(m => m.name))
+      }
+    }
+    events.on('modelsDiscovered', handleModelsDiscovered)
+
     // Poll for model updates every 30s
     const pollInterval = setInterval(async () => {
       try {
@@ -278,8 +293,9 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
       clearTimeout(fallbackTimeout)
       clearInterval(pollInterval)
       modelDiscovery.stopPolling()
+      events.off('modelsDiscovered', handleModelsDiscovered)
     }
-  }, [])
+  }, [setAvailableModels])
 
   return (
     <aside

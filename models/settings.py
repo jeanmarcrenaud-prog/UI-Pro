@@ -81,10 +81,11 @@ LEMONADE_URL = os.getenv("LEMONADE_URL", "http://localhost:13305")
 LLAMACPP_URL = os.getenv("LLAMACPP_URL", "http://localhost:8080")
 LMSTUDIO_URL = os.getenv("LMSTUDIO_URL", "http://localhost:1234")
 
-# Model Settings - Use models that actually exist in Ollama!
-MODEL_FAST = os.getenv("MODEL_FAST", "gemma4:e4b")
-MODEL_REASONING = os.getenv("MODEL_REASONING", "gemma4:latest")
-MODEL_CODE = os.getenv("MODEL_CODE", "gemma4:latest")
+# Model Settings - MUST be set via environment variables!
+# No hardcoded defaults - models are dynamically detected via /api/tags
+MODEL_FAST = os.getenv("MODEL_FAST") or ""  # Required - no default
+MODEL_REASONING = os.getenv("MODEL_REASONING") or ""  # Required - no default
+MODEL_CODE = os.getenv("MODEL_CODE") or ""  # Required - no default
 LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", 30))
 
 # Executor Settings
@@ -220,6 +221,14 @@ class Settings:
         
         if self.dashboard_port <= 0 or self.dashboard_port > 65535:
             errors.append(f"Invalid dashboard_port: {self.dashboard_port}")
+        
+        # Validate model configuration (required for LLM operations)
+        if not self.model_fast or self.model_fast == "":
+            errors.append("MODEL_FAST environment variable is required")
+        if not self.model_reasoning or self.model_reasoning == "":
+            errors.append("MODEL_REASONING environment variable is required")
+        if not self.model_code or self.model_code == "":
+            errors.append("MODEL_CODE environment variable is required")
         
         # Check workspace exists or can be created
         if not self.workspace.exists():

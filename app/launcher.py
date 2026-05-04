@@ -125,17 +125,27 @@ def check_node_available() -> bool:
         return False
 
 
-def check_ollama() -> dict:
-    """Check Ollama status."""
+def check_backends() -> dict:
+    """Check all LLM backends status using model discovery."""
     try:
-        import requests
-        r = requests.get("http://localhost:11434/api/tags", timeout=2)
-        if r.status_code == 200:
-            models = r.json().get("models", [])
-            return {"status": "running", "models": len(models)}
-    except Exception:
-        pass
-    return {"status": "not_running", "models": 0}
+        from services.model_discovery import ModelDiscovery
+        discovery = ModelDiscovery(timeout=2.0)
+        all_models = discovery.discover_all()
+        
+        # Group by backend
+        by_backend = {}
+        for model in all_models:
+            if model.backend not in by_backend:
+                by_backend[model.backend] = []
+            by_backend[model.backend].append(model.name)
+        
+        return {
+            "status": "running",
+            "models": len(all_models),
+            "by_backend": by_backend,
+        }
+    except Exception as e:
+        return {"status": "not_running", "models": 0, "by_backend": {}}
 
 
 def check_services():
@@ -154,12 +164,13 @@ def check_services():
     else:
         print_warning("Next.js UI (3000) - Non lancé")
     
-    # Ollama
-    ollama = check_ollama()
-    if ollama["status"] == "running":
-        print_success(f"Ollama - En cours d'exécution ({ollama['models']} modèles)")
+    # LLM Backends (Ollama, LM Studio, Lemonade)
+    backends = check_backends()
+    if backends["status"] == "running":
+        for backend, models in backends["by_backend"].items():
+            print_success(f"{backend.capitalize()} - {len(models)} modèles: {', '.join(models[:3])}{'...' if len(models) > 3 else ''}")
     else:
-        print_warning("Ollama - Non lancé")
+        print_warning("Aucun backend LLM détecté")
     
     # Node/npm
     if check_node_available():
@@ -255,12 +266,13 @@ def start_all(auto_open: bool = True):
     """Lance tous les services."""
     print_header("Lancement de tous les services")
     
-    # Check Ollama first
-    ollama = check_ollama()
-    if ollama["status"] == "running":
-        print_success(f"Ollama: {ollama['models']} modèles disponibles")
+    # Check all LLM backends
+    backends = check_backends()
+    if backends["status"] == "running":
+        for backend, models in backends["by_backend"].items():
+            print_success(f"{backend.capitalize()}: {len(models)} modèles")
     else:
-        print_warning("Ollama pas détecté - Lancez 'ollama serve' si nécessaire")
+        print_warning("Aucun backend LLM détecté - Lancez Ollama/LM Studio/Lemonade si nécessaire")
     
     # Start FastAPI in a thread
     print_info("Démarrage FastAPI...")

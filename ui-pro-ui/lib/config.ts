@@ -31,15 +31,9 @@ export const LLM_CONFIG = {
   // Default model - should be overridden via API at runtime
   defaultModel: process.env.NEXT_PUBLIC_DEFAULT_MODEL || 'qwen3.5:9b',
   
-  // Default available models (fallback list)
-  defaultModels: [
-    'qwen3.5:0.8b',
-    'qwen3.5:9b',
-    'gemma4:latest',
-    'gemma4:e4b',
-    'lfm2:latest',
-    'nemotron-cascade-2:latest',
-  ],
+  // Default available models - dynamically discovered at runtime
+  // No hardcoded models - will be populated by modelDiscovery service
+  defaultModels: [] as string[],
 }
 
 // Export combined config object for convenience

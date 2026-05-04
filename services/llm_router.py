@@ -25,8 +25,8 @@ class TaskType(Enum):
 
 @dataclass
 class RouterConfig:
-    """Router configuration"""
-    default_model: str = "gemma4:latest"
+    """Router configuration - models must be set via environment"""
+    default_model: str = ""  # Must be set via MODEL_FAST env var
     max_context_tokens: int = 8192
     enable_cost_optimization: bool = True
     enable_load_balancing: bool = False
