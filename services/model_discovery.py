@@ -1,25 +1,57 @@
 # services/model_discovery.py - Dynamic Model Discovery
 #
-# Discovers available models from multiple backends:
+# Discovers available models from multiple backends with rich metadata:
 # - Ollama / llama.cpp (uses same API)
 # - LM Studio
 # - Lemonade
+#
+# Features:
+# - Uses full /api/tags info (parameter_size, quantization, size, family)
+# - Smart context window estimation
+# - Speed tier based on quantization
+# - Model classification (coder, reasoning, fast, vision)
 
 import logging
+import re
 import requests
 from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
+from enum import Enum
 
 logger = logging.getLogger(__name__)
 
 
+class TaskType(Enum):
+    """Task type classification for model capabilities"""
+    CODE = "code"
+    REASONING = "reasoning"
+    FAST = "fast"
+    CREATIVE = "creative"
+    ANALYSIS = "analysis"
+    VISION = "vision"
+
+
 @dataclass
 class DiscoveredModel:
-    """A model discovered from a backend"""
+    """A model discovered from a backend with rich metadata"""
     name: str
     backend: str  # "ollama", "lmstudio", "lemonade"
+    # Rich metadata from API
+    parameter_size: Optional[str] = None  # ex: "8.0B", "70B"
+    quantization: Optional[str] = None    # ex: "Q4_K_M", "Q5_K_S", "FP16"
+    size_bytes: Optional[int] = None
+    size_gb: Optional[float] = None
+    family: Optional[str] = None
+    max_context: int = 8192  # Estimated
+    # Computed attributes
+    speed_tier: str = "fast"  # very_fast, fast, medium, slow
+    is_coder: bool = False
+    is_reasoning: bool = False
+    is_vision: bool = False
+    strengths: List[TaskType] = field(default_factory=list)
+    # Legacy fields
     size: Optional[str] = None
     modified_at: Optional[str] = None
 
@@ -83,10 +115,112 @@ class ModelDiscovery:
         if not self._endpoints:
             self._load_endpoints()
         return self._endpoints
-        self._cache_time: Optional[float] = None
+    
+    # ==================== Model Enrichment Methods ====================
+    
+    def _estimate_max_context(self, param_size: str, family: str) -> int:
+        """Estimate realistic context window based on parameter size and family"""
+        size_str = (param_size or "").lower()
+        family_str = (family or "").lower()
+        
+        if "70b" in size_str or "72b" in size_str:
+            return 32768
+        elif "32b" in size_str:
+            return 16384 if "gemma" not in family_str else 8192
+        elif any(x in size_str for x in ["13b", "14b", "8b"]):
+            return 8192
+        elif any(x in size_str for x in ["3b", "4b", "2b", "1b", "0.8b"]):
+            return 4096
+        return 8192
+    
+    def _estimate_speed(self, quantization: str, param_size: str) -> str:
+        """Determine speed tier based on quantization and parameter size"""
+        quant = (quantization or "").upper()
+        size = (param_size or "").lower()
+        
+        if any(x in quant for x in ["Q2", "Q3", "IQ3"]) or "1b" in size or "0.8b" in size:
+            return "very_fast"
+        elif "Q4" in quant or "7b" in size or "8b" in size:
+            return "fast"
+        elif "Q5" in quant or "Q6" in quant:
+            return "medium"
+        else:
+            return "slow"
+    
+    def _infer_strengths(self, name: str, param_size: str, family: str) -> List[TaskType]:
+        """Infer model strengths from name and metadata"""
+        name_lower = name.lower()
+        strengths = [TaskType.FAST]
+        
+        # Code detection
+        if "coder" in name_lower or "code" in name_lower:
+            strengths.append(TaskType.CODE)
+        elif "qwen" in name_lower and "2.5" in name_lower:
+            strengths.append(TaskType.CODE)
+        
+        # Reasoning detection
+        if "deepseek" in name_lower or "llama" in name_lower or "mistral" in name_lower:
+            strengths.append(TaskType.REASONING)
+        elif "qwen" in name_lower and "opus" in name_lower:
+            strengths.append(TaskType.REASONING)
+        
+        # Vision detection
+        if any(x in name_lower for x in ["vision", "llava", "moondream", "vision"]):
+            strengths.append(TaskType.VISION)
+            strengths.append(TaskType.ANALYSIS)
+        
+        # Creative (Gemma)
+        if "gemma" in name_lower:
+            strengths.append(TaskType.CREATIVE)
+        
+        # Remove duplicates while preserving order
+        return list(dict.fromkeys(strengths))
+    
+    def _enrich_model(self, model_data: Dict, backend: str) -> DiscoveredModel:
+        """Enrich model data with computed attributes"""
+        name = model_data.get("name", "")
+        details = model_data.get("details", {})
+        
+        # Extract metadata
+        param_size = details.get("parameter_size")
+        quant = details.get("quantization_level")
+        family = details.get("family")
+        size_bytes = model_data.get("size", 0)
+        
+        # Compute derived attributes
+        size_gb = round(size_bytes / (1024**3), 2) if size_bytes else None
+        max_context = self._estimate_max_context(param_size or "", family or "")
+        speed_tier = self._estimate_speed(quant or "", param_size or "")
+        strengths = self._infer_strengths(name, param_size or "", family or "")
+        
+        # Detect specific capabilities
+        name_lower = name.lower()
+        is_coder = "coder" in name_lower or ("qwen" in name_lower and "2.5" in name_lower)
+        is_reasoning = "deepseek" in name_lower or "llama" in name_lower or "mistral" in name_lower
+        is_vision = any(x in name_lower for x in ["vision", "llava", "moondream"])
+        
+        return DiscoveredModel(
+            name=name,
+            backend=backend,
+            parameter_size=param_size,
+            quantization=quant,
+            size_bytes=size_bytes,
+            size_gb=size_gb,
+            family=family,
+            max_context=max_context,
+            speed_tier=speed_tier,
+            is_coder=is_coder,
+            is_reasoning=is_reasoning,
+            is_vision=is_vision,
+            strengths=strengths,
+            size=str(size_bytes) if size_bytes else None,
+            modified_at=model_data.get("modified_at"),
+        )
+    
+    # ==================== Discovery Methods ====================
     
     def _discover_ollama(self) -> List[DiscoveredModel]:
-        """Discover models from Ollama"""
+        """Discover models from Ollama with rich metadata"""
         models = []
         try:
             response = requests.get(
@@ -97,12 +231,8 @@ class ModelDiscovery:
             data = response.json()
             
             for model in data.get("models", []):
-                models.append(DiscoveredModel(
-                    name=model.get("name", ""),
-                    backend="ollama",
-                    size=model.get("size"),
-                    modified_at=model.get("modified_at"),
-                ))
+                enriched = self._enrich_model(model, "ollama")
+                models.append(enriched)
             logger.info(f"[ModelDiscovery] Ollama: found {len(models)} models")
         except requests.RequestException as e:
             logger.debug(f"[ModelDiscovery] Ollama unavailable: {e}")
@@ -121,12 +251,8 @@ class ModelDiscovery:
             
             # llama.cpp returns same format as Ollama
             for model in data.get("models", []):
-                models.append(DiscoveredModel(
-                    name=model.get("name", ""),
-                    backend="ollama",  # Treat as Ollama - same API
-                    size=model.get("size"),
-                    modified_at=model.get("modified_at"),
-                ))
+                enriched = self._enrich_model(model, "ollama")  # Treat as Ollama
+                models.append(enriched)
             logger.info(f"[ModelDiscovery] llama.cpp: found {len(models)} models")
         except requests.RequestException as e:
             logger.debug(f"[ModelDiscovery] llama.cpp unavailable: {e}")
@@ -218,6 +344,26 @@ class ModelDiscovery:
         """Get models from a specific backend"""
         models = self.discover_all()
         return [m for m in models if m.backend == backend]
+    
+    def get_models_summary(self) -> List[Dict]:
+        """Get summary of all discovered models (useful for UI/debug)"""
+        models = self.discover_all()
+        return [
+            {
+                "name": m.name,
+                "backend": m.backend,
+                "size_gb": m.size_gb,
+                "parameter_size": m.parameter_size,
+                "quantization": m.quantization,
+                "speed_tier": m.speed_tier,
+                "max_context": m.max_context,
+                "is_coder": m.is_coder,
+                "is_reasoning": m.is_reasoning,
+                "is_vision": m.is_vision,
+                "strengths": [s.value for s in m.strengths],
+            }
+            for m in models
+        ]
     
     def is_model_available(self, model_name: str) -> bool:
         """Check if a model is available on any backend"""
