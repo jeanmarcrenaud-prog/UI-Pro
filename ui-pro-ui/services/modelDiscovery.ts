@@ -270,7 +270,7 @@ class ModelDiscoveryService {
           isVision: this.isVision(m.display_name || m.key),
           capabilities: this.inferCapabilities(m.display_name || m.key, paramSize, m.architecture || ''),
         }
-      }
+      })
     } catch (e) {
       console.debug('[ModelDiscovery] LM Studio fetch failed:', e)
       return []
