@@ -241,12 +241,36 @@ class ModelDiscoveryService {
       if (!response.ok) return []
       
       const data = await response.json()
-      // LM Studio returns { models: [...] }
-      return (data.models || []).map((m: { key: string; display_name?: string }) => ({
-        id: m.key,
-        name: m.display_name || m.key,
-        provider: 'lmstudio' as const,
-      }))
+      // LM Studio returns { models: [...] } with rich metadata
+      return (data.models || []).map((m: { 
+        key: string
+        display_name?: string
+        architecture?: string
+        quantization?: { name?: string; bits_per_weight?: number }
+        size_bytes?: number
+        params_string?: string
+        max_context_length?: number
+      }) => {
+        const quant = m.quantization?.name
+        const paramSize = m.params_string || ''
+        const sizeBytes = m.size_bytes || 0
+        
+        return {
+          id: m.key,
+          name: m.display_name || m.key,
+          provider: 'lmstudio' as const,
+          parameterSize: paramSize || undefined,
+          quantization: quant,
+          sizeGb: sizeBytes > 0 ? Math.round(sizeBytes / 1024 / 1024 / 1024 * 100) / 100 : undefined,
+          family: m.architecture,
+          maxContext: m.max_context_length,
+          speedTier: this.estimateSpeed(quant || '', paramSize),
+          isCoder: this.isCoder(m.display_name || m.key),
+          isReasoning: this.isReasoning(m.display_name || m.key),
+          isVision: this.isVision(m.display_name || m.key),
+          capabilities: this.inferCapabilities(m.display_name || m.key, paramSize, m.architecture || ''),
+        }
+      }
     } catch (e) {
       console.debug('[ModelDiscovery] LM Studio fetch failed:', e)
       return []
@@ -271,11 +295,29 @@ class ModelDiscoveryService {
       
       const data = await response.json()
       // llama.cpp returns same format as Ollama - treat as "ollama"
-      return (data.models || []).map((m: { name: string }) => ({
-        id: m.name,
-        name: m.name,
-        provider: 'ollama' as const,  // Treat llama.cpp as Ollama
-      }))
+      return (data.models || []).map((m: { name: string; size?: number; details?: Record<string, unknown> }) => {
+        const details = m.details || {}
+        const paramSize = details.parameter_size as string | undefined
+        const quant = details.quantization_level as string | undefined
+        const family = details.family as string | undefined
+        const sizeBytes = m.size || 0
+        
+        return {
+          id: m.name,
+          name: m.name,
+          provider: 'ollama' as const,
+          parameterSize: paramSize,
+          quantization: quant,
+          sizeGb: sizeBytes > 0 ? Math.round(sizeBytes / 1024 / 1024 / 1024 * 100) / 100 : undefined,
+          family: family,
+          maxContext: this.estimateMaxContext(paramSize || '', family || ''),
+          speedTier: this.estimateSpeed(quant || '', paramSize || ''),
+          isCoder: this.isCoder(m.name),
+          isReasoning: this.isReasoning(m.name),
+          isVision: this.isVision(m.name),
+          capabilities: this.inferCapabilities(m.name, paramSize || '', family || ''),
+        }
+      })
     } catch {
       return []
     } finally {
@@ -298,11 +340,35 @@ class ModelDiscoveryService {
       }
       
       const data = await response.json()
-      return (data.data || []).map((m: { id: string; labels?: string[] }) => ({
-        id: m.id,
-        name: m.id,
-        provider: 'lemonade' as const,
-      }))
+      // Lemonade returns { data: [...] } - extract what we can
+      return (data.data || []).map((m: { 
+        id: string
+        labels?: string[]
+        size?: number
+      }) => {
+        const name = m.id
+        const nameLower = name.toLowerCase()
+        
+        // Try to extract parameter size from name or labels
+        let paramSize = ''
+        if (m.labels) {
+          const sizeLabel = m.labels.find(l => l.match(/\d+b/i))
+          if (sizeLabel) paramSize = sizeLabel
+        }
+        
+        return {
+          id: m.id,
+          name: m.id,
+          provider: 'lemonade' as const,
+          parameterSize: paramSize || undefined,
+          sizeGb: m.size ? Math.round(m.size / 1024 / 1024 / 1024 * 100) / 100 : undefined,
+          speedTier: this.estimateSpeed('', paramSize),
+          isCoder: this.isCoder(name),
+          isReasoning: this.isReasoning(name),
+          isVision: this.isVision(name),
+          capabilities: this.inferCapabilities(name, paramSize, ''),
+        }
+      })
     } finally {
       clearTimeout(timeout)
     }
