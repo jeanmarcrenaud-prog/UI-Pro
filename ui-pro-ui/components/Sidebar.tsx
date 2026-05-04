@@ -138,14 +138,22 @@ function ModelSelectDropdown({
                 t.sidebar.noModelsFound
               </option>
             ) : (
-              availableModels.map((model) => (
-                <option
-                  key={`${model.provider}-${model.name}`}
-                  value={model.name}
-                >
-                  {model.name} [{model.provider}]
-                </option>
-              ))
+              availableModels.map((model) => {
+                // Build display string with metadata
+                const parts = [model.name]
+                if (model.sizeGb) parts.push(`${model.sizeGb}GB`)
+                if (model.speedTier && model.speedTier !== 'fast') parts.push(model.speedTier)
+                parts.push(model.provider)
+                
+                return (
+                  <option
+                    key={`${model.provider}-${model.name}`}
+                    value={model.name}
+                  >
+                    {parts.join(' • ')}
+                  </option>
+                )
+              })
             )}
           </select>
         )}
@@ -246,12 +254,20 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
     const initModels = async () => {
       try {
         const models = await modelDiscovery.discover()
-        // Update store with discovered models including provider info
+        // Update store with discovered models including rich metadata
         if (isMounted && models.length > 0) {
-          // Map provider to match ModelInfo type
           const mappedModels: ModelInfo[] = models.map(m => ({
             name: m.name,
-            provider: (m.provider === 'llama.cpp' ? 'llamacpp' : m.provider) as ModelInfo['provider']
+            provider: m.provider,
+            parameterSize: m.parameterSize,
+            quantization: m.quantization,
+            sizeGb: m.sizeGb,
+            maxContext: m.maxContext,
+            speedTier: m.speedTier,
+            isCoder: m.isCoder,
+            isReasoning: m.isReasoning,
+            isVision: m.isVision,
+            capabilities: m.capabilities,
           }))
           setAvailableModels(mappedModels)
         }
@@ -275,11 +291,20 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
     initModels()
 
     // Listen for model discovery events to update store
-    const handleModelsDiscovered = (data: { models: Array<{ name: string; provider: string }> }) => {
+    const handleModelsDiscovered = (data: { models: Array<Record<string, unknown>> }) => {
       if (data.models && data.models.length > 0) {
         setAvailableModels(data.models.map(m => ({ 
-          name: m.name, 
-          provider: m.provider as 'ollama' | 'lmstudio' | 'lemonade' | 'llamacpp'
+          name: m.name as string, 
+          provider: m.provider as 'ollama' | 'lmstudio' | 'lemonade',
+          parameterSize: m.parameterSize as string | undefined,
+          quantization: m.quantization as string | undefined,
+          sizeGb: m.sizeGb as number | undefined,
+          maxContext: m.maxContext as number | undefined,
+          speedTier: m.speedTier as 'very_fast' | 'fast' | 'medium' | 'slow' | undefined,
+          isCoder: m.isCoder as boolean | undefined,
+          isReasoning: m.isReasoning as boolean | undefined,
+          isVision: m.isVision as boolean | undefined,
+          capabilities: m.capabilities as string[] | undefined,
         })))
       }
     }

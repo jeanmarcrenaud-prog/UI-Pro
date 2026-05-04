@@ -194,11 +194,19 @@ export function SettingsView() {
               {modelCount === 0 ? (
                 <option value="">Aucun modèle disponible</option>
               ) : (
-                availableModels.map((model) => (
-                  <option key={`${model.provider}-${model.name}`} value={model.name}>
-                    {model.name} [{model.provider}]
-                  </option>
-                ))
+                availableModels.map((model) => {
+                  // Build display string with metadata
+                  const parts = [model.name]
+                  if (model.sizeGb) parts.push(`${model.sizeGb}GB`)
+                  if (model.speedTier && model.speedTier !== 'fast') parts.push(model.speedTier)
+                  parts.push(model.provider)
+                  
+                  return (
+                    <option key={`${model.provider}-${model.name}`} value={model.name}>
+                      {parts.join(' • ')}
+                    </option>
+                  )
+                })
               )}
             </select>
 
