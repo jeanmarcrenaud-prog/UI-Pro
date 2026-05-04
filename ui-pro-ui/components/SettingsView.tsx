@@ -24,6 +24,9 @@ export function SettingsView() {
   const [modelDescription, setModelDescription] = useState<string | null>(null)
   const [isLoadingDescription, setIsLoadingDescription] = useState(false)
 
+  // Get selected model's metadata
+  const selectedModelInfo = availableModels.find(m => m.name === selectedModel)
+
   const [backendInfo, setBackendInfo] = useState<BackendInfo[]>([
     { name: 'Ollama', url: LLM_CONFIG.ollamaUrl, status: 'inactive' },
     { name: 'LM Studio', url: LLM_CONFIG.lmstudioUrl, status: 'inactive' },
@@ -226,12 +229,60 @@ export function SettingsView() {
           {/* Model Description */}
           {selectedModel && selectedModel !== 'default' && (
             <div className="mt-4 p-4 bg-slate-900/50 rounded-xl border border-slate-700/50">
-              {isLoadingDescription ? (
-                <div className="flex items-center gap-2 text-slate-500 text-sm">
-                  <span className="animate-pulse">Loading description...</span>
+              {selectedModelInfo ? (
+                <div className="space-y-2">
+                  {/* Main info */}
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {selectedModelInfo.parameterSize && (
+                      <span className="px-2 py-1 bg-violet-600/20 text-violet-300 text-xs rounded">
+                        {selectedModelInfo.parameterSize}
+                      </span>
+                    )}
+                    {selectedModelInfo.quantization && (
+                      <span className="px-2 py-1 bg-blue-600/20 text-blue-300 text-xs rounded">
+                        {selectedModelInfo.quantization}
+                      </span>
+                    )}
+                    {selectedModelInfo.sizeGb && (
+                      <span className="px-2 py-1 bg-emerald-600/20 text-emerald-300 text-xs rounded">
+                        {selectedModelInfo.sizeGb} GB
+                      </span>
+                    )}
+                    {selectedModelInfo.maxContext && (
+                      <span className="px-2 py-1 bg-amber-600/20 text-amber-300 text-xs rounded">
+                        {selectedModelInfo.maxContext.toLocaleString()} ctx
+                      </span>
+                    )}
+                    {selectedModelInfo.speedTier && (
+                      <span className={`px-2 py-1 text-xs rounded ${
+                        selectedModelInfo.speedTier === 'very_fast' ? 'bg-green-600/20 text-green-300' :
+                        selectedModelInfo.speedTier === 'fast' ? 'bg-lime-600/20 text-lime-300' :
+                        selectedModelInfo.speedTier === 'medium' ? 'bg-yellow-600/20 text-yellow-300' :
+                        'bg-orange-600/20 text-orange-300'
+                      }`}>
+                        {selectedModelInfo.speedTier}
+                      </span>
+                    )}
+                  </div>
+                  
+                  {/* Capabilities */}
+                  {selectedModelInfo.capabilities && selectedModelInfo.capabilities.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {selectedModelInfo.capabilities.map(cap => (
+                        <span key={cap} className="px-2 py-0.5 bg-slate-700 text-slate-400 text-xs rounded capitalize">
+                          {cap}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  
+                  {/* Backend */}
+                  <div className="pt-2 border-t border-slate-700/50">
+                    <span className="text-xs text-slate-500">
+                      Backend: <span className="text-slate-400">{selectedModelInfo.provider}</span>
+                    </span>
+                  </div>
                 </div>
-              ) : modelDescription ? (
-                <p className="text-sm text-slate-300 leading-relaxed">{modelDescription}</p>
               ) : (
                 <p className="text-sm text-slate-500">Large language model</p>
               )}
