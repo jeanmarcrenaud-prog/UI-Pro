@@ -1,9 +1,9 @@
 # services/model_discovery.py - Dynamic Model Discovery
 #
 # Discovers available models from multiple backends:
-# - Ollama (localhost:11434)
-# - LM Studio (localhost:1234)
-# - Lemonade (localhost:13305)
+# - Ollama / llama.cpp (uses same API)
+# - LM Studio
+# - Lemonade
 
 import logging
 import requests
@@ -33,31 +33,56 @@ class ModelDiscovery:
         models = discovery.discover_all()  # Returns list of DiscoveredModel
     """
     
-    # Backend endpoints for model listing
+    # Backend endpoints - loaded from settings at runtime
     # Note: llama.cpp uses the same API as Ollama (/api/tags), so we detect it as "ollama"
-    ENDPOINTS = {
-        "ollama": {
-            "url": "http://localhost:11434/api/tags",
-            "model_path": "models",
-        },
-        "llamacpp": {
-            "url": "http://localhost:8080/api/tags",  # llama.cpp uses Ollama-compatible API
-            "model_path": "models",
-        },
-        "lmstudio": {
-            "url": "http://localhost:1234/api/v1/models",
-            "model_path": "data",
-        },
-        "lemonade": {
-            "url": "http://localhost:13305/api/v1/models",
-            "model_path": "models",
-        },
-    }
     
     def __init__(self, timeout: float = 5.0):
         self.timeout = timeout
         self._cache: List[DiscoveredModel] = []
         self._cache_lock = Lock()
+        
+        # Load URLs from settings (lazy import to avoid circular imports)
+        self._endpoints: Dict[str, Dict] = {}
+        self._load_endpoints()
+    
+    def _load_endpoints(self):
+        """Load backend URLs from settings"""
+        try:
+            from models.settings import settings
+            self._endpoints = {
+                "ollama": {
+                    "url": f"{settings.ollama_url}/api/tags",
+                    "model_path": "models",
+                },
+                "llamacpp": {
+                    "url": f"{settings.llamacpp_url}/api/tags",  # llama.cpp uses Ollama-compatible API
+                    "model_path": "models",
+                },
+                "lmstudio": {
+                    "url": f"{settings.lmstudio_url}/api/v1/models",
+                    "model_path": "data",
+                },
+                "lemonade": {
+                    "url": f"{settings.lemonade_url}/api/v1/models",
+                    "model_path": "models",
+                },
+            }
+        except ImportError as e:
+            logger.warning(f"Could not load settings, using defaults: {e}")
+            # Fallback to defaults
+            self._endpoints = {
+                "ollama": {"url": "http://localhost:11434/api/tags", "model_path": "models"},
+                "llamacpp": {"url": "http://localhost:8080/api/tags", "model_path": "models"},
+                "lmstudio": {"url": "http://localhost:1234/api/v1/models", "model_path": "data"},
+                "lemonade": {"url": "http://localhost:13305/api/v1/models", "model_path": "models"},
+            }
+    
+    @property
+    def ENDPOINTS(self) -> Dict[str, Dict]:
+        """Get endpoints (lazy loaded from settings)"""
+        if not self._endpoints:
+            self._load_endpoints()
+        return self._endpoints
         self._cache_time: Optional[float] = None
     
     def _discover_ollama(self) -> List[DiscoveredModel]:
