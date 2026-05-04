@@ -168,24 +168,28 @@ class ModelDiscoveryService {
   }
 
   private async fetchLlamaCpp(url: string): Promise<Model[]> {
+    // llama.cpp uses Ollama-compatible API (/api/tags)
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 5000)
     
     try {
-      const response = await fetch(`${url}/v1/models`, {
+      // Try Ollama-compatible endpoint first
+      const response = await fetch(`${url}/api/tags`, {
         method: 'GET',
-        headers: { 'Authorization': 'Bearer empty' },
         signal: controller.signal,
       })
       
       if (!response.ok) return []
       
       const data = await response.json()
-      return (data.data || []).map((m: { id: string }) => ({
-        id: m.id,
-        name: m.id,
-        provider: 'llama.cpp' as const,
+      // llama.cpp returns same format as Ollama - treat as "ollama"
+      return (data.models || []).map((m: { name: string }) => ({
+        id: m.name,
+        name: m.name,
+        provider: 'ollama' as const,  // Treat llama.cpp as Ollama
       }))
+    } catch {
+      return []
     } finally {
       clearTimeout(timeout)
     }
