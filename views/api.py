@@ -180,6 +180,32 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+# ==================== RATE LIMITING ====================
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+# Create limiter using client IP as key
+limiter = Limiter(key_func=get_remote_address)
+
+# Add rate limiter to app
+app.state.limiter = limiter
+
+# Custom rate limit handler
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={
+            "error": "Rate limit exceeded",
+            "detail": str(exc.detail),
+            "retry_after": exc.headers.get("Retry-After", "60")
+        }
+    )
+
+
 # API Key authentication
 API_KEY_HEADER = "x-api-key"
 
@@ -751,14 +777,19 @@ async def execute_endpoint(request: ExecuteRequest):
 
 
 @app.post("/api/chat", response_model=ChatResponse)
-async def chat_endpoint(request: ChatRequest):
+@limiter.limit("10/minute")  # 10 requests per minute
+async def chat_endpoint(request: Request, chat_request: ChatRequest):
     """Chat endpoint for REST API (fallback when WebSocket fails)"""
     try:
         stream_service = get_streaming_service()
         
         # Collect full response from streaming
         chunks = []
-        async for chunk in stream_service.stream_generate(request.message, model=request.model or "qwen3.5:9b", provider=request.provider):
+        async for chunk in stream_service.stream_generate(
+            chat_request.message, 
+            model=chat_request.model or "qwen3.5:9b", 
+            provider=chat_request.provider
+        ):
             if chunk.text:
                 chunks.append(chunk.text)
         
