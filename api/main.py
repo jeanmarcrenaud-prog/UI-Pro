@@ -579,39 +579,51 @@ async def ws_endpoint(websocket: WebSocket):
 
             # === Token Streaming with Resume Support ===
             chunk_index = start_chunk
+            print(f"[WS-API] Starting stream_generate: model={model}, provider={provider}", flush=True)
 
-            async for chunk in stream_service.stream_generate(task, model=model, provider=provider):
-                chunk_text = getattr(chunk, 'text', str(chunk))
+            try:
+                stream_gen = stream_service.stream_generate(task, model=model, provider=provider)
+                async for chunk in stream_gen:
+                    chunk_text = getattr(chunk, 'text', str(chunk))
 
-                if chunk_index < last_chunk_index:
+                    if chunk_index < last_chunk_index:
+                        chunk_index += 1
+                        continue
+
                     chunk_index += 1
-                    continue
+                    request_state["chunk_index"] = chunk_index
+                    
+                    # Track token count (approximate by counting chunks)
+                    token_count = chunk_index
 
-                chunk_index += 1
-                request_state["chunk_index"] = chunk_index
-                
-                # Track token count (approximate by counting chunks)
-                token_count = chunk_index
+                    await websocket.send_text(json.dumps({
+                        "type": "token",
+                        "content": chunk_text,
+                        "response": chunk_text,
+                        "done": False,
+                        "message_id": message_id,
+                        "chunk_index": chunk_index,
+                        "tokens": token_count
+                    }))
 
+                    # Also emit to log subscribers
+                    for log_ws in list(_log_subscriptions):
+                        try:
+                            await log_ws.send_text(json.dumps({
+                                "type": "log",
+                                "message": chunk_text[:100] if chunk_text else "",
+                            }))
+                        except Exception as e:
+                            logger.warning(f"Log subscription error: {e}")
+            except Exception as stream_err:
+                print(f"[WS-API] Stream error: {stream_err}", flush=True)
+                logger.error(f"Stream error: {stream_err}", exc_info=True)
                 await websocket.send_text(json.dumps({
-                    "type": "token",
-                    "content": chunk_text,
-                    "response": chunk_text,
-                    "done": False,
-                    "message_id": message_id,
-                    "chunk_index": chunk_index,
-                    "tokens": token_count
+                    "type": "error",
+                    "message": f"Stream error: {stream_err}",
+                    "message_id": message_id
                 }))
-
-                # Also emit to log subscribers
-                for log_ws in list(_log_subscriptions):
-                    try:
-                        await log_ws.send_text(json.dumps({
-                            "type": "log",
-                            "message": chunk_text[:100] if chunk_text else "",
-                        }))
-                    except Exception as e:
-                        logger.warning(f"Log subscription error: {e}")
+                break
 
             # === Complete remaining steps ===
             for step_id, title in [
