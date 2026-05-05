@@ -176,24 +176,36 @@ async def lifespan(app: FastAPI):
     # Attach store to app.state for dependency injection
     app.state.store = store
     
-    # Pre-warm connections
-    try:
-        get_streaming_service()
-        logger.info("Streaming service initialized")
-    except Exception as e:
-        logger.warning(f"Streaming service not available: {e}")
+    # Pre-warm connections and verify imports
+    if get_streaming_service is None:
+        logger.error("Streaming service failed to import!")
+    else:
+        try:
+            get_streaming_service()
+            logger.info("Streaming service initialized")
+        except Exception as e:
+            logger.warning(f"Streaming service not available: {e}")
     
-    # Start global background cleanup task
-    cleanup_task = asyncio.create_task(_global_session_cleanup())
+    if get_websocket_controller is None:
+        logger.error("WebSocket controller failed to import!")
+    
+    if settings is None:
+        logger.error("Settings failed to import!")
+    
+    # Start global background cleanup task only if controllers available
+    cleanup_task = None
+    if get_websocket_controller:
+        cleanup_task = asyncio.create_task(_global_session_cleanup())
     
     yield
     
-    # Cancel background task
-    cleanup_task.cancel()
-    try:
-        await cleanup_task
-    except asyncio.CancelledError:
-        pass
+    # Cancel background task if it was started
+    if cleanup_task:
+        cleanup_task.cancel()
+        try:
+            await cleanup_task
+        except asyncio.CancelledError:
+            pass
     
     # Shutdown
     logger.info("Shutting down UI-Pro API...")
@@ -390,6 +402,8 @@ def _check_ollama() -> str:
     """Check if Ollama is reachable"""
     import requests
     try:
+        if settings is None:
+            return "unreachable"
         resp = requests.get(
             settings.ollama_url.replace("/api/generate", "/api/tags"),
             timeout=2
@@ -555,7 +569,7 @@ async def ws_endpoint(ws: WebSocket):
     logger.info(f"[WS-VIEWS] Client: {client_info}")
 
     # Optional API key check
-    api_key = getattr(settings, 'api_key', None)
+    api_key = getattr(settings, 'api_key', None) if settings else None
     if api_key:
         if ws.headers.get("x-api-key") != api_key:
             await ws.close(code=1008, reason="Invalid API key")
@@ -564,6 +578,12 @@ async def ws_endpoint(ws: WebSocket):
     # Use WebSocketController for state management
     ws_controller = get_websocket_controller()
     stream_service = get_streaming_service()
+    
+    # Verify services are available
+    if not ws_controller or not stream_service:
+        await ws.close(code=1011, reason="Internal services unavailable")
+        return
+    
     current_message_id: str | None = None
     session_id: str = "unknown"
 
@@ -576,15 +596,22 @@ async def ws_endpoint(ws: WebSocket):
         last_ping = time.time()
 
         while True:
-            current_time = time.time()
-            
-            # Send ping every 30s for keepalive
-            if current_time - last_ping > 30:
-                await ws.send_text(json.dumps({"type": "ping"}))
-                last_ping = current_time
+            try:
+                # Wait with timeout to allow periodic pings
+                data = await asyncio.wait_for(ws.receive_text(), timeout=25.0)
+            except asyncio.TimeoutError:
+                # Send ping when idle
+                if time.time() - last_ping > 30:
+                    try:
+                        await ws.send_text(json.dumps({"type": "ping"}))
+                        last_ping = time.time()
+                    except Exception:
+                        break
+                continue
 
-            data = await ws.receive_text()
+            # Process received data
             logger.info(f"[WS] Received: {data[:100]}...")
+            current_time = time.time()
 
             # Parse message using controller
             msg = await ws_controller.parse_message(data)
@@ -838,6 +865,14 @@ async def chat_endpoint(request: Request, chat_request: ChatRequest):
     """Chat endpoint for REST API (fallback when WebSocket fails)"""
     try:
         stream_service = get_streaming_service()
+        
+        # Verify service is available
+        if stream_service is None:
+            return ChatResponse(
+                result="Error: Streaming service not available",
+                status="error",
+                error="Service unavailable"
+            )
         
         # Collect full response from streaming
         chunks = []
