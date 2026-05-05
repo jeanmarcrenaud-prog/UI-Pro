@@ -140,12 +140,21 @@ class StreamingService:
         prompt: str,
         model: str,
         provider: str | None = None,
+        start_chunk: int = 0,
         temperature: float = 0.7,
         on_chunk: Optional[Callable[[StreamChunk], None]] = None,
     ) -> AsyncIterator[StreamChunk]:
         """
         Main streaming generator.
         Always yields exactly one final event: COMPLETED, ERROR, or CANCELLED.
+        
+        Args:
+            prompt: The prompt to send to the model
+            model: Model name
+            provider: Backend provider (ollama, lmstudio, lemonade, etc.)
+            start_chunk: Chunk index to start from (for resume) - skips step events if > 0
+            temperature: Model temperature
+            on_chunk: Optional callback for each chunk
         """
         if not model:
             raise ValueError("Model name is required")
@@ -153,31 +162,35 @@ class StreamingService:
         self._stream_counter += 1
         stream_id = f"stream-{self._stream_counter}-{uuid.uuid4().hex[:8]}"
         start_time = time.time()
-        chunk_index = 0
+        chunk_index = start_chunk  # Start from resume position
 
         self._active_streams[stream_id] = asyncio.current_task()
+        
+        # For resume, skip step events and start directly from token streaming
+        is_resume = start_chunk > 0
 
         try:
             client = self._get_client(model, provider)
 
-            # === Step Events ===
-            yield StreamChunk(
-                text="", status=StreamStatus.STARTING, stream_id=stream_id,
-                chunk_index=chunk_index, step_id="step-analyzing", step_status="active"
-            )
-            chunk_index += 1
+            # === Step Events (skip on resume) ===
+            if not is_resume:
+                yield StreamChunk(
+                    text="", status=StreamStatus.STARTING, stream_id=stream_id,
+                    chunk_index=chunk_index, step_id="step-analyzing", step_status="active"
+                )
+                chunk_index += 1
 
-            yield StreamChunk(
-                text="", status=StreamStatus.GENERATING, stream_id=stream_id,
-                chunk_index=chunk_index, step_id="step-analyzing", step_status="done"
-            )
-            chunk_index += 1
+                yield StreamChunk(
+                    text="", status=StreamStatus.GENERATING, stream_id=stream_id,
+                    chunk_index=chunk_index, step_id="step-analyzing", step_status="done"
+                )
+                chunk_index += 1
 
-            yield StreamChunk(
-                text="", status=StreamStatus.GENERATING, stream_id=stream_id,
-                chunk_index=chunk_index, step_id="step-planning", step_status="active"
-            )
-            chunk_index += 1
+                yield StreamChunk(
+                    text="", status=StreamStatus.GENERATING, stream_id=stream_id,
+                    chunk_index=chunk_index, step_id="step-planning", step_status="active"
+                )
+                chunk_index += 1
 
             # === Token Streaming ===
             buffer: list[str] = []
