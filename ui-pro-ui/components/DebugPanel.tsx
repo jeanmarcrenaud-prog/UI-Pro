@@ -42,7 +42,7 @@ export function DebugPanel({
   modelName = 'gemma4:latest',
   backend = 'ollama',
   elapsedSeconds = 0,
-  tokenCount: propTokenCount = 0,
+  tokenCount = 0,
   lastErrorMsg,
   currentStep = 0,
   logs = [],
