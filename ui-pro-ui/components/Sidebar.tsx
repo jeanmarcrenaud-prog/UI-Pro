@@ -257,6 +257,7 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
         // Update store with discovered models including rich metadata
         if (isMounted && models.length > 0) {
           const mappedModels: ModelInfo[] = models.map(m => ({
+            id: m.id,
             name: m.name,
             provider: m.provider,
             parameterSize: m.parameterSize,

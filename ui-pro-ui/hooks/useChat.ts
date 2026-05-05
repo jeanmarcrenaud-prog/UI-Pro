@@ -45,7 +45,7 @@ export const useChat = () => {
   const getCurrentModelInfo = useCallback(() => {
     const modelInfo = availableModels.find(m => m.name === selectedModel)
     const provider = modelInfo?.provider || 'lmstudio'
-    const model = modelInfo?.name || selectedModel || 'qwen/qwen3.5-9b'
+    const model = modelInfo?.id || selectedModel || 'qwen/qwen3.5-9b'
     console.log('[getCurrentModelInfo] selectedModel:', selectedModel, 'modelInfo:', modelInfo, '-> provider:', provider, 'model:', model)
     return {
       model,
