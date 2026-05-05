@@ -629,7 +629,7 @@ async def ws_endpoint(ws: WebSocket):
     - Request state tracking via WebSocketController
     - resume_ack confirmation
     """
-    logger.info("[WS-VIEWS] WebSocket endpoint CALLED!")
+    print(f"[WS-VIEWS] WebSocket endpoint CALLED! Headers: {dict(ws.headers)}")
     logger.info(f"[WS-VIEWS] Headers: {dict(ws.headers)}")
     client_info = str(ws.client.host) if ws.client and ws.client.host else "unknown"
     logger.info(f"[WS-VIEWS] Client: {client_info}")
@@ -653,9 +653,12 @@ async def ws_endpoint(ws: WebSocket):
     current_message_id: str | None = None
     session_id: str = "unknown"
 
+    print("[WS-VIEWS] About to accept connection...")
     try:
         await ws.accept()
+        print("[WS-VIEWS] Connection accepted!")
         session_id = await ws_controller.handle_connection(ws, client_info)
+        print(f"[WS-VIEWS] handle_connection done, session_id={session_id}")
         logger.info(f"[WS-VIEWS] Connection accepted from {client_info}, session_id={session_id}")
 
         # Track timing for keepalive
