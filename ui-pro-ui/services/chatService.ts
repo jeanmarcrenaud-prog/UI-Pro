@@ -148,15 +148,15 @@ class ChatService {
   private sendOverWebSocket() {
     if (!this.ws || !this.activeRequest) return
 
-    this.ws.send(
-      JSON.stringify({
-        message_id: this.activeRequest.id,
-        message: this.activeRequest.prompt,
-        model: this.activeRequest.model,
-        provider: this.activeRequest.provider,
-        last_chunk_index: this.activeRequest.lastChunkIndex,
-      })
-    )
+    const payload = {
+      message_id: this.activeRequest.id,
+      message: this.activeRequest.prompt,
+      model: this.activeRequest.model,
+      provider: this.activeRequest.provider,
+      last_chunk_index: this.activeRequest.lastChunkIndex,
+    }
+    console.log('[chatService] Sending payload:', JSON.stringify(payload, null, 2))
+    this.ws.send(JSON.stringify(payload))
   }
 
   private handleMessage = (event: MessageEvent) => {
