@@ -21,6 +21,7 @@ sentence-transformers>=2.4.0
 ## Web
 jinja2>=3.1.0
 websockets>=11.0.0
+slowapi>=0.1.9
 
 ## UI
 gradio>=4.19.0
