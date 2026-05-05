@@ -17,6 +17,8 @@ import time
 import json
 import sys
 import uuid
+import os
+import asyncio
 from typing import Callable, Dict, Any, Optional
 import traceback
 from logging.handlers import RotatingFileHandler
@@ -48,8 +50,6 @@ class JSONFormatter(logging.Formatter):
 
 # Configure logging
 log_dir = "logs"
-import os
-
 os.makedirs(log_dir, exist_ok=True)
 file_handler = RotatingFileHandler(
     f"{log_dir}/app.log",
@@ -71,20 +71,27 @@ root_logger.addHandler(file_handler)
 root_logger.addHandler(console_handler)
 
 
+# ==================== INTERNAL IMPORTS ====================
+# Note: These are imported here to avoid circular imports
+# but could be moved to top if needed
+from models.settings import settings
+from services.streaming import get_streaming_service, StreamStatus
+from controllers.websocket import get_websocket_controller
+
+
 # ==================== THREAD-SAFE STATE MANAGEMENT ====================
 
 # Session cleanup function for WebSocket
 def _cleanup_sessions():
     """Remove expired sessions to prevent memory leaks"""
     now = time.time()
-    # Get references to update
-    global store
-    if hasattr(store, '_sessions'):
-        expired = [k for k, v in list(store._sessions.items()) if now - v.get("last_activity", 0) > 3600]
-        for k in expired:
-            store.remove_session(k)
-        if expired:
-            logger.info(f"[CLEANUP] Removed {len(expired)} expired sessions")
+    # Use public sessions property
+    sessions = store.sessions
+    expired = [k for k, v in sessions.items() if now - v.get("last_activity", 0) > 3600]
+    for k in expired:
+        store.remove_session(k)
+    if expired:
+        logger.info(f"[CLEANUP] Removed {len(expired)} expired sessions")
 
 
 class ThreadSafeStore:
@@ -124,15 +131,22 @@ class ThreadSafeStore:
     def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
         with self._lock:
             return self._sessions.get(session_id)
+    
+    def clear_sessions(self) -> None:
+        """Clear all sessions - called on shutdown"""
+        with self._lock:
+            self._sessions.clear()
+    
+    @property
+    def sessions(self) -> Dict[str, Dict[str, Any]]:
+        """Get a copy of sessions for inspection"""
+        with self._lock:
+            return dict(self._sessions)
 
 
 # Global thread-safe store
 store = ThreadSafeStore(max_size=100)
 
-
-# ==================== TOP-LEVEL IMPORTS ====================
-
-from models.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -158,7 +172,7 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down UI-Pro API...")
     
     # Cleanup sessions
-    store._sessions.clear()
+    store.clear_sessions()
     logger.info("Sessions cleared")
 
 
@@ -450,12 +464,11 @@ def get_default_model():
 
 # ==================== WEBSOCKET ====================
 
-from controllers.websocket import get_websocket_controller
-
-
 # =====================
 # WEBSOCKET RESUME STATE
 # =====================
+# Using asyncio.Lock for thread-safe access
+_active_requests_lock: asyncio.Lock = asyncio.Lock()
 active_requests: Dict[str, Dict[str, Any]] = {}  # message_id -> request state
 
 
@@ -468,7 +481,6 @@ async def ws_endpoint(ws: WebSocket):
     - active_requests tracking per message_id
     - resume_ack confirmation
     """
-    print("[WS-VIEWS] ==== WebSocket endpoint CALLED! ====", flush=True)
     logger.info("[WS-VIEWS] WebSocket endpoint CALLED!")
     logger.info(f"[WS-VIEWS] Headers: {dict(ws.headers)}")
     client_info = str(ws.client.host) if ws.client and ws.client.host else "unknown"
@@ -488,7 +500,7 @@ async def ws_endpoint(ws: WebSocket):
     try:
         await ws.accept()
         session_id = f"{client_info}-{uuid.uuid4().hex[:8]}"
-        print(f"[WS-VIEWS] Connection accepted from {client_info}, session_id={session_id}", flush=True)
+        logger.info(f"[WS-VIEWS] Connection accepted from {client_info}, session_id={session_id}")
 
         # Track cleanup timing
         last_cleanup = time.time()
@@ -523,7 +535,8 @@ async def ws_endpoint(ws: WebSocket):
             model = msg.get("model")
             provider = msg.get("provider")  # ollama, lmstudio, lemonade, llamacpp
             message_id = msg.get("message_id") or str(uuid.uuid4())
-            last_chunk_index = msg.get("last_chunk_index", 0)
+            # Ensure proper type conversion for resume
+            last_chunk_index = int(msg.get("last_chunk_index", 0) or 0)
 
             current_message_id = message_id
 
@@ -659,9 +672,6 @@ async def sse_stream(generator):
         yield f"data: {json.dumps(chunk.to_dict())}\n\n"
 
 
-from services.streaming import get_streaming_service, StreamStatus
-
-
 @app.get("/stream")
 async def stream_endpoint(prompt: str):
     """SSE streaming endpoint with error handling"""
@@ -698,8 +708,6 @@ async def stream_endpoint(prompt: str):
 
 
 # ==================== CHAT ENDPOINT (FALLBACK) ====================
-
-from services.streaming import get_streaming_service
 
 
 class ExecuteRequest(BaseModel):
