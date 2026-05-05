@@ -24,6 +24,28 @@ import traceback
 from logging.handlers import RotatingFileHandler
 import threading
 
+# ==================== EARLY IMPORTS ====================
+# Import with try/except to avoid circular import issues
+# These are needed early for type hints and configuration
+try:
+    from models.settings import settings
+except ImportError as e:
+    settings = None
+    logging.warning(f"Could not import settings: {e}")
+
+try:
+    from services.streaming import get_streaming_service, StreamStatus
+except ImportError as e:
+    get_streaming_service = None
+    StreamStatus = None
+    logging.warning(f"Could not import streaming service: {e}")
+
+try:
+    from controllers.websocket import get_websocket_controller
+except ImportError as e:
+    get_websocket_controller = None
+    logging.warning(f"Could not import websocket controller: {e}")
+
 # Suppress noise
 logging.getLogger("transformers").setLevel(logging.ERROR)
 logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
@@ -69,14 +91,6 @@ root_logger = logging.getLogger()
 root_logger.setLevel(logging.DEBUG)
 root_logger.addHandler(file_handler)
 root_logger.addHandler(console_handler)
-
-
-# ==================== INTERNAL IMPORTS ====================
-# Note: These are imported here to avoid circular imports
-# but could be moved to top if needed
-from models.settings import settings
-from services.streaming import get_streaming_service, StreamStatus
-from controllers.websocket import get_websocket_controller
 
 
 # ==================== THREAD-SAFE STATE MANAGEMENT ====================
@@ -169,7 +183,17 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Streaming service not available: {e}")
     
+    # Start global background cleanup task
+    cleanup_task = asyncio.create_task(_global_session_cleanup())
+    
     yield
+    
+    # Cancel background task
+    cleanup_task.cancel()
+    try:
+        await cleanup_task
+    except asyncio.CancelledError:
+        pass
     
     # Shutdown
     logger.info("Shutting down UI-Pro API...")
@@ -177,6 +201,23 @@ async def lifespan(app: FastAPI):
     # Cleanup sessions
     store.clear_sessions()
     logger.info("Sessions cleared")
+
+
+async def _global_session_cleanup():
+    """Global background task to cleanup expired sessions every 60s"""
+    while True:
+        try:
+            await asyncio.sleep(60)
+            _cleanup_sessions()
+            # Also cleanup completed requests in WebSocket controller
+            ws_ctrl = get_websocket_controller()
+            if ws_ctrl:
+                await ws_ctrl.cleanup_completed()
+            logger.debug("[GLOBAL_CLEANUP] Session cleanup completed")
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"[GLOBAL_CLEANUP] Error: {e}")
 
 
 # ==================== FASTAPI APP ====================
@@ -531,15 +572,16 @@ async def ws_endpoint(ws: WebSocket):
         session_id = await ws_controller.handle_connection(ws, client_info)
         logger.info(f"[WS-VIEWS] Connection accepted from {client_info}, session_id={session_id}")
 
-        # Track cleanup timing
-        last_cleanup = time.time()
+        # Track timing for keepalive
+        last_ping = time.time()
 
         while True:
-            # Periodic cleanup every 60s
-            if time.time() - last_cleanup > 60:
-                _cleanup_sessions()
-                await ws_controller.cleanup_completed()
-                last_cleanup = time.time()
+            current_time = time.time()
+            
+            # Send ping every 30s for keepalive
+            if current_time - last_ping > 30:
+                await ws.send_text(json.dumps({"type": "ping"}))
+                last_ping = current_time
 
             data = await ws.receive_text()
             logger.info(f"[WS] Received: {data[:100]}...")
@@ -550,6 +592,11 @@ async def ws_endpoint(ws: WebSocket):
             # Handle control messages
             if msg.get("type") == "ping":
                 await ws.send_text(json.dumps({"type": "pong", "message_id": current_message_id}))
+                continue
+            
+            if msg.get("type") == "pong":
+                # Client responded to our ping, reset timer
+                last_ping = current_time
                 continue
 
             if msg.get("type") == "cancel":
@@ -671,15 +718,21 @@ async def ws_endpoint(ws: WebSocket):
     except Exception as e:
         logger.error(f"WebSocket error: {e}", exc_info=True)
     finally:
+        # Always cleanup, but don't try to send if already disconnected
         await ws_controller.handle_disconnect(session_id)
-        try:
-            await ws.send_text(json.dumps({
-                "type": "error",
-                "message": "An internal error occurred",
-                "message_id": current_message_id
-            }))
-        except Exception:
-            pass
+        # Only try to send if WebSocket is still in a valid state
+        if ws.client and hasattr(ws.client, 'state'):
+            try:
+                # Check if not already disconnected (FastAPI 0.115+)
+                from fastapi.websockets import WebSocketState
+                if ws.client.state != WebSocketState.DISCONNECTED:
+                    await ws.send_text(json.dumps({
+                        "type": "error",
+                        "message": "Connection closed",
+                        "message_id": current_message_id
+                    }))
+            except Exception:
+                pass  # Ignore errors during cleanup send
 
 
 # ==================== STREAMING ====================
