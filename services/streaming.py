@@ -121,6 +121,8 @@ class StreamingService:
         }
         backend_key = backend_mapping.get(backend.lower() if backend else "ollama", "ollama")
         
+        logger.info(f"[streaming] _get_client: model={model}, provider={provider}, backend={backend}, backend_key={backend_key}")
+        
         backend_cfg = settings.backends.get(backend_key)
 
         # Smart fallback: if provider is explicitly lmstudio/lemonade, try to use it even if not in enabled list
@@ -142,6 +144,8 @@ class StreamingService:
                 url = settings.ollama_url
         else:
             url = backend_cfg["url"]
+        
+        logger.info(f"[streaming] Using URL: {url} for model {model}")
 
         config = ModelConfig(
             url=f"{url}/api/generate",
