@@ -681,6 +681,7 @@ async def ws_endpoint(ws: WebSocket):
 
             # Parse message using controller
             msg = await ws_controller.parse_message(data)
+            logger.info(f"[ws] Parsed message: {msg}")
 
             # Handle control messages
             if msg.get("type") == "ping":
