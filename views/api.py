@@ -156,8 +156,11 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown lifecycle handler"""
-# Startup
+    # Startup
     logger.info("Starting UI-Pro API...")
+    
+    # Attach store to app.state for dependency injection
+    app.state.store = store
     
     # Pre-warm connections
     try:
