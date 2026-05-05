@@ -22,6 +22,7 @@ interface DebugPanelProps {
   onToggle?: () => void
   status?: 'idle' | 'running' | 'completed' | 'error'
   modelName?: string
+  backend?: string  // Provider: ollama, lmstudio, lemonade
   elapsedSeconds?: number
   tokenCount?: number
   connectionStatus?: string
@@ -40,6 +41,7 @@ export function DebugPanel({
   onToggle,
   status = 'idle',
   modelName = 'gemma4:latest',
+  backend = 'ollama',
   elapsedSeconds = 0,
   tokenCount: propTokenCount = 0,
   lastErrorMsg,
@@ -121,7 +123,10 @@ export function DebugPanel({
         <div className="p-4 space-y-3 border-b border-slate-800/60">
           <Row label={t.debug?.status || 'Status'} value={status.toUpperCase()} />
           <Row label={t.debug?.model || 'Model'} value={modelName} color="violet" />
-          <Row label={t.debug?.backend || 'Backend'} value="🦙 Ollama" />
+          <Row 
+            label={t.debug?.backend || 'Backend'} 
+            value={backend === 'ollama' ? '🦙 Ollama' : backend === 'lmstudio' ? '🖥️ LM Studio' : backend === 'lemonade' ? '🍋 Lemonade' : backend} 
+          />
           <Row label={t.debug?.elapsed || 'Elapsed'} value={`${elapsedSeconds}s`} />
           <Row label={t.debug?.tokens || 'Tokens'} value={localTokenCount} color="violet" bold />
         </div>
