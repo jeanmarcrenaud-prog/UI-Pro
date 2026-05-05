@@ -190,6 +190,7 @@ class StatusResponse(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     model: str | None = None  # Optional model selection
+    provider: str | None = None  # Provider: ollama, lmstudio, lemonade, llamacpp
 
 
 class ChatResponse(BaseModel):
@@ -521,6 +522,7 @@ async def ws_endpoint(ws: WebSocket):
             # Extract request details
             task = msg.get("message") or msg.get("prompt") or ""
             model = msg.get("model")
+            provider = msg.get("provider")  # ollama, lmstudio, lemonade, llamacpp
             message_id = msg.get("message_id") or str(uuid.uuid4())
             last_chunk_index = msg.get("last_chunk_index", 0)
 
@@ -579,7 +581,7 @@ async def ws_endpoint(ws: WebSocket):
             # === Streaming Phase ===
             chunk_index = start_chunk
 
-            async for chunk in stream_service.stream_generate(task, model=model):
+            async for chunk in stream_service.stream_generate(task, model=model, provider=provider):
                 chunk_text = chunk.text if hasattr(chunk, "text") else str(chunk)
 
                 # Skip already sent chunks during resume
@@ -750,7 +752,7 @@ async def chat_endpoint(request: ChatRequest):
         
         # Collect full response from streaming
         chunks = []
-        async for chunk in stream_service.stream_generate(request.message, model=request.model):
+        async for chunk in stream_service.stream_generate(request.message, model=request.model or "qwen3.5:9b", provider=request.provider):
             if chunk.text:
                 chunks.append(chunk.text)
         

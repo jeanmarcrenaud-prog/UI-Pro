@@ -104,13 +104,24 @@ class StreamingService:
                 return backend
         return "ollama"
 
-    def _get_client(self, model: str):
+    def _get_client(self, model: str, provider: str | None = None):
         """Get appropriate client for the model/backend."""
         from llm.router import OllamaClient, ModelConfig
         from models.settings import settings
 
-        backend = self._detect_backend(model)
-        backend_cfg = settings.backends.get(backend)
+        # Use provider if explicitly provided, otherwise detect from model name
+        backend = provider if provider else self._detect_backend(model)
+        
+        # Map common provider names to backend keys
+        backend_mapping = {
+            "lmstudio": "lmstudio",
+            "lemonade": "lemonade",
+            "llamacpp": "llamacpp",
+            "ollama": "ollama",
+        }
+        backend_key = backend_mapping.get(backend.lower() if backend else "ollama", "ollama")
+        
+        backend_cfg = settings.backends.get(backend_key)
 
         if not backend_cfg or not backend_cfg.get("enabled", False):
             url = settings.ollama_url
@@ -128,6 +139,7 @@ class StreamingService:
         self,
         prompt: str,
         model: str,
+        provider: str | None = None,
         temperature: float = 0.7,
         on_chunk: Optional[Callable[[StreamChunk], None]] = None,
     ) -> AsyncIterator[StreamChunk]:
@@ -146,7 +158,7 @@ class StreamingService:
         self._active_streams[stream_id] = asyncio.current_task()
 
         try:
-            client = self._get_client(model)
+            client = self._get_client(model, provider)
 
             # === Step Events ===
             yield StreamChunk(
