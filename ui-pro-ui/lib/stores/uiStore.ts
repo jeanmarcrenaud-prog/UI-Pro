@@ -11,7 +11,8 @@ type Theme = 'dark' | 'light'
 
 // Model with provider and rich metadata info
 export interface ModelInfo {
-  name: string
+  id: string           // Backend key (e.g., "qwen/qwen3.5-9b" for LM Studio)
+  name: string         // Display name (e.g., "Qwen3.5 9B")
   provider: 'ollama' | 'lmstudio' | 'lemonade'
   // Rich metadata
   parameterSize?: string      // ex: "8.0B", "70B"
