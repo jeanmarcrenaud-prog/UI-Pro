@@ -23,6 +23,7 @@ class ModelConfig:
     url: str = ""
     model: str = ""
     timeout: int = 30
+    backend: str = "ollama"  # ollama, lmstudio, lemonade, etc.
 
     def __post_init__(self):
         # Values are set explicitly in _create_model_config
@@ -82,41 +83,81 @@ class OllamaClient:
         import requests
 
         model = model or self.config.model
-        url = self.config.url or f"{settings.ollama_url}/api/generate"
+url = self.config.url or f"{settings.ollama_url}/v1/chat/completions"
+        # Use backend from config to determine format
+        backend = self.config.backend or "ollama"
 
-        payload = {
-            "model": model,
-            "prompt": prompt,
-            "system": system_prompt or "",
-            "stream": True,
-            "options": {"temperature": temperature}
-        }
+        if backend == "ollama":
+            # Ollama format: /api/generate with prompt
+            url = self.config.url or f"{settings.ollama_url}/api/generate"
+            payload = {
+                "model": model,
+                "prompt": prompt,
+                "system": system_prompt or "",
+                "stream": True,
+                "options": {"temperature": temperature}
+            }
+            is_streaming_endpoint = "stream" in url and "chat" not in url
+        elif backend in ("lmstudio", "lemonade"):
+            # LM Studio / OpenAI format: /v1/chat/completions with messages
+            url = self.config.url or f"{settings.ollama_url}/v1/chat/completions"
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": prompt})
+            payload = {
+                "model": model,
+                "messages": messages,
+                "stream": True,
+                "temperature": temperature
+            }
+            is_streaming_endpoint = True
+        else:
+            # Default to Ollama format
+            url = self.config.url or f"{settings.ollama_url}/api/generate"
+            payload = {
+                "model": model,
+                "prompt": prompt,
+                "system": system_prompt or "",
+                "stream": True,
+                "options": {"temperature": temperature}
+            }
+            is_streaming_endpoint = "stream" in url and "chat" not in url
 
-        try:
-            with requests.post(
-                url, 
-                json=payload, 
-                stream=True,
-                timeout=self.config.timeout
-            ) as r:
-                r.raise_for_status()
-                for line in r.iter_lines():
-                    if line:
-                        text = line.decode().strip()
-                        if not text:
-                            continue
-                        # Parse JSON line from Ollama
-                        try:
-                            data = json.loads(text)
-                            content = data.get('response', '')
-                            if content:
-                                yield content
-                            if data.get('done', False):
-                                break
-                        except json.JSONDecodeError:
-                            logger.warning(f"Failed to parse stream line: {text[:50]}")
-        except requests.RequestException as e:
-            yield f"[Error: {e}]"
+        if is_streaming_endpoint:
+            try:
+                with requests.post(
+                    url,
+                    json=payload,
+                    stream=True,
+                    timeout=self.config.timeout
+                ) as r:
+                    r.raise_for_status()
+                    for line in r.iter_lines():
+                        if line:
+                            text = line.decode().strip()
+                            if not text:
+                                continue
+                            try:
+                                data = json.loads(text)
+                                # Parse based on backend format
+                                if backend in ("lmstudio", "lemonade"):
+                                    # OpenAI format: choices[0].delta.content
+                                    content = data.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                                elif backend == "llamacpp":
+                                    # llama.cpp typically uses OpenAI format
+                                    content = data.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                                else:
+                                    # Ollama format: response
+                                    content = data.get('response', '')
+                                if content:
+                                    yield content
+                                if data.get("done", False) or (backend not in ("lmstudio", "lemonade", "llamacpp") and data.get('done', False)):
+                                    break
+                            except json.JSONDecodeError:
+                                logger.warning(f"Failed to parse stream line: {text[:50]}")
+            except requests.RequestException as e:
+                yield f"[Error: {e}]"
 
 logger = logging.getLogger(__name__)
 

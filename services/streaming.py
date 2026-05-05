@@ -147,10 +147,24 @@ class StreamingService:
         
         logger.info(f"[streaming] Using URL: {url} for model {model}")
 
+        # Use different API endpoints based on provider
+        if backend_key == "lmstudio":
+            # LM Studio uses /api/v1/chat/completions (OpenAI-compatible)
+            endpoint = "/v1/chat/completions"
+        elif backend_key == "lemonade":
+            # Lemonade might use different endpoint
+            endpoint = "/v1/chat/completions"
+        else:
+            # Ollama uses /api/generate
+            endpoint = "/api/generate"
+        
+        logger.info(f"[streaming] Using endpoint: {endpoint} for backend: {backend_key}")
+
         config = ModelConfig(
-            url=f"{url}/api/generate",
+            url=f"{url}{endpoint}",
             model=model,
-            timeout=self.config.timeout_ms // 1000
+            timeout=self.config.timeout_ms // 1000,
+            backend=backend_key,
         )
         return OllamaClient(config)
 
@@ -215,7 +229,7 @@ class StreamingService:
             buffer: list[str] = []
             token_count = 0
 
-            for chunk_text in client.stream(prompt=prompt, model=model, temperature=temperature):
+            for chunk_text in client.stream(prompt=prompt, model=model, system_prompt="", temperature=temperature):
                 # Check for cancellation
                 if self._active_streams.get(stream_id) and self._active_streams[stream_id].cancelled():
                     raise asyncio.CancelledError()
