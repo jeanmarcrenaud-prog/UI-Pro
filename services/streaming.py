@@ -123,8 +123,23 @@ class StreamingService:
         
         backend_cfg = settings.backends.get(backend_key)
 
-        if not backend_cfg or not backend_cfg.get("enabled", False):
-            url = settings.ollama_url
+        # Smart fallback: if provider is explicitly lmstudio/lemonade, try to use it even if not in enabled list
+        if backend_key in ("lmstudio", "lemonade") and provider:
+            lmstudio_cfg = settings.backends.get("lmstudio")
+            lemonade_cfg = settings.backends.get("lemonade")
+            if backend_key == "lmstudio" and lmstudio_cfg:
+                url = lmstudio_cfg.get("url", settings.lmstudio_url)
+            elif backend_key == "lemonade" and lemonade_cfg:
+                url = lemonade_cfg.get("url", settings.lemonade_url)
+            else:
+                url = settings.lmstudio_url if backend_key == "lmstudio" else settings.lemonade_url
+        elif not backend_cfg or not backend_cfg.get("enabled", False):
+            # Fallback: try lmstudio as secondary if ollama not enabled
+            lmstudio_cfg = settings.backends.get("lmstudio")
+            if lmstudio_cfg and lmstudio_cfg.get("enabled", False):
+                url = lmstudio_cfg.get("url", settings.lmstudio_url)
+            else:
+                url = settings.ollama_url
         else:
             url = backend_cfg["url"]
 
