@@ -286,7 +286,7 @@ async def _global_session_cleanup():
             await asyncio.sleep(60)
             _cleanup_sessions()
             # Also cleanup completed requests in WebSocket controller
-            ws_ctrl = get_websocket_controller()
+            ws_ctrl = _get_ws_controller_cached()
             if ws_ctrl:
                 await ws_ctrl.cleanup_completed()
             logger.debug("[GLOBAL_CLEANUP] Session cleanup completed")
@@ -641,9 +641,9 @@ async def ws_endpoint(ws: WebSocket):
             await ws.close(code=1008, reason="Invalid API key")
             return
 
-    # Use WebSocketController for state management
-    ws_controller = get_websocket_controller()
-    stream_service = get_streaming_service()
+    # Use WebSocketController for state management (using cached getters)
+    ws_controller = _get_ws_controller_cached()
+    stream_service = _get_streaming_service_cached()
     
     # Verify services are available
     if not ws_controller or not stream_service:
@@ -845,7 +845,7 @@ async def stream_endpoint(prompt: str):
             detail="Prompt must be non-empty and less than 10KB"
         )
 
-    service = get_streaming_service()
+    service = _get_streaming_service_cached()
 
     try:
         # Default model for SSE endpoint
@@ -930,7 +930,7 @@ async def execute_endpoint(request: ExecuteRequest):
 async def chat_endpoint(request: Request, chat_request: ChatRequest):
     """Chat endpoint for REST API (fallback when WebSocket fails)"""
     try:
-        stream_service = get_streaming_service()
+        stream_service = _get_streaming_service_cached()
         
         # Verify service is available
         if stream_service is None:
