@@ -63,9 +63,12 @@ export default function Home() {
     }
   }, [isLoading, selectedModel, availableModels])
 
-  const modelName =
-    selectedModel ??
-    (availableModels.length > 0 ? availableModels[0] : undefined)
+  // Build model display name with provider info
+  const currentModelInfo = availableModels.find(m => m.name === selectedModel) 
+    || availableModels[0]
+  const modelName = currentModelInfo 
+    ? `${currentModelInfo.name} • ${currentModelInfo.provider}`
+    : (selectedModel ?? 'unknown')
     
   const hasError = messages.some(m => m.status === 'error')
   const debugStatus: 'idle' | 'running' | 'error' = isLoading ? 'running' : hasError ? 'error' : 'idle'
