@@ -7,7 +7,7 @@
 # - /health, /status: Health checks
 
 from fastapi import FastAPI, WebSocket, Request, HTTPException, Depends
-from fastapi.websockets import WebSocketDisconnect
+from fastapi.websockets import WebSocketDisconnect, WebSocketState
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -91,6 +91,15 @@ root_logger = logging.getLogger()
 root_logger.setLevel(logging.DEBUG)
 root_logger.addHandler(file_handler)
 root_logger.addHandler(console_handler)
+
+
+# ==================== HELPER FUNCTIONS ====================
+
+def _get_setting(attr: str, default: Any = None) -> Any:
+    """Safely get settings attribute, returning default if settings is None"""
+    if settings is None:
+        return default
+    return getattr(settings, attr, default)
 
 
 # ==================== THREAD-SAFE STATE MANAGEMENT ====================
@@ -192,6 +201,16 @@ async def lifespan(app: FastAPI):
     if settings is None:
         logger.error("Settings failed to import!")
     
+    # Initialize GPU monitoring once at startup
+    app.state.nvml_initialized = False
+    try:
+        import pynvml
+        pynvml.nvmlInit()
+        app.state.nvml_initialized = True
+        logger.info("NVIDIA NVML initialized for GPU monitoring")
+    except Exception as e:
+        logger.debug(f"GPU monitoring not available: {e}")
+    
     # Start global background cleanup task only if controllers available
     cleanup_task = None
     if get_websocket_controller:
@@ -209,6 +228,15 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("Shutting down UI-Pro API...")
+    
+    # Shutdown NVML if it was initialized
+    if getattr(app.state, 'nvml_initialized', False):
+        try:
+            import pynvml
+            pynvml.nvmlShutdown()
+            logger.info("NVIDIA NVML shutdown complete")
+        except Exception:
+            pass
     
     # Cleanup sessions
     store.clear_sessions()
@@ -417,6 +445,8 @@ def _check_ollama() -> str:
 
 @app.get("/")
 def home(request: Request):
+    model_fast = _get_setting('model_fast', 'N/A')
+    model_reasoning = _get_setting('model_reasoning', 'N/A')
     return HTMLResponse(content=f"""
 <!DOCTYPE html>
 <html>
@@ -425,7 +455,7 @@ def home(request: Request):
     <h1>UI Pro - LLM Orchestration Platform</h1>
     <p>🚀 Agent Orchestration System Ready</p>
     <p>Status: <strong>✅ Running</strong></p>
-    <p>Models: <code>{settings.model_fast or 'N/A'}</code> + <code>{settings.model_reasoning or 'N/A'}</code></p>
+    <p>Models: <code>{model_fast}</code> + <code>{model_reasoning}</code></p>
     <p>⚡ Powered by <strong>Ollama</strong> + <strong>FastAPI</strong></p>
     
     <h2>Endpoints</h2>
@@ -480,9 +510,9 @@ def _get_system_info() -> dict:
 def _get_gpu_info() -> dict | None:
     """Get GPU utilization and memory usage"""
     # Try pynvml first (NVIDIA GPU)
+    # Note: NVML is initialized at startup and shutdown in lifespan
     try:
         import pynvml
-        pynvml.nvmlInit()
         
         # Get first GPU
         handle = pynvml.nvmlDeviceGetHandleByIndex(0)
@@ -504,7 +534,7 @@ def _get_gpu_info() -> dict | None:
         except Exception:
             temp = None
         
-        pynvml.nvmlShutdown()
+        # Don't call nvmlShutdown here - it's done at app shutdown
         
         return {
             "name": "NVIDIA GPU",
@@ -531,9 +561,9 @@ def _get_gpu_info() -> dict | None:
 @app.get("/status", response_model=StatusResponse, dependencies=[Depends(verify_api_key)])
 def status():
     return {
-        "model_fast": settings.model_fast or "N/A",
-        "model_reasoning": settings.model_reasoning or "N/A",
-        "ollama_url": settings.ollama_url or "http://localhost:11434",
+        "model_fast": _get_setting('model_fast', 'N/A'),
+        "model_reasoning": _get_setting('model_reasoning', 'N/A'),
+        "ollama_url": _get_setting('ollama_url', 'http://localhost:11434'),
     }
 
 
@@ -541,8 +571,8 @@ def status():
 def get_default_model():
     """Return the default model from settings (.env)"""
     return {
-        "model_fast": settings.model_fast or "qwen3.5:0.8b",
-        "model_reasoning": settings.model_reasoning or "qwen3.5:0.8b",
+        "model_fast": _get_setting('model_fast', 'qwen3.5:0.8b'),
+        "model_reasoning": _get_setting('model_reasoning', 'qwen3.5:0.8b'),
     }
 
 
@@ -751,7 +781,6 @@ async def ws_endpoint(ws: WebSocket):
         if ws.client and hasattr(ws.client, 'state'):
             try:
                 # Check if not already disconnected (FastAPI 0.115+)
-                from fastapi.websockets import WebSocketState
                 if ws.client.state != WebSocketState.DISCONNECTED:
                     await ws.send_text(json.dumps({
                         "type": "error",
