@@ -467,9 +467,7 @@ def get_default_model():
 # =====================
 # WEBSOCKET RESUME STATE
 # =====================
-# Using asyncio.Lock for thread-safe access
-_active_requests_lock: asyncio.Lock = asyncio.Lock()
-active_requests: Dict[str, Dict[str, Any]] = {}  # message_id -> request state
+# Note: Request state is now managed by WebSocketController
 
 
 @app.websocket("/ws")
@@ -478,7 +476,7 @@ async def ws_endpoint(ws: WebSocket):
     
     Features:
     - Proper resume via message_id + last_chunk_index
-    - active_requests tracking per message_id
+    - Request state tracking via WebSocketController
     - resume_ack confirmation
     """
     logger.info("[WS-VIEWS] WebSocket endpoint CALLED!")
@@ -493,13 +491,15 @@ async def ws_endpoint(ws: WebSocket):
             await ws.close(code=1008, reason="Invalid API key")
             return
 
+    # Use WebSocketController for state management
+    ws_controller = get_websocket_controller()
     stream_service = get_streaming_service()
     current_message_id: str | None = None
     session_id: str = "unknown"
 
     try:
         await ws.accept()
-        session_id = f"{client_info}-{uuid.uuid4().hex[:8]}"
+        session_id = await ws_controller.handle_connection(ws, client_info)
         logger.info(f"[WS-VIEWS] Connection accepted from {client_info}, session_id={session_id}")
 
         # Track cleanup timing
@@ -509,16 +509,14 @@ async def ws_endpoint(ws: WebSocket):
             # Periodic cleanup every 60s
             if time.time() - last_cleanup > 60:
                 _cleanup_sessions()
+                await ws_controller.cleanup_completed()
                 last_cleanup = time.time()
 
             data = await ws.receive_text()
             logger.info(f"[WS] Received: {data[:100]}...")
 
-            # Parse JSON if valid
-            try:
-                msg = json.loads(data)
-            except json.JSONDecodeError:
-                msg = {"message": data}
+            # Parse message using controller
+            msg = await ws_controller.parse_message(data)
 
             # Handle control messages
             if msg.get("type") == "ping":
@@ -526,38 +524,30 @@ async def ws_endpoint(ws: WebSocket):
                 continue
 
             if msg.get("type") == "cancel":
-                if current_message_id and active_requests.get(current_message_id):
-                    active_requests.pop(current_message_id, None)
+                if current_message_id:
+                    await ws_controller.cancel_request(current_message_id)
                 break
 
-            # Extract request details
-            task = msg.get("message") or msg.get("prompt") or ""
-            model = msg.get("model")
-            provider = msg.get("provider")  # ollama, lmstudio, lemonade, llamacpp
-            message_id = msg.get("message_id") or str(uuid.uuid4())
-            # Ensure proper type conversion for resume
-            last_chunk_index = int(msg.get("last_chunk_index", 0) or 0)
-
-            current_message_id = message_id
-
-            if not model:
+            # Validate request using controller
+            is_valid, error_msg, request = await ws_controller.validate_request(msg)
+            if not is_valid:
                 await ws.send_text(json.dumps({
                     "type": "error",
-                    "message": "Model is required",
-                    "message_id": message_id
+                    "message": error_msg,
+                    "message_id": request.get("message_id") if request else "unknown"
                 }))
                 continue
 
-            # === Register or Resume Request ===
-            if message_id not in active_requests:
-                active_requests[message_id] = {
-                    "model": model,
-                    "task": task,
-                    "chunk_index": 0,
-                    "is_complete": False
-                }
+            task = request["task"]
+            model = request["model"]
+            provider = request["provider"]
+            message_id = request["message_id"]
+            last_chunk_index = request["last_chunk_index"]
 
-            request_state = active_requests[message_id]
+            current_message_id = message_id
+
+            # Register/resume request via controller
+            request_state = await ws_controller.register_request(message_id, model, task)
             start_chunk = max(last_chunk_index, request_state["chunk_index"])
 
             # Send resume acknowledgment
@@ -599,8 +589,7 @@ async def ws_endpoint(ws: WebSocket):
                             "message_id": message_id,
                             "chunk_index": chunk.chunk_index
                         }))
-                    request_state["is_complete"] = True
-                    request_state["chunk_index"] = chunk.chunk_index
+                    await ws_controller.update_request_state(message_id, chunk.chunk_index, is_complete=True)
                     continue
 
                 if chunk.status == StreamStatus.ERROR:
@@ -610,8 +599,7 @@ async def ws_endpoint(ws: WebSocket):
                         "message_id": message_id,
                         "chunk_index": chunk.chunk_index
                     }))
-                    request_state["is_complete"] = True
-                    request_state["chunk_index"] = chunk.chunk_index
+                    await ws_controller.update_request_state(message_id, chunk.chunk_index, is_complete=True)
                     continue
 
                 if chunk.status == StreamStatus.CANCELLED:
@@ -621,8 +609,7 @@ async def ws_endpoint(ws: WebSocket):
                         "message_id": message_id,
                         "chunk_index": chunk.chunk_index
                     }))
-                    request_state["is_complete"] = True
-                    request_state["chunk_index"] = chunk.chunk_index
+                    await ws_controller.update_request_state(message_id, chunk.chunk_index, is_complete=True)
                     continue
 
                 # Handle step events from streaming service
@@ -635,12 +622,12 @@ async def ws_endpoint(ws: WebSocket):
                         "message_id": message_id,
                         "chunk_index": chunk.chunk_index
                     }))
-                    request_state["chunk_index"] = chunk.chunk_index
+                    await ws_controller.update_request_state(message_id, chunk.chunk_index)
                     continue
 
                 # Handle token chunks
                 if chunk.text:
-                    request_state["chunk_index"] = chunk.chunk_index
+                    await ws_controller.update_request_state(message_id, chunk.chunk_index)
                     await ws.send_text(json.dumps({
                         "type": "token",
                         "content": chunk.text,
@@ -654,6 +641,8 @@ async def ws_endpoint(ws: WebSocket):
         logger.info(f"WebSocket disconnected normally: {session_id}")
     except Exception as e:
         logger.error(f"WebSocket error: {e}", exc_info=True)
+    finally:
+        await ws_controller.handle_disconnect(session_id)
         try:
             await ws.send_text(json.dumps({
                 "type": "error",
