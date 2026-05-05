@@ -520,8 +520,11 @@ async def ws_endpoint(websocket: WebSocket):
             # Extract request data
             task = msg.get("message") or msg.get("prompt") or ""
             model = msg.get("model")
+            provider = msg.get("provider") or "lmstudio"  # Default to lmstudio
             message_id = msg.get("message_id") or str(uuid.uuid4())
             last_chunk_index: int = int(msg.get("last_chunk_index", 0) or 0)
+            
+            print(f"[WS-API] Received: model={model}, provider={provider}, task={task[:50]}...", flush=True)
 
             current_message_id = message_id
 
@@ -577,7 +580,7 @@ async def ws_endpoint(websocket: WebSocket):
             # === Token Streaming with Resume Support ===
             chunk_index = start_chunk
 
-            async for chunk in stream_service.stream_generate(task, model=model):
+            async for chunk in stream_service.stream_generate(task, model=model, provider=provider):
                 chunk_text = getattr(chunk, 'text', str(chunk))
 
                 if chunk_index < last_chunk_index:
