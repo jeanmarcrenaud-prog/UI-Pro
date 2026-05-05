@@ -629,7 +629,9 @@ async def ws_endpoint(ws: WebSocket):
     - Request state tracking via WebSocketController
     - resume_ack confirmation
     """
-    print(f"[WS-VIEWS] WebSocket endpoint CALLED! Headers: {dict(ws.headers)}")
+    print(f"[WS-VIEWS] WebSocket endpoint CALLED! Headers: {dict(ws.headers)}", flush=True)
+    import sys
+    sys.stdout.flush()
     logger.info(f"[WS-VIEWS] Headers: {dict(ws.headers)}")
     client_info = str(ws.client.host) if ws.client and ws.client.host else "unknown"
     logger.info(f"[WS-VIEWS] Client: {client_info}")
