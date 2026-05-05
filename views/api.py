@@ -23,6 +23,38 @@ from typing import Callable, Dict, Any, Optional
 import traceback
 from logging.handlers import RotatingFileHandler
 import threading
+from functools import lru_cache
+
+# ==================== CACHED GETTERS ====================
+# Use lru_cache to avoid repeated imports and improve performance
+
+@lru_cache(maxsize=1)
+def _get_settings_cached():
+    """Get settings with caching"""
+    try:
+        from models.settings import settings
+        return settings
+    except ImportError:
+        return None
+
+@lru_cache(maxsize=1)
+def _get_streaming_service_cached():
+    """Get streaming service with caching"""
+    try:
+        from services.streaming import get_streaming_service
+        return get_streaming_service()
+    except ImportError:
+        return None
+
+@lru_cache(maxsize=1)
+def _get_ws_controller_cached():
+    """Get WebSocket controller with caching"""
+    try:
+        from controllers.websocket import get_websocket_controller
+        return get_websocket_controller()
+    except ImportError:
+        return None
+
 
 # ==================== EARLY IMPORTS ====================
 # Import with try/except to avoid circular import issues
@@ -92,14 +124,18 @@ root_logger.setLevel(logging.DEBUG)
 root_logger.addHandler(file_handler)
 root_logger.addHandler(console_handler)
 
+# Create module logger (used by _cleanup_sessions and other functions)
+logger = logging.getLogger(__name__)
+
 
 # ==================== HELPER FUNCTIONS ====================
 
 def _get_setting(attr: str, default: Any = None) -> Any:
-    """Safely get settings attribute, returning default if settings is None"""
-    if settings is None:
+    """Safely get settings attribute using cached getter"""
+    cached = _get_settings_cached()
+    if cached is None:
         return default
-    return getattr(settings, attr, default)
+    return getattr(cached, attr, default)
 
 
 # ==================== THREAD-SAFE STATE MANAGEMENT ====================
@@ -171,9 +207,6 @@ class ThreadSafeStore:
 store = ThreadSafeStore(max_size=100)
 
 
-logger = logging.getLogger(__name__)
-
-
 # ==================== LIFESPAN HANDLER ====================
 
 @asynccontextmanager
@@ -185,20 +218,23 @@ async def lifespan(app: FastAPI):
     # Attach store to app.state for dependency injection
     app.state.store = store
     
-    # Pre-warm connections and verify imports
-    if get_streaming_service is None:
+    # Pre-warm connections and verify imports using cached getters
+    streaming_svc = _get_streaming_service_cached()
+    if streaming_svc is None:
         logger.error("Streaming service failed to import!")
     else:
         try:
-            get_streaming_service()
+            streaming_svc()
             logger.info("Streaming service initialized")
         except Exception as e:
             logger.warning(f"Streaming service not available: {e}")
     
-    if get_websocket_controller is None:
+    ws_ctrl = _get_ws_controller_cached()
+    if ws_ctrl is None:
         logger.error("WebSocket controller failed to import!")
     
-    if settings is None:
+    cached_settings = _get_settings_cached()
+    if cached_settings is None:
         logger.error("Settings failed to import!")
     
     # Initialize GPU monitoring once at startup
@@ -213,7 +249,7 @@ async def lifespan(app: FastAPI):
     
     # Start global background cleanup task only if controllers available
     cleanup_task = None
-    if get_websocket_controller:
+    if ws_ctrl:
         cleanup_task = asyncio.create_task(_global_session_cleanup())
     
     yield
@@ -775,8 +811,9 @@ async def ws_endpoint(ws: WebSocket):
     except Exception as e:
         logger.error(f"WebSocket error: {e}", exc_info=True)
     finally:
-        # Always cleanup, but don't try to send if already disconnected
-        await ws_controller.handle_disconnect(session_id)
+        # Cleanup only if controller is available
+        if ws_controller:
+            await ws_controller.handle_disconnect(session_id)
         # Only try to send if WebSocket is still in a valid state
         if ws.client and hasattr(ws.client, 'state'):
             try:
