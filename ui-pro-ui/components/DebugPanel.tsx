@@ -30,7 +30,6 @@ interface DebugPanelProps {
   currentStep?: number
   logs?: string[]
   onClearLogs?: () => void
-  subscribeToStore?: boolean
   locale?: 'en' | 'fr'
 }
 
@@ -48,21 +47,11 @@ export function DebugPanel({
   currentStep = 0,
   logs = [],
   onClearLogs,
-  subscribeToStore = true,
   locale = 'en',
 }: DebugPanelProps) {
-  const { locale: storeLocale = 'fr' } = useUIStore()
   const { t } = useI18n()
   
-  const [localTokenCount, setLocalTokenCount] = useState(propTokenCount)
   const logsEndRef = useRef<HTMLDivElement>(null)
-
-  // FIX: Force sync when prop changes (handles React.memo parent issues)
-  useEffect(() => {
-    if (propTokenCount !== localTokenCount) {
-      setLocalTokenCount(propTokenCount)
-    }
-  }, [propTokenCount, localTokenCount])
 
   // Derived state optimization
   const completed = useMemo(
@@ -128,7 +117,7 @@ export function DebugPanel({
             value={backend === 'ollama' ? '🦙 Ollama' : backend === 'lmstudio' ? '🖥️ LM Studio' : backend === 'lemonade' ? '🍋 Lemonade' : backend} 
           />
           <Row label={t.debug?.elapsed || 'Elapsed'} value={`${elapsedSeconds}s`} />
-          <Row label={t.debug?.tokens || 'Tokens'} value={localTokenCount} color="violet" bold />
+          <Row label={t.debug?.tokens || 'Tokens'} value={tokenCount ?? 0} color="violet" bold />
         </div>
 
         {/* PROGRESS - only show when agent is actively running (not idle/error) */}
@@ -189,7 +178,13 @@ export function DebugPanel({
             {logs.length === 0 ? (
               <span className="text-slate-600 italic">{t.debug?.waiting || 'Waiting...'}</span>
             ) : (
-              logs.map((l, i) => <div key={`log-${i}-${l.slice(0, 10)}`}>{l}</div>)
+              logs.map((log, index) => (
+  <div 
+    key={log.length > 20 ? `log-${index}-${log.slice(0, 20)}` : `log-${index}`}
+  >
+    {log}
+  </div>
+))
             )}
             <div ref={logsEndRef} />
           </div>
