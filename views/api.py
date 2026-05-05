@@ -142,12 +142,11 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown lifecycle handler"""
-    # Startup
+# Startup
     logger.info("Starting UI-Pro API...")
     
     # Pre-warm connections
     try:
-        from services.streaming import get_streaming_service
         get_streaming_service()
         logger.info("Streaming service initialized")
     except Exception as e:
@@ -558,76 +557,85 @@ async def ws_endpoint(ws: WebSocket):
                 }))
                 logger.info(f"Resuming message {message_id} from chunk {last_chunk_index}")
 
-            # === Step 1: Analyzing ===
-            await ws.send_text(json.dumps({
-                "type": "step",
-                "step_id": "step-analyzing",
-                "title": "Analyzing request",
-                "status": "done",
-                "message_id": message_id,
-                "chunk_index": start_chunk
-            }))
-
-            # === Step 2: Planning ===
-            await ws.send_text(json.dumps({
-                "type": "step",
-                "step_id": "step-planning",
-                "title": "Planning solution",
-                "status": "active",
-                "message_id": message_id,
-                "chunk_index": start_chunk
-            }))
-
-            # === Streaming Phase ===
-            chunk_index = start_chunk
-
-            async for chunk in stream_service.stream_generate(task, model=model, provider=provider):
-                chunk_text = chunk.text if hasattr(chunk, "text") else str(chunk)
-
-                # Skip already sent chunks during resume
-                if chunk_index < last_chunk_index:
-                    chunk_index += 1
+            # === Streaming Phase (streaming service handles step events) ===
+            async for chunk in stream_service.stream_generate(
+                task, 
+                model=model, 
+                provider=provider,
+                start_chunk=start_chunk
+            ):
+                # Handle final events from streaming service
+                if chunk.status == StreamStatus.COMPLETED:
+                    # Send final done signal
+                    await ws.send_text(json.dumps({
+                        "type": "done",
+                        "message_id": message_id,
+                        "chunk_index": chunk.chunk_index
+                    }))
+                    # Mark remaining steps as done
+                    for step_id, title in [
+                        ("step-planning", "Planning solution"),
+                        ("step-executing", "Executing"),
+                        ("step-reviewing", "Reviewing")
+                    ]:
+                        await ws.send_text(json.dumps({
+                            "type": "step",
+                            "step_id": step_id,
+                            "title": title,
+                            "status": "done",
+                            "message_id": message_id,
+                            "chunk_index": chunk.chunk_index
+                        }))
+                    request_state["is_complete"] = True
+                    request_state["chunk_index"] = chunk.chunk_index
                     continue
 
-                chunk_index += 1
+                if chunk.status == StreamStatus.ERROR:
+                    await ws.send_text(json.dumps({
+                        "type": "error",
+                        "message": chunk.error or "Generation error",
+                        "message_id": message_id,
+                        "chunk_index": chunk.chunk_index
+                    }))
+                    request_state["is_complete"] = True
+                    request_state["chunk_index"] = chunk.chunk_index
+                    continue
 
-                # Update state
-                request_state["chunk_index"] = chunk_index
+                if chunk.status == StreamStatus.CANCELLED:
+                    await ws.send_text(json.dumps({
+                        "type": "error",
+                        "message": "Request cancelled by user",
+                        "message_id": message_id,
+                        "chunk_index": chunk.chunk_index
+                    }))
+                    request_state["is_complete"] = True
+                    request_state["chunk_index"] = chunk.chunk_index
+                    continue
 
-                await ws.send_text(json.dumps({
-                    "type": "token",
-                    "content": chunk_text,
-                    "response": chunk_text,
-                    "done": False,
-                    "message_id": message_id,
-                    "chunk_index": chunk_index
-                }))
+                # Handle step events from streaming service
+                if chunk.step_id:
+                    await ws.send_text(json.dumps({
+                        "type": "step",
+                        "step_id": chunk.step_id,
+                        "title": chunk.step_id.replace("step-", "").replace("-", " ").title(),
+                        "status": chunk.step_status,
+                        "message_id": message_id,
+                        "chunk_index": chunk.chunk_index
+                    }))
+                    request_state["chunk_index"] = chunk.chunk_index
+                    continue
 
-            # === Mark remaining steps as done ===
-            for step_id, title in [
-                ("step-planning", "Planning solution"),
-                ("step-executing", "Executing"),
-                ("step-reviewing", "Reviewing")
-            ]:
-                await ws.send_text(json.dumps({
-                    "type": "step",
-                    "step_id": step_id,
-                    "title": title,
-                    "status": "done",
-                    "message_id": message_id,
-                    "chunk_index": chunk_index
-                }))
-
-            # Final done signal
-            await ws.send_text(json.dumps({
-                "type": "done",
-                "message_id": message_id,
-                "chunk_index": chunk_index
-            }))
-
-            # Mark request as complete
-            request_state["is_complete"] = True
-            request_state["chunk_index"] = chunk_index
+                # Handle token chunks
+                if chunk.text:
+                    request_state["chunk_index"] = chunk.chunk_index
+                    await ws.send_text(json.dumps({
+                        "type": "token",
+                        "content": chunk.text,
+                        "response": chunk.text,
+                        "done": False,
+                        "message_id": message_id,
+                        "chunk_index": chunk.chunk_index
+                    }))
 
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected normally: {session_id}")
@@ -651,7 +659,7 @@ async def sse_stream(generator):
         yield f"data: {json.dumps(chunk.to_dict())}\n\n"
 
 
-from services.streaming import get_streaming_service
+from services.streaming import get_streaming_service, StreamStatus
 
 
 @app.get("/stream")
@@ -666,7 +674,8 @@ async def stream_endpoint(prompt: str):
     service = get_streaming_service()
 
     try:
-        generator = service.stream_generate(prompt)
+        # Default model for SSE endpoint
+        generator = service.stream_generate(prompt, model="qwen3.5:9b")
         return StreamingResponse(
             sse_stream(generator),
             media_type="text/event-stream",
