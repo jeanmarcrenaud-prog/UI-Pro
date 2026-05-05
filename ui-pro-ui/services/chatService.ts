@@ -14,6 +14,7 @@ interface ActiveRequest {
   id: string
   prompt: string
   model: string
+  provider: string  // ollama, lmstudio, lemonade, llamacpp
   assistantId: string
   lastChunkIndex: number
 }
@@ -46,7 +47,7 @@ class ChatService {
     return () => this.handlers.delete(handler)
   }
 
-  async sendMessage(content: string, resumeMessageId?: string, resumeChunkIndex = 0) {
+  async sendMessage(content: string, resumeMessageId?: string, resumeChunkIndex = 0, model?: string, provider?: string) {
     if (this.activeRequest) {
       console.warn('[chatService] A request is already in progress')
       return
@@ -58,7 +59,8 @@ class ChatService {
     this.activeRequest = {
       id: messageId,
       prompt: content,
-      model: 'qwen3.5:9b', // Default model - caller should override
+      model: model || 'qwen3.5:9b',
+      provider: provider || 'ollama',
       assistantId,
       lastChunkIndex: resumeChunkIndex,
     }
@@ -76,9 +78,10 @@ class ChatService {
   }
 
   // Set model AFTER initialization (so caller controls it)
-  setModel(model: string) {
+  setModel(model: string, provider: string = 'ollama') {
     if (this.activeRequest) {
       this.activeRequest.model = model
+      this.activeRequest.provider = provider
     }
   }
 
@@ -150,6 +153,7 @@ class ChatService {
         message_id: this.activeRequest.id,
         message: this.activeRequest.prompt,
         model: this.activeRequest.model,
+        provider: this.activeRequest.provider,
         last_chunk_index: this.activeRequest.lastChunkIndex,
       })
     )
@@ -256,6 +260,7 @@ class ChatService {
           body: JSON.stringify({
             message: this.activeRequest.prompt,
             model: this.activeRequest.model,
+            provider: this.activeRequest.provider,
           }),
         }
       )

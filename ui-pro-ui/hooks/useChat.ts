@@ -6,11 +6,13 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useChatStore } from '@/lib/stores/chatStore'
 import { useAgentStore } from '@/lib/stores/agentStore'
+import { useUIStore } from '@/lib/stores/uiStore'
 import { chatService } from '@/services/chatService'
 import { events } from '@/lib/events'
 import type { Message } from '@/lib/types'
 
 export const useChat = () => {
+  const { selectedModel, availableModels } = useUIStore()
   const {
     currentMessageId,
     lastReceivedChunkIndex,
@@ -40,6 +42,14 @@ export const useChat = () => {
   const safetyTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // ===================== RESUME LOGIC =====================
+  const getCurrentModelInfo = useCallback(() => {
+    const modelInfo = availableModels.find(m => m.name === selectedModel)
+    return {
+      model: selectedModel || 'qwen3.5:9b',
+      provider: modelInfo?.provider || 'ollama'
+    }
+  }, [selectedModel, availableModels])
+
   const attemptResume = useCallback(async () => {
     if (!currentMessageId || lastReceivedChunkIndex <= 0) return
 
@@ -51,16 +61,19 @@ export const useChat = () => {
 
     console.log(`[useChat] Attempting resume → messageId: ${currentMessageId}, from chunk: ${lastReceivedChunkIndex}`)
 
+    const { model, provider } = getCurrentModelInfo()
     try {
       await chatService.sendMessage(
         originalPrompt,
         currentMessageId,
-        lastReceivedChunkIndex
+        lastReceivedChunkIndex,
+        model,
+        provider
       )
     } catch (err) {
       console.error('[useChat] Resume failed:', err)
     }
-  }, [currentMessageId, lastReceivedChunkIndex, getPromptById])
+  }, [currentMessageId, lastReceivedChunkIndex, getPromptById, getCurrentModelInfo])
 
   // Auto resume when WebSocket goes idle while streaming
   useEffect(() => {
@@ -188,8 +201,9 @@ export const useChat = () => {
     ]
     start(initialSteps)
 
+    const { model, provider } = getCurrentModelInfo()
     try {
-      await chatService.sendMessage(content, messageId, 0) // New message → start from chunk 0
+      await chatService.sendMessage(content, messageId, 0, model, provider) // New message → start from chunk 0
 
       // Safety timeout (5 minutes)
       safetyTimeoutRef.current = setTimeout(() => {
@@ -215,6 +229,7 @@ export const useChat = () => {
     start,
     resetAgent,
     setCurrentMessage,
+    getCurrentModelInfo,
   ])
 
   // ===================== CANCEL & CLEAR =====================
