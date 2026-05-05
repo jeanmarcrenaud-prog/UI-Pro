@@ -69,6 +69,7 @@ export default function Home() {
   const modelName = currentModelInfo 
     ? `${currentModelInfo.name} • ${currentModelInfo.provider}`
     : (selectedModel ?? 'unknown')
+  const backend = currentModelInfo?.provider || 'ollama'
     
   const hasError = messages.some(m => m.status === 'error')
   const debugStatus: 'idle' | 'running' | 'error' = isLoading ? 'running' : hasError ? 'error' : 'idle'
@@ -141,6 +142,7 @@ export default function Home() {
           onClearLogs={() => useChatStore.getState().clearLogs()}
           status={debugStatus}
           modelName={modelName}
+          backend={backend}
           elapsedSeconds={elapsedSeconds}
           tokenCount={tokenCount}
           connectionStatus={isLoading ? 'connecting' : 'connected'}
