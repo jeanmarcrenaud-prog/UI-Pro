@@ -119,7 +119,7 @@ _BACKENDS_TEMPLATE = {
     },
     "lmstudio": {
         "url": LMSTUDIO_URL,
-        "enabled": _parse_bool(os.getenv("LMSTUDIO_ENABLED"), False),
+        "enabled": _parse_bool(os.getenv("LMSTUDIO_ENABLED"), True),
         "models_endpoint": "/api/v1/models",
     },
 }
