@@ -699,6 +699,7 @@ async def ws_endpoint(ws: WebSocket):
 
             # Validate request using controller
             is_valid, error_msg, request = await ws_controller.validate_request(msg)
+            logger.info(f"[ws] validate_request: valid={is_valid}, error={error_msg}, request={request}")
             if not is_valid:
                 await ws.send_text(json.dumps({
                     "type": "error",
@@ -712,6 +713,8 @@ async def ws_endpoint(ws: WebSocket):
             provider = request["provider"]
             message_id = request["message_id"]
             last_chunk_index = request["last_chunk_index"]
+            
+            logger.info(f"[ws] Processing request: model={model}, provider={provider}, task={task[:50]}...")
 
             current_message_id = message_id
 
