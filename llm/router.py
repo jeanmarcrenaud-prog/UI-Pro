@@ -138,6 +138,12 @@ class OllamaClient:
                             text = line.decode().strip()
                             if not text:
                                 continue
+                            # Handle SSE format (e.g., "data: {...}")
+                            if text.startswith("data: "):
+                                text = text[6:]  # Remove "data: " prefix
+                            # Handle [DONE] signal
+                            if text == "[DONE]":
+                                break
                             try:
                                 data = json.loads(text)
                                 # Parse based on backend format
@@ -152,7 +158,12 @@ class OllamaClient:
                                     content = data.get('response', '')
                                 if content:
                                     yield content
-                                if data.get("done", False) or (backend not in ("lmstudio", "lemonade", "llamacpp") and data.get('done', False)):
+                                # Check for completion - different formats
+                                if data.get("done", False):  # Ollama format
+                                    break
+                                # OpenAI/LM Studio: check finish_reason
+                                choices = data.get("choices", [])
+                                if choices and choices[0].get("finish_reason"):
                                     break
                             except json.JSONDecodeError:
                                 logger.warning(f"Failed to parse stream line: {text[:50]}")
