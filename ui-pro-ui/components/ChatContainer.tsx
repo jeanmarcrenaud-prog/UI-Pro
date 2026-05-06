@@ -70,6 +70,7 @@ export function ChatContainer({
     sendMessage,
     stopGeneration,
     steps,
+    regenerate,
   } = useChat()
 
   const { t, locale } = useI18n()
@@ -138,7 +139,7 @@ export function ChatContainer({
               disabled={isLoading}
             />
           ) : (
-            <ChatMessages messages={messages} onSuggestion={handleSuggestion} />
+            <ChatMessages messages={messages} onSuggestion={handleSuggestion} onRegenerate={regenerate} />
           )}
         </AnimatePresence>
 
