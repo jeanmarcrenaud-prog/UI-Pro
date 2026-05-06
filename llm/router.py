@@ -83,7 +83,7 @@ class OllamaClient:
         import requests
 
         model = model or self.config.model
-url = self.config.url or f"{settings.ollama_url}/v1/chat/completions"
+        url = self.config.url or f"{settings.ollama_url}/v1/chat/completions"
         # Use backend from config to determine format
         backend = self.config.backend or "ollama"
 
