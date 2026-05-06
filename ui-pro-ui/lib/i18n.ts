@@ -29,6 +29,11 @@ export interface Translations {
     availableModels: string
     refresh: string
     refreshing: string
+    searchModels: string
+    testBackends: string
+    testBackendsAria: string
+    loadingDescription: string
+    error: string
     backendConnections: string
     systemResources: string
     about: string
@@ -44,6 +49,9 @@ export interface Translations {
     elapsed: string
     tokens: string
     agentExecution: string
+    liveLogs: string
+    clear: string
+    waiting: string
   }
   codeBlock: {
     copy: string
@@ -117,6 +125,11 @@ const en: Translations = {
     availableModels: 'Available Models',
     refresh: 'Refresh',
     refreshing: 'Refreshing...',
+    searchModels: 'Search models...',
+    testBackends: 'Test',
+    testBackendsAria: 'Test backend connectivity',
+    loadingDescription: 'Loading description...',
+    error: 'Error',
     backendConnections: 'Backend Connections',
     systemResources: 'System Resources',
     about: 'About',
@@ -178,6 +191,11 @@ const fr: Translations = {
     availableModels: 'Modèles disponibles',
     refresh: 'Actualiser',
     refreshing: 'Actualisation...',
+    searchModels: 'Rechercher des modèles...',
+    testBackends: 'Tester',
+    testBackendsAria: 'Tester la connectivité backend',
+    loadingDescription: 'Chargement de la description...',
+    error: 'Erreur',
     backendConnections: 'Connexions Backend',
     systemResources: 'Ressources Système',
     about: 'À propos',

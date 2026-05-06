@@ -1,7 +1,7 @@
 // components/settings/SettingsView.tsx
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useUIStore } from '@/lib/stores/uiStore'
 import { modelDiscovery } from '@/services/modelDiscovery'
 import { LLM_CONFIG } from '@/lib/config'
@@ -13,6 +13,7 @@ interface BackendInfo {
   name: string
   url: string
   status: 'active' | 'inactive' | 'error'
+  responseTime?: number // Response time in ms
 }
 
 export function SettingsView() {
@@ -23,9 +24,21 @@ export function SettingsView() {
   const [refreshError, setRefreshError] = useState<string | null>(null)
   const [modelDescription, setModelDescription] = useState<string | null>(null)
   const [isLoadingDescription, setIsLoadingDescription] = useState(false)
+  
+  // Model search filter
+  const [modelSearch, setModelSearch] = useState('')
 
   // Get selected model's metadata
   const selectedModelInfo = availableModels.find(m => m.name === selectedModel)
+
+  // Memoized filtered models based on search
+  const filteredModels = useMemo(() =>
+    availableModels.filter(model =>
+      model.name.toLowerCase().includes(modelSearch.toLowerCase()) ||
+      model.provider.toLowerCase().includes(modelSearch.toLowerCase())
+    ),
+    [availableModels, modelSearch]
+  )
 
   const [backendInfo, setBackendInfo] = useState<BackendInfo[]>([
     { name: 'Ollama', url: LLM_CONFIG.ollamaUrl, status: 'inactive' },
@@ -34,80 +47,104 @@ export function SettingsView() {
     { name: 'Lemonade', url: LLM_CONFIG.lemonadeUrl, status: 'inactive' },
   ])
 
-  // Check backend connectivity once on mount
-  useEffect(() => {
-    const checkBackends = async () => {
-      const results = await Promise.all(
-        backendInfo.map(async (backend): Promise<BackendInfo> => {
-          const endpoints = [`${backend.url}/api/tags`, `${backend.url}/api/v1/models`]
+  // Memoized backend check function
+  const checkBackends = useCallback(async () => {
+    const results = await Promise.all(
+      backendInfo.map(async (backend): Promise<BackendInfo> => {
+        const endpoints = [`${backend.url}/api/tags`, `${backend.url}/api/v1/models`]
+        let status: BackendInfo['status'] = 'inactive'
+        let responseTime: number | undefined
 
-          for (const endpoint of endpoints) {
-            try {
-              const controller = new AbortController()
-              const timeoutId = setTimeout(() => controller.abort(), 2500)
+        for (const endpoint of endpoints) {
+          try {
+            const controller = new AbortController()
+            const timeoutId = setTimeout(() => controller.abort(), 2500)
 
-              const res = await fetch(endpoint, { signal: controller.signal })
-              clearTimeout(timeoutId)
+            const startTime = Date.now()
+            const res = await fetch(endpoint, { signal: controller.signal })
+            responseTime = Date.now() - startTime
+            clearTimeout(timeoutId)
 
-              if (res.ok) {
-                return { ...backend, status: 'active' }
-              }
-            } catch {
-              // Try next endpoint
+            if (res.ok) {
+              status = 'active'
+              break
+            }
+          } catch (err) {
+            if (err instanceof Error && err.name !== 'AbortError') {
+              status = 'error'
             }
           }
-          return backend // remains 'inactive'
-        })
-      )
-      setBackendInfo(results)
-    }
+        }
+        return { ...backend, status, responseTime }
+      })
+    )
+    setBackendInfo(results)
+  }, [backendInfo])
 
+  // Check backend connectivity once on mount
+  useEffect(() => {
     checkBackends()
-  }, []) // Empty dependency array = run once
+  }, [checkBackends])
+
+  // Memoized fetch description function
+  const fetchDescription = useCallback(async () => {
+    if (!selectedModel || selectedModel === 'default') {
+      setModelDescription(null)
+      return
+    }
+    
+    setIsLoadingDescription(true)
+    try {
+      // Try GitHub API first with timeout
+      const githubController = new AbortController()
+      const githubTimeout = setTimeout(() => githubController.abort(), 3000)
+      const githubRes = await fetch(
+        `https://api.github.com/search/repositories?q=${encodeURIComponent(selectedModel)}+in:name&per_page=1`,
+        { signal: githubController.signal, headers: { Accept: 'application/vnd.github.v3+json' } }
+      )
+      clearTimeout(githubTimeout)
+
+      if (githubRes.ok) {
+        const data = await githubRes.json()
+        if (data.items?.[0]?.description) {
+          setModelDescription(data.items[0].description)
+          setIsLoadingDescription(false)
+          return
+        }
+      } else if (!githubRes.ok && githubRes.status !== 429) {
+        console.warn(`GitHub API error: ${githubRes.status}`)
+      }
+
+      // Try Ollama API as fallback with timeout
+      const ollamaController = new AbortController()
+      const ollamaTimeout = setTimeout(() => ollamaController.abort(), 3000)
+      const ollamaRes = await fetch(`${LLM_CONFIG.ollamaUrl}/api/tags`, {
+        signal: ollamaController.signal
+      })
+      clearTimeout(ollamaTimeout)
+
+      if (ollamaRes.ok) {
+        const ollamaData = await ollamaRes.json()
+        const model = ollamaData.models?.find((m: any) => m.name === selectedModel)
+        if (model?.details?.description) {
+          setModelDescription(model.details.description)
+          setIsLoadingDescription(false)
+          return
+        }
+      }
+      setModelDescription('Large language model from Ollama')
+    } catch (err) {
+      console.warn('Failed to fetch model description:', err)
+      setModelDescription('Large language model')
+    } finally {
+      setIsLoadingDescription(false)
+    }
+  }, [selectedModel])
 
   // Fetch model description when selected model changes
   useEffect(() => {
-    const fetchDescription = async () => {
-      if (!selectedModel || selectedModel === 'default') {
-        setModelDescription(null)
-        return
-      }
-      
-      setIsLoadingDescription(true)
-      try {
-        // Try GitHub API first
-        const res = await fetch(`https://api.github.com/search/repositories?q=${encodeURIComponent(selectedModel)}+in:name&per_page=1`, {
-          headers: { Accept: 'application/vnd.github.v3+json' }
-        })
-        if (res.ok) {
-          const data = await res.json()
-          if (data.items?.[0]?.description) {
-            setModelDescription(data.items[0].description)
-            setIsLoadingDescription(false)
-            return
-          }
-        }
-        // Try Ollama API as fallback
-        const ollamaRes = await fetch('http://localhost:11434/api/tags')
-        if (ollamaRes.ok) {
-          const ollamaData = await ollamaRes.json()
-          const model = ollamaData.models?.find((m: any) => m.name === selectedModel)
-          if (model?.details?.description) {
-            setModelDescription(model.details.description)
-            setIsLoadingDescription(false)
-            return
-          }
-        }
-        setModelDescription('Large language model from Ollama')
-      } catch {
-        setModelDescription('Large language model')
-      } finally {
-        setIsLoadingDescription(false)
-      }
-    }
-    
     fetchDescription()
-  }, [selectedModel])
+  }, [fetchDescription])
 
   const handleRefreshModels = async () => {
     setIsRefreshLoading(true)
@@ -188,16 +225,25 @@ export function SettingsView() {
             🤖 {t.settings.modelsSection}
           </h3>
 
+          {/* Model Search */}
+          <input
+            type="text"
+            placeholder={t.settings.searchModels || 'Search models...'}
+            value={modelSearch}
+            onChange={(e) => setModelSearch(e.target.value)}
+            className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-2 mb-3 text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
+          />
+
           <div className="flex flex-col sm:flex-row gap-3">
             <select
               value={selectedModel}
               onChange={(e) => setSelectedModel(e.target.value)}
               className="flex-1 bg-slate-900 border border-slate-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-violet-500"
             >
-              {modelCount === 0 ? (
+              {filteredModels.length === 0 ? (
                 <option value="">Aucun modèle disponible</option>
               ) : (
-                availableModels.map((model) => {
+                filteredModels.map((model) => {
                   // Build display string with metadata
                   const parts = [model.name]
                   if (model.sizeGb) parts.push(`${model.sizeGb}GB`)
@@ -219,9 +265,9 @@ export function SettingsView() {
               className="px-6 py-3 bg-violet-600 hover:bg-violet-700 disabled:bg-violet-800/70 disabled:cursor-wait text-white text-sm font-medium rounded-xl transition-all flex items-center justify-center gap-2 whitespace-nowrap min-w-[120px]"
             >
               {isRefreshLoading ? (
-                <>⟳ {t.settings.refreshing}</>
+                <span>⟳ {t.settings.refreshing}</span>
               ) : (
-                <>↻ {t.settings.refresh}</>
+                <span>↻ {t.settings.refresh}</span>
               )}
             </button>
           </div>
@@ -229,7 +275,9 @@ export function SettingsView() {
           {/* Model Description */}
           {selectedModel && selectedModel !== 'default' && (
             <div className="mt-4 p-4 bg-slate-900/50 rounded-xl border border-slate-700/50">
-              {selectedModelInfo ? (
+              {isLoadingDescription ? (
+                <p className="text-sm text-slate-400">⏳ {t.settings.loadingDescription || 'Loading description...'}</p>
+              ) : selectedModelInfo ? (
                 <div className="space-y-2">
                   {/* Main info */}
                   <div className="flex flex-wrap gap-2 mb-3">
@@ -302,17 +350,39 @@ export function SettingsView() {
 
         {/* Backend Connections */}
         <section className="lg:col-span-2 bg-slate-800/70 rounded-2xl border border-slate-700 overflow-hidden">
-          <h3 className="text-sm font-medium text-slate-300 p-6 border-b border-slate-700 flex items-center gap-2">
-            🔌 {t.settings.backendConnections}
-          </h3>
+          <div className="p-6 border-b border-slate-700 flex items-center justify-between">
+            <h3 className="text-sm font-medium text-slate-300 flex items-center gap-2">
+              🔌 {t.settings.backendConnections}
+            </h3>
+            <button
+              onClick={checkBackends}
+              aria-label={t.settings.testBackendsAria || 'Test backend connectivity'}
+              className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-sm text-slate-300 rounded-lg transition-colors flex items-center gap-2"
+            >
+              ✅ {t.settings.testBackends || 'Test'}
+            </button>
+          </div>
           <div className="grid grid-cols-2 md:grid-cols-4">
             {backendInfo.map((backend) => (
-              <div key={backend.name} className="p-6 text-center border-b border-slate-700 last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0">
+              <div key={backend.name} aria-label={`Backend ${backend.name} is ${backend.status}`} className="p-6 text-center border-b border-slate-700 last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0">
                 <p className="font-medium text-white mb-2">{backend.name}</p>
-                <div className={`inline-flex items-center gap-2 text-sm ${backend.status === 'active' ? 'text-emerald-400' : 'text-slate-500'}`}>
-                  <div className={`w-2.5 h-2.5 rounded-full ${backend.status === 'active' ? 'bg-emerald-400' : 'bg-slate-600'}`} />
-                  {backend.status === 'active' ? t.settings.active : t.settings.inactive}
+                <div className={`inline-flex items-center gap-2 text-sm ${
+                  backend.status === 'active' ? 'text-emerald-400' :
+                  backend.status === 'error' ? 'text-red-400' :
+                  'text-slate-500'
+                }`}>
+                  <div className={`w-2.5 h-2.5 rounded-full ${
+                    backend.status === 'active' ? 'bg-emerald-400' :
+                    backend.status === 'error' ? 'bg-red-400' :
+                    'bg-slate-600'
+                  }`} />
+                  {backend.status === 'active' ? t.settings.active :
+                   backend.status === 'error' ? `⚠️ ${t.settings.error || 'Error'}` :
+                   t.settings.inactive}
                 </div>
+                {backend.responseTime && (
+                  <p className="text-[10px] text-slate-500 mt-1">{backend.responseTime}ms</p>
+                )}
                 <p className="text-[10px] text-slate-600 mt-3 truncate font-mono">{backend.url}</p>
               </div>
             ))}
