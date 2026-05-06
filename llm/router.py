@@ -97,7 +97,7 @@ class OllamaClient:
                 "stream": True,
                 "options": {"temperature": temperature}
             }
-            is_streaming_endpoint = "stream" in url and "chat" not in url
+            is_streaming_endpoint = "generate" in url or "stream" in url
         elif backend in ("lmstudio", "lemonade"):
             # LM Studio / OpenAI format: /v1/chat/completions with messages
             url = self.config.url or f"{settings.ollama_url}/v1/chat/completions"
@@ -122,7 +122,7 @@ class OllamaClient:
                 "stream": True,
                 "options": {"temperature": temperature}
             }
-            is_streaming_endpoint = "stream" in url and "chat" not in url
+            is_streaming_endpoint = "generate" in url or "stream" in url
 
         if is_streaming_endpoint:
             try:
@@ -168,6 +168,7 @@ class OllamaClient:
                             except json.JSONDecodeError:
                                 logger.warning(f"Failed to parse stream line: {text[:50]}")
             except requests.RequestException as e:
+                logger.error(f"[OllamaClient.stream] Request error: {e}")
                 yield f"[Error: {e}]"
 
 logger = logging.getLogger(__name__)

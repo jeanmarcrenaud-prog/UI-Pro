@@ -846,7 +846,8 @@ async def sse_stream(generator):
 
 
 @app.get("/stream")
-async def stream_endpoint(prompt: str):
+@app.get("/api/stream")
+async def stream_endpoint(prompt: str, model: str = "qwen3.5:9b"):
     """SSE streaming endpoint with error handling"""
     if not prompt or len(prompt) > 10000:
         raise HTTPException(
@@ -857,8 +858,8 @@ async def stream_endpoint(prompt: str):
     service = _get_streaming_service_cached()
 
     try:
-        # Default model for SSE endpoint
-        generator = service.stream_generate(prompt, model="qwen3.5:9b")
+        # Use model from query parameter
+        generator = service.stream_generate(prompt, model=model)
         return StreamingResponse(
             sse_stream(generator),
             media_type="text/event-stream",
