@@ -154,8 +154,8 @@ class OllamaClient:
                                     # llama.cpp typically uses OpenAI format
                                     content = data.get("choices", [{}])[0].get("delta", {}).get("content", "")
                                 else:
-                                    # Ollama format: response
-                                    content = data.get('response', '')
+                                    # Ollama format: response (or thinking for reasoning models like qwen3.6)
+                                    content = data.get('response', '') or data.get('thinking', '')
                                 if content:
                                     yield content
                                 # Check for completion - different formats
