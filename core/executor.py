@@ -122,6 +122,8 @@ class CodeExecutor:
                     proc_cmd,
                     capture_output=True,
                     text=True,
+                    encoding='utf-8',
+                    errors='replace',  # Replace invalid chars instead of crashing
                     timeout=self.config.timeout,
                     stdin=subprocess.DEVNULL,
                 )
@@ -131,6 +133,8 @@ class CodeExecutor:
                     cwd=workspace,
                     capture_output=True,
                     text=True,
+                    encoding='utf-8',
+                    errors='replace',
                     timeout=self.config.timeout,
                 )
             
