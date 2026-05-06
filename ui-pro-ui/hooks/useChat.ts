@@ -55,6 +55,66 @@ export const useChat = () => {
     }
   }, [selectedModel, availableModels])
 
+  // Regenerate: find last user message and resend it
+  const handleRegenerate = useCallback(async (messageId: string) => {
+    // Find the user message to regenerate
+    const userMsg = messages.find(m => m.id === messageId || (m.role === 'user' && messages.filter(x => x.role === 'user').pop()?.id === m.id))
+    if (!userMsg) {
+      console.warn('[useChat] Cannot regenerate: user message not found')
+      return
+    }
+    
+    // Get the user message content - use the one associated with this messageId
+    const lastUserMessage = messages.filter(m => m.role === 'user').pop()
+    if (!lastUserMessage) return
+    
+    const content = lastUserMessage.content
+    
+    // Remove all messages after the last user message (assistant responses)
+    const userMsgIndex = messages.findIndex(m => m.id === lastUserMessage.id)
+    if (userMsgIndex === -1) return
+    
+    const messagesToRemove = messages.slice(userMsgIndex + 1)
+    for (const msg of messagesToRemove) {
+      removeMessage(msg.id)
+    }
+    
+    console.log('[useChat] Regenerating from user message:', content.slice(0, 50))
+    
+    // Now send the message again (similar to handleSend)
+    const messageId = crypto.randomUUID()
+    const assistantId = crypto.randomUUID()
+    const { model, provider } = getCurrentModelInfo()
+    
+    // Add new assistant message
+    addMessage({
+      role: 'assistant',
+      content: '',
+      status: 'thinking',
+      id: assistantId,
+    })
+    
+    setLoading(true)
+    resetAgent()
+    
+    const initialSteps = [
+      { id: 'step-analyzing', title: 'Analyzing request', status: 'pending' as const },
+      { id: 'step-planning', title: 'Planning solution', status: 'pending' as const },
+      { id: 'step-executing', title: 'Executing', status: 'pending' as const },
+      { id: 'step-reviewing', title: 'Reviewing', status: 'pending' as const },
+    ]
+    start(initialSteps)
+    
+    try {
+      await chatService.sendMessage(content, messageId, 0, model, provider)
+    } catch (err) {
+      console.error('[useChat] Regenerate failed:', err)
+      setError('Failed to regenerate')
+      isSendingRef.current = false
+      isStreamActiveRef.current = false
+    }
+  }, [messages, removeMessage, getCurrentModelInfo, addMessage, setLoading, resetAgent, start])
+
   const attemptResume = useCallback(async () => {
     if (!currentMessageId || lastReceivedChunkIndex <= 0) return
 
@@ -265,5 +325,6 @@ export const useChat = () => {
     cancel,
     stopGeneration: cancel,  // Alias for backward compatibility
     clear,
+    regenerate: handleRegenerate,
   }
 }
