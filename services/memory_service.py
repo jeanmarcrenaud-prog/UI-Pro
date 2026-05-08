@@ -1,6 +1,6 @@
-# services/memory_service.py - Memory Service (Refactored)
+# services/memory_service.py - Unified Memory Service
 #
-# Role: Unified memory service with persistent metadata
+# Role: Unified memory service with persistent rich metadata
 # - FAISS vector search
 # - Rich metadata with UUID-based entries
 # - Context building with token budget
@@ -15,13 +15,18 @@ from collections import defaultdict
 import pickle
 import uuid
 import threading
+import asyncio
+import hashlib
 
+from models.settings import settings
 from .base import BaseService, ServiceMetrics
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class MemoryEntry:
-    """Unified memory entry with stable UUID"""
+    """Memory entry with stable identity."""
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     text: str = ""
     timestamp: datetime = field(default_factory=datetime.now)
@@ -30,7 +35,7 @@ class MemoryEntry:
     importance: float = 1.0
     metadata: Dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,
             "text": self.text,
@@ -38,30 +43,28 @@ class MemoryEntry:
             "session_id": self.session_id,
             "task_type": self.task_type,
             "importance": self.importance,
-            "metadata": self.metadata
+            "metadata": self.metadata,
         }
 
     @classmethod
-    def from_dict(cls, data: Dict) -> "MemoryEntry":
+    def from_dict(cls, data: Dict[str, Any]) -> "MemoryEntry":
         data = data.copy()
-        if "timestamp" in data and isinstance(data["timestamp"], str):
+        if isinstance(data.get("timestamp"), str):
             data["timestamp"] = datetime.fromisoformat(data["timestamp"])
         return cls(**data)
 
 
 class ContextBuilder:
-    """Smart context management with token budget"""
-    
+    """Token-aware context assembler."""
+
     def __init__(self, max_tokens: int = 4096):
         self.max_tokens = max_tokens
-        self.compression_threshold = 0.8
 
-    def estimate_tokens(self, text: str) -> int:
-        """Rough token estimation"""
+    @staticmethod
+    def estimate_tokens(text: str) -> int:
         return len(text) // 4
 
     def fit(self, texts: List[str], max_tokens: Optional[int] = None) -> List[str]:
-        """Fit texts within token budget"""
         max_t = max_tokens or self.max_tokens
         result = []
         total = 0
@@ -72,106 +75,98 @@ class ContextBuilder:
                 break
             result.append(text)
             total += tokens
-        
+
         return result
 
 
 class MemoryService(BaseService):
-    """
-    Unified memory service with persistent metadata.
-    """
-    
+    """Unified memory service with persistent rich metadata."""
+
     def __init__(
-        self, 
+        self,
         persist_path: Optional[str] = None,
         max_tokens: int = 4096,
-        auto_compress: bool = True
     ):
         super().__init__("MemoryService")
-        self.persist_path = persist_path
+
+        self.persist_path = persist_path or str(settings.workspace / "memory")
         self.max_tokens = max_tokens
-        self.auto_compress = auto_compress
-        
-        # Thread safety
+
         self._lock = threading.RLock()
-        
+
         # Core storage
         self._vector_store = None
-        
-        # Unified entry storage: id -> MemoryEntry
         self._entries: Dict[str, MemoryEntry] = {}
-        
-        # Text to ID mapping for O(1) lookup
-        self._text_to_id: Dict[str, str] = {}
-        
-        # Session index: session_id -> list[entry_id]
+        self._text_to_id: Dict[str, str] = {}  # Use hash to avoid collision
         self._session_index: Dict[str, List[str]] = defaultdict(list)
-        
-        # Context builder
-        self.context_builder = ContextBuilder(max_tokens=max_tokens)
-        
-        # Metrics
-        self._service_metrics = ServiceMetrics()
-        
-        # Persistence
-        self._entries_path: Optional[Path] = None
 
-    # ====================== INITIALIZATION ======================
-    
+        self.context_builder = ContextBuilder(max_tokens=max_tokens)
+        self._service_metrics = ServiceMetrics()
+
+        self._entries_path = Path(self.persist_path) / "memory_entries.pkl"
+
+    # ====================== LIFECYCLE ======================
+
     async def initialize(self) -> None:
-        """Async initialization"""
+        """Initialize vector store and load persisted data."""
         try:
+            # Lazy import to avoid circular dependencies
             from core.memory import get_memory_manager
             self._vector_store = get_memory_manager()
-            
-            # Setup persistence
-            if self.persist_path:
-                self._entries_path = Path(self.persist_path).parent / "memory_entries.pkl"
-                self._load_entries()
-            
-            self.logger.info(f"MemoryService initialized - {len(self._entries)} entries")
+
+            await self._load_entries()
+            logger.info(f"MemoryService initialized — {len(self._entries)} entries")
+
         except Exception as e:
+            logger.error(f"MemoryService initialization failed: {e}")
             self._set_error(str(e))
             raise
 
-    def _load_entries(self) -> None:
-        """Load entries from disk"""
-        if self._entries_path and self._entries_path.exists():
-            try:
-                with open(self._entries_path, "rb") as f:
-                    data = pickle.load(f)
-                    self._entries = {k: MemoryEntry.from_dict(v) for k, v in data.items()}
-                    # Rebuild text to ID mapping
-                    self._text_to_id = {entry.text: entry.id for entry in self._entries.values()}
-                    # Rebuild session index
-                    for entry in self._entries.values():
-                        if entry.session_id:
-                            self._session_index[entry.session_id].append(entry.id)
-                self.logger.info(f"Loaded {len(self._entries)} entries")
-            except Exception as e:
-                self.logger.warning(f"Failed to load entries: {e}")
-                self._entries = {}
+    async def _load_entries(self) -> None:
+        """Load persisted entries."""
+        if not self._entries_path.exists():
+            return
+
+        try:
+            with open(self._entries_path, "rb") as f:
+                data = pickle.load(f)
+
+            self._entries = {k: MemoryEntry.from_dict(v) for k, v in data.items()}
+
+            # Rebuild indexes
+            self._text_to_id.clear()
+            self._session_index.clear()
+
+            for entry in self._entries.values():
+                # Use hash to avoid text collision
+                text_hash = hashlib.sha256(entry.text.encode()).hexdigest()[:16]
+                self._text_to_id[text_hash] = entry.id
+                if entry.session_id:
+                    self._session_index[entry.session_id].append(entry.id)
+
+            logger.info(f"Loaded {len(self._entries)} memory entries from disk")
+        except Exception as e:
+            logger.warning(f"Failed to load memory entries: {e}")
 
     def _save_entries(self) -> None:
-        """Save entries to disk"""
-        if self._entries_path:
-            try:
-                self._entries_path.parent.mkdir(parents=True, exist_ok=True)
-                with open(self._entries_path, "wb") as f:
-                    data = {k: v.to_dict() for k, v in self._entries.items()}
-                    pickle.dump(data, f)
-                self.logger.debug(f"Saved {len(self._entries)} entries")
-            except Exception as e:
-                self.logger.error(f"Failed to save entries: {e}")
+        """Persist entries to disk."""
+        try:
+            self._entries_path.parent.mkdir(parents=True, exist_ok=True)
+            data = {k: v.to_dict() for k, v in self._entries.items()}
+
+            with open(self._entries_path, "wb") as f:
+                pickle.dump(data, f)
+        except Exception as e:
+            logger.error(f"Failed to save memory entries: {e}")
 
     async def shutdown(self) -> None:
-        """Clean shutdown"""
-        if self._vector_store:
-            self._vector_store.save()
+        """Graceful shutdown."""
+        if self._vector_store and hasattr(self._vector_store, 'save'):
+            await asyncio.to_thread(self._vector_store.save)
         self._save_entries()
-        self.logger.info("MemoryService shutdown completed")
+        logger.info("MemoryService shutdown completed")
 
-# ====================== CORE OPERATIONS ======================
+    # ====================== CORE API ======================
 
     async def add(
         self,
@@ -179,48 +174,49 @@ class MemoryService(BaseService):
         session_id: Optional[str] = None,
         task_type: Optional[str] = None,
         importance: float = 0.5,
-        metadata: Optional[Dict[str, Any]] = None,
-        auto_save: bool = False
+        metadata: Optional[Dict] = None,
+        auto_save: bool = True,
     ) -> Optional[str]:
-        """Add memory entry"""
+        """Add a new memory entry."""
         if not text or not text.strip():
             return None
-        
+
+        text = text.strip()
+
         with self._lock:
             try:
-                # Generate stable UUID
-                entry_id = str(uuid.uuid4())
-                
+                # Deduplication using hash
+                text_hash = hashlib.sha256(text.encode()).hexdigest()[:16]
+                if text_hash in self._text_to_id:
+                    entry_id = self._text_to_id[text_hash]
+                    # Update importance if higher
+                    if importance > self._entries[entry_id].importance:
+                        self._entries[entry_id].importance = importance
+                    return entry_id
+
                 entry = MemoryEntry(
-                    id=entry_id,
-                    text=text.strip(),
+                    text=text,
                     session_id=session_id,
                     task_type=task_type,
                     importance=importance,
-                    timestamp=datetime.now()
+                    metadata=metadata or {},
                 )
-                
-                # Add to vector store
-                self._vector_store.add_memory(entry.text, auto_save=auto_save)
-                
-                # Store entry
+
+                if self._vector_store:
+                    await asyncio.to_thread(self._vector_store.add_memory, text, auto_save=auto_save)
+
                 self._entries[entry.id] = entry
-                
-                # Text to ID mapping for O(1) lookup
-                self._text_to_id[entry.text] = entry.id
-                
-                # Update session index
+                self._text_to_id[text_hash] = entry.id
+
                 if session_id:
                     self._session_index[session_id].append(entry.id)
-                
+
                 self._service_metrics.record_call(0, success=True)
-                self.logger.debug(f"Memory added [{entry.id[:8]}] session={session_id}")
-                
                 return entry.id
 
             except Exception as e:
                 self._service_metrics.record_call(0, success=False)
-                self.logger.error(f"Failed to add memory: {e}")
+                logger.error(f"Failed to add memory: {e}")
                 return None
 
     async def search(
@@ -228,46 +224,43 @@ class MemoryService(BaseService):
         query: str,
         k: int = 5,
         session_id: Optional[str] = None,
-        task_type: Optional[str] = None
-    ) -> List[Dict]:
-        """Semantic search with filters"""
-        if not query or not query.strip():
+        task_type: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Semantic search with optional filters."""
+        if not query or not query.strip() or not self._vector_store:
             return []
 
         try:
-            # Get more results for filtering
-            vector_results = self._vector_store.search(query, k=k * 2)
-            
-            # O(1) lookup using _text_to_id mapping
+            vector_results = await asyncio.to_thread(self._vector_store.search, query, k=k * 2)
+
             results = []
-            
             for vr in vector_results:
                 text = vr.get("text", "")
-                
-                # Fast lookup via mapping
-                entry_id = self._text_to_id.get(text)
+                text_hash = hashlib.sha256(text.encode()).hexdigest()[:16]
+                entry_id = self._text_to_id.get(text_hash)
                 if not entry_id:
                     continue
-                    
+
                 entry = self._entries.get(entry_id)
                 if not entry:
                     continue
-                
+
                 # Apply filters
                 if session_id and entry.session_id != session_id:
                     continue
                 if task_type and entry.task_type != task_type:
                     continue
-                
+
                 results.append({
                     "id": entry.id,
                     "text": entry.text,
                     "score": vr.get("score", 0.0),
                     "session_id": entry.session_id,
                     "task_type": entry.task_type,
-                    "importance": entry.importance
+                    "importance": entry.importance,
+                    "timestamp": entry.timestamp.isoformat(),
                 })
-                
+
                 if len(results) >= k:
                     break
 
@@ -275,8 +268,8 @@ class MemoryService(BaseService):
             return results
 
         except Exception as e:
+            logger.error(f"Memory search failed: {e}")
             self._service_metrics.record_call(0, success=False)
-            self.logger.error(f"Search failed: {e}")
             return []
 
     # ====================== CONTEXT ======================
@@ -286,57 +279,33 @@ class MemoryService(BaseService):
         query: str,
         k: int = 5,
         session_id: Optional[str] = None,
-        max_tokens: Optional[int] = None
+        max_tokens: Optional[int] = None,
     ) -> str:
-        """Get optimized context for query"""
         results = await self.search(query, k=k, session_id=session_id)
-        
-        if not results:
-            return ""
-
-        texts = [r.get("text", "")[:500] for r in results]
+        texts = [r["text"] for r in results]
         fitted = self.context_builder.fit(texts, max_tokens)
-
-        return "\n---\n".join(fitted)
+        return "\n\n---\n\n".join(fitted)
 
     async def get_session_context(
         self,
         session_id: str,
-        max_tokens: Optional[int] = None
+        max_tokens: Optional[int] = None,
     ) -> str:
-        """Get full session context"""
         if not session_id:
             return ""
 
         entry_ids = self._session_index.get(session_id, [])
         entries = [self._entries[eid] for eid in entry_ids if eid in self._entries]
-        
-        if not entries:
-            return ""
 
-        # Sort by importance then timestamp
         sorted_entries = sorted(
             entries,
             key=lambda e: (e.importance, e.timestamp),
             reverse=True
         )
 
-        texts = [e.text[:500] for e in sorted_entries]
-        return "\n---\n".join(self.context_builder.fit(texts, max_tokens))
-
-    # ====================== COMPRESSION ======================
-
-    async def compress_session(self, session_id: str) -> bool:
-        """Compress session memory"""
-        self.logger.info(f"Session compression requested for {session_id}")
-        # TODO: Implement with LLM
-        return True
-
-    async def summarize_old_memories(self, session_id: Optional[str] = None) -> int:
-        """Summarize old memories"""
-        self.logger.info(f"Summarization requested for session={session_id}")
-        # TODO: Implement with LLM
-        return 0
+        texts = [e.text for e in sorted_entries]
+        fitted = self.context_builder.fit(texts, max_tokens)
+        return "\n\n---\n\n".join(fitted)
 
     # ====================== UTILITIES ======================
 
@@ -344,47 +313,35 @@ class MemoryService(BaseService):
         return len(self._entries)
 
     def clear(self, session_id: Optional[str] = None) -> None:
-        """Clear memories"""
-        if session_id:
-            entry_ids = self._session_index.pop(session_id, [])
-            for eid in entry_ids:
-                self._entries.pop(eid, None)
-            self.logger.info(f"Cleared session: {session_id}")
-        else:
-            self._entries.clear()
-            self._session_index.clear()
-            if self._vector_store:
-                self._vector_store.clear()
-            self.logger.info("All memories cleared")
+        with self._lock:
+            if session_id:
+                for eid in self._session_index.pop(session_id, []):
+                    entry = self._entries.pop(eid, None)
+                    if entry:
+                        text_hash = hashlib.sha256(entry.text.encode()).hexdigest()[:16]
+                        self._text_to_id.pop(text_hash, None)
+                logger.info(f"Cleared session {session_id}")
+            else:
+                self._entries.clear()
+                self._text_to_id.clear()
+                self._session_index.clear()
+                if self._vector_store and hasattr(self._vector_store, 'clear'):
+                    self._vector_store.clear()
+                logger.info("All memories cleared")
 
-    def get_stats(self) -> Dict:
-        """Get service statistics"""
+    def get_stats(self) -> Dict[str, Any]:
         return {
             "total_entries": self.count(),
             "active_sessions": len(self._session_index),
             "max_tokens": self.max_tokens,
-            "vector_store": self._vector_store.count() if self._vector_store else 0
+            "vector_store_count": self._vector_store.count() if self._vector_store and hasattr(self._vector_store, 'count') else 0,
         }
 
-    def get_metrics(self) -> Dict:
-        """Get service metrics"""
+    def get_metrics(self) -> Dict[str, Any]:
         return {
             "service": "MemoryService",
-            "total_entries": self.count(),
-            "total_searches": self._service_metrics.total_calls,
-            "success_rate": self._service_metrics.success_rate,
-            "sessions": len(self._session_index),
-            "max_tokens": self.max_tokens,
-        }
-
-    def get_session_summary(self) -> Dict[str, Any]:
-        """Get summary of all sessions"""
-        return {
-            sid: {
-                "count": len(eids),
-                "entries": [self._entries[eid].to_dict() for eid in eids if eid in self._entries]
-            }
-            for sid, eids in self._session_index.items()
+            **self._service_metrics.to_dict(),
+            **self.get_stats(),
         }
 
 
@@ -394,7 +351,6 @@ _memory_service: Optional[MemoryService] = None
 
 
 def get_memory_service() -> MemoryService:
-    """Get singleton memory service"""
     global _memory_service
     if _memory_service is None:
         _memory_service = MemoryService()
