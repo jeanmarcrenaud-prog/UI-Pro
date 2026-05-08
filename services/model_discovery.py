@@ -115,8 +115,11 @@ class ModelDiscovery:
         return 4096 if any(x in size for x in ["3b", "4b", "2b", "1b"]) else 8192
 
     @staticmethod
-    def _estimate_speed(quantization: str, param_size: str) -> str:
-        quant = (quantization or "").upper()
+    def _estimate_speed(quantization: Optional[str], param_size: str) -> str:
+        # Handle case where quantization could be a dict or other type
+        if isinstance(quantization, dict):
+            quantization = quantization.get("level") or quantization.get("name") or ""
+        quant = str(quantization or "").upper()
         size = (param_size or "").lower()
 
         if any(q in quant for q in ["Q2", "Q3", "IQ2", "IQ3"]) or "1b" in size:
