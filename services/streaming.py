@@ -101,20 +101,41 @@ class StreamingService:
 
     def _get_client(self, model: str, provider: Optional[str] = None):
         """
-        Get configured client via ModelService.
+        Get configured client based on provider.
         
-        Fully delegates to ModelService which coordinates:
-        - ModelDiscovery (available models)
-        - LLMRouter (intelligent routing)
-        - Performance tracking
+        Uses provider to determine backend URL:
+        - lmstudio -> LM Studio API
+        - ollama -> Ollama API  
+        - lemonade -> Lemonade API
+        - llamacpp -> llama.cpp API
         """
-        model_svc = self._ensure_model_service()
+        from llm.router import OllamaClient, ModelConfig
+        from models.settings import settings
 
-        # Determine mode from model name patterns
-        mode = "reasoning" if any(x in model.lower() for x in ["deepseek", "qwen", "coder", "reason"]) else "fast"
+        # Determine backend URL from provider
+        provider = (provider or "ollama").lower()
+        
+        if provider == "lmstudio":
+            url = settings.lmstudio_url
+            endpoint = "/v1/chat/completions"
+        elif provider == "lemonade":
+            url = settings.lemonade_url
+            endpoint = "/v1/chat/completions"
+        elif provider == "llamacpp":
+            url = settings.llamacpp_url
+            endpoint = "/api/generate"
+        else:  # ollama or default
+            url = settings.ollama_url
+            endpoint = "/api/generate"
 
-        # Fully delegate to ModelService - it handles routing and client config
-        return model_svc.get_client(mode=mode)
+        config = ModelConfig(
+            url=f"{url.rstrip('/')}{endpoint}",
+            model=model,
+            timeout=self.config.timeout_ms // 1000,
+            backend=provider,
+        )
+
+        return OllamaClient(config)
 
     async def stream_generate(
         self,
