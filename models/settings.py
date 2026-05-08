@@ -86,7 +86,7 @@ LMSTUDIO_URL = os.getenv("LMSTUDIO_URL", "http://localhost:1234")
 MODEL_FAST = os.getenv("MODEL_FAST") or ""  # Required - no default
 MODEL_REASONING = os.getenv("MODEL_REASONING") or ""  # Required - no default
 MODEL_CODE = os.getenv("MODEL_CODE") or ""  # Required - no default
-LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", 30))
+LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", 120))  # 120s for reasoning/code models
 
 # Executor Settings
 EXECUTOR_TIMEOUT = int(os.getenv("EXECUTOR_TIMEOUT", 60))
@@ -99,30 +99,8 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 
 # ========================
-# Backend configuration
+# Backend configuration (inline in Settings.backends field)
 # ========================
-_BACKENDS_TEMPLATE = {
-    "ollama": {
-        "url": OLLAMA_URL,
-        "enabled": _parse_bool(os.getenv("OLLAMA_ENABLED"), True),
-        "models_endpoint": "/api/tags",
-    },
-    "lemonade": {
-        "url": LEMONADE_URL,
-        "enabled": _parse_bool(os.getenv("LEMONADE_ENABLED"), True),
-        "models_endpoint": "/api/v1/models",
-    },
-    "llamacpp": {
-        "url": LLAMACPP_URL,
-        "enabled": _parse_bool(os.getenv("LLAMACPP_ENABLED"), False),
-        "models_endpoint": "/props",
-    },
-    "lmstudio": {
-        "url": LMSTUDIO_URL,
-        "enabled": _parse_bool(os.getenv("LMSTUDIO_ENABLED"), True),
-        "models_endpoint": "/api/v1/models",
-    },
-}
 
 # Reasoning keywords for smart model selection
 REASONING_KEYWORDS = frozenset(["error", "debug", "optimize", "architecture", "complex", "plan", "architect"])
@@ -170,7 +148,12 @@ class Settings:
     
     # Config
     load_dotenv: bool = LOAD_DOTENV
-    backends: dict = field(default_factory=lambda: copy.deepcopy(_BACKENDS_TEMPLATE))
+    backends: dict = field(default_factory=lambda: {
+        "ollama": {"url": OLLAMA_URL, "enabled": True, "models_endpoint": "/api/tags"},
+        "lemonade": {"url": LEMONADE_URL, "enabled": True, "models_endpoint": "/api/v1/models"},
+        "llamacpp": {"url": LLAMACPP_URL, "enabled": False, "models_endpoint": "/props"},
+        "lmstudio": {"url": LMSTUDIO_URL, "enabled": True, "models_endpoint": "/api/v1/models"},
+    })
     
     def __post_init__(self):
         # Override YAML-based settings if present in config
@@ -267,7 +250,3 @@ def get_settings() -> Settings:
 
 # Public API
 settings = get_settings()
-
-
-# Backward compatibility - module-level constants
-BACKENDS = _BACKENDS_TEMPLATE
