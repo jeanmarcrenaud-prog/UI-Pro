@@ -7,6 +7,7 @@ import { MarkdownRenderer } from '@/components/markdown'
 import { motion } from 'framer-motion'
 import { Copy, Check, RefreshCw, ArrowDown, Play } from 'lucide-react'
 import { MessageSuggestions } from './MessageSuggestions'
+import { useI18n } from '@/lib/i18n'
 
 interface MessageBubbleProps {
   message: Message
@@ -58,6 +59,7 @@ export const MessageBubble = memo(function MessageBubble({
   onContinue,
   onSuggestion,
 }: MessageBubbleProps) {
+  const { t } = useI18n()
   const [copied, setCopied] = useState(false)
 
   if (!message?.role) return null
@@ -162,7 +164,7 @@ export const MessageBubble = memo(function MessageBubble({
               <button
                 onClick={onRegenerate}
                 className="p-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-400 hover:text-white opacity-0 group-hover:opacity-100 transition-all"
-                title="Regenerate response"
+                title={t.messageBubble?.regenerate ?? 'Regenerate'}
               >
                 <RefreshCw className="w-3 h-3" />
               </button>
@@ -173,7 +175,7 @@ export const MessageBubble = memo(function MessageBubble({
               <button
                 onClick={onContinue}
                 className="p-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-400 hover:text-white opacity-0 group-hover:opacity-100 transition-all"
-                title="Continue generating"
+                title={t.messageBubble?.continue ?? 'Continue'}
               >
                 <ArrowDown className="w-3 h-3" />
               </button>
