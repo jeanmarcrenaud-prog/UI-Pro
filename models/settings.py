@@ -109,7 +109,7 @@ REASONING_KEYWORDS = frozenset(["error", "debug", "optimize", "architecture", "c
 # ========================
 # Unified Settings class
 # ========================
-@dataclass(frozen=True)
+@dataclass(kw_only=True)
 class Settings:
     """Immutable configuration singleton - unified source of truth."""
     # Paths
@@ -154,30 +154,35 @@ class Settings:
         "llamacpp": {"url": LLAMACPP_URL, "enabled": False, "models_endpoint": "/props"},
         "lmstudio": {"url": LMSTUDIO_URL, "enabled": True, "models_endpoint": "/api/v1/models"},
     })
-    
-    def __post_init__(self):
-        # Override YAML-based settings if present in config
-        app_config = _YAML_CONFIG.get("app", {})
-        llm_config = _YAML_CONFIG.get("llm", {})
-        executor_config = _YAML_CONFIG.get("executor", {})
-        memory_config = _YAML_CONFIG.get("memory", {})
-        logging_config = _YAML_CONFIG.get("logging", {})
-        api_config = _YAML_CONFIG.get("api", {})
-        dashboard_config = _YAML_CONFIG.get("dashboard", {})
-        
-        # Override using object.__setattr__ (frozen dataclass)
-        object.__setattr__(self, 'app_name', os.getenv("APP_NAME", app_config.get("name", self.app_name)))
-        object.__setattr__(self, 'version', os.getenv("VERSION", app_config.get("version", self.version)))
-        object.__setattr__(self, 'debug', _parse_bool(os.getenv("DEBUG"), app_config.get("debug", self.debug)))
-        object.__setattr__(self, 'api_host', os.getenv("API_HOST", api_config.get("host", self.api_host)))
-        object.__setattr__(self, 'api_port', int(os.getenv("API_PORT", api_config.get("port", self.api_port))))
-        # Security: api_key MUST come from env only (never from YAML)
+
+    def __new__(cls):
+        """Singleton pattern - return existing instance if available."""
+        if hasattr(cls, '_instance'):
+            return cls._instance
+        instance = super().__new__(cls)
+        cls._instance = instance
+        return instance
+
+    def __init__(self, **kwargs):
+        """Custom init to apply env/yaml overrides without object.__setattr__."""
+        # Get YAML config
+        yaml_app = _YAML_CONFIG.get("app", {})
+        yaml_api = _YAML_CONFIG.get("api", {})
+        yaml_memory = _YAML_CONFIG.get("memory", {})
+
+        # Apply overrides (env takes priority over yaml)
+        self.app_name = os.getenv("APP_NAME", yaml_app.get("name", self.app_name))
+        self.version = os.getenv("VERSION", yaml_app.get("version", self.version))
+        self.debug = _parse_bool(os.getenv("DEBUG"), yaml_app.get("debug", self.debug))
+        self.api_host = os.getenv("API_HOST", yaml_api.get("host", self.api_host))
+        self.api_port = int(os.getenv("API_PORT", yaml_api.get("port", self.api_port)))
+        # Security: api_key MUST come from env only
         api_key_env = os.getenv("API_KEY")
         if api_key_env:
-            object.__setattr__(self, 'api_key', api_key_env)
-        object.__setattr__(self, 'dashboard_port', int(os.getenv("DASHBOARD_PORT", dashboard_config.get("port", self.dashboard_port))))
-        object.__setattr__(self, 'memory_enabled', _parse_bool(os.getenv("MEMORY_ENABLED"), memory_config.get("enabled", self.memory_enabled)))
-        object.__setattr__(self, 'memory_limit_mb', int(os.getenv("MEMORY_LIMIT_MB", memory_config.get("limit_mb", self.memory_limit_mb))))
+            self.api_key = api_key_env
+        self.dashboard_port = int(os.getenv("DASHBOARD_PORT", yaml_api.get("dashboard_port", self.dashboard_port)))
+        self.memory_enabled = _parse_bool(os.getenv("MEMORY_ENABLED"), yaml_memory.get("enabled", self.memory_enabled))
+        self.memory_limit_mb = int(os.getenv("MEMORY_LIMIT_MB", yaml_memory.get("limit_mb", self.memory_limit_mb)))
     
     def get_model_for_task(self, task: str) -> str:
         """
