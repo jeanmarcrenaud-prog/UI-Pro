@@ -196,17 +196,31 @@ class Settings:
         object.__setattr__(self, 'memory_enabled', _parse_bool(os.getenv("MEMORY_ENABLED"), memory_config.get("enabled", self.memory_enabled)))
         object.__setattr__(self, 'memory_limit_mb', int(os.getenv("MEMORY_LIMIT_MB", memory_config.get("limit_mb", self.memory_limit_mb))))
     
-    def get_model_for_task(self, task_type: str) -> str:
-        """Smart model selection based on task type."""
-        task_lower = task_type.lower()
+    def get_model_for_task(self, task: str) -> str:
+        """
+        Simple model selection for basic task types.
+        Complex keyword-based routing is handled by LLMRouter.
         
+        Args:
+            task: Task type ("fast", "reasoning", "code") or natural language
+            
+        Returns:
+            Model name for the task
+        """
+        task_lower = task.lower().strip()
+        
+        # Simple mode selection (for backward compatibility)
         if task_lower == "fast":
             return self.model_fast
         elif task_lower == "reasoning":
             return self.model_reasoning
-        elif any(kw in task_lower for kw in REASONING_KEYWORDS):
-            return self.model_reasoning
-        return self.model_fast
+        elif task_lower == "code":
+            return self.model_code
+        
+        # For complex tasks, delegate to LLMRouter
+        from llm.router import LLMRouter
+        router = LLMRouter()
+        return router.get_model_for_task(task)
     
     def get_workspace_str(self) -> str:
         """Get workspace as string for external I/O."""
@@ -254,11 +268,6 @@ def get_settings() -> Settings:
 
 # Public API
 settings = get_settings()
-
-
-def get_model_for_task(task_type: str) -> str:
-    """Smart model selection based on task type (delegates to singleton)."""
-    return settings.get_model_for_task(task_type)
 
 
 # Backward compatibility - module-level constants
