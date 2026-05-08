@@ -135,6 +135,7 @@ class ModelService:
         Get client for specific model and provider.
         
         Uses explicit provider to determine backend URL.
+        Strips provider prefix from model name (e.g., "lmstudio-Qwen3.5 9B" -> "Qwen3.5 9B").
         """
         self._ensure_init()
         from llm.router import OllamaClient, ModelConfig
@@ -144,6 +145,13 @@ class ModelService:
         provider = (provider or "ollama").lower()
         backend_url = self._get_backend_url(provider)
 
+        # Strip provider prefix from model name (e.g., "lmstudio-Qwen3.5 9B" -> "Qwen3.5 9B")
+        clean_model = model
+        for prefix in ["ollama-", "lmstudio-", "lemonade-", "llamacpp-"]:
+            if model.startswith(prefix):
+                clean_model = model[len(prefix):]
+                break
+
         # Determine endpoint based on provider
         if provider == "lmstudio" or provider == "lemonade":
             endpoint = "/v1/chat/completions"
@@ -152,7 +160,7 @@ class ModelService:
 
         config = ModelConfig(
             url=f"{backend_url.rstrip('/')}{endpoint}",
-            model=model,
+            model=clean_model,
             timeout=LLM_TIMEOUT,
             backend=provider,
         )
