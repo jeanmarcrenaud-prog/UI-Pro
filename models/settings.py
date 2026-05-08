@@ -25,8 +25,8 @@ import yaml
 # to see logs from settings.py
 logger = logging.getLogger(__name__)
 
-# Paths
-PROJECT_ROOT = Path(__file__).parent
+# Paths - use parents[1] to go from models/ to project root
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 # Load .env file relative to PROJECT_ROOT
 ENV_FILE = PROJECT_ROOT / ".env"
@@ -210,17 +210,16 @@ class Settings:
         task_lower = task.lower().strip()
         
         # Simple mode selection (for backward compatibility)
+        # Complex keyword-based routing is handled by LLMRouter only
         if task_lower == "fast":
             return self.model_fast
-        elif task_lower == "reasoning":
+        if task_lower in ("reasoning", "reasoner"):
             return self.model_reasoning
-        elif task_lower == "code":
+        if task_lower == "code":
             return self.model_code
         
-        # For complex tasks, delegate to LLMRouter
-        from llm.router import LLMRouter
-        router = LLMRouter()
-        return router.get_model_for_task(task)
+        # Default to fast for unknown simple tasks
+        return self.model_fast
     
     def get_workspace_str(self) -> str:
         """Get workspace as string for external I/O."""
