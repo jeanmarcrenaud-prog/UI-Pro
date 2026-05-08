@@ -22,7 +22,7 @@ export default function ChatInput({ onSend, isLoading }: ChatInputProps) {
   return (
     <div className="flex items-center gap-2 bg-[#0f172a] p-2 rounded-xl border border-gray-700">
       <textarea
-        className="flex-1 bg-transparent outline-none text-white px-3 resize-none"
+        className="flex-1 bg-transparent outline-none text-white px-3 resize-none placeholder:text-slate-500"
         placeholder="Describe your task..."
         value={value}
         rows={1}
@@ -37,7 +37,7 @@ export default function ChatInput({ onSend, isLoading }: ChatInputProps) {
 
       <button
         disabled={isLoading}
-        className="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 px-4 py-2 rounded-lg"
+        className="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 px-4 py-2 rounded-lg text-white"
         onClick={handleSend}
       >
         ➤
