@@ -101,41 +101,15 @@ class StreamingService:
 
     def _get_client(self, model: str, provider: Optional[str] = None):
         """
-        Get configured client based on provider.
+        Get configured client via ModelService.
         
-        Uses provider to determine backend URL:
-        - lmstudio -> LM Studio API
-        - ollama -> Ollama API  
-        - lemonade -> Lemonade API
-        - llamacpp -> llama.cpp API
+        Fully delegates to ModelService which handles:
+        - ModelDiscovery for backend detection
+        - LLMRouter for routing
+        - Proper URL/endpoint configuration
         """
-        from llm.router import OllamaClient, ModelConfig
-        from models.settings import settings
-
-        # Determine backend URL from provider
-        provider = (provider or "ollama").lower()
-        
-        if provider == "lmstudio":
-            url = settings.lmstudio_url
-            endpoint = "/v1/chat/completions"
-        elif provider == "lemonade":
-            url = settings.lemonade_url
-            endpoint = "/v1/chat/completions"
-        elif provider == "llamacpp":
-            url = settings.llamacpp_url
-            endpoint = "/api/generate"
-        else:  # ollama or default
-            url = settings.ollama_url
-            endpoint = "/api/generate"
-
-        config = ModelConfig(
-            url=f"{url.rstrip('/')}{endpoint}",
-            model=model,
-            timeout=self.config.timeout_ms // 1000,
-            backend=provider,
-        )
-
-        return OllamaClient(config)
+        model_svc = self._ensure_model_service()
+        return model_svc.get_client_for_model(model=model, provider=provider)
 
     async def stream_generate(
         self,
@@ -273,12 +247,21 @@ class StreamingService:
 
     async def _stream_from_client(self, client, prompt: str, model: str, temperature: float):
         """Helper to support both sync and async streaming clients."""
-        if hasattr(client, 'stream') and asyncio.iscoroutinefunction(client.stream):
-            async for chunk in client.stream(prompt=prompt, model=model, temperature=temperature):
+        # Check if client has stream method
+        if not hasattr(client, 'stream'):
+            logger.warning("Client has no stream method, using generate")
+            result = client.generate(prompt=prompt, model=model, temperature=temperature)
+            yield result
+            return
+
+        # Handle async vs sync
+        stream_method = client.stream
+        if asyncio.iscoroutinefunction(stream_method):
+            async for chunk in stream_method(prompt=prompt, model=model, temperature=temperature):
                 yield chunk
         else:
             # Synchronous client wrapped
-            for chunk in client.stream(prompt=prompt, model=model, temperature=temperature):
+            for chunk in stream_method(prompt=prompt, model=model, temperature=temperature):
                 yield chunk
 
     def cancel_stream(self, stream_id: str) -> bool:

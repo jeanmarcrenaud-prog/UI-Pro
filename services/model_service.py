@@ -126,10 +126,62 @@ class ModelService:
         Returns an OllamaClient with correct model, URL, and timeout from settings.
         """
         self._ensure_init()
-        # get_for_mode is in llm.router.LLMRouter, not services.llm_router
         from llm.router import LLMRouter
         router = LLMRouter()
         return router.get_for_mode(mode)
+
+    def get_client_for_model(self, model: str, provider: Optional[str] = None) -> Any:
+        """
+        Get client for specific model and provider.
+        
+        Uses ModelDiscovery to get backend info, falls back to settings.
+        """
+        self._ensure_init()
+        from llm.router import OllamaClient, ModelConfig
+        from models.settings import settings
+
+        provider = (provider or "ollama").lower()
+
+        # Try to get URL from ModelDiscovery
+        backend_url = None
+        try:
+            models = self._discovery.discover_all()
+            for m in models:
+                if m.name == model or model in m.name:
+                    backend_url = self._get_backend_url(m.backend)
+                    break
+        except Exception:
+            pass
+
+        # Fallback to settings
+        if not backend_url:
+            backend_url = self._get_backend_url(provider)
+
+        # Determine endpoint
+        if provider == "lmstudio" or provider == "lemonade":
+            endpoint = "/v1/chat/completions"
+        else:
+            endpoint = "/api/generate"
+
+        config = ModelConfig(
+            url=f"{backend_url.rstrip('/')}{endpoint}",
+            model=model,
+            timeout=settings.LLM_TIMEOUT,
+            backend=provider,
+        )
+
+        return OllamaClient(config)
+
+    def _get_backend_url(self, backend: str) -> str:
+        """Get URL for backend from settings."""
+        from models.settings import settings
+        mapping = {
+            "ollama": settings.ollama_url,
+            "lmstudio": settings.lmstudio_url,
+            "lemonade": settings.lemonade_url,
+            "llamacpp": settings.llamacpp_url,
+        }
+        return mapping.get(backend.lower(), settings.ollama_url)
 
     def generate(
         self,
