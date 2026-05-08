@@ -78,6 +78,10 @@ export function useChatController() {
               ],
             })
           }
+          // Update token count if provided
+          if (event.tokensGenerated !== undefined) {
+            useChatStore.getState().setTokenCount(event.tokensGenerated)
+          }
           break
 
         case 'step':

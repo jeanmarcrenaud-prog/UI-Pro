@@ -16,6 +16,7 @@ export interface BackendStreamChunk {
   content?: string
   response?: string
   tokens?: number
+  tokens_generated?: number
   latency_ms?: number
   error?: string
   step_id?: string
@@ -28,6 +29,7 @@ export interface StreamEvent {
   content: string
   index?: number
   tokens?: number
+  tokensGenerated?: number
   error?: string
   stepId?: string
   stepStatus?: string
@@ -186,6 +188,7 @@ class StreamService {
       content,
       index: data.index,
       tokens: data.tokens,
+      tokensGenerated: data.tokens_generated,
       streamId: data.stream_id,
       latencyMs: data.latency_ms,
     }
