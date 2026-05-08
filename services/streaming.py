@@ -1,14 +1,11 @@
-# services/streaming.py
-"""
-Streaming Service for real-time LLM responses.
-
-Features:
-- Async generator with proper lifecycle events
-- Guaranteed single final event (done/error/cancelled)
-- Cancellation support
-- Step tracking for frontend
-- Backend detection and validation
-"""
+# services/streaming.py - Real-time Streaming Service
+#
+# Features:
+# - Async generator with proper lifecycle events
+# - Guaranteed single final event (done/error/cancelled)
+# - Cancellation support
+# - Step tracking for frontend
+# - Delegates to ModelService/LLMRouter for client creation
 
 import asyncio
 import logging
@@ -18,6 +15,8 @@ from typing import Optional, AsyncIterator, Callable, Dict, Any
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+
+from models.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +31,7 @@ class StreamStatus(Enum):
 
 @dataclass
 class StreamChunk:
-    """Represents a single chunk in the streaming response."""
+    """Standardized streaming chunk for frontend consumption."""
     text: str
     status: StreamStatus
     stream_id: str
@@ -44,7 +43,7 @@ class StreamChunk:
     step_status: Optional[str] = None
     timestamp: datetime = field(default_factory=datetime.now)
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         """Convert to frontend-compatible format (WebSocket / SSE)"""
         type_map = {
             StreamStatus.STARTING: "token",
@@ -54,13 +53,13 @@ class StreamChunk:
             StreamStatus.CANCELLED: "error",
         }
 
-        result: dict[str, Any] = {
+        result: Dict[str, Any] = {
             "type": type_map.get(self.status, "token"),
             "status": self.status.value,
             "stream_id": self.stream_id,
             "index": self.chunk_index,
-            "data": self.text,
             "content": self.text,
+            "data": self.text,
             "response": self.text,
             "tokens": self.tokens_generated,
             "latency_ms": round(self.latency_ms, 2),
@@ -78,116 +77,58 @@ class StreamChunk:
 
 @dataclass
 class StreamConfig:
+    """Streaming configuration."""
     chunk_size: int = 5
     max_tokens: int = 4096
     timeout_ms: int = 120_000
-    enable_progress: bool = True
-
-    backend_rules: dict[str, list[str]] = field(default_factory=lambda: {
-        "ollama": [],
-        "lemonade": ["GGUF", "user.", "Whisper"],
-        "llamacpp": ["llamacpp"],
-        "lmstudio": ["lmstudio"],
-    })
 
 
 class StreamingService:
+    """Real-time streaming service with robust lifecycle management."""
+
     def __init__(self, config: Optional[StreamConfig] = None):
         self.config = config or StreamConfig()
-        self._active_streams: Dict[str, asyncio.Task] = {}
+        self._active_streams: Dict[str, Optional[asyncio.Task]] = {}
         self._stream_counter = 0
+        self._model_service = None
 
-    def _detect_backend(self, model: str) -> str:
-        """Detect backend based on model name patterns."""
-        for backend, patterns in self.config.backend_rules.items():
-            if any(pattern in model or model.startswith(pattern) for pattern in patterns):
-                return backend
-        return "ollama"
+    def _ensure_model_service(self):
+        """Lazy initialization to avoid circular imports."""
+        if self._model_service is None:
+            from services.model_service import get_model_service
+            self._model_service = get_model_service()
+        return self._model_service
 
-    def _get_client(self, model: str, provider: str | None = None):
-        """Get appropriate client for the model/backend."""
-        from llm.router import OllamaClient, ModelConfig
-        from models.settings import settings
-
-        # Use provider if explicitly provided, otherwise detect from model name
-        backend = provider if provider else self._detect_backend(model)
+    def _get_client(self, model: str, provider: Optional[str] = None):
+        """
+        Get configured client via ModelService.
         
-        # Map common provider names to backend keys
-        backend_mapping = {
-            "lmstudio": "lmstudio",
-            "lemonade": "lemonade",
-            "llamacpp": "llamacpp",
-            "ollama": "ollama",
-        }
-        backend_key = backend_mapping.get(backend.lower() if backend else "ollama", "ollama")
-        
-        logger.info(f"[streaming] _get_client: model={model}, provider={provider}, backend={backend}, backend_key={backend_key}")
-        
-        backend_cfg = settings.backends.get(backend_key)
+        Fully delegates to ModelService which coordinates:
+        - ModelDiscovery (available models)
+        - LLMRouter (intelligent routing)
+        - Performance tracking
+        """
+        model_svc = self._ensure_model_service()
 
-        # Smart fallback: if provider is explicitly lmstudio/lemonade, try to use it even if not in enabled list
-        if backend_key in ("lmstudio", "lemonade") and provider:
-            lmstudio_cfg = settings.backends.get("lmstudio")
-            lemonade_cfg = settings.backends.get("lemonade")
-            if backend_key == "lmstudio" and lmstudio_cfg:
-                url = lmstudio_cfg.get("url", settings.lmstudio_url)
-            elif backend_key == "lemonade" and lemonade_cfg:
-                url = lemonade_cfg.get("url", settings.lemonade_url)
-            else:
-                url = settings.lmstudio_url if backend_key == "lmstudio" else settings.lemonade_url
-        elif not backend_cfg or not backend_cfg.get("enabled", False):
-            # Fallback: try lmstudio as secondary if ollama not enabled
-            lmstudio_cfg = settings.backends.get("lmstudio")
-            if lmstudio_cfg and lmstudio_cfg.get("enabled", False):
-                url = lmstudio_cfg.get("url", settings.lmstudio_url)
-            else:
-                url = settings.ollama_url
-        else:
-            url = backend_cfg["url"]
-        
-        logger.info(f"[streaming] Using URL: {url} for model {model}")
+        # Determine mode from model name patterns
+        mode = "reasoning" if any(x in model.lower() for x in ["deepseek", "qwen", "coder", "reason"]) else "fast"
 
-        # Use different API endpoints based on provider
-        if backend_key == "lmstudio":
-            # LM Studio uses /api/v1/chat/completions (OpenAI-compatible)
-            endpoint = "/v1/chat/completions"
-        elif backend_key == "lemonade":
-            # Lemonade might use different endpoint
-            endpoint = "/v1/chat/completions"
-        else:
-            # Ollama uses /api/generate
-            endpoint = "/api/generate"
-        
-        logger.info(f"[streaming] Using endpoint: {endpoint} for backend: {backend_key}")
-
-        config = ModelConfig(
-            url=f"{url}{endpoint}",
-            model=model,
-            timeout=self.config.timeout_ms // 1000,
-            backend=backend_key,
-        )
-        return OllamaClient(config)
+        # Fully delegate to ModelService - it handles routing and client config
+        return model_svc.get_client(mode=mode)
 
     async def stream_generate(
         self,
         prompt: str,
         model: str,
-        provider: str | None = None,
-        start_chunk: int = 0,
+        provider: Optional[str] = None,
         temperature: float = 0.7,
         on_chunk: Optional[Callable[[StreamChunk], None]] = None,
+        start_chunk: int = 0,
     ) -> AsyncIterator[StreamChunk]:
         """
-        Main streaming generator.
-        Always yields exactly one final event: COMPLETED, ERROR, or CANCELLED.
+        Main streaming generator with guaranteed final event.
         
-        Args:
-            prompt: The prompt to send to the model
-            model: Model name
-            provider: Backend provider (ollama, lmstudio, lemonade, etc.)
-            start_chunk: Chunk index to start from (for resume) - skips step events if > 0
-            temperature: Model temperature
-            on_chunk: Optional callback for each chunk
+        Always yields exactly one final event: COMPLETED, ERROR, or CANCELLED.
         """
         if not model:
             raise ValueError("Model name is required")
@@ -195,11 +136,12 @@ class StreamingService:
         self._stream_counter += 1
         stream_id = f"stream-{self._stream_counter}-{uuid.uuid4().hex[:8]}"
         start_time = time.time()
-        chunk_index = start_chunk  # Start from resume position
+        chunk_index = start_chunk
 
-        self._active_streams[stream_id] = asyncio.current_task()
-        
-        # For resume, skip step events and start directly from token streaming
+        current = asyncio.current_task()
+        self._active_streams[stream_id] = current if current else None
+
+        # For resume, skip step events
         is_resume = start_chunk > 0
 
         try:
@@ -229,9 +171,10 @@ class StreamingService:
             buffer: list[str] = []
             token_count = 0
 
-            for chunk_text in client.stream(prompt=prompt, model=model, system_prompt="", temperature=temperature):
+            async for chunk_text in self._stream_from_client(client, prompt, model, temperature):
                 # Check for cancellation
-                if self._active_streams.get(stream_id) and self._active_streams[stream_id].cancelled():
+                task = self._active_streams.get(stream_id)
+                if task is not None and task.cancelled():
                     raise asyncio.CancelledError()
 
                 buffer.append(chunk_text)
@@ -239,7 +182,6 @@ class StreamingService:
 
                 if len(buffer) >= self.config.chunk_size:
                     full_text = "".join(buffer)
-
                     chunk = StreamChunk(
                         text=full_text,
                         status=StreamStatus.GENERATING,
@@ -248,18 +190,16 @@ class StreamingService:
                         tokens_generated=token_count,
                         latency_ms=(time.time() - start_time) * 1000,
                     )
-
                     if on_chunk:
                         on_chunk(chunk)
                     yield chunk
-
                     buffer.clear()
                     chunk_index += 1
 
                 if token_count >= self.config.max_tokens:
                     break
 
-            # Flush any remaining tokens
+            # Flush remaining buffer
             if buffer:
                 chunk = StreamChunk(
                     text="".join(buffer),
@@ -274,8 +214,8 @@ class StreamingService:
                 yield chunk
                 chunk_index += 1
 
-            # === SUCCESS: Single final completed event ===
-            final_chunk = StreamChunk(
+            # === Guaranteed Final Event ===
+            final = StreamChunk(
                 text="",
                 status=StreamStatus.COMPLETED,
                 stream_id=stream_id,
@@ -284,38 +224,44 @@ class StreamingService:
                 latency_ms=(time.time() - start_time) * 1000,
             )
             if on_chunk:
-                on_chunk(final_chunk)
-            yield final_chunk
+                on_chunk(final)
+            yield final
 
         except asyncio.CancelledError:
             logger.info(f"Stream {stream_id} was cancelled")
-            cancelled_chunk = StreamChunk(
+            cancelled = StreamChunk(
                 text="", status=StreamStatus.CANCELLED, stream_id=stream_id,
                 chunk_index=chunk_index, error="Request cancelled by user"
             )
             if on_chunk:
-                on_chunk(cancelled_chunk)
-            yield cancelled_chunk
+                on_chunk(cancelled)
+            yield cancelled
 
         except Exception as e:
             logger.error(f"Streaming failed for stream {stream_id}", exc_info=True)
             error_chunk = StreamChunk(
-                text="",
-                status=StreamStatus.ERROR,
-                stream_id=stream_id,
-                chunk_index=chunk_index,
-                error=str(e)
+                text="", status=StreamStatus.ERROR, stream_id=stream_id,
+                chunk_index=chunk_index, error=str(e)
             )
             if on_chunk:
                 on_chunk(error_chunk)
             yield error_chunk
 
         finally:
-            # Always clean up
             self._active_streams.pop(stream_id, None)
 
+    async def _stream_from_client(self, client, prompt: str, model: str, temperature: float):
+        """Helper to support both sync and async streaming clients."""
+        if hasattr(client, 'stream') and asyncio.iscoroutinefunction(client.stream):
+            async for chunk in client.stream(prompt=prompt, model=model, temperature=temperature):
+                yield chunk
+        else:
+            # Synchronous client wrapped
+            for chunk in client.stream(prompt=prompt, model=model, temperature=temperature):
+                yield chunk
+
     def cancel_stream(self, stream_id: str) -> bool:
-        """Cancel an active streaming task."""
+        """Cancel an active stream."""
         task = self._active_streams.get(stream_id)
         if task and not task.cancelled():
             task.cancel()
@@ -328,6 +274,7 @@ class StreamingService:
 
 
 # ====================== Singleton ======================
+
 _streaming_service: Optional[StreamingService] = None
 
 
