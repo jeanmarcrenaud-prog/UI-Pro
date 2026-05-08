@@ -816,7 +816,8 @@ async def ws_endpoint(ws: WebSocket):
                         "response": chunk.text,
                         "done": False,
                         "message_id": message_id,
-                        "chunk_index": chunk.chunk_index
+                        "chunk_index": chunk.chunk_index,
+                        "tokens_generated": chunk.tokens_generated or 0
                     }))
 
     except WebSocketDisconnect:
