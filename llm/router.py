@@ -16,6 +16,9 @@ from typing import Literal, Optional, Iterator
 import logging
 from models.settings import settings
 
+# Logger defined at module level - used by OllamaClient and LLMRouter
+logger = logging.getLogger(__name__)
+
 # Define ModelConfig and OllamaClient locally since we removed llm/client.py
 @dataclass
 class ModelConfig:
@@ -171,8 +174,6 @@ class OllamaClient:
                 logger.error(f"[OllamaClient.stream] Request error: {e}")
                 yield f"[Error: {e}]"
 
-logger = logging.getLogger(__name__)
-
 # ==================== **1. CONFIG** ====================
 
 @dataclass
@@ -198,6 +199,20 @@ class ModelsConfig:
         self.reasoner = self.reasoner or settings.model_reasoning
         if not self.ollama_url:
             self.ollama_url = f"{settings.ollama_url}/api/generate"
+
+    @classmethod
+    def from_settings(cls) -> "ModelsConfig":
+        """Create ModelsConfig from settings - single source of truth."""
+        from models.settings import settings
+        return cls(
+            fast=settings.model_fast,
+            reasoning=settings.model_reasoning,
+            code=settings.model_code,
+            reasoner=settings.model_reasoning,
+            ollama_url=f"{settings.ollama_url}/api/generate",
+            backend="ollama",
+            timeout=120,
+        )
 
 # Singleton settings - utilise settings.py comme source unique
 # Models MUST be set via environment variables - no hardcoded defaults
@@ -237,7 +252,7 @@ class LLMRouter:
     
     def get_model_for_task(self, task: str) -> str:
         """
-        Choisir le meilleur modèle pour la tâche.
+        Choisir le meilleur modèle pour la tâche avec keyword scoring.
         
         Args:
             task: Description de la tâche
@@ -245,30 +260,39 @@ class LLMRouter:
         Returns:
             Nom du modèle
             
-        Routing logic:
-          - code/bug: deepseek-coder
-          - debug/architect: qwen-opus
-          - explain: qwen-7b
-          - default: qwen-32b
+        Routing logic (score-based):
+          - code: function, def, class, import, bug, fix, refactor
+          - reasoning: debug, architecture, plan, complex, analyze
+          - fast: explain, describe, simple, what, who
+          - default: reasoning
         """
-        task_lower = task.lower()
+        task_lower = task.lower().strip()
         
+        # Keyword categories with weights
         keywords = {
-            "code": ["code", "implement", "function", "variable", "import", "def "],
-            "reasoner": ["debug", "error", "architecture", "complex", "plan", "architect"],
-            "fast": ["explain", "describe", "simple", "what ", "who "]
+            "code": {"code": 2, "implement": 2, "function": 1, "def ": 1, "class ": 1, 
+                     "import": 1, "bug": 2, "fix": 2, "refactor": 2, "error": 1},
+            "reasoner": {"debug": 3, "architecture": 3, "plan": 2, "complex": 2, 
+                        "analyze": 2, "design": 2, "strategy": 2, "optimize": 2},
+            "fast": {"explain": 1, "describe": 1, "simple": 1, "what ": 1, "who ": 1,
+                    "summarize": 1, "translate": 1}
         }
         
-        for category, keywords_list in keywords.items():
-            if any(kw in task_lower for kw in keywords_list):
-                if category == "code":
-                    return self.config.code
-                elif category == "reasoner":
-                    return self.config.reasoner
-                elif category == "fast":
-                    return self.config.fast
+        # Calculate scores
+        scores = {"code": 0, "reasoner": 0, "fast": 0}
         
-        return self.config.reasoning  # Default to reasoning
+        for category, kw_dict in keywords.items():
+            for kw, weight in kw_dict.items():
+                if kw in task_lower:
+                    scores[category] += weight
+        
+        # Return highest scoring model
+        if scores["code"] >= scores["reasoner"] and scores["code"] >= scores["fast"]:
+            return self.config.code
+        elif scores["reasoner"] >= scores["fast"]:
+            return self.config.reasoner
+        else:
+            return self.config.fast
     
     def _create_model_config(self, model_name: str | None = None) -> ModelConfig:
         """Create ModelConfig from current config and optional model name."""
