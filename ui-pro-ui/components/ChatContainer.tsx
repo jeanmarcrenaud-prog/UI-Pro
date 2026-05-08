@@ -9,6 +9,7 @@ import { ChatSuggestions } from './chat/ChatSuggestions'
 import { ExamplesList } from './chat/ExamplesList'
 import { LoadingIndicator } from './chat/LoadingIndicator'
 import { StepProgress } from './chat/StepProgress'
+import { StreamingTokenGraph } from './chat/StreamingTokenGraph'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useI18n } from '@/lib/i18n'
 
@@ -173,6 +174,8 @@ export function ChatContainer({
               </div>
               <div className="bg-slate-800 rounded-2xl px-5 py-2.5 text-sm text-slate-300 flex items-center gap-3">
                 {t.streaming.generating}
+                
+                <StreamingTokenGraph />
                 
                 <button
                   onClick={handleStop}
