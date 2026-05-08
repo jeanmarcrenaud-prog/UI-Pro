@@ -134,30 +134,17 @@ class ModelService:
         """
         Get client for specific model and provider.
         
-        Uses ModelDiscovery to get backend info, falls back to settings.
+        Uses explicit provider to determine backend URL.
         """
         self._ensure_init()
         from llm.router import OllamaClient, ModelConfig
-        from models.settings import settings, LLM_TIMEOUT
+        from models.settings import LLM_TIMEOUT
 
+        # Use explicit provider - this takes priority over ModelDiscovery
         provider = (provider or "ollama").lower()
+        backend_url = self._get_backend_url(provider)
 
-        # Try to get URL from ModelDiscovery
-        backend_url = None
-        try:
-            models = self._discovery.discover_all()
-            for m in models:
-                if m.name == model or model in m.name:
-                    backend_url = self._get_backend_url(m.backend)
-                    break
-        except Exception:
-            pass
-
-        # Fallback to settings
-        if not backend_url:
-            backend_url = self._get_backend_url(provider)
-
-        # Determine endpoint
+        # Determine endpoint based on provider
         if provider == "lmstudio" or provider == "lemonade":
             endpoint = "/v1/chat/completions"
         else:
