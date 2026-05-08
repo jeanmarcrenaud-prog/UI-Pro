@@ -13,13 +13,15 @@ import { CodeMinimap } from './CodeMinimap'
 interface CodeBlockProps {
   language?: string
   value: string
+  filename?: string
 }
 
 const SyntaxHighlighterComp = SyntaxHighlighter as React.ComponentType<any>
 
 export const CodeBlock = memo(function CodeBlock({ 
   language = 'text', 
-  value = '' 
+  value = '',
+  filename
 }: CodeBlockProps) {
   const [copied, setCopied] = useState(false)
   const [running, setRunning] = useState(false)
@@ -122,8 +124,15 @@ export const CodeBlock = memo(function CodeBlock({
     <div className="relative my-5 rounded-2xl overflow-hidden border border-slate-700 bg-slate-900 shadow-xl">
       {/* Header */}
       <div className="flex items-center justify-between bg-slate-800 px-5 py-3 border-b border-slate-700">
-        <div className="text-sm font-medium text-slate-300 tracking-wide">
-          {displayLanguage}
+        <div className="flex items-center gap-3 text-sm">
+          {filename && (
+            <span className="font-mono text-violet-400 truncate max-w-[200px]">
+              {filename}
+            </span>
+          )}
+          <span className="font-medium text-slate-300 tracking-wide">
+            {displayLanguage}
+          </span>
         </div>
 
         <div className="flex items-center gap-2">
