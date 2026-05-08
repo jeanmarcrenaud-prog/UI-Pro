@@ -509,7 +509,11 @@ def home(request: Request):
 @app.get("/health", response_model=HealthResponse)
 def health_check():
     """Health check endpoint for container orchestration"""
-    system_info = _get_system_info()
+    try:
+        system_info = _get_system_info()
+    except Exception as e:
+        # Return minimal system info if it fails
+        system_info = {"error": str(e)}
     
     return {
         "status": "healthy",
