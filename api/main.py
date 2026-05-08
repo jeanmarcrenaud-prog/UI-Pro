@@ -68,6 +68,7 @@ def cleanup_sessions():
 class ChatRequest(BaseModel):
     message: str
     model: Optional[str] = None
+    provider: Optional[str] = None  # ollama, lmstudio, lemonade, llamacpp
 
 
 class ChatResponse(BaseModel):
@@ -188,7 +189,11 @@ async def chat(request: ChatRequest):
 
         # Collect full response from streaming (async)
         chunks = []
-        async for chunk in stream_service.stream_generate(request.message, model=request.model or settings.model_fast):
+        async for chunk in stream_service.stream_generate(
+            request.message, 
+            model=request.model or settings.model_fast,
+            provider=request.provider
+        ):
             if chunk.text:
                 chunks.append(chunk.text)
 
