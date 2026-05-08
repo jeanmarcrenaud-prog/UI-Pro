@@ -18,7 +18,7 @@ from .service_api import ServiceAPI, get_service_api, get_streaming, get_model, 
 from .llm_router import LLMRouter, TaskType, RouterConfig, get_llm_router
 from .streaming import StreamingService, StreamChunk, StreamConfig, StreamStatus, get_streaming_service
 from .error_handler import ErrorHandler, ErrorDetails, ErrorCategory, get_error_handler
-from .tools import Tool, ToolParameter, ToolCall, ToolRegistry, get_tool_registry, create_tool
+from .tools import Tool, ToolParameter, ToolCall, ToolManager, get_tool_manager, create_tool
 from .agents import Agent, AgentConfig, AgentStep, AgentStatus, get_agent
 
 __all__ = [
@@ -56,8 +56,8 @@ __all__ = [
     "Tool",
     "ToolParameter",
     "ToolCall",
-    "ToolRegistry",
-    "get_tool_registry",
+    "ToolManager",
+    "get_tool_manager",
     "create_tool",
     # Agents
     "Agent",

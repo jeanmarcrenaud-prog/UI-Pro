@@ -7,7 +7,6 @@ Backward compatibility wrapper - imports from models.settings.
 from models.settings import (
     settings,
     get_settings,
-    get_model_for_task,
     Settings,
     PROJECT_ROOT,
     WORKSPACE,
@@ -21,8 +20,13 @@ from models.settings import (
     LLM_TIMEOUT,
     EXECUTOR_TIMEOUT,
     LOG_LEVEL,
-    BACKENDS,
 )
+
+
+def get_model_for_task(task: str) -> str:
+    """Wrapper for Settings.get_model_for_task() method."""
+    return settings.get_model_for_task(task)
+
 
 __all__ = [
     "settings",
@@ -41,5 +45,4 @@ __all__ = [
     "LLM_TIMEOUT",
     "EXECUTOR_TIMEOUT",
     "LOG_LEVEL",
-    "BACKENDS",
 ]
