@@ -21,6 +21,7 @@ class TaskType(Enum):
     REASONING = "reasoning"
     CREATIVE = "creative"
     ANALYSIS = "analysis"
+    VISION = "vision"
 
 
 @dataclass
