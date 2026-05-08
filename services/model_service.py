@@ -138,7 +138,7 @@ class ModelService:
         """
         self._ensure_init()
         from llm.router import OllamaClient, ModelConfig
-        from models.settings import settings
+        from models.settings import settings, LLM_TIMEOUT
 
         provider = (provider or "ollama").lower()
 
@@ -166,7 +166,7 @@ class ModelService:
         config = ModelConfig(
             url=f"{backend_url.rstrip('/')}{endpoint}",
             model=model,
-            timeout=settings.LLM_TIMEOUT,
+            timeout=LLM_TIMEOUT,
             backend=provider,
         )
 
