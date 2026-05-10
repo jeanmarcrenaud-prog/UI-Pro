@@ -52,7 +52,7 @@ export const useChat = () => {
     
     const provider = modelInfo?.provider || 'ollama'
     // Fallback model based on provider format (LM Studio uses slash, Ollama uses colon)
-    const fallbackModel = provider === 'lmstudio' ? 'qwen/qwen3.5-9b' : 'qwen3.5:0.8b'
+    const fallbackModel = provider === 'lmstudio' ? 'qwen/qwen3.5-9b' : 'qwen3.6:latest'
     // Use model ID if found, otherwise use selectedModel as-is (could be id or display name)
     const model = modelInfo?.id || (selectedModel && (selectedModel.includes('/') || selectedModel.includes(':')) ? selectedModel : fallbackModel)
     console.log('[getCurrentModelInfo] selectedModel:', selectedModel, 'modelInfo:', modelInfo, '-> provider:', provider, 'model:', model)
