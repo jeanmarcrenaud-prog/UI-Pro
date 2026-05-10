@@ -1,31 +1,33 @@
-# services/code_execution.py
+# services/code_execution.py - Secure Execution of LLM-Generated Code
 """
 Service for safely executing LLM-generated Python code with static analysis.
 """
 
 import logging
 import traceback
+import time
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
 
-from core.code_review import review_code, ReviewResult  # Your module
+from core.code_review import review_code, ReviewResult
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class ExecutionResult:
-    """Result of code execution after review"""
+    """Result of code execution after review and safety checks."""
     success: bool
     output: str = ""
     error: str = ""
     review_result: Optional[ReviewResult] = None
-    execution_time: float = 0.0
+    execution_time_ms: float = 0.0
 
 
 class CodeExecutionService:
     """
-    Secure code execution service with mandatory code review.
+    Secure code execution with mandatory static analysis.
+    Designed to safely run LLM-generated Python code.
     """
 
     def __init__(self, enable_review: bool = True, fail_on_review: bool = True):
@@ -33,83 +35,81 @@ class CodeExecutionService:
         self.fail_on_review = fail_on_review
 
     def execute(self, code: str, globals_dict: Optional[Dict] = None) -> ExecutionResult:
-        """
-        Review then execute Python code safely.
-        
-        Args:
-            code: Python code to execute
-            globals_dict: Global variables to pass to exec()
-            
-        Returns:
-            ExecutionResult with success status and output/error
-        """
+        """Review then execute code safely."""
+        start_time = time.time()
+
         if not code or not code.strip():
             return ExecutionResult(success=False, error="Empty code provided")
 
         review_result: Optional[ReviewResult] = None
 
-        # === 1. CODE REVIEW ===
+        # === 1. STATIC CODE REVIEW ===
         if self.enable_review:
-            logger.info("Running static analysis before execution...")
+            logger.info("Performing static analysis before execution...")
             review_result = review_code(code)
 
             if not review_result.success and self.fail_on_review:
-                issues_summary = "\n".join(
-                    f"- {issue.get('tool')} | {issue.get('severity')} | {issue.get('message')}"
-                    for issue in review_result.issues[:10]  # Limit output
+                issues = "\n".join(
+                    f"• {issue.get('tool', 'unknown')} | {issue.get('severity', 'unknown')} | {issue.get('message', '')}"
+                    for issue in review_result.issues[:8]
                 )
                 return ExecutionResult(
                     success=False,
-                    error=f"Code review failed:\n{issues_summary}",
+                    error=f"Code review failed:\n{issues}",
                     review_result=review_result
                 )
 
             if review_result.issues:
-                logger.warning(f"Code review found {len(review_result.issues)} issues "
-                             f"(severity filter: {self.fail_on_review})")
+                logger.warning(f"Code review found {len(review_result.issues)} issues")
 
-        # === 2. CODE EXECUTION ===
+        # === 2. SAFE EXECUTION ===
         try:
-            # Prepare execution environment
             local_dict: Dict[str, Any] = {}
             global_dict = globals_dict or {}
 
-            # Add safe built-ins if needed
+            # Very restricted globals
             safe_globals = {
-                "__builtins__": __builtins__,
+                "__builtins__": {
+                    "print": print,
+                    "range": range,
+                    "len": len,
+                    "str": str,
+                    "int": int,
+                    "float": float,
+                    "list": list,
+                    "dict": dict,
+                    "sum": sum,
+                    "min": min,
+                    "max": max,
+                },
                 **global_dict
             }
 
-            logger.info("Executing reviewed code...")
-            
-            # Execute the code
             exec(code, safe_globals, local_dict)
 
-            output = local_dict.get("result", str(local_dict))
+            output = local_dict.get("result") or str(local_dict)
 
             return ExecutionResult(
                 success=True,
                 output=str(output),
-                review_result=review_result
+                review_result=review_result,
+                execution_time_ms=(time.time() - start_time) * 1000
             )
 
         except Exception as e:
             error_msg = f"{type(e).__name__}: {e}"
-            logger.error(f"Code execution failed: {error_msg}")
-            logger.debug(traceback.format_exc())
+            logger.error(f"Code execution failed: {error_msg}\n{traceback.format_exc()}")
 
             return ExecutionResult(
                 success=False,
                 error=error_msg,
-                review_result=review_result
+                review_result=review_result,
+                execution_time_ms=(time.time() - start_time) * 1000
             )
-
-    def should_fail(self, review_result: ReviewResult) -> bool:
-        """Check if review result should block execution"""
-        return not review_result.success
 
 
 # ====================== Singleton ======================
+
 _execution_service: Optional[CodeExecutionService] = None
 
 
@@ -117,7 +117,7 @@ def get_code_execution_service(
     enable_review: bool = True,
     fail_on_review: bool = True
 ) -> CodeExecutionService:
-    """Get singleton instance of CodeExecutionService"""
+    """Get singleton CodeExecutionService."""
     global _execution_service
     if _execution_service is None:
         _execution_service = CodeExecutionService(
@@ -131,5 +131,5 @@ def execute_code(
     code: str,
     globals_dict: Optional[Dict] = None
 ) -> ExecutionResult:
-    """Convenience function to execute code with review"""
+    """Convenience function to execute code safely."""
     return get_code_execution_service().execute(code, globals_dict)
