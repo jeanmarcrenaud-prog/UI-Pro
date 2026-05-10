@@ -107,9 +107,19 @@ class StreamingService:
         - ModelDiscovery for backend detection
         - LLMRouter for routing
         - Proper URL/endpoint configuration
+        
+        Falls back to router if ModelService fails.
         """
         model_svc = self._ensure_model_service()
-        return model_svc.get_client_for_model(model=model, provider=provider)
+
+        try:
+            return model_svc.get_client_for_model(model=model, provider=provider)
+        except (AttributeError, Exception) as e:
+            logger.warning(f"ModelService delegation failed: {e}. Falling back to router.")
+            from services.llm_router import get_llm_router
+            router = get_llm_router()
+            mode = "reasoning" if any(k in model.lower() for k in ["deepseek", "qwen", "coder"]) else "fast"
+            return router.get_for_mode(mode)
 
     async def stream_generate(
         self,
@@ -141,7 +151,6 @@ class StreamingService:
 
         try:
             client = self._get_client(model, provider)
-            logger.info(f"[stream] Using client URL: {client.config.url}, model: {client.config.model}, backend: {client.config.backend}")
 
             # === Step Events (skip on resume) ===
             if not is_resume:
