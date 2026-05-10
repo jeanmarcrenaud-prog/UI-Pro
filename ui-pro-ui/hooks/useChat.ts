@@ -16,54 +16,46 @@ export const useChat = () => {
   const {
     currentMessageId,
     lastReceivedChunkIndex,
-    messageHistory,
-    setCurrentMessage,
+    messages,
+    addMessage,
+    updateMessageById,
     updateLastChunkIndex,
+    setCurrentMessage,
     resetCurrentMessage,
     trimMessageHistory,
     getPromptById,
-    addMessage,
-    updateMessageById,
-    setLoading,
-    setError,
     saveToHistory,
     removeMessage,
-    messages,
+    setLoading,
+    setError,
     isLoading,
     error,
   } = useChatStore()
 
   const { steps, start, updateStep, reset: resetAgent } = useAgentStore()
 
-  // Refs
+  // Refs for mutable state
   const isSendingRef = useRef(false)
   const isStreamActiveRef = useRef(false)
   const contentRef = useRef('')
   const assistantMessageIdRef = useRef('')
   const safetyTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
-  // ===================== RESUME LOGIC =====================
+  // ===================== MODEL RESOLUTION =====================
   const getCurrentModelInfo = useCallback(() => {
-    // First try to find by name (display name), then by id
-    let modelInfo = availableModels.find(m => m.name === selectedModel)
-    if (!modelInfo) {
-      modelInfo = availableModels.find(m => m.id === selectedModel)
-    }
-    
+    const modelInfo = availableModels.find(m => 
+      m.name === selectedModel || m.id === selectedModel
+    )
+
     const provider = modelInfo?.provider || 'ollama'
     // Fallback model based on provider format (LM Studio uses slash, Ollama uses colon)
     const fallbackModel = provider === 'lmstudio' ? 'qwen/qwen3.5-9b' : 'qwen3.6:latest'
-    // Use model ID if found, otherwise use selectedModel as-is (could be id or display name)
-    const model = modelInfo?.id || (selectedModel && (selectedModel.includes('/') || selectedModel.includes(':')) ? selectedModel : fallbackModel)
-    console.log('[getCurrentModelInfo] selectedModel:', selectedModel, 'modelInfo:', modelInfo, '-> provider:', provider, 'model:', model)
-    return {
-      model,
-      provider
-    }
+    const model = modelInfo?.id || selectedModel || fallbackModel
+
+    return { model, provider }
   }, [selectedModel, availableModels])
 
-  // ===================== HELPER FUNCTIONS =====================
-  // Initial steps - memoized to avoid recreation
+  // ===================== INITIAL STEPS =====================
   const initialSteps = useMemo(() => [
     { id: 'step-analyzing', title: 'Analyzing request', status: 'pending' as const },
     { id: 'step-planning', title: 'Planning solution', status: 'pending' as const },
@@ -71,172 +63,157 @@ export const useChat = () => {
     { id: 'step-reviewing', title: 'Reviewing', status: 'pending' as const },
   ], [])
 
-  // Shared: initialize a new assistant message and start generation
-  const initializeNewGeneration = useCallback((content: string, messageId: string, assistantId: string) => {
-    // Reset state
+  // ===================== CORE GENERATION =====================
+  const initializeNewGeneration = useCallback(async (
+    content: string, 
+    messageId: string, 
+    assistantId: string
+  ) => {
     assistantMessageIdRef.current = assistantId
     contentRef.current = ''
-    
-    // Add messages
+
     addMessage({
       role: 'assistant',
       content: '',
       status: 'thinking',
       id: assistantId,
     })
-    
+
     setLoading(true)
     resetAgent()
     start(initialSteps)
-    
-    // Get model info and start generation
-    const { model, provider } = getCurrentModelInfo()
-    return chatService.sendMessage(content, messageId, 0, model, provider)
-  }, [addMessage, setLoading, resetAgent, start, getCurrentModelInfo])
 
-  // ===================== REGENERATE =====================
-  const handleRegenerate = useCallback(async (messageId: string) => {
-    // Find the user message by ID
-    const userMessageIndex = messages.findIndex(m => m.id === messageId && m.role === 'user')
-    
-    if (userMessageIndex === -1) {
-      console.warn('[useChat] Cannot regenerate: user message not found')
-      return
-    }
-    
-    const userMsg = messages[userMessageIndex]
-    const content = userMsg.content
-    
-    // Remove all messages after this user message (assistant responses)
-    const messagesAfter = messages.slice(userMessageIndex + 1)
-    messagesAfter.forEach(msg => removeMessage(msg.id))
-    
-    console.log('[useChat] Regenerating response for:', content.slice(0, 60) + '...')
-    
-    const newMessageId = crypto.randomUUID()
-    const assistantId = crypto.randomUUID()
-    
-    // Set sending flags
+    const { model, provider } = getCurrentModelInfo()
+
+    return chatService.sendMessage(content, messageId, 0, model, provider)
+  }, [addMessage, setLoading, resetAgent, start, getCurrentModelInfo, initialSteps])
+
+  // ===================== SEND MESSAGE =====================
+  const sendMessage = useCallback(async (content: string) => {
+    if (isSendingRef.current || !content.trim()) return
+
+    if (safetyTimeoutRef.current) clearTimeout(safetyTimeoutRef.current)
+
     isSendingRef.current = true
     isStreamActiveRef.current = true
-    
+
+    const messageId = crypto.randomUUID()
+    const assistantId = crypto.randomUUID()
+
+    setCurrentMessage(messageId, content)
+    addMessage({ role: 'user', content, id: crypto.randomUUID() })
+
+    try {
+      await initializeNewGeneration(content, messageId, assistantId)
+
+      // Safety timeout
+      safetyTimeoutRef.current = setTimeout(() => {
+        if (isStreamActiveRef.current) {
+          setError('Request timed out after 5 minutes')
+          cancel()
+        }
+      }, 300_000)
+
+    } catch (err) {
+      console.error('[useChat] Send failed:', err)
+      setError(err instanceof Error ? err.message : 'Failed to send message')
+      isSendingRef.current = false
+      isStreamActiveRef.current = false
+    }
+  }, [initializeNewGeneration, setCurrentMessage, addMessage, setError])
+
+  // ===================== REGENERATE =====================
+  const regenerate = useCallback(async (messageId: string) => {
+    const userIndex = messages.findIndex(m => m.id === messageId && m.role === 'user')
+    if (userIndex === -1) return
+
+    const userMsg = messages[userIndex]
+    const content = userMsg.content
+
+    // Remove subsequent assistant messages
+    messages.slice(userIndex + 1).forEach(m => removeMessage(m.id))
+
+    const newMessageId = crypto.randomUUID()
+    const assistantId = crypto.randomUUID()
+
+    isSendingRef.current = true
+    isStreamActiveRef.current = true
+
     try {
       await initializeNewGeneration(content, newMessageId, assistantId)
     } catch (err) {
       console.error('[useChat] Regenerate failed:', err)
-      setError('Failed to regenerate')
-      isSendingRef.current = false
-      isStreamActiveRef.current = false
+      setError('Failed to regenerate response')
     }
   }, [messages, removeMessage, initializeNewGeneration, setError])
 
-  // Refs for values used in message handler (to avoid re-subscriptions)
+  // ===================== CANCEL =====================
+  const cancel = useCallback(() => {
+    chatService.cancel()
+    isStreamActiveRef.current = false
+    isSendingRef.current = false
+
+    if (safetyTimeoutRef.current) {
+      clearTimeout(safetyTimeoutRef.current)
+      safetyTimeoutRef.current = null
+    }
+  }, [])
+
+  // Refs for values used in message handler
   const stepsRef = useRef(steps)
   const lastChunkIndexRef = useRef(lastReceivedChunkIndex)
   
-  // Keep refs in sync
   useEffect(() => { stepsRef.current = steps }, [steps])
   useEffect(() => { lastChunkIndexRef.current = lastReceivedChunkIndex }, [lastReceivedChunkIndex])
 
-  const attemptResume = useCallback(async () => {
-    if (!currentMessageId || lastReceivedChunkIndex <= 0) return
-
-    const originalPrompt = getPromptById(currentMessageId)
-    if (!originalPrompt) {
-      console.warn('[useChat] Cannot resume: original prompt not found')
-      return
-    }
-
-    console.log(`[useChat] Attempting resume → messageId: ${currentMessageId}, from chunk: ${lastReceivedChunkIndex}`)
-
-    const { model, provider } = getCurrentModelInfo()
-    try {
-      await chatService.sendMessage(
-        originalPrompt,
-        currentMessageId,
-        lastReceivedChunkIndex,
-        model,
-        provider
-      )
-    } catch (err) {
-      console.error('[useChat] Resume failed:', err)
-    }
-  }, [currentMessageId, lastReceivedChunkIndex, getPromptById, getCurrentModelInfo])
-
-  // Auto resume when WebSocket goes idle while streaming
+  // ===================== MESSAGE LISTENER =====================
   useEffect(() => {
-    const handleStatus = (data: { status: string }) => {
-      if (data.status === 'idle' && isStreamActiveRef.current && currentMessageId) {
-        console.log('[useChat] WebSocket became idle during active stream → triggering resume')
-        attemptResume()
-      }
-    }
-
-    events.on('status', handleStatus)
-    return () => events.off('status', handleStatus)
-  }, [currentMessageId, attemptResume])
-
-  // ===================== MESSAGE HANDLER =====================
-  useEffect(() => {
-    const unsubscribe = chatService.onMessage((msg: Message) => {
+    const unsubscribe = chatService.onMessage((msg: any) => {
       if (!isStreamActiveRef.current) return
 
-      // === Step Events ===
+      // Step updates
       if (msg.type === 'step' && msg.step_id) {
-        // Use msg.status to determine step status (not msg.type which is 'step' here)
-        const status = (msg.status === 'done') ? 'done' : 'active'
-        updateStep(msg.step_id, status)
+        updateStep(msg.step_id, msg.status === 'done' ? 'done' : 'active')
         return
       }
 
-      // === Token Streaming ===
-      if (msg.delta || msg.content) {
-        const text = msg.delta || msg.content || ''
-        contentRef.current += text
-
-        // Update chunk index
-        const newIndex = lastChunkIndexRef.current + 1
+      // Token streaming
+      if (msg.type === 'token' && msg.content) {
+        contentRef.current += msg.content
+        const newIndex = (lastChunkIndexRef.current || 0) + 1
         updateLastChunkIndex(newIndex)
 
-        // Update UI message
-        updateMessageById(assistantMessageIdRef.current, (prev) => prev + text, 'streaming')
+        updateMessageById(assistantMessageIdRef.current, prev => prev + msg.content, 'streaming')
       }
 
-      // === Done ===
-      if (msg.status === 'done' || msg.done === true) {
+      // Completion
+      if (msg.type === 'done' || msg.done === true) {
         isStreamActiveRef.current = false
         isSendingRef.current = false
 
         updateMessageById(assistantMessageIdRef.current, () => contentRef.current, 'done')
         saveToHistory()
 
-        // Force all steps to done (using ref)
-        stepsRef.current.forEach((step) => {
-          if (step.status !== 'done') updateStep(step.id, 'done')
-        })
+        // Mark all steps done
+        initialSteps.forEach(step => updateStep(step.id, 'done'))
 
         resetCurrentMessage()
         trimMessageHistory()
         contentRef.current = ''
 
-        if (safetyTimeoutRef.current) {
-          clearTimeout(safetyTimeoutRef.current)
-          safetyTimeoutRef.current = null
-        }
+        if (safetyTimeoutRef.current) clearTimeout(safetyTimeoutRef.current)
       }
 
-      // === Error ===
-      if (msg.status === 'error') {
+      // Error handling
+      if (msg.type === 'error') {
         isStreamActiveRef.current = false
         isSendingRef.current = false
-        setError(msg.content || 'Unknown error')
-        updateMessageById(assistantMessageIdRef.current, () => msg.content || '', 'error')
-
-        if (safetyTimeoutRef.current) clearTimeout(safetyTimeoutRef.current)
+        setError(msg.message || 'Unknown error')
+        updateMessageById(assistantMessageIdRef.current, () => msg.message || '', 'error')
       }
     })
 
-    return () => { unsubscribe() }
+    return unsubscribe
   }, [
     updateMessageById,
     updateLastChunkIndex,
@@ -245,85 +222,33 @@ export const useChat = () => {
     updateStep,
     resetCurrentMessage,
     trimMessageHistory,
+    initialSteps,
   ])
 
-  // ===================== SEND MESSAGE =====================
-  const sendMessage = useCallback(async (content: string) => {
-    if (isSendingRef.current || !content.trim()) return
+  // Auto-resume logic (when WS reconnects during active stream)
+  useEffect(() => {
+    if (!currentMessageId || lastReceivedChunkIndex <= 0) return
 
-    // Cleanup previous timeout
-    if (safetyTimeoutRef.current) {
-      clearTimeout(safetyTimeoutRef.current)
+    const originalPrompt = getPromptById(currentMessageId)
+    if (originalPrompt) {
+      console.log(`[useChat] Auto-resuming ${currentMessageId} from chunk ${lastReceivedChunkIndex}`)
+      const { model, provider } = getCurrentModelInfo()
+      chatService.sendMessage(originalPrompt, currentMessageId, lastReceivedChunkIndex, model, provider)
     }
-
-    isSendingRef.current = true
-    isStreamActiveRef.current = true
-
-    const messageId = crypto.randomUUID()
-    const assistantId = crypto.randomUUID()
-
-    // Save for potential resume
-    setCurrentMessage(messageId, content)
-
-    // Add user message
-    addMessage({ role: 'user', content, id: crypto.randomUUID() })
-
-    try {
-      // Use shared helper for assistant message + generation
-      await initializeNewGeneration(content, messageId, assistantId)
-
-      // Safety timeout (5 minutes)
-      safetyTimeoutRef.current = setTimeout(() => {
-        if (isStreamActiveRef.current) {
-          console.warn('[useChat] Safety timeout triggered (5min)')
-          isStreamActiveRef.current = false
-          isSendingRef.current = false
-          setError('Request timed out')
-        }
-      }, 300000)
-
-    } catch (err: unknown) {
-      console.error('[useChat] Failed to send message:', err)
-      const message = err instanceof Error ? err.message : 'Failed to send message'
-      setError(message)
-      isSendingRef.current = false
-      isStreamActiveRef.current = false
-    }
-  }, [
-    addMessage,
-    setCurrentMessage,
-    initializeNewGeneration,
-    setError,
-  ])
-
-  // ===================== CANCEL & CLEAR =====================
-  const cancel = useCallback(() => {
-    chatService.cancel()
-    isStreamActiveRef.current = false
-    isSendingRef.current = false
-    if (safetyTimeoutRef.current) {
-      clearTimeout(safetyTimeoutRef.current)
-      safetyTimeoutRef.current = null
-    }
-  }, [])
-
-  const clear = useCallback(() => {
-    cancel()
-    resetCurrentMessage()
-    trimMessageHistory()
-    contentRef.current = ''
-  }, [cancel, resetCurrentMessage, trimMessageHistory])
+  }, [currentMessageId, lastReceivedChunkIndex, getPromptById, getCurrentModelInfo])
 
   return {
     messages,
     isLoading,
     error,
     steps,
-    currentStep: steps.find((s) => s.status === 'active'),
     sendMessage,
     cancel,
-    stopGeneration: cancel,  // Alias for backward compatibility
-    clear,
-    regenerate: handleRegenerate,
+    regenerate,
+    clear: () => {
+      cancel()
+      resetCurrentMessage()
+      trimMessageHistory()
+    },
   }
 }
