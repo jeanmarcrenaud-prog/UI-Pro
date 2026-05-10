@@ -6,7 +6,7 @@
 
 // UI-Pro Dashboard - ChatGPT quality
 
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { ChatContainer } from '@/components/ChatContainer'
 import { CommandPalette, useKeyboardShortcuts } from '@/components/CommandPalette'
 import { Sidebar } from '@/components/Sidebar'
@@ -17,60 +17,81 @@ import { useUIStore } from '@/lib/stores/uiStore'
 import { useChatStore } from '@/lib/stores/chatStore'
 import { useAgentStore } from '@/lib/stores/agentStore'
 
+type TabType = 'chat' | 'history' | 'settings'
+
 export default function Home() {
-  const [activeTab, setActiveTab] = useState('chat')
+  const [activeTab, setActiveTab] = useState<TabType>('chat')
   const [showDebug, setShowDebug] = useState(true)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
-  const hasLoggedModel = useRef(false) // Stable ref - persists across renders
+  const hasLoggedModel = useRef(false)
+  const timerRef = useRef<NodeJS.Timeout | null>(null)
   const { paletteOpen, setPaletteOpen } = useKeyboardShortcuts()
   
-  // Stores (MUST come first - isLoading is used below)
-  const { selectedModel, availableModels, focusMode, sidebarOpen } = useUIStore()
-  const { isLoading, logs, tokenCount, clearMessages, messages } = useChatStore()
-  const { steps: storeSteps, currentStep: storeCurrentStep } = useAgentStore()
+  // Store selectors - more efficient than getState()
+  const { selectedModel, availableModels, focusMode } = useUIStore()
+  const isLoading = useChatStore(state => state.isLoading)
+  const logs = useChatStore(state => state.logs)
+  const tokenCount = useChatStore(state => state.tokenCount)
+  const messages = useChatStore(state => state.messages)
+  const clearMessages = useChatStore(state => state.clearMessages)
+  const addLog = useChatStore(state => state.addLog)
+  const clearLogs = useChatStore(state => state.clearLogs)
+  
+  const storeSteps = useAgentStore(state => state.steps)
 
   const handleNewChat = useCallback(() => {
     clearMessages()
     setElapsedSeconds(0)
-  }, [clearMessages])
+  }, [clearMessages, setElapsedSeconds])
 
-  // Timer for elapsed time when loading
-  useEffect(() => {
-    let interval: NodeJS.Timeout | null = null
+  const onTabChange = useCallback((tab: TabType) => {
+    setActiveTab(tab)
+  }, [])
 
-    if (isLoading) {
-      if (!hasLoggedModel.current) {
-        hasLoggedModel.current = true
+  // Memoized model info
+  const currentModelInfo = useMemo(() => {
+    return availableModels.find(m => m.name === selectedModel) || availableModels[0]
+  }, [availableModels, selectedModel])
 
-        const currentModel =
-          selectedModel ??
-          (availableModels.length > 0 ? availableModels[0] : 'unknown')
-
-        useChatStore.getState().addLog(`🤖 Using model: ${currentModel}`)
-      }
-
-      interval = setInterval(() => {
-        setElapsedSeconds(s => s + 1)
-      }, 1000)
-    } else {
-      hasLoggedModel.current = false // Reset for next time
-      setElapsedSeconds(0)
-    }
-
-    // ALWAYS cleanup - runs on unmount OR deps change
-    return () => {
-      if (interval) clearInterval(interval)
-    }
-  }, [isLoading, selectedModel, availableModels])
-
-  // Build model display name with provider info
-  const currentModelInfo = availableModels.find(m => m.name === selectedModel) 
-    || availableModels[0]
   const modelName = currentModelInfo 
     ? `${currentModelInfo.name} • ${currentModelInfo.provider}`
     : (selectedModel ?? 'unknown')
   const backend = currentModelInfo?.provider || 'ollama'
-    
+
+  // Effect for model logging
+  useEffect(() => {
+    if (isLoading && !hasLoggedModel.current) {
+      hasLoggedModel.current = true
+      const currentModel = selectedModel ?? availableModels[0]?.name ?? 'unknown'
+      addLog(`🤖 Using model: ${currentModel}`)
+    } else if (!isLoading) {
+      hasLoggedModel.current = false
+    }
+  }, [isLoading, selectedModel, availableModels, addLog])
+
+  // Effect for timer
+  useEffect(() => {
+    if (isLoading) {
+      timerRef.current = setInterval(() => {
+        setElapsedSeconds(s => s + 1)
+      }, 1000)
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current)
+      setElapsedSeconds(0)
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current)
+    }
+  }, [isLoading])
+
+const handleClearLogs = useCallback(() => {
+    clearLogs()
+  }, [clearLogs])
+
+  const handleDebugToggle = useCallback(() => {
+    setShowDebug(prev => !prev)
+  }, [])
+
   const hasError = messages.some(m => m.status === 'error')
   const debugStatus: 'idle' | 'running' | 'error' = isLoading ? 'running' : hasError ? 'error' : 'idle'
 
@@ -80,7 +101,7 @@ export default function Home() {
       {!focusMode && (
 <Sidebar 
           activeTab={activeTab} 
-          onTabChange={setActiveTab} 
+          onTabChange={onTabChange} 
           onNewChat={handleNewChat}
         />
       )}
@@ -101,6 +122,7 @@ export default function Home() {
             {activeTab === 'chat' && (
               <button
                 onClick={() => setShowDebug(!showDebug)}
+                aria-label={showDebug ? 'Hide debug panel' : 'Show debug panel'}
                 className={`px-3 py-1.5 rounded-lg text-xs transition-colors ${
                   showDebug 
                     ? 'bg-violet-600 text-white' 
@@ -138,8 +160,8 @@ export default function Home() {
         <DebugPanel 
           steps={storeSteps}
           isOpen={showDebug}
-          onToggle={() => setShowDebug(false)}
-          onClearLogs={() => useChatStore.getState().clearLogs()}
+          onToggle={handleDebugToggle}
+          onClearLogs={handleClearLogs}
           status={debugStatus}
           modelName={modelName}
           backend={backend}

@@ -3,7 +3,7 @@
 
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useUIStore } from '@/lib/stores/uiStore'
 import { useChatStore } from '@/lib/stores/chatStore'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -27,71 +27,76 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const { setTheme, theme, toggleFocusMode } = useUIStore()
-  const { clearMessages } = useChatStore()
+  const { clearMessages, startNewChat } = useChatStore()
 
   // Define commands
-  const commands: CommandItem[] = useMemo(() => [
-    // Actions
-    {
-      id: 'new-chat',
-      label: 'New Chat',
-      icon: <Plus className="w-4 h-4" />,
-      action: () => { clearMessages(); onClose() },
-      category: 'action',
-      shortcut: 'Ctrl+N',
-    },
-    {
-      id: 'clear-chat',
-      label: 'Clear Current Chat',
-      icon: <X className="w-4 h-4" />,
-      action: () => { clearMessages(); onClose() },
-      category: 'action',
-    },
+  const commands: CommandItem[] = useMemo(() => {
+    const isMac = typeof navigator !== 'undefined' && navigator.platform.includes('Mac')
+    const cmd = isMac ? '⌘' : 'Ctrl'
     
-    // Navigation
-    {
-      id: 'go-chat',
-      label: 'Go to Chat',
-      icon: <FileText className="w-4 h-4" />,
-      action: () => { onClose() },
-      category: 'navigation',
-      shortcut: 'Alt+1',
-    },
-    {
-      id: 'go-history',
-      label: 'Go to History',
-      icon: <Hash className="w-4 h-4" />,
-      action: () => { onClose() },
-      category: 'navigation',
-      shortcut: 'Alt+2',
-    },
-    {
-      id: 'go-settings',
-      label: 'Go to Settings',
-      icon: <Settings className="w-4 h-4" />,
-      action: () => { onClose() },
-      category: 'navigation',
-      shortcut: 'Alt+3',
-    },
+    return [
+      // Actions
+      {
+        id: 'new-chat',
+        label: 'New Chat',
+        icon: <Plus className="w-4 h-4" />,
+        action: () => { startNewChat(); onClose() },
+        category: 'action' as const,
+        shortcut: `${cmd}+N`,
+      },
+      {
+        id: 'clear-chat',
+        label: 'Clear Current Chat',
+        icon: <X className="w-4 h-4" />,
+        action: () => { clearMessages(); onClose() },
+        category: 'action' as const,
+      },
+      
+      // Navigation
+      {
+        id: 'go-chat',
+        label: 'Go to Chat',
+        icon: <FileText className="w-4 h-4" />,
+        action: () => { onClose() },
+        category: 'navigation' as const,
+        shortcut: 'Alt+1',
+      },
+      {
+        id: 'go-history',
+        label: 'Go to History',
+        icon: <Hash className="w-4 h-4" />,
+        action: () => { onClose() },
+        category: 'navigation' as const,
+        shortcut: 'Alt+2',
+      },
+      {
+        id: 'go-settings',
+        label: 'Go to Settings',
+        icon: <Settings className="w-4 h-4" />,
+        action: () => { onClose() },
+        category: 'navigation' as const,
+        shortcut: 'Alt+3',
+      },
 
-    // Settings
-    {
-      id: 'toggle-theme',
-      label: theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode',
-      icon: theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />,
-      action: () => { setTheme(theme === 'dark' ? 'light' : 'dark'); onClose() },
-      category: 'settings',
-      shortcut: 'Ctrl+Shift+D',
-    },
-    {
-      id: 'toggle-focus',
-      label: 'Toggle Focus Mode',
-      icon: <Search className="w-4 h-4" />,
-      action: () => { toggleFocusMode(); onClose() },
-      category: 'settings',
-      shortcut: 'Ctrl+Shift+F',
-    },
-  ], [clearMessages, theme, setTheme, toggleFocusMode, onClose])
+      // Settings
+      {
+        id: 'toggle-theme',
+        label: theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode',
+        icon: theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />,
+        action: () => { setTheme(theme === 'dark' ? 'light' : 'dark'); onClose() },
+        category: 'settings' as const,
+        shortcut: `${cmd}+Shift+D`,
+      },
+      {
+        id: 'toggle-focus',
+        label: 'Toggle Focus Mode',
+        icon: <Search className="w-4 h-4" />,
+        action: () => { toggleFocusMode(); onClose() },
+        category: 'settings' as const,
+        shortcut: `${cmd}+Shift+F`,
+      },
+    ]
+  }, [clearMessages, startNewChat, theme, setTheme, toggleFocusMode, onClose])
 
   // Filter commands
   const filteredCommands = useMemo(() => {
@@ -99,6 +104,23 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
     const q = query.toLowerCase()
     return commands.filter(c => c.label.toLowerCase().includes(q))
   }, [commands, query])
+
+  // Group commands by category
+  const groupedCommands = useMemo(() => {
+    const groups: Record<string, CommandItem[]> = {}
+    filteredCommands.forEach(cmd => {
+      if (!groups[cmd.category]) groups[cmd.category] = []
+      groups[cmd.category].push(cmd)
+    })
+    return Object.entries(groups)
+  }, [filteredCommands])
+
+  // Reset selected index when filtered results change
+  useEffect(() => {
+    if (selectedIndex >= filteredCommands.length && filteredCommands.length > 0) {
+      setSelectedIndex(0)
+    }
+  }, [filteredCommands.length, selectedIndex])
 
   // Handle keyboard navigation
   useEffect(() => {
@@ -115,13 +137,18 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
         e.preventDefault()
         filteredCommands[selectedIndex]?.action()
       } else if (e.key === 'Escape') {
-        onClose()
+        e.preventDefault()
+        if (query) {
+          setQuery('')
+        } else {
+          onClose()
+        }
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, filteredCommands, selectedIndex, onClose])
+  }, [isOpen, filteredCommands, selectedIndex, onClose, query])
 
   // Reset when opened
   useEffect(() => {
@@ -170,28 +197,39 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
                 No commands found
               </div>
             ) : (
-              filteredCommands.map((cmd, i) => (
-                <button
-                  key={cmd.id}
-                  onClick={cmd.action}
-                  className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors ${
-                    i === selectedIndex 
-                      ? 'bg-violet-600 text-white' 
-                      : 'text-slate-300 hover:bg-slate-800'
-                  }`}
-                >
-                  <span className="opacity-70">{cmd.icon}</span>
-                  <span className="flex-1">{cmd.label}</span>
-                  {cmd.shortcut && (
-                    <kbd className={`text-xs px-2 py-0.5 rounded ${
-                      i === selectedIndex 
-                        ? 'bg-white/20' 
-                        : 'bg-slate-800'
-                    }`}>
-                      {cmd.shortcut}
-                    </kbd>
-                  )}
-                </button>
+              groupedCommands.map(([category, cmds]) => (
+                <div key={category}>
+                  <div className="px-4 py-2 text-xs font-medium text-slate-500 uppercase tracking-wider">
+                    {category}
+                  </div>
+                  {cmds.map((cmd) => {
+                    // Find global index for selection tracking
+                    const globalIndex = filteredCommands.findIndex(c => c.id === cmd.id)
+                    return (
+                      <button
+                        key={cmd.id}
+                        onClick={cmd.action}
+                        className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors ${
+                          globalIndex === selectedIndex 
+                            ? 'bg-violet-600 text-white' 
+                            : 'text-slate-300 hover:bg-slate-800'
+                        }`}
+                      >
+                        <span className="opacity-70">{cmd.icon}</span>
+                        <span className="flex-1">{cmd.label}</span>
+                        {cmd.shortcut && (
+                          <kbd className={`text-xs px-2 py-0.5 rounded ${
+                            globalIndex === selectedIndex 
+                              ? 'bg-white/20' 
+                              : 'bg-slate-800'
+                          }`}>
+                            {cmd.shortcut}
+                          </kbd>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
               ))
             )}
           </div>
@@ -212,6 +250,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
 export function useKeyboardShortcuts() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const { toggleFocusMode } = useUIStore()
+  const { startNewChat } = useChatStore()
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -233,13 +272,13 @@ export function useKeyboardShortcuts() {
       // Ctrl/Cmd + N - New chat
       if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
         e.preventDefault()
-        useChatStore.getState().clearMessages()
+        startNewChat()
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [toggleFocusMode])
+  }, [toggleFocusMode, startNewChat])
 
   return { paletteOpen, setPaletteOpen }
 }

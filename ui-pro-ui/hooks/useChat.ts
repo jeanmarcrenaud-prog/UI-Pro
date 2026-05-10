@@ -3,7 +3,7 @@
 
 'use client'
 
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useChatStore } from '@/lib/stores/chatStore'
 import { useAgentStore } from '@/lib/stores/agentStore'
 import { useUIStore } from '@/lib/stores/uiStore'
@@ -27,6 +27,7 @@ export const useChat = () => {
     setLoading,
     setError,
     saveToHistory,
+    removeMessage,
     messages,
     isLoading,
     error,
@@ -43,11 +44,17 @@ export const useChat = () => {
 
   // ===================== RESUME LOGIC =====================
   const getCurrentModelInfo = useCallback(() => {
-    const modelInfo = availableModels.find(m => m.name === selectedModel)
+    // First try to find by name (display name), then by id
+    let modelInfo = availableModels.find(m => m.name === selectedModel)
+    if (!modelInfo) {
+      modelInfo = availableModels.find(m => m.id === selectedModel)
+    }
+    
     const provider = modelInfo?.provider || 'ollama'
     // Fallback model based on provider format (LM Studio uses slash, Ollama uses colon)
     const fallbackModel = provider === 'lmstudio' ? 'qwen/qwen3.5-9b' : 'qwen3.5:0.8b'
-    const model = modelInfo?.id || selectedModel || fallbackModel
+    // Use model ID if found, otherwise use selectedModel as-is (could be id or display name)
+    const model = modelInfo?.id || (selectedModel.includes('/') || selectedModel.includes(':') ? selectedModel : fallbackModel)
     console.log('[getCurrentModelInfo] selectedModel:', selectedModel, 'modelInfo:', modelInfo, '-> provider:', provider, 'model:', model)
     return {
       model,
@@ -55,38 +62,22 @@ export const useChat = () => {
     }
   }, [selectedModel, availableModels])
 
-  // Regenerate: find last user message and resend it
-  const handleRegenerate = useCallback(async (messageId: string) => {
-    // Find the user message to regenerate
-    const userMsg = messages.find(m => m.id === messageId || (m.role === 'user' && messages.filter(x => x.role === 'user').pop()?.id === m.id))
-    if (!userMsg) {
-      console.warn('[useChat] Cannot regenerate: user message not found')
-      return
-    }
+  // ===================== HELPER FUNCTIONS =====================
+  // Initial steps - memoized to avoid recreation
+  const initialSteps = useMemo(() => [
+    { id: 'step-analyzing', title: 'Analyzing request', status: 'pending' as const },
+    { id: 'step-planning', title: 'Planning solution', status: 'pending' as const },
+    { id: 'step-executing', title: 'Executing', status: 'pending' as const },
+    { id: 'step-reviewing', title: 'Reviewing', status: 'pending' as const },
+  ], [])
+
+  // Shared: initialize a new assistant message and start generation
+  const initializeNewGeneration = useCallback((content: string, messageId: string, assistantId: string) => {
+    // Reset state
+    assistantMessageIdRef.current = assistantId
+    contentRef.current = ''
     
-    // Get the user message content - use the one associated with this messageId
-    const lastUserMessage = messages.filter(m => m.role === 'user').pop()
-    if (!lastUserMessage) return
-    
-    const content = lastUserMessage.content
-    
-    // Remove all messages after the last user message (assistant responses)
-    const userMsgIndex = messages.findIndex(m => m.id === lastUserMessage.id)
-    if (userMsgIndex === -1) return
-    
-    const messagesToRemove = messages.slice(userMsgIndex + 1)
-    for (const msg of messagesToRemove) {
-      removeMessage(msg.id)
-    }
-    
-    console.log('[useChat] Regenerating from user message:', content.slice(0, 50))
-    
-    // Now send the message again (similar to handleSend)
-    const messageId = crypto.randomUUID()
-    const assistantId = crypto.randomUUID()
-    const { model, provider } = getCurrentModelInfo()
-    
-    // Add new assistant message
+    // Add messages
     addMessage({
       role: 'assistant',
       content: '',
@@ -96,24 +87,56 @@ export const useChat = () => {
     
     setLoading(true)
     resetAgent()
-    
-    const initialSteps = [
-      { id: 'step-analyzing', title: 'Analyzing request', status: 'pending' as const },
-      { id: 'step-planning', title: 'Planning solution', status: 'pending' as const },
-      { id: 'step-executing', title: 'Executing', status: 'pending' as const },
-      { id: 'step-reviewing', title: 'Reviewing', status: 'pending' as const },
-    ]
     start(initialSteps)
     
+    // Get model info and start generation
+    const { model, provider } = getCurrentModelInfo()
+    return chatService.sendMessage(content, messageId, 0, model, provider)
+  }, [addMessage, setLoading, resetAgent, start, getCurrentModelInfo])
+
+  // ===================== REGENERATE =====================
+  const handleRegenerate = useCallback(async (messageId: string) => {
+    // Find the user message by ID
+    const userMessageIndex = messages.findIndex(m => m.id === messageId && m.role === 'user')
+    
+    if (userMessageIndex === -1) {
+      console.warn('[useChat] Cannot regenerate: user message not found')
+      return
+    }
+    
+    const userMsg = messages[userMessageIndex]
+    const content = userMsg.content
+    
+    // Remove all messages after this user message (assistant responses)
+    const messagesAfter = messages.slice(userMessageIndex + 1)
+    messagesAfter.forEach(msg => removeMessage(msg.id))
+    
+    console.log('[useChat] Regenerating response for:', content.slice(0, 60) + '...')
+    
+    const newMessageId = crypto.randomUUID()
+    const assistantId = crypto.randomUUID()
+    
+    // Set sending flags
+    isSendingRef.current = true
+    isStreamActiveRef.current = true
+    
     try {
-      await chatService.sendMessage(content, messageId, 0, model, provider)
+      await initializeNewGeneration(content, newMessageId, assistantId)
     } catch (err) {
       console.error('[useChat] Regenerate failed:', err)
       setError('Failed to regenerate')
       isSendingRef.current = false
       isStreamActiveRef.current = false
     }
-  }, [messages, removeMessage, getCurrentModelInfo, addMessage, setLoading, resetAgent, start])
+  }, [messages, removeMessage, initializeNewGeneration, setError])
+
+  // Refs for values used in message handler (to avoid re-subscriptions)
+  const stepsRef = useRef(steps)
+  const lastChunkIndexRef = useRef(lastReceivedChunkIndex)
+  
+  // Keep refs in sync
+  useEffect(() => { stepsRef.current = steps }, [steps])
+  useEffect(() => { lastChunkIndexRef.current = lastReceivedChunkIndex }, [lastReceivedChunkIndex])
 
   const attemptResume = useCallback(async () => {
     if (!currentMessageId || lastReceivedChunkIndex <= 0) return
@@ -172,7 +195,7 @@ export const useChat = () => {
         contentRef.current += text
 
         // Update chunk index
-        const newIndex = lastReceivedChunkIndex + 1
+        const newIndex = lastChunkIndexRef.current + 1
         updateLastChunkIndex(newIndex)
 
         // Update UI message
@@ -187,8 +210,8 @@ export const useChat = () => {
         updateMessageById(assistantMessageIdRef.current, () => contentRef.current, 'done')
         saveToHistory()
 
-        // Force all steps to done
-        steps.forEach((step) => {
+        // Force all steps to done (using ref)
+        stepsRef.current.forEach((step) => {
           if (step.status !== 'done') updateStep(step.id, 'done')
         })
 
@@ -219,10 +242,9 @@ export const useChat = () => {
     updateLastChunkIndex,
     saveToHistory,
     setError,
-    steps,
     updateStep,
     resetCurrentMessage,
-    lastReceivedChunkIndex,
+    trimMessageHistory,
   ])
 
   // ===================== SEND MESSAGE =====================
@@ -236,39 +258,19 @@ export const useChat = () => {
 
     isSendingRef.current = true
     isStreamActiveRef.current = true
-    contentRef.current = ''
 
     const messageId = crypto.randomUUID()
     const assistantId = crypto.randomUUID()
 
     // Save for potential resume
     setCurrentMessage(messageId, content)
-    assistantMessageIdRef.current = assistantId
 
-    // Add UI messages
+    // Add user message
     addMessage({ role: 'user', content, id: crypto.randomUUID() })
-    addMessage({
-      role: 'assistant',
-      content: '',
-      status: 'thinking',
-      id: assistantId,
-    })
 
-    setLoading(true)
-    resetAgent()
-
-    // Initialize agent steps
-    const initialSteps = [
-      { id: 'step-analyzing', title: 'Analyzing request', status: 'pending' as const },
-      { id: 'step-planning', title: 'Planning solution', status: 'pending' as const },
-      { id: 'step-executing', title: 'Executing', status: 'pending' as const },
-      { id: 'step-reviewing', title: 'Reviewing', status: 'pending' as const },
-    ]
-    start(initialSteps)
-
-    const { model, provider } = getCurrentModelInfo()
     try {
-      await chatService.sendMessage(content, messageId, 0, model, provider) // New message → start from chunk 0
+      // Use shared helper for assistant message + generation
+      await initializeNewGeneration(content, messageId, assistantId)
 
       // Safety timeout (5 minutes)
       safetyTimeoutRef.current = setTimeout(() => {
@@ -289,12 +291,9 @@ export const useChat = () => {
     }
   }, [
     addMessage,
-    setLoading,
-    setError,
-    start,
-    resetAgent,
     setCurrentMessage,
-    getCurrentModelInfo,
+    initializeNewGeneration,
+    setError,
   ])
 
   // ===================== CANCEL & CLEAR =====================
