@@ -29,7 +29,7 @@ export const LLM_CONFIG = {
   lemonadeUrl: process.env.NEXT_PUBLIC_LEMONADE_URL || 'http://localhost:13305',
   
   // Default model - should be overridden via API at runtime
-  defaultModel: process.env.NEXT_PUBLIC_DEFAULT_MODEL || 'qwen3.5:9b',
+  defaultModel: process.env.NEXT_PUBLIC_DEFAULT_MODEL || 'qwen3.6:latest',
   
   // Default available models - dynamically discovered at runtime
   // No hardcoded models - will be populated by modelDiscovery service
