@@ -119,10 +119,12 @@ async def ws_endpoint(websocket: WebSocket):
 
             # Stream tokens
             chunk_index = start_chunk
+            token_count = 0
             try:
                 stream_gen = stream_service.stream_generate(request["task"], model=request["model"], provider=request["provider"])
                 async for chunk in stream_gen:
                     chunk_text = getattr(chunk, 'text', str(chunk))
+                    token_count = getattr(chunk, 'tokens_generated', chunk_index) or chunk_index
                     if chunk_index < request["last_chunk_index"]:
                         chunk_index += 1
                         continue
@@ -131,7 +133,7 @@ async def ws_endpoint(websocket: WebSocket):
                     await websocket.send_text(json.dumps({
                         "type": "token", "content": chunk_text, "response": chunk_text,
                         "done": False, "message_id": request["message_id"],
-                        "chunk_index": chunk_index, "tokens": chunk_index
+                        "chunk_index": chunk_index, "tokens": token_count
                     }))
             except Exception as e:
                 logger.error(f"Stream error: {e}")
@@ -146,7 +148,7 @@ async def ws_endpoint(websocket: WebSocket):
                 }))
 
             await websocket.send_text(json.dumps({
-                "type": "done", "message_id": request["message_id"], "chunk_index": chunk_index, "tokens": chunk_index
+                "type": "done", "message_id": request["message_id"], "chunk_index": chunk_index, "tokens": token_count
             }))
             await controller.update_request_state(request["message_id"], chunk_index, is_complete=True)
 
