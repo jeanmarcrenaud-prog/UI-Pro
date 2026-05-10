@@ -72,6 +72,13 @@ class OllamaClient:
             return data.get('response', '')
         except requests.RequestException as e:
             logger.error(f"Ollama request failed: {e}")
+            error_msg = str(e)
+            if "subscription" in error_msg.lower() or "upgrade" in error_msg.lower():
+                return "[Error: Ce modèle nécessite un abonnement Ollama. Veuillez sélectionner un modèle local.]"
+            elif "404" in error_msg:
+                return "[Error: Modèle non trouvé. Vérifiez que le modèle est installé localement.]"
+            elif "connection" in error_msg.lower():
+                return "[Error: Impossible de se connecter à Ollama.]"
             return f"[OllamaError: {e}]"
 
     def stream(
@@ -172,7 +179,16 @@ class OllamaClient:
                                 logger.warning(f"Failed to parse stream line: {text[:50]}")
             except requests.RequestException as e:
                 logger.error(f"[OllamaClient.stream] Request error: {e}")
-                yield f"[Error: {e}]"
+                # Explicit error messages for common issues
+                error_msg = str(e)
+                if "subscription" in error_msg.lower() or "upgrade" in error_msg.lower():
+                    yield "[Error: Ce modèle nécessite un abonnement Ollama. Veuillez sélectionner un modèle local (qwen3.6, gemma4, lfm2, nemotron-cascade-2, qwen3.5:9b)]"
+                elif "404" in error_msg:
+                    yield "[Error: Modèle non trouvé. Vérifiez que le modèle est bien installé localement avec 'ollama list']"
+                elif "connection" in error_msg.lower():
+                    yield "[Error: Impossible de se connecter à Ollama. Vérifiez que le service est démarré.]"
+                else:
+                    yield f"[Error: {e}]"
 
 # ==================== **1. CONFIG** ====================
 
