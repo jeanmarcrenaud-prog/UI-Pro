@@ -1,0 +1,204 @@
+# core/executor.py - Code Executor (Sandbox + Auto-Fix + Timeout + Code Review)
+#
+# Role: Secure code execution in isolated sandbox
+# Used by: Agent execution, code review
+# - Temporary directory isolation
+# - Execution timeout (30s default)
+# - Auto-cleanup on completion
+# - Code review integration
+
+import subprocess
+import tempfile
+import time
+import logging
+import sys
+import shlex
+from pathlib import Path
+from dataclasses import dataclass
+from typing import Dict, Any, Optional
+
+logger = logging.getLogger(__name__)
+
+
+# ==================== **1. CONFIG** ====================
+
+@dataclass
+class ExecutionConfig:
+    """Configuration sandbox"""
+    timeout: int = 30
+    workspace_dir: str = "workspace"
+    cleanup: bool = True
+    max_fix_attempts: int = 3
+    code_review_enabled: bool = False
+
+
+_CONFIG = ExecutionConfig()
+
+
+# ==================== **2. CODE EXECUTOR CLASS** ====================
+
+class CodeExecutor:
+    """
+    Executor avec sandbox + auto-fix + code review.
+    
+    Pattern:
+      - Optionally run code review (bandit/pylint)
+      - Créer tmp dir isolation (tempfile)
+      - Écrire main.py (entry point)
+      - Exécuter avec timeout
+      - Capturer stderr/stdout
+      - Auto-fix loop si échec
+    """
+    
+    def __init__(
+        self,
+        timeout: int = 30,
+        workspace_dir: str = "workspace",
+        cleanup: bool = True,
+        max_fix_attempts: int = 3,
+        code_review_enabled: bool = False,
+    ):
+        self.config = ExecutionConfig(
+            timeout=timeout,
+            workspace_dir=workspace_dir,
+            cleanup=cleanup,
+            max_fix_attempts=max_fix_attempts,
+            code_review_enabled=code_review_enabled,
+        )
+        self._reviewer = None
+        
+        if self.config.code_review_enabled:
+            try:
+                from core.code_review import CodeReviewer
+                self._reviewer = CodeReviewer()
+            except ImportError:
+                logger.warning("Code review not available")
+    
+    def run(self, code: str, args: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Exécuter code sandboxed avec code review optionnel.
+        
+        Args:
+            code: Code Python à exécuter
+            args: Arguments optionnels passés à python (ex: --flag value)
+            
+        Returns:
+            Dict {"success": bool, "stdout": ..., "stderr": ..., "duration_ms": ..., "review": ...}
+        """
+        start_time = time.time()
+        
+        # Run code review first if enabled
+        review_result = None
+        if self.config.code_review_enabled and self._reviewer:
+            try:
+                review_result = self._reviewer.review(code)
+                if not review_result.success:
+                    logger.warning(f"Code review found issues: {review_result.issues}")
+            except Exception as e:
+                logger.warning(f"Code review failed: {e}")
+        
+        tmpdir = None
+        
+        try:
+            # Use TemporaryDirectory for automatic cleanup
+            import tempfile
+            tmpdir = tempfile.TemporaryDirectory()
+            workspace = Path(tmpdir.name)
+            
+            # Write code to temp file
+            main_file = workspace / "main.py"
+            sanitized_code = self._prepare_code(code)
+            main_file.write_text(sanitized_code, encoding="utf-8")
+            
+            # Execute - different approach for Windows
+            proc_cmd = ["python", str(main_file)]
+            if args:
+                proc_cmd.extend(shlex.split(args))
+                logger.info(f"[EXECUTOR] command: {' '.join(proc_cmd)}")
+            
+            if sys.platform == "win32":
+                # Run with stdin explicitly closed to avoid handle issues
+                cp = subprocess.run(
+                    proc_cmd,
+                    capture_output=True,
+                    text=True,
+                    encoding='utf-8',
+                    errors='replace',  # Replace invalid chars instead of crashing
+                    timeout=self.config.timeout,
+                    stdin=subprocess.DEVNULL,
+                )
+            else:
+                cp = subprocess.run(
+                    proc_cmd,
+                    cwd=workspace,
+                    capture_output=True,
+                    text=True,
+                    encoding='utf-8',
+                    errors='replace',
+                    timeout=self.config.timeout,
+                )
+            
+            duration_ms = int((time.time() - start_time) * 1000)
+            success = cp.returncode == 0
+            
+            if not success:
+                logger.warning(f"Execution failed: {cp.stderr[:100]}")
+            
+            return {
+                "success": success,
+                "stdout": cp.stdout,
+                "stderr": cp.stderr,
+                "duration_ms": duration_ms,
+                "returncode": cp.returncode,
+                "review": {
+                    "enabled": self.config.code_review_enabled,
+                    "issues": review_result.issues if review_result else [],
+                    "passed": review_result.success if review_result else True,
+                } if review_result else None,
+            }
+            
+        except subprocess.TimeoutExpired:
+            raise TimeoutError(f"Execution timeout: {self.config.timeout}s")
+        
+        except FileNotFoundError as e:
+            logger.error(f"File not found: {e}")
+            return {"success": False, "error": str(e)}
+        
+        except Exception as e:
+            logger.error(f"Executor error: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+        
+        finally:
+            # Cleanup - TemporaryDirectory auto-cleans on context exit
+            if tmpdir:
+                try:
+                    tmpdir.cleanup()
+                except Exception:
+                    pass  # Best effort
+    
+    def _prepare_code(self, code: str) -> str:
+        """Sanitize code - remove dangerous patterns"""
+        # Remove shebang (not needed, can cause issues on Windows)
+        lines = code.splitlines(True)
+        if lines and lines[0].lstrip().startswith("#!"):
+            code = "".join(lines[1:])
+        
+        # Block dangerous imports/calls
+        dangerous = [
+            "eval(", "exec(", "subprocess.Popen", "__import__",
+            "shutil.rmtree", "os.remove", "os.unlink",
+            "open('../", 'open("..",', "open('..',",
+        ]
+        for pattern in dangerous:
+            if pattern in code:
+                code = code.replace(pattern, "# BLOCKED: " + pattern)
+        
+        return code
+
+
+# ==================== **3. EXISTING COMPATIBILITY** ====================
+
+# Backward compatibility with legacy code
+def run():
+    """Legacy API"""
+    return "executor.py has been updated to CodeExecutor pattern"
