@@ -8,8 +8,8 @@
 # - streaming: Real-time streaming responses
 # - error_handler: Comprehensive error handling
 # - tools: Function calling / tools
-# - agents: Multi-step reasoning agents
 # - llm_router: Advanced LLM routing
+# NOTE: agents.py supprimé - utiliser agents/agent.py pour les agents
 
 from .base import BaseService, ServiceMetrics
 from .model_service import ModelService, get_model_service
@@ -19,7 +19,6 @@ from .llm_router import LLMRouter, TaskType, RouterConfig, get_llm_router
 from .streaming import StreamingService, StreamChunk, StreamConfig, StreamStatus, get_streaming_service
 from .error_handler import ErrorHandler, ErrorDetails, ErrorCategory, get_error_handler
 from .tools import Tool, ToolParameter, ToolCall, ToolManager, get_tool_manager, create_tool
-from .agents import Agent, AgentConfig, AgentStep, AgentStatus, get_agent
 
 __all__ = [
     # Base
@@ -59,10 +58,4 @@ __all__ = [
     "ToolManager",
     "get_tool_manager",
     "create_tool",
-    # Agents
-    "Agent",
-    "AgentConfig",
-    "AgentStep",
-    "AgentStatus",
-    "get_agent",
 ]
