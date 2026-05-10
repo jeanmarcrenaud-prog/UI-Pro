@@ -46,8 +46,7 @@ ui-pro/                           # Racine projet (65 fichiers Python)
 │   ├── model_service.py        # Service modèle
 │   ├── service_api.py          # API service
 │   ├── streaming.py            # Streaming SSE/WS
-│   ├── tools.py                 # Tools registry
-│   └── agents.py               # Agents service
+│   └── tools.py                 # Tools registry
 │
 ├── llm/                          # LLM clients
 │   ├── __init__.py
