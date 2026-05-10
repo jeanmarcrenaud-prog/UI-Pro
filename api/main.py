@@ -1,32 +1,41 @@
 # api/main.py - FastAPI Application Entry Point
-#
-# Role: FastAPI app initialization with modular routers
-# Used by: Direct uvicorn run, run.py launcher
+"""
+UI-Pro API - FastAPI application entry point
+"""
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
-# Suppress noise
+from contextlib import asynccontextmanager
 import logging
-logging.getLogger("transformers").setLevel(logging.ERROR)
-logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
 
-# Import routers
-from api.routers import health, chat, execute, ws, logs
+logger = logging.getLogger("api")
 
-# ===================== FASTAPI APP =====================
-app = FastAPI(title="UI Pro - LLM Orchestration Platform")
 
-# CORS middleware for frontend
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("🚀 UI-Pro API starting...")
+    yield
+    logger.info("👋 UI-Pro API shutting down...")
+
+
+app = FastAPI(
+    title="UI-Pro",
+    description="AI Agent Orchestration Platform",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:8000", "http://127.0.0.1:8000"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Include routers
+from api.routers import health, chat, execute, ws, logs
+
 app.include_router(health.router)
 app.include_router(chat.router)
 app.include_router(execute.router)
