@@ -5,22 +5,18 @@
 
 import { memo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-
-interface Step {
-  id: string
-  title: string
-  status: 'pending' | 'active' | 'done'
-}
+import type { AgentStep } from '@/lib/types'
 
 interface AgentStepsProps {
-  steps: Step[]
+  steps: AgentStep[]
   className?: string
 }
 
-const statusConfig = {
+const statusConfig: Record<string, { icon: string; color: string }> = {
   pending: { icon: '⏳', color: 'text-slate-500' },
   active: { icon: '⚙️', color: 'text-violet-400' },
   done: { icon: '✅', color: 'text-emerald-400' },
+  error: { icon: '⚠️', color: 'text-red-400' },
 }
 
 export const AgentSteps = memo(function AgentSteps({ 

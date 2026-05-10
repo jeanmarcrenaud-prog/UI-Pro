@@ -61,7 +61,6 @@ export function HistoryView({ onSelectChat, onClose }: HistoryViewProps) {
   const [showArchived, setShowArchived] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<SortOption>('date_desc')
-  const [filterModel, setFilterModel] = useState<string>('')
   const [filterTag, setFilterTag] = useState<string>('')
   const [showFilters, setShowFilters] = useState(false)
   
@@ -151,7 +150,8 @@ export function HistoryView({ onSelectChat, onClose }: HistoryViewProps) {
 
   const exportSelected = useCallback(() => {
     let combinedMd = '# UI-Pro Conversations Export\n\n---\n\n'
-    filteredHistory
+    // Export all selected chats, ignoring search/filter
+    history
       .filter(c => selectedChats.has(c.id))
       .forEach(chat => {
         combinedMd += `## ${chat.title}\n\n`
@@ -172,7 +172,7 @@ export function HistoryView({ onSelectChat, onClose }: HistoryViewProps) {
     URL.revokeObjectURL(url)
     setSelectedChats(new Set())
     setSelectMode(false)
-  }, [filteredHistory, selectedChats])
+  }, [history, selectedChats])
 
   // --- Handlers ---
   

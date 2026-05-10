@@ -2,7 +2,7 @@
 // Role: Renders an agent message with embedded step execution list in a chat bubble
 
 // components/chat/AgentMessage.tsx
-import { AgentSteps } from '../agent/AgentSteps'
+import { AgentSteps } from './AgentSteps'
 import type { AgentStep } from '@/lib/types'
 
 export default function AgentMessage({ steps }: { steps: AgentStep[] }) {

@@ -52,7 +52,9 @@ interface ChatStore extends ChatState {
   addMessage: (message: Message) => void
   updateLastMessage: (content: string, status?: Message['status']) => void
   updateMessageById: (id: string, updater: (content: string) => string, status?: Message['status']) => void
+  removeMessage: (id: string) => void
   clearMessages: () => void
+  startNewChat: () => void
   setLoading: (loading: boolean) => void
   setError: (error: string | null) => void
   // Internal
@@ -295,6 +297,13 @@ export const useChatStore = create<ChatStore>()(
         })),
 
       clearMessages: () => set({ messages: [], error: null, currentChatId: null }),
+
+      startNewChat: () => set({ messages: [], error: null, currentChatId: null }),
+
+      removeMessage: (id) =>
+        set((state) => ({
+          messages: state.messages.filter(m => m.id !== id),
+        })),
 
       setLoading: (isLoading) => set({ isLoading }),
 
