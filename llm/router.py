@@ -1,52 +1,41 @@
-# llm/router.py - Multi-Model Router
-#
-# Role: Intelligent routing of tasks to best model based on keywords
-# Used by: orchestrator, code_review, general task routing
-# - fast → qwen2.5:7b (exposé <300ms)
-# - reasoning → qwen2.5:32b (complexité)
-# - code → deepseek-coder:33b (spécialisation)
-#
-# Usage :
-#   router = LLMRouter()
-#   llm = router.get_for_task("explain")  # fast
-#   llm = router.get_for_task("debug")    # reasoning
+# llm/router.py - Intelligent Multi-Model Router
+"""
+Role: Intelligent routing of tasks to best model based on keywords
+Used by: orchestrator, code_review, streaming service
+"""
 
 from dataclasses import dataclass
 from typing import Literal, Optional, Iterator
 import logging
+
 from models.settings import settings
 
-# Logger defined at module level - used by OllamaClient and LLMRouter
 logger = logging.getLogger(__name__)
 
-# Define ModelConfig and OllamaClient locally since we removed llm/client.py
+
 @dataclass
 class ModelConfig:
-    """Configuration for LLM backend"""
+    """LLM Backend Configuration"""
     url: str = ""
     model: str = ""
-    timeout: int = 30
-    backend: str = "ollama"  # ollama, lmstudio, lemonade, etc.
-
-    def __post_init__(self):
-        # Values are set explicitly in _create_model_config
-        pass
+    timeout: int = 120
+    backend: str = "ollama"
 
 
 class OllamaClient:
-    """Ollama local LLM client."""
+    """Unified client supporting multiple backends (Ollama, LM Studio, etc.)"""
 
-    def __init__(self, config: ModelConfig = None):
+    def __init__(self, config: Optional[ModelConfig] = None):
         self.config = config or ModelConfig()
 
     def generate(
-        self, 
-        prompt: str, 
-        model: str = None,
+        self,
+        prompt: str,
+        model: Optional[str] = None,
         system_prompt: Optional[str] = None,
-        temperature: float = 0.7
+        temperature: float = 0.7,
     ) -> str:
-        """Generate response from Ollama."""
+        """Synchronous generation."""
         import json
         import requests
 
@@ -62,54 +51,37 @@ class OllamaClient:
         }
 
         try:
-            response = requests.post(
-                url, 
-                json=payload, 
-                timeout=self.config.timeout
-            )
-            response.raise_for_status()
-            data = response.json()
+            resp = requests.post(url, json=payload, timeout=self.config.timeout)
+            resp.raise_for_status()
+            data = resp.json()
             return data.get('response', '')
         except requests.RequestException as e:
             logger.error(f"Ollama request failed: {e}")
-            error_msg = str(e)
-            if "subscription" in error_msg.lower() or "upgrade" in error_msg.lower():
-                return "[Error: Ce modèle nécessite un abonnement Ollama. Veuillez sélectionner un modèle local.]"
+            error_msg = str(e).lower()
+            if "subscription" in error_msg or "upgrade" in error_msg:
+                return "[Error: Ce modèle nécessite un abonnement. Utilisez un modèle local.]"
             elif "404" in error_msg:
-                return "[Error: Modèle non trouvé. Vérifiez que le modèle est installé localement.]"
-            elif "connection" in error_msg.lower():
+                return "[Error: Modèle non trouvé. Vérifiez 'ollama list']"
+            elif "connection" in error_msg:
                 return "[Error: Impossible de se connecter à Ollama.]"
             return f"[OllamaError: {e}]"
 
     def stream(
-        self, 
-        prompt: str, 
-        model: str = None,
+        self,
+        prompt: str,
+        model: Optional[str] = None,
         system_prompt: Optional[str] = None,
-        temperature: float = 0.7
+        temperature: float = 0.7,
     ) -> Iterator[str]:
-        """Stream response from Ollama."""
+        """Streaming response."""
         import json
         import requests
 
         model = model or self.config.model
-        url = self.config.url or f"{settings.ollama_url}/v1/chat/completions"
-        # Use backend from config to determine format
         backend = self.config.backend or "ollama"
 
-        if backend == "ollama":
-            # Ollama format: /api/generate with prompt
-            url = self.config.url or f"{settings.ollama_url}/api/generate"
-            payload = {
-                "model": model,
-                "prompt": prompt,
-                "system": system_prompt or "",
-                "stream": True,
-                "options": {"temperature": temperature}
-            }
-            is_streaming_endpoint = "generate" in url or "stream" in url
-        elif backend in ("lmstudio", "lemonade"):
-            # LM Studio / OpenAI format: /v1/chat/completions with messages
+        # Determine URL and payload format based on backend
+        if backend in ("lmstudio", "lemonade"):
             url = self.config.url or f"{settings.ollama_url}/v1/chat/completions"
             messages = []
             if system_prompt:
@@ -121,9 +93,8 @@ class OllamaClient:
                 "stream": True,
                 "temperature": temperature
             }
-            is_streaming_endpoint = True
         else:
-            # Default to Ollama format
+            # Ollama format
             url = self.config.url or f"{settings.ollama_url}/api/generate"
             payload = {
                 "model": model,
@@ -132,93 +103,64 @@ class OllamaClient:
                 "stream": True,
                 "options": {"temperature": temperature}
             }
-            is_streaming_endpoint = "generate" in url or "stream" in url
 
-        if is_streaming_endpoint:
-            try:
-                with requests.post(
-                    url,
-                    json=payload,
-                    stream=True,
-                    timeout=self.config.timeout
-                ) as r:
-                    r.raise_for_status()
-                    for line in r.iter_lines():
-                        if line:
-                            text = line.decode().strip()
-                            if not text:
-                                continue
-                            # Handle SSE format (e.g., "data: {...}")
-                            if text.startswith("data: "):
-                                text = text[6:]  # Remove "data: " prefix
-                            # Handle [DONE] signal
-                            if text == "[DONE]":
+        try:
+            with requests.post(url, json=payload, stream=True, timeout=self.config.timeout) as r:
+                r.raise_for_status()
+                for line in r.iter_lines():
+                    if line:
+                        text = line.decode().strip()
+                        if not text:
+                            continue
+                        # Handle SSE format
+                        if text.startswith("data: "):
+                            text = text[6:]
+                        if text == "[DONE]":
+                            break
+                        try:
+                            data = json.loads(text)
+                            # Parse based on backend format
+                            if backend in ("lmstudio", "lemonade", "llamacpp"):
+                                content = data.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                            else:
+                                # Ollama format
+                                content = data.get('response', '') or data.get('thinking', '')
+                            if content:
+                                yield content
+                            if data.get("done", False):
                                 break
-                            try:
-                                data = json.loads(text)
-                                # Parse based on backend format
-                                if backend in ("lmstudio", "lemonade"):
-                                    # OpenAI format: choices[0].delta.content
-                                    content = data.get("choices", [{}])[0].get("delta", {}).get("content", "")
-                                elif backend == "llamacpp":
-                                    # llama.cpp typically uses OpenAI format
-                                    content = data.get("choices", [{}])[0].get("delta", {}).get("content", "")
-                                else:
-                                    # Ollama format: response (or thinking for reasoning models like qwen3.6)
-                                    content = data.get('response', '') or data.get('thinking', '')
-                                if content:
-                                    yield content
-                                # Check for completion - different formats
-                                if data.get("done", False):  # Ollama format
-                                    break
-                                # OpenAI/LM Studio: check finish_reason
-                                choices = data.get("choices", [])
-                                if choices and choices[0].get("finish_reason"):
-                                    break
-                            except json.JSONDecodeError:
-                                logger.warning(f"Failed to parse stream line: {text[:50]}")
-            except requests.RequestException as e:
-                logger.error(f"[OllamaClient.stream] Request error: {e}")
-                # Explicit error messages for common issues
-                error_msg = str(e)
-                if "subscription" in error_msg.lower() or "upgrade" in error_msg.lower():
-                    yield "[Error: Ce modèle nécessite un abonnement Ollama. Veuillez sélectionner un modèle local (qwen3.6, gemma4, lfm2, nemotron-cascade-2, qwen3.5:9b)]"
-                elif "404" in error_msg:
-                    yield "[Error: Modèle non trouvé. Vérifiez que le modèle est bien installé localement avec 'ollama list']"
-                elif "connection" in error_msg.lower():
-                    yield "[Error: Impossible de se connecter à Ollama. Vérifiez que le service est démarré.]"
-                else:
-                    yield f"[Error: {e}]"
+                            choices = data.get("choices", [])
+                            if choices and choices[0].get("finish_reason"):
+                                break
+                        except json.JSONDecodeError:
+                            logger.warning(f"Failed to parse stream line: {text[:50]}")
+        except requests.RequestException as e:
+            logger.error(f"[OllamaClient.stream] Request error: {e}")
+            error_msg = str(e)
+            if "subscription" in error_msg.lower() or "upgrade" in error_msg.lower():
+                yield "[Error: Ce modèle nécessite un abonnement Ollama. Veuillez sélectionner un modèle local (qwen3.6, gemma4, lfm2, nemotron-cascade-2, qwen3.5:9b)]"
+            elif "404" in error_msg:
+                yield "[Error: Modèle non trouvé. Vérifiez que le modèle est bien installé localement avec 'ollama list']"
+            elif "connection" in error_msg.lower():
+                yield "[Error: Impossible de se connecter à Ollama. Vérifiez que le service est démarré.]"
+            else:
+                yield f"[Error: {e}]"
 
-# ==================== **1. CONFIG** ====================
+
+# ==================== CONFIG ====================
 
 @dataclass
 class ModelsConfig:
-    """Configuration multi-modèles - importée depuis settings.py"""
-    # Models importés depuis settings (pas de hardcoding)
+    """Configuration multi-modèles"""
     fast: str = ""
     reasoning: str = ""
     code: str = ""
     reasoner: str = ""
-    
-    # Backend settings from settings
     ollama_url: str = ""
-    backend: Literal["ollama", "http"] = "ollama"
     timeout: int = 120
-    
-    def __post_init__(self):
-        from models.settings import settings
-        # Utiliser settings comme source unique - pas de fallback codé en dur
-        self.fast = self.fast or settings.model_fast
-        self.reasoning = self.reasoning or settings.model_reasoning
-        self.code = self.code or settings.model_code
-        self.reasoner = self.reasoner or settings.model_reasoning
-        if not self.ollama_url:
-            self.ollama_url = f"{settings.ollama_url}/api/generate"
 
     @classmethod
     def from_settings(cls) -> "ModelsConfig":
-        """Create ModelsConfig from settings - single source of truth."""
         from models.settings import settings
         return cls(
             fast=settings.model_fast,
@@ -226,184 +168,90 @@ class ModelsConfig:
             code=settings.model_code,
             reasoner=settings.model_reasoning,
             ollama_url=f"{settings.ollama_url}/api/generate",
-            backend="ollama",
             timeout=120,
         )
 
-# Singleton settings - utilise settings.py comme source unique
-# Models MUST be set via environment variables - no hardcoded defaults
-try:
-    from models.settings import settings as _app_settings
-    _settings = ModelsConfig(
-        fast=_app_settings.model_fast,
-        reasoning=_app_settings.model_reasoning,
-        code=_app_settings.model_code,
-        reasoner=_app_settings.model_reasoning,
-        ollama_url=f"{_app_settings.ollama_url}/api/generate",
-    )
-except:
-    _settings = ModelsConfig()
+
+# Singleton settings
+_settings = ModelsConfig.from_settings()
 
 
-# ==================== **2. Router Pattern** ====================
+# ==================== ROUTER ====================
 
 class LLMRouter:
-    """
-    Intelligent router qui choisit le meilleur modèle.
-    
-    ✅ Routing intelligent
-    ✅ Cache responses
-    ✅ Fallback automatique
-    ✅ Multi-model orchestration
-    
-    Usage:
-      router = LLMRouter()
-      llm = router.get_for_task("plan")  # → qwen-opus
-      llm = router.get_for_task("code")   # → deepseek
-    """
-    
-    def __init__(self, config: ModelsConfig | None = None):
+    """Intelligent model router with weighted scoring."""
+
+    def __init__(self, config: Optional[ModelsConfig] = None):
         self.config = config or _settings
-        self.cache = {}
-    
+
     def get_model_for_task(self, task: str) -> str:
-        """
-        Choisir le meilleur modèle pour la tâche avec keyword scoring.
-        
-        Args:
-            task: Description de la tâche
-            
-        Returns:
-            Nom du modèle
-            
-        Routing logic (score-based):
-          - code: function, def, class, import, bug, fix, refactor
-          - reasoning: debug, architecture, plan, complex, analyze
-          - fast: explain, describe, simple, what, who
-          - default: reasoning
-        """
+        """Score-based model selection."""
         task_lower = task.lower().strip()
-        
-        # Keyword categories with weights
-        keywords = {
-            "code": {"code": 2, "implement": 2, "function": 1, "def ": 1, "class ": 1, 
-                     "import": 1, "bug": 2, "fix": 2, "refactor": 2, "error": 1},
-            "reasoner": {"debug": 3, "architecture": 3, "plan": 2, "complex": 2, 
-                        "analyze": 2, "design": 2, "strategy": 2, "optimize": 2},
-            "fast": {"explain": 1, "describe": 1, "simple": 1, "what ": 1, "who ": 1,
-                    "summarize": 1, "translate": 1}
-        }
-        
-        # Calculate scores
+
         scores = {"code": 0, "reasoner": 0, "fast": 0}
-        
+
+        # Weighted keywords
+        keywords = {
+            "code": {"code": 2, "implement": 2, "function": 1, "def ": 2, "class ": 2, 
+                     "bug": 2, "fix": 2, "refactor": 2},
+            "reasoner": {"debug": 3, "architecture": 3, "plan": 2, "analyze": 2, 
+                        "design": 2, "strategy": 2, "complex": 2, "optimize": 2},
+            "fast": {"explain": 2, "describe": 2, "what": 1, "who": 1, "simple": 2, 
+                    "summarize": 2}
+        }
+
         for category, kw_dict in keywords.items():
             for kw, weight in kw_dict.items():
                 if kw in task_lower:
                     scores[category] += weight
-        
-        # Return highest scoring model
-        if scores["code"] >= scores["reasoner"] and scores["code"] >= scores["fast"]:
+
+        # Select highest scoring category
+        if scores["code"] >= max(scores["reasoner"], scores["fast"]):
             return self.config.code
         elif scores["reasoner"] >= scores["fast"]:
             return self.config.reasoner
         else:
             return self.config.fast
-    
-    def _create_model_config(self, model_name: str | None = None) -> ModelConfig:
-        """Create ModelConfig from current config and optional model name."""
+
+    def _create_model_config(self, model_name: str) -> ModelConfig:
         return ModelConfig(
             url=self.config.ollama_url,
-            model=model_name or self.config.fast,
+            model=model_name,
             timeout=self.config.timeout,
         )
-    
-    def get_for_task(self, task: str) -> OllamaClient:
-        """
-        Créer OllamaClient approprié.
-        
-        Args:
-            task: Description
-            
-        Returns:
-            OllamaClient configuré
-        """
-        model_name = self.get_model_for_task(task)
-        logger.debug(f"Routing task to model: {model_name}")
-        return OllamaClient(self._create_model_config(model_name))
-    
-    def try_fallback(self, task: str) -> str:
-        """
-        Essayer fallback si modèle échoue.
-        
-        Args:
-            task: Tête échouée
-            
-        Returns:
-            Message d'erreur si tous échouent
-        """
-        # Try reasoning model first
-        return f"[Error: Fallback tried {self.config.reasoner}]"
 
-    def generate(self, prompt: str, mode: str = "fast") -> str:
-        """
-        Generate response - convenience method.
-        
-        Args:
-            prompt: The prompt
-            mode: fast/code/reasoning
-            
-        Returns:
-            Response text
-        """
-        # Get client for mode
-        mode_to_model = {
+    def get_for_task(self, task: str) -> OllamaClient:
+        model_name = self.get_model_for_task(task)
+        logger.debug(f"Routing task → {model_name}")
+        return OllamaClient(self._create_model_config(model_name))
+
+    def get_for_mode(self, mode: str) -> OllamaClient:
+        """Get client by explicit mode."""
+        mode_map = {
             "fast": self.config.fast,
             "code": self.config.code,
             "reasoning": self.config.reasoning,
             "reasoner": self.config.reasoner,
         }
-        model_name = mode_to_model.get(mode, self.config.fast)
-        
-        # Get client and generate
-        client = OllamaClient(self._create_model_config(model_name))
-        return client.generate(prompt)
-    
-    def get_for_mode(self, mode: str) -> OllamaClient:
-        """
-        Get client by mode (fast/code/reasoning).
-        """
-        model_name = {
-            "fast": self.config.fast,
-            "code": self.config.code,
-            "reasoning": self.config.reasoning,
-            "reasoner": self.config.reasoner,
-        }.get(mode, self.config.fast)
+        model_name = mode_map.get(mode.lower(), self.config.fast)
         return OllamaClient(self._create_model_config(model_name))
 
+    def generate(self, prompt: str, mode: str = "fast") -> str:
+        """Convenience method."""
+        client = self.get_for_mode(mode)
+        return client.generate(prompt)
 
-# ==================== **3. Test Routing** ====================
 
-class TestLLMRouter:
-    """
-    Test suite pour LLMRouter.
-    """
-    
-    def test_routing_logic(self):
-        """Test routing"""
-        router = LLMRouter()
-        
-        # Code task → deepseek
-        assert router.get_model_for_task("def hello():") == "deepseek-coder:33b"
-        
-        # Architecture task → qwen-opus
-        assert router.get_model_for_task("architecture") == "qwen-opus"
-        
-        # Simple task → fast
-        assert router.get_model_for_task("explanation") in ["qwen2.5-coder:7b"]
-        
-    def test_fallback(self):
-        """Test fallback"""
-        # Test fallback when no Ollama available
-        # (Skip in production)
-        pass
+# ====================== Singleton ======================
+
+_router: Optional[LLMRouter] = None
+
+
+def get_llm_router() -> LLMRouter:
+    global _router
+    if _router is None:
+        _router = LLMRouter()
+    return _router
+
+
+__all__ = ["LLMRouter", "OllamaClient", "ModelConfig", "get_llm_router"]
