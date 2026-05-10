@@ -1,7 +1,8 @@
 # views/routers/health.py - Health and status endpoints
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from typing import Any, Dict, Optional
+import time
 
 from models.settings import settings
 
@@ -80,28 +81,23 @@ def _get_gpu_info() -> Optional[Dict[str, Any]]:
 # ====================== Routes ======================
 
 @router.get("/health")
-def health_check() -> Dict[str, Any]:
-    """Health check endpoint for container orchestration."""
-    try:
-        system_info = _get_system_info()
-    except Exception as e:
-        system_info = {"error": str(e)}
-    
+async def health_check():
+    """Health check for orchestration tools (Docker, Kubernetes, etc.)"""
     return {
         "status": "healthy",
-        "timestamp": __import__("time").time(),
+        "timestamp": time.time(),
         "version": getattr(settings, 'version', "1.0.0"),
         "services": {
             "api": "ok",
             "llm": _check_ollama(),
         },
-        "system": system_info
+        "system": _get_system_info(),
     }
 
 
 @router.get("/status")
-def status() -> Dict[str, Any]:
-    """Get current status of the application."""
+async def status():
+    """Current configuration status"""
     return {
         "model_fast": _get_setting('model_fast', 'N/A'),
         "model_reasoning": _get_setting('model_reasoning', 'N/A'),
@@ -110,8 +106,8 @@ def status() -> Dict[str, Any]:
 
 
 @router.get("/api/settings/default-model")
-def get_default_model() -> Dict[str, Any]:
-    """Get default model configuration for frontend."""
+async def get_default_model():
+    """Default models for frontend"""
     return {
         "model_fast": _get_setting('model_fast', 'qwen3.5:0.8b'),
         "model_reasoning": _get_setting('model_reasoning', 'qwen3.5:0.8b'),
