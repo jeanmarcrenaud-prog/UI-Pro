@@ -59,7 +59,7 @@ class ChatService {
     this.activeRequest = {
       id: messageId,
       prompt: content,
-      model: model || 'qwen3.5:9b',
+      model: model || 'qwen3.6:latest',
       provider: provider || 'ollama',
       assistantId,
       lastChunkIndex: resumeChunkIndex,

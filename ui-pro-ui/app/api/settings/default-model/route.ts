@@ -16,8 +16,8 @@ export async function GET() {
   } catch {
     // Fallback defaults
     return NextResponse.json({
-      model_fast: 'qwen3.5:0.8b',
-      model_reasoning: 'qwen3.5:0.8b'
+      model_fast: 'qwen3.6:latest',
+      model_reasoning: 'qwen3.6:latest'
     })
   }
 }

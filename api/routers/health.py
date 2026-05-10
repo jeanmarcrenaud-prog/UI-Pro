@@ -93,6 +93,6 @@ async def get_models():
 def get_default_model():
     """Return the default model from settings"""
     return {
-        "model_fast": settings.model_fast or "qwen3.5:9b",
-        "model_reasoning": settings.model_reasoning or "qwen3.5:9b",
+        "model_fast": settings.model_fast or "qwen3.6:latest",
+        "model_reasoning": settings.model_reasoning or "qwen3.6:latest",
     }
