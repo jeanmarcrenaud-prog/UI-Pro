@@ -1,49 +1,59 @@
-# UI-Pro Requirements
+# ====================== UI-Pro Requirements ======================
 
-## Core
+## Core Framework
 fastapi==0.135.3
-uvicorn[standard]==0.44.0
-pydantic==2.12.5
-pydantic-settings>=2.0.0
-python-dotenv>=1.0.0
-python-multipart>=0.0.9
+uvicorn[standard]==0.34.0
+pydantic==2.10.6
+pydantic-settings>=2.7.0
+python-dotenv>=1.0.1
+python-multipart>=0.0.20
 
-## HTTP/Client
-httpx>=0.27.0
-requests>=2.31.0
+## HTTP & Clients
+httpx>=0.28.0
+requests>=2.32.0
 
-## LLM/ML
-torch>=2.0.0
+## LLM & ML
+torch>=2.4.0
 faiss-cpu>=1.13.0
 numpy>=1.26.0
-sentence-transformers>=2.4.0
+sentence-transformers>=3.0.0
+sentencepiece>=0.2.0
+tiktoken>=0.8.0
 
-## Web
+## Async & Utils
+aiofiles>=23.2.0
+psutil>=6.0.0
+watchdog>=4.0.0
+
+## Web & UI
 jinja2>=3.1.0
-websockets>=11.0.0
+websockets>=13.0
+gradio>=5.0.0
+gradio-client>=1.0.0
+
+## API Rate Limiting & Security
 slowapi>=0.1.9
 
-## UI
-gradio>=4.19.0
-gradio-client>=2.4.0
-
-## Testing
-pytest>=8.0.0
+## Development & Testing
+pytest>=8.3.0
 pytest-mock>=3.14.0
-pytest-cov>=7.0.0
+pytest-cov>=6.0.0
+pytest-asyncio>=0.23.0
 
-## Dev Tools
-black>=24.3.0
+black>=24.8.0
 isort>=5.13.0
-flake8>=7.0.0
-mypy>=1.9.0
+flake8>=7.1.0
+mypy>=1.11.0
+pre-commit>=3.8.0
 
-## Optional
-psutil>=5.9.0
-watchdog>=4.0.0
-pre-commit>=3.7.0
+## Optional / Extras
 beautifulsoup4>=4.12.0
+nvidia-ml-py>=12.0.0          # GPU monitoring (optional)
+ollama>=0.4.0                 # Direct Ollama client
+
+# Platform-specific GPU support (uncomment if needed):
+# torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
 # Notes
-# - pynvml optional for GPU monitoring (nvidia-ml-py)
 # - Run: pip install -r requirements.txt
+# - For GPU: pip install torch --index-url https://download.pytorch.org/whl/cu121
