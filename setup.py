@@ -178,7 +178,7 @@ def setup_env_file() -> bool:
     
     return True
 
-def check_services() -> bool:
+def check_services(skip_prompts: bool = False) -> bool:
     """Check if required services are running."""
     print_step("Checking required services...")
     
@@ -203,9 +203,118 @@ def check_services() -> bool:
     
     ollama = check_port('localhost', 11434, 'Ollama')
     lmstudio = check_port('localhost', 1234, 'LM Studio')
+    lemonade = check_port('localhost', 8080, 'Lemonade')
     
-    if not ollama and not lmstudio:
-        print_warning("No LLM backend running. Start Ollama or LM Studio to use the app.")
+    if not ollama and not lmstudio and not lemonade:
+        print_warning("No LLM backend detected!")
+        
+        # Offer to install Ollama (skip in CI mode)
+        if not skip_prompts:
+            print(f"""
+{Colors.BOLD}Would you like to install Ollama with qwen3.5:0.8B?{Colors.END}
+This is a lightweight model (≈500MB) perfect for getting started.
+""")
+            response = input("Install Ollama? [Y/n]: ").strip().lower()
+            if response in ('', 'y', 'yes'):
+                install_ollama()
+        else:
+            print("Skipping Ollama installation (CI mode)")
+            print("To install manually: https://ollama.com")
+    
+    return True
+
+def install_ollama() -> bool:
+    """Install Ollama and pull qwen3.5:0.8B model."""
+    import platform
+    
+    print_step("Installing Ollama...")
+    
+    system = platform.system()
+    
+    try:
+        if system == 'Windows':
+            # PowerShell install for Windows
+            print("Installing Ollama via PowerShell...")
+            result = subprocess.run(
+                ['powershell', '-Command', 'irm https://ollama.com/install.ps1 | iex'],
+                capture_output=True,
+                text=True,
+                timeout=120
+            )
+            if result.returncode != 0:
+                print_warning("PowerShell install failed, trying manual method...")
+                print("Please download from: https://ollama.com/download")
+            else:
+                print_success("Ollama installed via PowerShell")
+                
+        elif system == 'Darwin':
+            # macOS
+            print("Installing Ollama via curl...")
+            result = subprocess.run(
+                ['curl', '-fsSL', 'https://ollama.com/install.sh', '|', 'sh'],
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=120
+            )
+            print_success("Ollama installed on macOS")
+            
+        elif system == 'Linux':
+            # Linux
+            print("Installing Ollama via curl...")
+            result = subprocess.run(
+                ['curl', '-fsSL', 'https://ollama.com/install.sh', '|', 'sh'],
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=120
+            )
+            if result.returncode != 0:
+                print_warning("Install script failed")
+                print(result.stderr)
+            else:
+                print_success("Ollama installed on Linux")
+        else:
+            print_warning(f"Unsupported system: {system}")
+            print("Please install Ollama manually from https://ollama.com")
+            return False
+        
+    except Exception as e:
+        print_warning(f"Failed to install Ollama: {e}")
+        print("Please install manually from https://ollama.com")
+        return False
+    
+    # Pull qwen3.5:0.8B model
+    print_step("Pulling qwen3.5:0.8B model (this may take a few minutes)...")
+    
+    try:
+        # Start ollama serve in background
+        subprocess.Popen(
+            ['ollama', 'serve'],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        # Give it a moment to start
+        import time
+        time.sleep(2)
+        
+        # Pull the model
+        result = subprocess.run(
+            ['ollama', 'pull', 'qwen3.5:0.8b'],
+            capture_output=True,
+            text=True,
+            timeout=600  # 10 minutes timeout
+        )
+        
+        if result.returncode == 0:
+            print_success("qwen3.5:0.8B model downloaded!")
+        else:
+            print_warning(f"Failed to pull model: {result.stderr}")
+            print("You can pull it later with: ollama pull qwen3.5:0.8b")
+            
+    except Exception as e:
+        print_warning(f"Failed to pull model: {e}")
+        print("You can pull it later with: ollama pull qwen3.5:0.8b")
     
     return True
 
@@ -241,6 +350,9 @@ def print_next_steps():
 
 def main():
     """Main setup function."""
+    # Check for --yes flag to skip prompts
+    skip_prompts = '--yes' in sys.argv or '-y' in sys.argv
+    
     print(f"""
 {Colors.BOLD}============================================================
                     UI-PRO ENVIRONMENT SETUP
@@ -278,7 +390,7 @@ def main():
     setup_env_file()
     
     # Check services
-    check_services()
+    check_services(skip_prompts)
     
     # Print next steps
     print_next_steps()
