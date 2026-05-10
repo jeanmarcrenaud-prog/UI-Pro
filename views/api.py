@@ -724,7 +724,7 @@ async def ws_endpoint(ws: WebSocket):
             message_id = request["message_id"]
             last_chunk_index = request["last_chunk_index"]
             
-            logger.info(f"[ws] Processing request: model={model}, provider={provider}, task={task[:50]}...")
+            logger.info(f"[ws] Processing request: model='{model}', provider='{provider}', task='{task[:50]}...'")
 
             current_message_id = message_id
 

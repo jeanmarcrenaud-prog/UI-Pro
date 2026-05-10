@@ -151,6 +151,7 @@ class StreamingService:
 
         try:
             client = self._get_client(model, provider)
+            logger.info(f"[stream] client: url={client.config.url}, model={client.config.model}, backend={client.config.backend}")
 
             # === Step Events (skip on resume) ===
             if not is_resume:
