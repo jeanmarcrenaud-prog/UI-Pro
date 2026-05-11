@@ -59,7 +59,7 @@ async def lifespan(app: FastAPI):
     
     # Initialize services
     try:
-        from services.model_discovery import get_model_discovery
+        from backend.infrastructure.model_discovery import get_model_discovery
         get_model_discovery().discover_all()
         logger.info("Model discovery initialized")
     except Exception as e:
@@ -265,7 +265,7 @@ class ChatResponse(BaseModel):
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
     """REST chat endpoint (non-streaming)."""
-    from services.streaming import get_streaming_service
+    from backend.infrastructure.streaming import get_streaming_service
     
     stream_service = get_streaming_service()
     
