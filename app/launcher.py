@@ -128,7 +128,7 @@ def check_node_available() -> bool:
 def check_backends() -> dict:
     """Check all LLM backends status using model discovery."""
     try:
-        from services.model_discovery import ModelDiscovery
+        from backend.infrastructure.model_discovery import ModelDiscovery
         discovery = ModelDiscovery(timeout=2.0)
         all_models = discovery.discover_all()
         

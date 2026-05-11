@@ -38,7 +38,7 @@ class ChatResponse(BaseModel):
 async def chat(request: ChatRequest):
     """Chat endpoint (REST fallback when WebSocket fails)"""
     try:
-        from services.streaming import get_streaming_service
+        from backend.infrastructure.streaming import get_streaming_service
         stream_service = get_streaming_service()
 
         # Collect full response from streaming (async)

@@ -32,7 +32,7 @@ def _get_streaming_service_cached():
     
     @lru_cache()
     def get_service():
-        from services.streaming import get_streaming_service
+        from backend.infrastructure.streaming import get_streaming_service
         return get_service()
     
     return get_service()

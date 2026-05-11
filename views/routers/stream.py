@@ -14,7 +14,7 @@ router = APIRouter(tags=["stream"])
 
 
 def _get_streaming_service():
-    from services.streaming import get_streaming_service
+    from backend.infrastructure.streaming import get_streaming_service
     return get_streaming_service()
 
 

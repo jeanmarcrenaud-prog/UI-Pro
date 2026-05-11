@@ -52,7 +52,7 @@ async def ws_endpoint(websocket: WebSocket):
     from controllers.websocket import get_websocket_controller
     controller = get_websocket_controller()
 
-    from services.streaming import get_streaming_service
+    from backend.infrastructure.streaming import get_streaming_service
     stream_service = get_streaming_service()
 
     last_cleanup = time.time()
