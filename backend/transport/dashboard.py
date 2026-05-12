@@ -347,6 +347,11 @@ def _build_main_ui():
 GRADIO_APP = _build_main_ui()
 
 
+def create_dashboard():
+    """Create and return the Gradio dashboard app."""
+    return GRADIO_APP
+
+
 def run():
     print("🚀 Starting UI-Pro Dashboard on http://localhost:7860")
     print("📋 Pipeline: Planner → Architect → Coder → Reviewer → Executor (auto-fix)")

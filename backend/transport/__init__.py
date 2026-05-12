@@ -9,8 +9,7 @@ from .translations import (
     TRANSLATIONS,
     LANGUAGE_OPTIONS,
     get_translation,
-    set_language,
-    get_current_language,
+    get_current_translations,
 )
 
 __all__ = [
@@ -22,6 +21,5 @@ __all__ = [
     "TRANSLATIONS",
     "LANGUAGE_OPTIONS",
     "get_translation",
-    "set_language",
-    "get_current_language",
+    "get_current_translations",
 ]
