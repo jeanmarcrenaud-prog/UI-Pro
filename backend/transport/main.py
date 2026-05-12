@@ -34,7 +34,7 @@ app.add_middleware(
 )
 
 # Include routers
-from api.routers import health, chat, execute, ws, logs
+from backend.transport.routers import health, chat, execute, ws, logs
 
 app.include_router(health.router)
 app.include_router(chat.router)
