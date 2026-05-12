@@ -245,6 +245,7 @@ export const useChat = () => {
     sendMessage,
     cancel,
     regenerate,
+    stopGeneration: cancel,
     clear: () => {
       cancel()
       resetCurrentMessage()

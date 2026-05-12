@@ -42,9 +42,11 @@ class ChatService {
   // PUBLIC API
   // =====================
 
-  onMessage(handler: (message: Message) => void) {
+  onMessage(handler: (message: Message) => void): () => void {
     this.handlers.add(handler)
-    return () => this.handlers.delete(handler)
+    return () => {
+      this.handlers.delete(handler)
+    }
   }
 
   async sendMessage(content: string, resumeMessageId?: string, resumeChunkIndex = 0, model?: string, provider?: string) {
