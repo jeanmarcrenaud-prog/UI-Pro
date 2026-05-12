@@ -98,7 +98,8 @@ async def websocket_endpoint(ws: WebSocket):
             
             # Stream
             async for chunk in stream_service.stream_generate(
-                task,
+                message=task,
+                session_id=session_id,
                 model=model,
                 provider=provider,
                 start_chunk=start_chunk
