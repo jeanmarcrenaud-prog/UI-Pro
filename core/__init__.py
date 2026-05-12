@@ -4,7 +4,7 @@
 
 from backend.domain.core.executor import CodeExecutor, ExecutionConfig
 from backend.domain.core.constants import WSEvent, AgentStep, ErrorCode, ConfigKey
-from backend.domain.core.orchestrator_async import Orchestrator
+from backend.domain.core.orchestrator_async import OrchestratorAsync
 from backend.domain.core.prompts import (
     SYSTEM_PLANNER,
     SYSTEM_ARCHITECT,
@@ -105,7 +105,7 @@ __all__ = [
     # Core
     "CodeExecutor",
     "ExecutionConfig",
-    "Orchestrator",
+    "OrchestratorAsync",
     "WSEvent",
     "AgentStep",
     "ErrorCode",
