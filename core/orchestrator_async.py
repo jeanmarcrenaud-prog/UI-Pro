@@ -3,11 +3,13 @@
 # DEPRECATED: Import from backend.domain.core.orchestrator_async instead
 
 from backend.domain.core.orchestrator_async import (
-    Orchestrator,
+    OrchestratorAsync,
+    get_orchestrator,
 )
 
 __all__ = [
-    "Orchestrator",
+    "OrchestratorAsync",
+    "get_orchestrator",
 ]
 Refactored async orchestrator with proper typing and robust error handling.
 """

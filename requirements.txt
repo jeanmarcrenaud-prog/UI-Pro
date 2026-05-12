@@ -29,6 +29,10 @@ aiofiles>=23.2.0
 psutil>=6.0.0
 watchdog>=4.0.0
 
+## Agentic / LangGraph
+langgraph>=0.2.0
+langchain-core>=0.3.0
+
 ## Web & UI
 jinja2>=3.1.0
 websockets>=13.0

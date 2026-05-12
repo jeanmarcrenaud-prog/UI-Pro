@@ -1,14 +1,8 @@
-# core/orchestrator_async.py - Async Orchestrator (PRO VERSION)
-#
-# Role: Orchestrates multi-step agent reasoning with auto-fix
-# Used by: WebSocket endpoint, API calls
-# - Request analysis
-# - Planning
-# - Execution with code review
-# - Auto-fix on errors
-
 """
-Refactored async orchestrator with proper typing and robust error handling.
+backend/domain/core/orchestrator_async.py
+Orchestrateur Agentic principal avec LangGraph (Version 2026)
+
+Source of truth pour l'orchestration.
 """
 
 from __future__ import annotations
@@ -18,346 +12,417 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 
 import asyncio
-
-from backend.domain.core.state_manager import StateManager
-from backend.domain.core.executor import CodeExecutor
-from llm.router import LLMRouter
-from backend.domain.core.prompts import get_prompt  # Centralized prompts
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class OrchestratorResult:
-    """Result dataclass for orchestrator output."""
-    status: str
-    data: dict[str, Any] = field(default_factory=dict)
-    errors: list[str] = field(default_factory=list)
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary for JSON serialization."""
-        return {
-            "status": self.status,
-            **self.data,
-            "errors": self.errors,
-        }
+# Lazy imports to avoid circular imports
+def _get_state_manager():
+    from backend.domain.core.state_manager import StateManager
+    return StateManager
 
 
-class Orchestrator:
-    """Async orchestrator with clean pipeline and auto-fix loop."""
+def _get_executor():
+    from backend.infrastructure.code_execution import CodeExecutor
+    return CodeExecutor
+
+
+def _get_llm_router():
+    from backend.infrastructure.llm_router import get_llm_router
+    return get_llm_router
+
+
+def _get_tool_registry():
+    from backend.infrastructure.tools import get_tool_registry
+    return get_tool_registry
+
+
+def _get_metrics_manager():
+    from backend.domain.core.metrics import MetricsManager
+    return MetricsManager
+
+
+def _emit_agent_step(phase: str, message: str):
+    try:
+        from backend.domain.core.events import emit_agent_step
+        emit_agent_step(phase, message)
+    except ImportError:
+        pass
+
+
+# ====================== STATE ======================
+class AgentState(dict):
+    """État persistant du graphe LangGraph"""
+    messages: list[dict[str, Any]] = field(default_factory=list)
+    plan: Optional[dict] = None
+    code: Optional[dict] = None
+    review: Optional[dict] = None
+    execution_result: Optional[dict] = None
+    error: Optional[str] = None
+    attempt: int = 0
+    max_attempts: int = 3
+    session_id: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+# ====================== LLM WRAPPER ======================
+class LLMWrapper:
+    """Wrapper around LLMRouter pour generate_structured"""
+
+    def __init__(self, router):
+        self.router = router
+
+    async def generate(self, prompt: str, model_type: str = "fast", temperature: float = 0.7) -> str:
+        """Generate text response."""
+        loop = asyncio.get_running_loop()
+        return await asyncio.wait_for(
+            loop.run_in_executor(None, lambda: self.router.generate(prompt, model_type)),
+            timeout=120.0
+        )
+
+    async def generate_structured(
+        self,
+        prompt: str,
+        model_type: str = "reasoning",
+        output_schema: Optional[dict] = None,
+        temperature: float = 0.3
+    ) -> dict[str, Any]:
+        """Generate structured JSON response."""
+        # Add schema hint to prompt if provided
+        if output_schema:
+            schema_hint = f"\n\nRéponds uniquement en JSON avec ce format: {json.dumps(output_schema)}"
+            prompt = prompt + schema_hint
+
+        response = await self.generate(prompt, model_type, temperature)
+
+        # Parse JSON safely
+        try:
+            return json.loads(response)
+        except json.JSONDecodeError:
+            # Try to extract JSON from markdown
+            cleaned = response.strip()
+            if cleaned.startswith("```"):
+                lines = cleaned.split("\n")
+                json_lines = [l for l in lines if not l.startswith("```") and not l.startswith("json")]
+                cleaned = "\n".join(json_lines)
+                try:
+                    return json.loads(cleaned)
+                except json.JSONDecodeError:
+                    pass
+
+            logger.warning("Failed to parse JSON from LLM response, returning raw")
+            return {"raw": response[:500], "error": "invalid_json"}
+
+
+# ====================== NODES ======================
+async def analyzing_node(state: AgentState, llm: LLMWrapper) -> AgentState:
+    """Node: Analyze user request"""
+    _emit_agent_step("analyzing", "Analyse des exigences...")
+    last_message = state.get("messages", [{}])[-1].get("content", "")
+
+    response = await llm.generate(
+        prompt=f"Analyse cette requête utilisateur et identifie le type de tâche:\n\n{last_message}",
+        model_type="reasoning",
+        temperature=0.3,
+    )
+
+    state["messages"].append({"role": "assistant", "content": response})
+    return state
+
+
+async def planning_node(state: AgentState, llm: LLMWrapper) -> AgentState:
+    """Node: Create implementation plan"""
+    _emit_agent_step("planning", "Création du plan d'implémentation...")
+
+    plan = await llm.generate_structured(
+        prompt="Crée un plan détaillé pour cette tâche. Inclut: étapes, fichiers à créer, approche technique.",
+        model_type="reasoning",
+        output_schema={"steps": list, "files": list, "approach": str},
+    )
+
+    state["plan"] = plan
+    state["messages"].append({"role": "assistant", "content": str(plan)})
+    return state
+
+
+async def coding_node(state: AgentState, llm: LLMWrapper) -> AgentState:
+    """Node: Generate code"""
+    _emit_agent_step("coding", "Génération du code...")
+
+    plan = state.get("plan", {})
+    code_dict = await llm.generate_structured(
+        prompt=f"""Implémente le plan suivant de façon complète:
+
+{json.dumps(plan)}
+
+Retourne uniquement un objet JSON: {{"files": {{"nom_fichier.py": "code complet"}}}}""",
+        model_type="fast",
+        output_schema={"files": dict},
+    )
+
+    state["code"] = code_dict
+    return state
+
+
+async def review_node(state: AgentState, llm: LLMWrapper) -> AgentState:
+    """Node: Code review (quality, security, best practices)"""
+    _emit_agent_step("reviewing", "Code Review...")
+
+    code = state.get("code", {})
+    review = await llm.generate_structured(
+        prompt=f"Analyse ce code de façon critique:\n{json.dumps(code)}\nRetourne: {{'passed': bool, 'issues': list, 'suggestions': list}}",
+        model_type="reasoning",
+        output_schema={"passed": bool, "issues": list, "suggestions": list},
+    )
+
+    state["review"] = review
+    return state
+
+
+async def execute_node(state: AgentState, executor) -> AgentState:
+    """Node: Execute code in sandbox"""
+    _emit_agent_step("executing", "Exécution dans le sandbox...")
+
+    code = state.get("code", {})
+    files = code.get("files", {})
+
+    try:
+        loop = asyncio.get_running_loop()
+        result = await asyncio.wait_for(
+            loop.run_in_executor(None, lambda: executor.run(files)),
+            timeout=60.0
+        )
+        state["execution_result"] = result
+    except Exception as e:
+        state["error"] = str(e)
+        logger.error("Execution failed", exc_info=True)
+
+    state["attempt"] += 1
+    return state
+
+
+# ====================== CONDITIONAL EDGES ======================
+def should_fix_code(state: AgentState) -> Literal["coding", "end"]:
+    """Determine if we should retry the code → review cycle"""
+    review = state.get("review")
+    if review and review.get("passed", False):
+        return "end"
+    if state.get("attempt", 0) >= state.get("max_attempts", 3):
+        return "end"
+
+    attempt = state.get("attempt", 0) + 1
+    max_attempts = state.get("max_attempts", 3)
+    _emit_agent_step("fixing", f"Auto-fix tentative {attempt}/{max_attempts}")
+    return "coding"
+
+
+# ====================== ORCHESTRATOR ======================
+class OrchestratorAsync:
+    """
+    Orchestrateur principal basé sur LangGraph.
+    Gère le cycle: analyze → plan → code → review → execute → (fix loop)
+    """
 
     def __init__(
         self,
-        state_manager: StateManager | None = None,
-        router: LLMRouter | None = None,
-        code_executor: CodeExecutor | None = None,
-    ) -> None:
-        self.state_manager = state_manager or StateManager()
-        self.router = router or LLMRouter()
-        self.executor = code_executor or CodeExecutor()
-        self.state = None
+        llm_router=None,
+        executor=None,
+        state_manager=None,
+        tool_registry=None,
+        metrics=None,
+    ):
+        self._llm_router = llm_router
+        self._executor = executor
+        self._state_manager = state_manager
+        self._tool_registry = tool_registry
+        self._metrics = metrics
+        self._llm = None
+        self._graph = None
 
-    async def run(self, task: str) -> dict[str, Any]:
-        """Main entry point for the orchestrator pipeline."""
+    @property
+    def llm_router(self):
+        if self._llm_router is None:
+            self._llm_router = _get_llm_router()()
+        return self._llm_router
+
+    @property
+    def executor(self):
+        if self._executor is None:
+            self._executor = _get_executor()()
+        return self._executor
+
+    @property
+    def state_manager(self):
+        if self._state_manager is None:
+            self._state_manager = _get_state_manager()()
+        return self._state_manager
+
+    @property
+    def tool_registry(self):
+        if self._tool_registry is None:
+            self._tool_registry = _get_tool_registry()()
+        return self._tool_registry
+
+    @property
+    def metrics(self):
+        if self._metrics is None:
+            self._metrics = _get_metrics_manager()()
+        return self._metrics
+
+    @property
+    def llm(self):
+        if self._llm is None:
+            self._llm = LLMWrapper(self.llm_router)
+        return self._llm
+
+    def _build_graph(self):
+        """Build LangGraph workflow (lazy build)"""
+        try:
+            from langgraph.graph import StateGraph, END, START
+            from langgraph.checkpoint.memory import MemorySaver
+
+            workflow = StateGraph(AgentState)
+
+            # Add nodes
+            workflow.add_node("analyzing", lambda s: asyncio.run(analyzing_node(s, self.llm)))
+            workflow.add_node("planning", lambda s: asyncio.run(planning_node(s, self.llm)))
+            workflow.add_node("coding", lambda s: asyncio.run(coding_node(s, self.llm)))
+            workflow.add_node("reviewing", lambda s: asyncio.run(review_node(s, self.llm)))
+            workflow.add_node("executing", lambda s: asyncio.run(execute_node(s, self.executor)))
+
+            # Main flow
+            workflow.add_edge(START, "analyzing")
+            workflow.add_edge("analyzing", "planning")
+            workflow.add_edge("planning", "coding")
+            workflow.add_edge("coding", "reviewing")
+            workflow.add_edge("reviewing", "executing")
+
+            # Auto-fix loop
+            workflow.add_conditional_edges(
+                "executing",
+                should_fix_code,
+                {"coding": "coding", "end": END}
+            )
+
+            checkpointer = MemorySaver()
+            return workflow.compile(checkpointer=checkpointer)
+
+        except ImportError:
+            logger.warning("LangGraph not installed, using fallback orchestrator")
+            return None
+
+    @property
+    def graph(self):
+        if self._graph is None:
+            self._graph = self._build_graph()
+        return self._graph
+
+    async def run(
+        self,
+        message: str,
+        session_id: str,
+        stream_mode: str = "values"
+    ) -> dict[str, Any]:
+        """
+        Execute the orchestrator pipeline.
+
+        Args:
+            message: User message/task
+            session_id: Session identifier
+            stream_mode: Streaming mode (not used in fallback)
+
+        Returns:
+            dict with status, data, errors
+        """
         start_time = time.time()
 
         try:
-            # ================= STATE =================
-            self.state = self.state_manager.create(task_id=task[:8])
-            self.state.task = task
-            self.state.status = "running"
-
-            logger.info("🚀 Starting pipeline: %s", task)
-
-            # ================= STEP 1: PARALLEL =================
-            logger.info("Step 1: Planning + Memory")
-
-            plan, memory = await asyncio.gather(
-                self._planner(task),
-                self._memory(task),
-            )
-
-            self.state.plan = plan
-            self.state.memory = memory
-
-            # ================= STEP 2: ARCHITECT =================
-            logger.info("Step 2: Architecture")
-
-            architecture = await self._architect(task, plan)
-            self.state.architecture = architecture
-
-            # ================= STEP 3: CODER =================
-            logger.info("Step 3: Code generation")
-
-            code = await self._coder(task, architecture)
-            self.state.code = code
-
-            # ================= STEP 4: REVIEW =================
-            logger.info("Step 4: Review")
-
-            review = await self._reviewer(code)
-            self.state.review = review
-
-            # ================= STEP 5: TEST =================
-            logger.info("Step 5: Test")
-
-            tests = await self._runner(code)
-            self.state.tests = tests
-
-            # ================= FINAL =================
-            duration = int((time.time() - start_time) * 1000)
-
-            self.state.metrics["duration_ms"] = duration
-            self.state.status = "completed"
-            self.state.completed_at = datetime.now()
-
-            logger.info("✅ Done in %dms", duration)
-
-            return self.state.to_dict()
+            # Use LangGraph if available
+            if self.graph is not None:
+                return await self._run_langgraph(message, session_id)
+            else:
+                # Fallback to sequential pipeline
+                return await self._run_fallback(message, session_id)
 
         except Exception as e:
-            logger.error("❌ Pipeline error: %s", e, exc_info=True)
-
-            if self.state:
-                self.state.status = "failed"
-                self.state.errors.append(str(e))
-
+            logger.exception("Orchestrator error")
+            self.metrics.track_error("orchestrator", str(e))
             return {
                 "status": "failed",
                 "error": str(e),
             }
 
-    # ================= AGENTS =================
+    async def _run_langgraph(self, message: str, session_id: str) -> dict[str, Any]:
+        """Run using LangGraph"""
+        from langgraph.types import StreamMode
 
-    async def _planner(self, task: str) -> dict[str, Any]:
-        """Planning agent - uses centralized prompts."""
-        prompt = get_prompt("planner", task=task)
-        return await self._llm_call(prompt, mode="fast")
+        initial_state: AgentState = {
+            "messages": [{"role": "user", "content": message}],
+            "session_id": session_id,
+            "attempt": 0,
+            "max_attempts": 3,
+            "metadata": {"start_time": datetime.now().isoformat()}
+        }
 
-    async def _architect(self, task: str, plan: dict[str, Any]) -> dict[str, Any]:
-        """Architecture agent - uses centralized prompts."""
-        prompt = get_prompt("architect", plan=str(plan))
-        return await self._llm_call(prompt, mode="reasoning")
+        _emit_agent_step("orchestrator", f"Session démarrée: {session_id}")
 
-    async def _coder(self, task: str, architecture: dict[str, Any]) -> dict[str, Any]:
-        """Code generation agent - uses centralized prompts."""
-        prompt = get_prompt("coder", architecture=str(architecture))
-        return await self._llm_call(prompt, mode="code")
+        results = []
+        async for event in self.graph.astream(
+            initial_state,
+            config={"configurable": {"thread_id": session_id}},
+            stream_mode=StreamMode(stream_mode),
+        ):
+            results.append(event)
 
-    async def _reviewer(self, code: dict[str, Any]) -> dict[str, Any]:
-        """Code review agent - uses centralized prompts."""
-        prompt = get_prompt("reviewer", code=str(code))
-        return await self._llm_call(prompt, mode="fast")
+        return {
+            "status": "completed",
+            "events": results,
+        }
 
-    async def _runner(self, code: dict[str, Any]) -> dict[str, Any]:
-        """
-        Execute code in sandbox with intelligent auto-fix loop.
+    async def _run_fallback(self, message: str, session_id: str) -> dict[str, Any]:
+        """Fallback sequential pipeline when LangGraph not available"""
+        state: AgentState = {
+            "messages": [{"role": "user", "content": message}],
+            "session_id": session_id,
+            "attempt": 0,
+            "max_attempts": 3,
+            "metadata": {"start_time": datetime.now().isoformat()}
+        }
 
-        Flow:
-          1. Execute code
-          2. If failure → Analyze error and categorize
-          3. Generate targeted fix prompt based on error type
-          4. Call LLM for correction with exponential backoff
-          5. Re-execute
-          6. Max retry = 3 with increasing delays
-        """
-        logger.info("🔨 Starting code execution + auto-fix loop")
+        _emit_agent_step("orchestrator", f"Session démarrée (fallback): {session_id}")
 
-        max_retry = 3
-        attempt = 0
-        files = code.get("files", {})
-        execution: dict[str, Any] = {"success": False, "stdout": "", "stderr": "No execution attempted"}
-        last_error = ""
-        error_patterns_seen = set()
+        # Sequential execution
+        state = await analyzing_node(state, self.llm)
+        state = await planning_node(state, self.llm)
+        state = await coding_node(state, self.llm)
+        state = await review_node(state, self.llm)
+        state = await execute_node(state, self.executor)
 
-        while attempt < max_retry:
-            attempt += 1
-            
-            # Exponential backoff: 1s, 2s, 4s delays between attempts (except first)
-            if attempt > 1:
-                delay = 2 ** (attempt - 2)  # 2^0=1, 2^1=2, 2^2=4
-                logger.info("[Auto-Fix] Waiting %ds before attempt %d/%d", delay, attempt, max_retry)
-                await asyncio.sleep(delay)
+        # Auto-fix loop
+        while should_fix_code(state) == "coding" and state.get("attempt", 0) < state.get("max_attempts", 3):
+            state = await coding_node(state, self.llm)
+            state = await review_node(state, self.llm)
+            state = await execute_node(state, self.executor)
 
-            logger.info("[Auto-Fix] Attempt %d/%d", attempt, max_retry)
+        return {
+            "status": "completed" if not state.get("error") else "failed",
+            "state": dict(state),
+        }
 
-            # Execute sandboxed
-            execution = await asyncio.to_thread(
-                self.executor.run,
-                files,
-            )
 
-            self.state.tests = execution
+# ====================== FACTORY ======================
+_orchestrator: Optional[OrchestratorAsync] = None
 
-            # Check success
-            if execution.get("success"):
-                logger.info("✅ Execution success (attempt %d)", attempt)
-                return execution
 
-            # Failure → Analyze error for intelligent auto-fix
-            error = execution.get("stderr", "") or execution.get("stdout", "")
-            logger.warning("❌ Execution failed (attempt %d): %s", attempt, error[:200])
-            
-            # Check if we're seeing the same error pattern - if so, adjust strategy
-            error_signature = self._get_error_signature(error)
-            if error_signature in error_patterns_seen:
-                logger.warning("🔄 Repeated error pattern detected: %s", error_signature)
-                # For repeated patterns, we might want to try a different approach
-                # but continue with standard fix for now
-            else:
-                error_patterns_seen.add(error_signature)
-            
-            last_error = error
+async def get_orchestrator() -> OrchestratorAsync:
+    """Factory pour injection de dépendances"""
+    global _orchestrator
+    if _orchestrator is None:
+        _orchestrator = OrchestratorAsync()
+    return _orchestrator
 
-            # Only proceed with auto-fix if we haven't exhausted retries
-            if attempt >= max_retry:
-                break
 
-            logger.warning("🔧 Auto-fix triggered")
-
-            try:
-                # Generate fix prompt using centralized prompts
-                main_file = next(iter(files.keys()), "main.py")
-                current_code = files.get(main_file, "")
-
-                fix_prompt = get_prompt(
-                    "fix",
-                    error=error,
-                    current_code=current_code,
-                    main_file=main_file,
-                    attempt=attempt,
-                    max_retry=max_retry,
-                )
-
-                # Fix code
-                fixed = await self._llm_call(fix_prompt, mode="code")
-                new_files = fixed.get("files")
-
-                # Handle different response formats
-                if isinstance(new_files, dict):
-                    files.update(new_files)
-                    logger.info("🔧 Applied fix for %s", main_file)
-                elif isinstance(fixed, dict):
-                    # Try to extract files from response
-                    if "files" in fixed:
-                        files.update(fixed["files"])
-                    elif "main.py" in fixed:
-                        files = {"main.py": fixed["main.py"]}
-                    else:
-                        logger.warning("⚠️ Invalid fix format, keeping previous files")
-                else:
-                    logger.warning("⚠️ Invalid fix response, keeping previous files")
-
-            except Exception as fix_error:
-                logger.error("❌ Auto-fix failed: %s", fix_error, exc_info=True)
-                break
-
-        # Failure after max_retry
-        logger.error("❌ Exhausted max retry attempts (%d)", max_retry)
-        if self.state:
-            self.state.errors.append(f"Auto-fix failed after {max_retry} attempts. Last error: {last_error[:100]}")
-
-        return execution
-
-    def _get_error_signature(self, error: str) -> str:
-        """
-        Extract a signature from an error message to detect repeated patterns.
-        This helps us avoid making the same fix attempts repeatedly.
-        """
-        import re
-        # Normalize the error to get a signature
-        # Remove line numbers, file paths, and variable values that change
-        normalized = re.sub(r'\b\d+\b', '<NUM>', error)  # Replace numbers
-        normalized = re.sub(r'/[^\s]*', '<PATH>', normalized)  # Replace file paths
-        normalized = re.sub(r'\b[a-zA-Z_][a-zA-Z0-9_]*\b', '<VAR>', normalized)  # Replace variable names
-        # Take first 100 chars as signature
-        return normalized[:100].strip()
-
-    async def _memory(self, task: str) -> list[dict[str, Any]]:
-        """
-        Memory search using FAISS adapter.
-
-        Searches for relevant context in the vector store.
-        Returns list of relevant documents with scores.
-        """
-        try:
-            from core.memory import get_memory_manager
-
-            # Use singleton to avoid reloading model
-            memory = get_memory_manager()
-            results = memory.search(task, k=3)
-            return results  # Already returns [{"text": ..., "score": ...}]
-        except Exception as e:
-            logger.warning("⚠️ FAISS memory search failed: %s", e)
-            return []
-
-    # ================= CORE =================
-
-    async def _llm_call(
-        self,
-        prompt: str,
-        mode: str,
-        timeout: float = 60.0,
-    ) -> dict[str, Any]:
-        """
-        Call LLM via router + safe JSON parsing.
-        
-        Args:
-            prompt: The prompt to send
-            mode: Router mode (fast, reasoning, code)
-            timeout: Max wait time in seconds (default 60s)
-        """
-        loop = asyncio.get_running_loop()
-
-        try:
-            response = await asyncio.wait_for(
-                loop.run_in_executor(
-                    None,
-                    lambda: self.router.generate(prompt, mode),
-                ),
-                timeout=timeout,
-            )
-        except asyncio.TimeoutError:
-            logger.error(f"LLM call timed out after {timeout}s")
-            return {"error": "timeout", "message": f"LLM call timed out after {timeout}s"}
-
-        return self._safe_json(response)
-
-    def _safe_json(self, text: str) -> dict[str, Any]:
-        """
-        Safely parse JSON from LLM response.
-        Logs warning when falling back to raw response.
-        """
-        try:
-            return json.loads(text)
-        except Exception:
-            # Try to extract JSON from markdown blocks
-            cleaned = text.strip()
-            if cleaned.startswith("```"):
-                # Handle markdown code blocks
-                lines = cleaned.split("\n")
-                json_lines = [
-                    line for line in lines
-                    if not line.startswith("```") and not line.startswith("json")
-                ]
-                cleaned = "\n".join(json_lines)
-                try:
-                    return json.loads(cleaned)
-                except Exception:
-                    pass
-
-            # Log warning for invalid JSON
-            logger.warning(
-                "⚠️ LLM returned invalid JSON (%s chars), falling back to raw. "
-                "Response: %s",
-                len(text),
-                text[:200],
-            )
-
-            return {
-                "raw": text[:500],  # Truncate raw response
-                "error": "invalid_json",
-            }
+__all__ = ["OrchestratorAsync", "AgentState", "get_orchestrator"]
