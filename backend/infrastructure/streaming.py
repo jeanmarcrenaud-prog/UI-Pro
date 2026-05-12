@@ -123,10 +123,13 @@ class StreamingService:
             chunk_index += 1
 
             # Run orchestrator
-            async for event in orchestrator.run(
+            result = await orchestrator.run(
                 message=message,
                 session_id=session_id,
-            ):
+            )
+            # Handle result (dict with status and state)
+            if isinstance(result, dict):
+                yield self._normalize_event(result, session_id, stream_id, chunk_index, start_time)
                 # Check for cancellation
                 task = self._active_streams.get(stream_id)
                 if task is not None and task.cancelled():
@@ -153,7 +156,7 @@ class StreamingService:
             ).to_dict()
 
         except Exception as e:
-            logger.exception("Unexpected error in streaming", session_id=session_id)
+            logger.exception(f"Unexpected error in streaming, session_id={session_id}")
             yield StreamChunk(
                 text="", status=StreamStatus.ERROR, stream_id=stream_id,
                 chunk_index=chunk_index, error=str(e)
