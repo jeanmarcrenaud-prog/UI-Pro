@@ -96,6 +96,7 @@ class StreamingService:
         message: str,
         session_id: str,
         model: Optional[str] = None,
+        provider: Optional[str] = None,
         temperature: float = 0.7,
     ) -> AsyncIterator[Dict[str, Any]]:
         """
