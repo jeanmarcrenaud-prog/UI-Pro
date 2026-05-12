@@ -1,4 +1,8 @@
 # ====================== UI-Pro Requirements ======================
+#
+# Architecture: backend/ is the source of truth
+# Legacy folders (core/, services/, api/, views/) are re-exports to backend/
+# Import from either location - both work for backward compatibility
 
 ## Core Framework
 fastapi==0.135.3
@@ -58,3 +62,5 @@ docker>=7.0.0                 # Docker sandbox for code execution
 # Notes
 # - Run: pip install -r requirements.txt
 # - For GPU: pip install torch --index-url https://download.pytorch.org/whl/cu121
+# - New code: import from backend/domain/core/, backend/infrastructure/, etc.
+# - Legacy code: import from core/, services/, etc. (re-exports work)
