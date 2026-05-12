@@ -1,3 +1,2 @@
-# infrastructure/ - External services, LLM, storage
-# Target: services/, llm/
-# Migration: optionnelle
+# backend/infrastructure/ - External services, LLM, storage
+# Import individual modules to avoid circular imports

@@ -1,23 +1,22 @@
-# **State Manager** - Global State Management
+# core/state_manager.py - Backward Compatibility Re-export
 #
-# ✅ State object
-# ✅ Full trace
-# ✅ Debug possible
-# ✅ Crash recovery
+# DEPRECATED: Import from backend.domain.core.state_manager instead
 
-from typing import Dict, Any, Optional, List
-from dataclasses import dataclass, field
-from datetime import datetime
-import uuid
-import json
-import logging
+from backend.domain.core.state_manager import (
+    State,
+    StateManager,
+    init_state,
+    save_state,
+    load_state,
+)
 
-logger = logging.getLogger(__name__)
-
-
-# ==================== **1. STATE OBJECT** ====================
-
-@dataclass
+__all__ = [
+    "State",
+    "StateManager",
+    "init_state",
+    "save_state",
+    "load_state",
+]
 class State:
     """
     Object d'état global.

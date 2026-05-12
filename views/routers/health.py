@@ -1,23 +1,10 @@
-# views/routers/health.py - Health and status endpoints
+# views/routers/health.py - Backward Compatibility Re-export
+#
+# DEPRECATED: Import from backend.transport.routers.health instead
 
-from fastapi import APIRouter
-from typing import Any, Dict, Optional
-import time
+from backend.transport.routers.health import router
 
-from models.settings import settings
-
-router = APIRouter(prefix="", tags=["health"])
-
-
-def _get_setting(attr: str, default: Any = None) -> Any:
-    """Get setting attribute safely."""
-    return getattr(settings, attr, default) or default
-
-
-def _check_ollama() -> str:
-    """Check if Ollama is available."""
-    import requests
-    try:
+__all__ = ["router"]
         resp = requests.get(f"{settings.ollama_url}/api/tags", timeout=2)
         return "ok" if resp.ok else "unavailable"
     except Exception:

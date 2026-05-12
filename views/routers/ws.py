@@ -1,22 +1,10 @@
-# views/routers/ws.py - WebSocket endpoint
+# views/routers/ws.py - Backward Compatibility Re-export
+#
+# DEPRECATED: Import from backend.transport.routers.ws instead
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Request
-from fastapi.websockets import WebSocketState
-from typing import Optional, Dict, Any
-import json
-import uuid
-import logging
+from backend.transport.routers.ws import router
 
-from models.settings import settings
-
-logger = logging.getLogger(__name__)
-
-router = APIRouter()
-
-
-def _get_ws_controller_cached():
-    """Get WebSocket controller with caching."""
-    from functools import lru_cache
+__all__ = ["router"]
     
     @lru_cache()
     def get_controller():

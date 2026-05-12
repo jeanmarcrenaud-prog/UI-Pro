@@ -12,83 +12,77 @@ python run.py --check       # Verify dependencies
 # Ports: FastAPI=8000, Gradio=7860
 ```
 
-## Project Structure (MVC)
+## Project Structure (Post-Refactoring)
+
+### Source of Truth: `backend/`
 
 ```
-ui-pro/
-├── run.py                  # Entry point
-├── core/                   # Core modules
-│   ├── executor.py        # CodeExecutor (sandbox with auto-fix loop)
-│   ├── state_manager.py  # StateManager
-│   ├── memory.py         # FAISS memory
-│   ├── metrics.py         # MetricsManager
-│   ├── logger.py          # Logging + rotation
-│   ├── events.py          # Thread-safe event pub/sub
-│   ├── orchestrator_async.py  # Async orchestrator
-│   └── config.py          # YAML loader + env overrides
-├── controllers/            # Business logic
-│   ├── orchestrator.py    # Pipeline orchestrator (DEPRECATED)
-│   ├── websocket.py       # WebSocket handling
-│   ├── code_review.py     # Code review logic
-│   └── executor.py        # CodeExecutor
-├── services/               # Service layer
-│   ├── llm_router.py      # Advanced LLM routing
-│   ├── model_service.py   # Model management
-│   ├── memory_service.py  # Memory with compression
+backend/
+├── domain/                 # Business logic (SOURCE OF TRUTH)
+│   ├── core/              # Core modules
+│   │   ├── executor.py    # CodeExecutor (sandbox with auto-fix loop)
+│   │   ├── state_manager.py
+│   │   ├── orchestrator_async.py
+│   │   ├── events.py
+│   │   ├── logger.py
+│   │   ├── metrics.py
+│   │   ├── prompts.py
+│   │   ├── code_review.py
+│   │   └── constants.py
+│   └── errors.py          # Domain errors
+├── infrastructure/        # External services
 │   ├── streaming.py       # Token streaming
-│   ├── tools.py           # Tool execution
-│   └── error_handler.py   # Error handling
-├── llm/                    # LLM clients
-│   ├── router.py          # Basic model routing
-│   └── client.py          # OllamaClient
-├── models/                 # Data models (schemas)
-│   ├── settings.py        # Configuration (SOURCE OF TRUTH)
-│   ├── config.py          # Pydantic config models
-│   ├── metrics.py         # Metrics dataclasses
-│   └── memory.py          # Memory dataclasses
-├── app/                    # App layer
-│   └── launcher.py        # Multi-service launcher
-├── views/                  # View layer
-│   ├── api.py             # Main API
-│   ├── dashboard.py       # Dashboard
-│   └── components/        # Gradio components
-├── templates/             # Static templates
-├── tests/                 # Test suite (85+ tests)
-├── workspace/             # Generated code
-└── configs/               # YAML/JSON configs
-```
-ui-pro/
-├── run.py                  # Entry point
-├── core/                   # Core modules
-│   ├── executor.py        # CodeExecutor (sandbox with auto-fix loop)
-│   ├── state_manager.py  # StateManager
+│   ├── model_service.py   # Model management
+│   ├── model_discovery.py # Multi-backend discovery
+│   ├── memory_service.py # Memory with compression
 │   ├── memory.py         # FAISS memory
-│   └── orchestrator_async.py  # Async orchestrator
-├── controllers/            # Business logic
-│   └── orchestrator.py  # Pipeline: planner → architect → coder → reviewer → executor
-├── services/             # Service layer
-│   ├── llm_router.py   # Advanced LLM routing
-│   ├── model_service.py
-│   └── memory_service.py
-├── llm/                  # LLM clients
-│   ├── router.py       # Basic model routing
-│   └── client.py       # Ollama client
-├── models/               # Data types (NOT logic)
-│   └── settings.py     # Configuration
-└── views/               # API layer
-    ├── api.py          # FastAPI endpoints
-    └── dashboard.py    # Gradio interface
+│   ├── llm_router.py     # Advanced LLM routing
+│   ├── tools.py          # Tool execution
+│   ├── error_handler.py  # Error handling
+│   ├── code_execution.py # Code execution
+│   └── base.py           # Service base class
+├── application/           # Application layer
+│   ├── launcher.py       # Multi-service launcher
+│   └── websocket.py      # WebSocket handling
+└── transport/             # API endpoints
+    ├── main.py           # FastAPI entry point
+    ├── views_api.py      # FastAPI app
+    ├── dashboard.py      # Gradio dashboard
+    ├── translations.py   # i18n
+    └── routers/          # API routers
+        ├── health.py
+        ├── chat.py
+        ├── ws.py
+        ├── stream.py
+        ├── execute.py
+        └── logs.py
 ```
 
-## Structure Après Refactoring
+### Legacy Folders (Backward Compatibility Re-exports)
+
+> **IMPORTANT**: These folders now re-export from `backend/`. Import from here for backward compatibility, or import directly from `backend/` for new code.
 
 ```
-models/              → types ONLY (settings, config)
-core/               → core logic (memory, state, executor, config)
-llm/                → LLM routing et clients
-services/            → service layer
-controllers/         → orchestrator, workflow
+ui-pro/                    # Legacy root (re-exports to backend/)
+├── core/                 # → backend/domain/core/
+├── services/             # → backend/infrastructure/
+├── api/                  # → backend/transport/
+├── views/                # → backend/transport/
+├── llm/                  # LLM clients (unchanged)
+├── models/               # Data types (unchanged)
+├── controllers/           # Business logic (unchanged)
+├── app/                  # App layer (unchanged)
+└── tests/                # Test suite
 ```
+
+## Migration Status
+
+| Legacy Folder | Target | Status |
+|---------------|--------|--------|
+| `core/` | `backend/domain/core/` | ✅ Re-export |
+| `services/` | `backend/infrastructure/` | ✅ Re-export |
+| `api/` | `backend/transport/` | ✅ Re-export |
+| `views/` | `backend/transport/` | ✅ Re-export |
 
 ## Critical Quirks
 
@@ -111,11 +105,18 @@ Settings uses `model_fast`/`model_reasoning`, NOT `fast`/`reasoning`. The `.env`
 ### 5. Ollama Models
 Available models are shown at startup. Default `.env` uses `gemma4:latest`. Other configured models may not exist.
 
+### 6. Import Pattern
+- **New code**: Import directly from `backend/domain/core/`, `backend/infrastructure/`, etc.
+- **Legacy code**: Import from `core/`, `services/`, etc. (re-exports work)
+
 ## Commands
 
 ```bash
-# Test single module
-python -c "from controllers.orchestrator import Orchestrator"
+# Test single module (new pattern)
+python -c "from backend.domain.core import Orchestrator"
+
+# Test single module (legacy pattern - still works)
+python -c "from core import Orchestrator"
 
 # Run app
 python run.py --all
@@ -133,3 +134,4 @@ pytest tests/ -v
 - Don't use bare `except:` - catch specific exceptions
 - Don't import at module level across MVC layers
 - Don't assume all Ollama models exist - check startup output
+- Don't modify legacy folders directly - modify `backend/` instead

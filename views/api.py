@@ -1,22 +1,10 @@
-# views/api.py - FastAPI Application
+# views/api.py - Backward Compatibility Re-export
 #
-# Role: Main entry point with app setup, middleware, and core endpoints
-# Routers handle: health, status, WebSocket, streaming
+# DEPRECATED: Import from backend.transport.views_api instead
 
-from fastapi import FastAPI, Request, HTTPException, Depends
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from contextlib import asynccontextmanager
-import logging
-import time
-import json
-import traceback
-from logging.handlers import RotatingFileHandler
-from functools import lru_cache
-from typing import Optional, Any, Callable
+from backend.transport.views_api import app
 
-# ==================== LOGGING ====================
+__all__ = ["app"]
 
 def setup_logging():
     """Configure structured logging."""

@@ -1,23 +1,48 @@
-# core/events.py - Event Protocol for UI-Pro
-"""
-Event protocol system with pub/sub for real-time messaging.
-Centralizes all event types and handlers.
-"""
+# core/events.py - Backward Compatibility Re-export
+#
+# DEPRECATED: Import from backend.domain.core.events instead
 
-import threading
-from dataclasses import dataclass, field
-from datetime import datetime
-from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
-import uuid
+from backend.domain.core.events import (
+    BaseEvent,
+    AgentEvent,
+    TokenEvent,
+    ToolEvent,
+    ErrorEvent,
+    EventType,
+    EventBus,
+    get_event_bus,
+    event_to_dict,
+    agent_event_to_ws,
+    token_event_to_ws,
+    tool_event_to_ws,
+    error_event_to_ws,
+    EventRouter,
+    emit_agent_step,
+    emit_token,
+    emit_tool,
+    emit_error,
+)
 
-from core.constants import WSEvent, AgentStep
-
-
-# ==================== Event Classes ====================
-
-@dataclass
-class BaseEvent:
+__all__ = [
+    "BaseEvent",
+    "AgentEvent",
+    "TokenEvent",
+    "ToolEvent",
+    "ErrorEvent",
+    "EventType",
+    "EventBus",
+    "get_event_bus",
+    "event_to_dict",
+    "agent_event_to_ws",
+    "token_event_to_ws",
+    "tool_event_to_ws",
+    "error_event_to_ws",
+    "EventRouter",
+    "emit_agent_step",
+    "emit_token",
+    "emit_tool",
+    "emit_error",
+]
     """Base event class with common fields"""
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     timestamp: datetime = field(default_factory=datetime.now)

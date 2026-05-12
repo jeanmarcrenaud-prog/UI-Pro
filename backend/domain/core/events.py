@@ -11,7 +11,7 @@ from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 import uuid
 
-from core.constants import WSEvent, AgentStep
+from backend.domain.core.constants import WSEvent, AgentStep
 
 
 # ==================== Event Classes ====================

@@ -9,7 +9,7 @@ import time
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
 
-from core.code_review import review_code, ReviewResult
+from backend.domain.core.code_review import review_code, ReviewResult
 
 logger = logging.getLogger(__name__)
 

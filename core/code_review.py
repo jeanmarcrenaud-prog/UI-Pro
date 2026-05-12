@@ -1,23 +1,20 @@
-"""
-Code Review Module - Static analysis before executing LLM-generated code.
-Supports: Bandit (security) and Pylint (style & bugs).
-"""
+# core/code_review.py - Backward Compatibility Re-export
+#
+# DEPRECATED: Import from backend.domain.core.code_review instead
 
-import subprocess
-import json
-import logging
-from pathlib import Path
-from tempfile import NamedTemporaryFile
-from dataclasses import dataclass
-from typing import Optional, List, Dict, Any
+from backend.domain.core.code_review import (
+    ReviewResult,
+    CodeReviewer,
+    get_reviewer,
+    review_code,
+)
 
-logger = logging.getLogger(__name__)
-
-
-@dataclass
-class ReviewResult:
-    """Result of code review"""
-    success: bool
+__all__ = [
+    "ReviewResult",
+    "CodeReviewer",
+    "get_reviewer",
+    "review_code",
+]
     issues: List[Dict[str, Any]]
     tool: str
     summary: str
