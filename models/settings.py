@@ -3,6 +3,9 @@ models/settings.py - Backward Compatibility Re-export
 """
 from backend.domain.settings import (
     Settings,
+    PROJECT_ROOT,
+    WORKSPACE,
+    TEMPLATES,
     OLLAMA_URL,
     LEMONADE_URL,
     LLAMACPP_URL,
@@ -20,6 +23,9 @@ from backend.domain.settings import (
 
 __all__ = [
     "Settings",
+    "PROJECT_ROOT",
+    "WORKSPACE",
+    "TEMPLATES",
     "OLLAMA_URL",
     "LEMONADE_URL",
     "LLAMACPP_URL",
