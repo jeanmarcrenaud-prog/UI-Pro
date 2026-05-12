@@ -104,12 +104,12 @@ async def websocket_endpoint(ws: WebSocket):
                 provider=provider,
                 start_chunk=start_chunk
             ):
-                # Handle completion
-                if chunk.status.value == "completed":
+                # Handle completion (chunk is now a dict)
+                if isinstance(chunk, dict) and chunk.get("status") == "completed":
                     await ws.send_text(json.dumps({
                         "type": "done",
                         "message_id": message_id,
-                        "chunk_index": chunk.chunk_index
+                        "chunk_index": chunk.get("chunk_index", 0)
                     }))
                     for step_id, title in [
                         ("step-planning", "Planning solution"),
@@ -122,57 +122,58 @@ async def websocket_endpoint(ws: WebSocket):
                             "title": title,
                             "status": "done",
                             "message_id": message_id,
-                            "chunk_index": chunk.chunk_index
+                            "chunk_index": chunk.get("chunk_index", 0)
                         }))
-                    await ws_controller.update_request_state(message_id, chunk.chunk_index, is_complete=True)
+                    await ws_controller.update_request_state(message_id, chunk.get("chunk_index", 0), is_complete=True)
                     continue
                 
                 # Handle errors
-                if chunk.status.value == "error":
+                if chunk.get("status") == "error":
                     await ws.send_text(json.dumps({
                         "type": "error",
-                        "message": chunk.error or "Generation error",
+                        "message": chunk.get("error", "Generation error"),
                         "message_id": message_id,
-                        "chunk_index": chunk.chunk_index
+                        "chunk_index": chunk.get("chunk_index", 0)
                     }))
-                    await ws_controller.update_request_state(message_id, chunk.chunk_index, is_complete=True)
+                    await ws_controller.update_request_state(message_id, chunk.get("chunk_index", 0), is_complete=True)
                     continue
                 
                 # Handle cancellation
-                if chunk.status.value == "cancelled":
+                if chunk.get("status") == "cancelled":
                     await ws.send_text(json.dumps({
                         "type": "error",
                         "message": "Request cancelled by user",
                         "message_id": message_id,
-                        "chunk_index": chunk.chunk_index
+                        "chunk_index": chunk.get("chunk_index", 0)
                     }))
-                    await ws_controller.update_request_state(message_id, chunk.chunk_index, is_complete=True)
+                    await ws_controller.update_request_state(message_id, chunk.get("chunk_index", 0), is_complete=True)
                     continue
                 
                 # Handle step events
-                if chunk.step_id:
+                if chunk.get("step_id"):
                     await ws.send_text(json.dumps({
                         "type": "step",
-                        "step_id": chunk.step_id,
-                        "title": chunk.step_id.replace("step-", "").replace("-", " ").title(),
-                        "status": chunk.step_status,
+                        "step_id": chunk.get("step_id"),
+                        "title": chunk.get("step_id", "").replace("step-", "").replace("-", " ").title(),
+                        "status": chunk.get("step_status", ""),
                         "message_id": message_id,
-                        "chunk_index": chunk.chunk_index
+                        "chunk_index": chunk.get("chunk_index", 0)
                     }))
-                    await ws_controller.update_request_state(message_id, chunk.chunk_index)
+                    await ws_controller.update_request_state(message_id, chunk.get("chunk_index", 0))
                     continue
                 
                 # Handle token chunks
-                if chunk.text:
-                    await ws_controller.update_request_state(message_id, chunk.chunk_index)
+                if chunk.get("content") or chunk.get("text"):
+                    content = chunk.get("content") or chunk.get("text", "")
+                    await ws_controller.update_request_state(message_id, chunk.get("chunk_index", 0))
                     await ws.send_text(json.dumps({
                         "type": "token",
-                        "content": chunk.text,
-                        "response": chunk.text,
+                        "content": content,
+                        "response": content,
                         "done": False,
                         "message_id": message_id,
-                        "chunk_index": chunk.chunk_index,
-                        "tokens_generated": chunk.tokens_generated or 0
+                        "chunk_index": chunk.get("chunk_index", 0),
+                        "tokens_generated": chunk.get("tokens", 0)
                     }))
     
     except WebSocketDisconnect:
