@@ -1,23 +1,10 @@
-import gradio as gr
-import asyncio
-import threading
-import time
-import json
-import sys
-import os
-from pathlib import Path
+# api/dashboard.py - Backward Compatibility Re-export
+#
+# DEPRECATED: Import from backend.transport.dashboard instead
 
-# Add project root to path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+from backend.transport.dashboard import create_dashboard
 
-# Import real orchestrator components
-from core.orchestrator_async import Orchestrator
-from core.state_manager import StateManager
-from core.executor import CodeExecutor
-
-# Translation imports
-from api.translations import (
+__all__ = ["create_dashboard"]
     get_current_translations,
     LANGUAGE_OPTIONS,
     DEFAULT_LANGUAGE,

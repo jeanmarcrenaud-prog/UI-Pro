@@ -4,6 +4,18 @@
 
 ## ✅ COMPLÉTÉ (Terminé)
 
+### Refactoring Backend (2026-05-12)
+
+| # | Tâche | Statut |
+|---|-----|-|------|
+| 1 | Migrer vers backend/ comme source de vérité | ✅ |
+| 2 | Convertir core/ vers ré-exports | ✅ |
+| 3 | Convertir services/ vers ré-exports | ✅ |
+| 4 | Convertir api/ vers ré-exports | ✅ |
+| 5 | Convertir views/ vers ré-exports | ✅ |
+| 6 | Mettre à jour AGENTS.md | ✅ |
+| 7 | Mettre à jour ARCHITECTURE.md | ✅ |
+
 ### Refactoring Terminé (2026-04-28)
 
 | # | Tâche | Statut |
@@ -87,33 +99,28 @@
 
 ---
 
-## Structure Actuelle
+## Structure Actuelle (Post-Refactoring)
 
 ```
-ui-pro/                           # 65 fichiers Python
+ui-pro/                           # Projet principal
 ├── run.py                        # Launcher principal
 ├── app/launcher.py              # Multi-service launcher
-├── api/                          # API routes
-│   ├── main.py                   # FastAPI alternatif
-│   ├── dashboard.py             # Gradio dashboard
-│   ├── web.py                   # Web endpoints
-│   └── translations.py          # i18n
-├── core/                         # Core modules (10 fichiers)
-│   ├── executor.py              # CodeExecutor (sandbox)
-│   ├── code_review.py           # Code review
-│   ├── constants.py             # WSEvent, AgentStep
-│   ├── errors.py                # DomainError
-│   ├── events.py                # Event bus
-│   ├── logger.py                # Logging
-│   ├── memory.py                # FAISS
-│   ├── metrics.py               # Métriques
-│   ├── orchestrator_async.py    # Async pipeline
-│   └── state_manager.py        # État
-├── services/                     # Service layer (10 fichiers)
+│
+├── backend/                      # SOURCE DE VÉRITÉ
+│   ├── domain/                  # Business logic
+│   │   └── core/                # Core modules
+│   ├── infrastructure/          # Services layer
+│   ├── application/              # App layer
+│   └── transport/                # API endpoints
+│
+├── core/                         # Legacy (ré-export → backend/)
+├── services/                     # Legacy (ré-export → backend/)
+├── api/                          # Legacy (ré-export → backend/)
+├── views/                        # Legacy (ré-export → backend/)
 ├── llm/                          # LLM clients
 ├── controllers/                  # HTTP/WS
-├── views/api.py                  # FastAPI app
-├── tests/                        # 11 tests
+├── models/                       # Data types
+├── tests/                        # Tests
 ├── ui-pro-ui/                    # Next.js frontend
 │   └── components/
 │       ├── chat/                # 7 composants
@@ -188,5 +195,5 @@ pytest tests/test_execution.py -v
 
 ---
 
-**Dernière mise à jour**: 2026-05-03
-**Status**: Complété ✅
+**Dernière mise à jour**: 2026-05-12
+**Status**: Refactoring backend terminé ✅

@@ -1,23 +1,26 @@
-"""
-Translation system for Gradio Dashboard.
+# api/translations.py - Backward Compatibility Re-export
+#
+# DEPRECATED: Import from backend.transport.translations instead
 
-Supports: French (fr), English (en)
-"""
+from backend.transport.translations import (
+    LANGUAGES,
+    DEFAULT_LANGUAGE,
+    TRANSLATIONS,
+    LANGUAGE_OPTIONS,
+    get_translation,
+    set_language,
+    get_current_language,
+)
 
-from typing import Dict
-
-# Available languages
-LANGUAGES = ["fr", "en"]
-DEFAULT_LANGUAGE = "fr"
-
-
-# Translation dictionaries
-TRANSLATIONS: Dict[str, Dict[str, str]] = {
-    "fr": {
-        # Navigation
-        "nav_task_input": "Tâche",
-        "nav_realtime": "Sortie temps réel",
-        "nav_logs": "Logs",
+__all__ = [
+    "LANGUAGES",
+    "DEFAULT_LANGUAGE",
+    "TRANSLATIONS",
+    "LANGUAGE_OPTIONS",
+    "get_translation",
+    "set_language",
+    "get_current_language",
+]
         "nav_status": "Statut",
         "nav_memory": "Mémoire",
         "nav_metrics": "Métriques",

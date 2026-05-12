@@ -1,21 +1,10 @@
-# views/routers/stream.py - SSE Streaming Endpoints
+# views/routers/stream.py - Backward Compatibility Re-export
+#
+# DEPRECATED: Import from backend.transport.routers.stream instead
 
-from fastapi import APIRouter, Query
-from fastapi.responses import StreamingResponse
-from typing import Optional
-import json
-import logging
+from backend.transport.routers.stream import router
 
-from models.settings import settings
-
-logger = logging.getLogger(__name__)
-
-router = APIRouter(tags=["stream"])
-
-
-def _get_streaming_service():
-    from backend.infrastructure.streaming import get_streaming_service
-    return get_streaming_service()
+__all__ = ["router"]
 
 
 async def sse_generator(prompt: str, model: str, provider: str, temperature: float):

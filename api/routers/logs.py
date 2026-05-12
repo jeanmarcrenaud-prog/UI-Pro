@@ -1,22 +1,10 @@
-# api/routers/logs.py - Log streaming WebSocket
-from fastapi import APIRouter, WebSocket
-import logging
-import asyncio
+# api/routers/logs.py - Backward Compatibility Re-export
+#
+# DEPRECATED: Import from backend.transport.routers.logs instead
 
-router = APIRouter(tags=["logs"])
+from backend.transport.routers.logs import router
 
-logger = logging.getLogger(__name__)
-
-_log_subscriptions: set = set()
-
-
-@router.websocket("/logs")
-async def ws_logs(websocket: WebSocket):
-    """WebSocket endpoint for streaming backend logs"""
-    await websocket.accept()
-
-    # Add to subscriptions
-    _log_subscriptions.add(websocket)
+__all__ = ["router"]
 
     logger.info("[WS LOGS] Client connected")
 

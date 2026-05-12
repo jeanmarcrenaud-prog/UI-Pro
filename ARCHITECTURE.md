@@ -1,9 +1,11 @@
 # Architecture UI-Pro
 
-## 📁 Structure du Projet (Réelle)
+## 📁 Structure du Projet (Post-Refactoring)
+
+### Source de Vérité: `backend/`
 
 ```
-ui-pro/                           # Racine projet (65 fichiers Python)
+ui-pro/                           # Racine projet
 ├── run.py                        # Launcher principal
 ├── settings.py                   # Settings standalone
 ├── conftest.py                    # Pytest config
@@ -12,42 +14,49 @@ ui-pro/                           # Racine projet (65 fichiers Python)
 ├── requirements.txt              # Dépendances
 ├── pytest.ini                    # Config pytest
 │
-├── app/                          # App layer
-│   ├── __init__.py
-│   └── launcher.py               # Multi-service launcher
+├── backend/                      # SOURCE DE VÉRITÉ
+│   ├── domain/                  # Business logic
+│   │   ├── core/                # Core modules
+│   │   │   ├── constants.py     # WSEvent, AgentStep
+│   │   │   ├── errors.py        # DomainError hierarchy
+│   │   │   ├── executor.py      # CodeExecutor (sandbox)
+│   │   │   ├── code_review.py   # Code review with bandit
+│   │   │   ├── events.py        # Event bus
+│   │   │   ├── logger.py        # Logging
+│   │   │   ├── metrics.py       # Métriques
+│   │   │   ├── orchestrator_async.py  # Async pipeline
+│   │   │   ├── prompts.py       # Prompts
+│   │   │   └── state_manager.py # État
+│   │   └── errors.py            # Domain errors
+│   │
+│   ├── infrastructure/           # Services layer
+│   │   ├── base.py              # Service base
+│   │   ├── code_execution.py    # Execution Python
+│   │   ├── error_handler.py     # Error handling
+│   │   ├── llm_router.py        # Advanced routing
+│   │   ├── memory.py            # FAISS wrapper
+│   │   ├── memory_service.py    # Service mémoire
+│   │   ├── model_discovery.py   # Model discovery
+│   │   ├── model_service.py     # Service modèle
+│   │   ├── service_api.py       # API service
+│   │   ├── streaming.py         # Streaming SSE/WS
+│   │   └── tools.py              # Tools registry
+│   │
+│   ├── application/             # App layer
+│   │   ├── launcher.py          # Multi-service launcher
+│   │   └── websocket.py         # WebSocket handling
+│   │
+│   └── transport/               # API endpoints
+│       ├── main.py              # FastAPI entry point
+│       ├── views_api.py         # FastAPI app
+│       ├── dashboard.py         # Gradio dashboard
+│       ├── translations.py      # i18n
+│       └── routers/             # API routers
 │
-├── api/                          # API routes
-│   ├── main.py                   # FastAPI alternatif
-│   ├── dashboard.py             # Gradio dashboard
-│   ├── web.py                   # Web endpoints
-│   └── translations.py          # i18n
-│
-├── core/                         # Core modules
-│   ├── __init__.py
-│   ├── constants.py             # WSEvent, AgentStep
-│   ├── errors.py                # DomainError hierarchy
-│   ├── executor.py              # CodeExecutor (sandbox)
-│   ├── code_review.py           # Code review with bandit
-│   ├── events.py                # Event bus
-│   ├── logger.py                # Logging
-│   ├── memory.py                # FAISS wrapper
-│   ├── metrics.py               # Métriques
-│   ├── orchestrator_async.py     # Async pipeline
-│   ├── prompts.py              # Prompts
-│   └── state_manager.py         # État
-│
-├── services/                     # Service layer
-│   ├── __init__.py
-│   ├── base.py                  # Service base
-│   ├── code_execution.py        # Execution Python
-│   ├── error_handler.py        # Error handling
-│   ├── llm_router.py           # Advanced routing
-│   ├── memory_service.py       # Service mémoire
-│   ├── model_service.py        # Service modèle
-│   ├── service_api.py          # API service
-│   ├── streaming.py            # Streaming SSE/WS
-│   └── tools.py                 # Tools registry
-│
+├── core/                         # Legacy (ré-export → backend/domain/core/)
+├── services/                     # Legacy (ré-export → backend/infrastructure/)
+├── api/                          # Legacy (ré-export → backend/transport/)
+├── views/                        # Legacy (ré-export → backend/transport/)
 ├── llm/                          # LLM clients
 │   ├── __init__.py
 │   └── router.py                # Multi-model routing (OllamaClient, LLMRouter)
@@ -423,4 +432,4 @@ async def stream_generate(...) -> AsyncIterator[StreamChunk]:
 
 ---
 
-**Dernière mise à jour**: 2026-05-03
+**Dernière mise à jour**: 2026-05-12

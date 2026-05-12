@@ -1,23 +1,36 @@
-"""
-Enhanced logging system for UI-Pro.
-Provides structured logging with rotation, multiple levels, JSON formatting,
-correlation IDs, and performance metrics.
-"""
+# core/logger.py - Backward Compatibility Re-export
+#
+# DEPRECATED: Import from backend.domain.core.logger instead
 
-import logging
-import os
-import threading
-import time
-import uuid
-from typing import Optional
-from logging.handlers import RotatingFileHandler
-from pathlib import Path
-import datetime
-import json
-from contextvars import ContextVar
+from backend.domain.core.logger import (
+    JSONFormatter,
+    LoggerManager,
+    set_correlation_id,
+    get_correlation_id,
+    generate_correlation_id,
+    get_logger,
+    debug,
+    info,
+    warning,
+    error,
+    critical,
+    log_performance,
+)
 
-
-# Context variable for correlation ID
+__all__ = [
+    "JSONFormatter",
+    "LoggerManager",
+    "set_correlation_id",
+    "get_correlation_id",
+    "generate_correlation_id",
+    "get_logger",
+    "debug",
+    "info",
+    "warning",
+    "error",
+    "critical",
+    "log_performance",
+]
 correlation_id_ctx: ContextVar[Optional[str]] = ContextVar('correlation_id', default=None)
 
 

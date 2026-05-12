@@ -1,28 +1,10 @@
-# api/routers/execute.py - Execute, validate, install-deps endpoints
-from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel
-from typing import Optional, List
-import logging
-import time
-import shlex
-from pathlib import Path
+# api/routers/execute.py - Backward Compatibility Re-export
+#
+# DEPRECATED: Import from backend.transport.routers.execute instead
 
-from settings import settings
+from backend.transport.routers.execute import router
 
-router = APIRouter(prefix="/api", tags=["execute"])
-
-logger = logging.getLogger(__name__)
-
-API_KEY_HEADER = "x-api-key"
-
-
-def verify_api_key(request: Request):
-    api_key = getattr(settings, "api_key", None)
-    if not api_key:
-        return True
-    if request.headers.get(API_KEY_HEADER) != api_key:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+__all__ = ["router"]
     return True
 
 

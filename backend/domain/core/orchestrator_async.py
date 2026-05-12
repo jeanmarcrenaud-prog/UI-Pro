@@ -22,10 +22,10 @@ from typing import Any, Literal
 
 import asyncio
 
-from core.state_manager import StateManager
-from core.executor import CodeExecutor
+from backend.domain.core.state_manager import StateManager
+from backend.domain.core.executor import CodeExecutor
 from llm.router import LLMRouter
-from core.prompts import get_prompt  # Centralized prompts
+from backend.domain.core.prompts import get_prompt  # Centralized prompts
 
 logger = logging.getLogger(__name__)
 

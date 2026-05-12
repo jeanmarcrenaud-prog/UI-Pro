@@ -1,25 +1,10 @@
-# api/routers/chat.py - Chat endpoint (REST fallback)
-from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel
-from typing import Optional
-import logging
+# api/routers/chat.py - Backward Compatibility Re-export
+#
+# DEPRECATED: Import from backend.transport.routers.chat instead
 
-from settings import settings
+from backend.transport.routers.chat import router
 
-router = APIRouter(prefix="/api", tags=["chat"])
-
-logger = logging.getLogger(__name__)
-
-API_KEY_HEADER = "x-api-key"
-
-
-def verify_api_key(request: Request):
-    api_key = getattr(settings, "api_key", None)
-    if not api_key:
-        return True
-    if request.headers.get(API_KEY_HEADER) != api_key:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+__all__ = ["router"]
     return True
 
 
