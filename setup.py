@@ -67,7 +67,8 @@ def run_command(cmd: list[str], cwd: Optional[Path] = None, check: bool = True) 
             if e.stderr:
                 print(e.stderr)
             sys.exit(1)
-        return e
+        # Return a failed CompletedProcess for non-check mode
+        return subprocess.CompletedProcess(args=cmd, returncode=e.returncode, stdout=e.stdout or "", stderr=e.stderr or "")
     except FileNotFoundError:
         print_error(f"Command not found: {cmd[0]}")
         sys.exit(1)
