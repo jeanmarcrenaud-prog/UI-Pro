@@ -27,15 +27,9 @@ def _get_ws_controller_cached():
 
 
 def _get_streaming_service_cached():
-    """Get streaming service with caching."""
-    from functools import lru_cache
-    
-    @lru_cache()
-    def get_service():
-        from backend.infrastructure.streaming import get_streaming_service
-        return get_streaming_service()
-    
-    return get_service()
+    """Get streaming service (uses singleton internally)."""
+    from backend.infrastructure.streaming import get_streaming_service
+    return get_streaming_service()
 
 
 @router.websocket("/ws")
