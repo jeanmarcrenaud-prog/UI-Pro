@@ -98,6 +98,7 @@ class StreamingService:
         model: Optional[str] = None,
         provider: Optional[str] = None,
         temperature: float = 0.7,
+        start_chunk: int = 0,
     ) -> AsyncIterator[Dict[str, Any]]:
         """
         Génère une réponse en streaming via LangGraph.
