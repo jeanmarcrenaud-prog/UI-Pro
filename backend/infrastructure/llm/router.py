@@ -18,7 +18,7 @@ class ModelConfig:
     """LLM Backend Configuration"""
     url: str = ""
     model: str = ""
-    timeout: int = 120
+    timeout: int = 300
     backend: str = "ollama"
 
 
@@ -157,7 +157,7 @@ class ModelsConfig:
     code: str = ""
     reasoner: str = ""
     ollama_url: str = ""
-    timeout: int = 120
+    timeout: int = 300
 
     @classmethod
     def from_settings(cls) -> "ModelsConfig":

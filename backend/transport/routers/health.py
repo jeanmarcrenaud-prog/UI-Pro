@@ -1,6 +1,7 @@
 # views/routers/health.py - Health and status endpoints
 
 from fastapi import APIRouter
+from pydantic import BaseModel
 from typing import Any, Dict, Optional
 import time
 
@@ -112,3 +113,27 @@ async def get_default_model():
         "model_fast": _get_setting('model_fast', 'qwen3.5:0.8b'),
         "model_reasoning": _get_setting('model_reasoning', 'qwen3.5:0.8b'),
     }
+
+
+class TimeoutRequest(BaseModel):
+    llm_timeout: int = 300
+    executor_timeout: int = 60
+
+
+@router.get("/api/settings/timeouts")
+async def get_timeouts():
+    """Current timeout values"""
+    return {
+        "llm_timeout": _get_setting('llm_timeout', 300),
+        "executor_timeout": _get_setting('executor_timeout', 60),
+    }
+
+
+@router.post("/api/settings/timeouts")
+async def set_timeouts(body: TimeoutRequest):
+    """Update timeout settings and persist to .env"""
+    try:
+        settings.set_timout(body.llm_timeout, body.executor_timeout)
+        return {"status": "ok", "llm_timeout": settings.llm_timeout, "executor_timeout": settings.executor_timeout}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}

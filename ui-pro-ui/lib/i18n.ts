@@ -40,6 +40,14 @@ export interface Translations {
     language: string
     active: string
     inactive: string
+    timeouts: string
+    llmTimeout: string
+    executorTimeout: string
+    llmTimeoutHelp: string
+    executorTimeoutHelp: string
+    savedSuccess: string
+    saveFailed: string
+    seconds: string
   }
   debug: {
     title: string
@@ -142,6 +150,14 @@ const en: Translations = {
     language: 'Language',
     active: 'Active',
     inactive: 'Inactive',
+    timeouts: 'Timeouts',
+    llmTimeout: 'LLM Timeout',
+    executorTimeout: 'Execution Timeout',
+    llmTimeoutHelp: 'Max time for model responses (10–1800s)',
+    executorTimeoutHelp: 'Max time for code execution (5–600s)',
+    savedSuccess: 'Saved successfully',
+    saveFailed: 'Failed to save',
+    seconds: 's',
   },
   debug: {
     title: 'Debug Panel',
@@ -209,6 +225,14 @@ const fr: Translations = {
     language: 'Langue',
     active: 'Actif',
     inactive: 'Inactif',
+    timeouts: 'Timeouts',
+    llmTimeout: 'Timeout LLM',
+    executorTimeout: "Timeout d'exécution",
+    llmTimeoutHelp: "Temps max pour les réponses du modèle (10–1800s)",
+    executorTimeoutHelp: 'Temps max pour exécuter le code (5–600s)',
+    savedSuccess: 'Enregistré avec succès',
+    saveFailed: "Échec de l'enregistrement",
+    seconds: 's',
   },
   debug: {
     title: 'Panneau Debug',
