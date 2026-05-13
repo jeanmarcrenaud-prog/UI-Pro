@@ -80,16 +80,8 @@ class StreamingService:
     """Service de streaming qui utilise l'orchestrateur LangGraph."""
 
     def __init__(self):
-        self.orchestrator = None
         self._active_streams: Dict[str, Optional[asyncio.Task]] = {}
         self._stream_counter = 0
-
-    async def _get_orchestrator(self):
-        """Lazy loading de l'orchestrateur."""
-        if self.orchestrator is None:
-            from backend.domain.core.orchestrator_async import get_orchestrator
-            self.orchestrator = await get_orchestrator()
-        return self.orchestrator
 
     async def stream_generate(
         self,
@@ -113,7 +105,7 @@ class StreamingService:
         self._active_streams[stream_id] = current if current else None
 
         try:
-            orchestrator = await self._get_orchestrator()
+            from backend.domain.core.langgraph_orchestrator import stream_agent
 
             # Step: Analyzing
             yield StreamChunk(
@@ -122,14 +114,11 @@ class StreamingService:
             ).to_dict()
             chunk_index += 1
 
-            # Run orchestrator
-            result = await orchestrator.run(
+            # Run orchestrator with streaming
+            async for event in stream_agent(
                 message=message,
                 session_id=session_id,
-            )
-            # Handle result (dict with status and state)
-            if isinstance(result, dict):
-                yield self._normalize_event(result, session_id, stream_id, chunk_index, start_time)
+            ):
                 # Check for cancellation
                 task = self._active_streams.get(stream_id)
                 if task is not None and task.cancelled():
