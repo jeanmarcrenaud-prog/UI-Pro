@@ -5,7 +5,7 @@ Used by: orchestrator, code_review, streaming service
 """
 
 from dataclasses import dataclass
-from typing import Literal, Optional, Iterator
+from typing import Literal, Optional, Iterator, AsyncGenerator
 import logging
 
 from models.settings import settings
@@ -145,6 +145,39 @@ class OllamaClient:
                 yield "[Error: Impossible de se connecter à Ollama. Vérifiez que le service est démarré.]"
             else:
                 yield f"[Error: {e}]"
+
+    async def astream(
+        self,
+        prompt: str,
+        model: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7,
+    ) -> AsyncGenerator[str, None]:
+        """
+        Native async token streaming.
+        Wraps the synchronous stream() in a thread executor for non-blocking operation.
+        """
+        import asyncio
+
+        loop = asyncio.get_running_loop()
+
+        def _sync_stream():
+            try:
+                return list(self.stream(prompt, model, system_prompt, temperature))
+            except Exception as e:
+                logger.error(f"[OllamaClient.astream] sync stream failed: {e}")
+                return [f"[Streaming Error: {e}]"]
+
+        stream_future = loop.run_in_executor(None, _sync_stream)
+        wrapped = asyncio.wrap_future(stream_future)
+
+        try:
+            async for token in wrapped:
+                if token:
+                    yield token
+        except Exception as e:
+            logger.error(f"[OllamaClient.astream] error: {e}")
+            yield f"[Streaming Error: {e}]"
 
 
 # ==================== CONFIG ====================
