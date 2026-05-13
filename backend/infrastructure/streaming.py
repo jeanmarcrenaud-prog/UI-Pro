@@ -118,6 +118,8 @@ class StreamingService:
             async for event in stream_agent(
                 message=message,
                 session_id=session_id,
+                model=model,
+                provider=provider,
             ):
                 # Check for cancellation
                 task = self._active_streams.get(stream_id)

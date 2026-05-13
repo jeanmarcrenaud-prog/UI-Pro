@@ -211,7 +211,7 @@ def _build_main_ui():
                 with concurrent.futures.ThreadPoolExecutor() as pool:
                     future = pool.submit(run_sync)
                     try:
-                        result = future.result(timeout=120)  # 2 min timeout
+                        result = future.result(timeout=300)  # 5 min timeout
                     except concurrent.futures.TimeoutError:
                         result = {"status": "timeout", "error": "Execution timeout after 2 minutes"}
                 

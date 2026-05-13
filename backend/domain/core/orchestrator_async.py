@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal, Optional
 
+from models.settings import settings
 import asyncio
 
 logger = logging.getLogger(__name__)
@@ -26,8 +27,8 @@ def _get_state_manager():
 
 
 def _get_executor():
-    from backend.infrastructure.code_execution import CodeExecutor
-    return CodeExecutor
+    from backend.infrastructure.code_execution import CodeExecutionService
+    return CodeExecutionService
 
 
 def _get_llm_router():
@@ -36,8 +37,8 @@ def _get_llm_router():
 
 
 def _get_tool_registry():
-    from backend.infrastructure.tools import get_tool_registry
-    return get_tool_registry
+    from backend.infrastructure.tools import ToolManager
+    return ToolManager
 
 
 def _get_metrics_manager():
@@ -80,7 +81,7 @@ class LLMWrapper:
         loop = asyncio.get_running_loop()
         return await asyncio.wait_for(
             loop.run_in_executor(None, lambda: self.router.generate(prompt, model_type)),
-            timeout=120.0
+            timeout=float(settings.llm_timeout)
         )
 
     async def generate_structured(
@@ -193,7 +194,7 @@ async def execute_node(state: AgentState, executor) -> AgentState:
         loop = asyncio.get_running_loop()
         result = await asyncio.wait_for(
             loop.run_in_executor(None, lambda: executor.run(files)),
-            timeout=60.0
+            timeout=float(settings.executor_timeout)
         )
         state["execution_result"] = result
     except Exception as e:
@@ -373,7 +374,7 @@ class OrchestratorAsync:
         async for event in self.graph.astream(
             initial_state,
             config={"configurable": {"thread_id": session_id}},
-            stream_mode=StreamMode(stream_mode),
+            stream_mode="values",
         ):
             results.append(event)
 

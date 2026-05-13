@@ -26,9 +26,15 @@ export function SettingsView() {
   const [refreshError, setRefreshError] = useState<string | null>(null)
   const [modelDescription, setModelDescription] = useState<string | null>(null)
   const [isLoadingDescription, setIsLoadingDescription] = useState(false)
-  
+
   // Model search filter
   const [modelSearch, setModelSearch] = useState('')
+
+  // Timeout settings
+  const [llmTimeout, setLlmTimeout] = useState(300)
+  const [executorTimeout, setExecutorTimeout] = useState(60)
+  const [isSavingTimeout, setIsSavingTimeout] = useState(false)
+  const [timeoutMsg, setTimeoutMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   // Get selected model's metadata
   const selectedModelInfo = availableModels.find(m => m.name === selectedModel)
@@ -175,6 +181,42 @@ export function SettingsView() {
     setLocale(newLocale)
   }
 
+  // Load timeouts from API on mount
+  useEffect(() => {
+    fetch('/api/settings/timeouts')
+      .then(r => r.json())
+      .then(data => {
+        if (data.llm_timeout) setLlmTimeout(data.llm_timeout)
+        if (data.executor_timeout) setExecutorTimeout(data.executor_timeout)
+      })
+      .catch(() => {})
+  }, [])
+
+  const handleSaveTimeouts = async () => {
+    setIsSavingTimeout(true)
+    setTimeoutMsg(null)
+    try {
+      const res = await fetch('/api/settings/timeouts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ llm_timeout: llmTimeout, executor_timeout: executorTimeout }),
+      })
+      const data = await res.json()
+      if (data.status === 'ok') {
+        setLlmTimeout(data.llm_timeout)
+        setExecutorTimeout(data.executor_timeout)
+        setTimeoutMsg({ type: 'success', text: t.settings.savedSuccess })
+      } else {
+        setTimeoutMsg({ type: 'error', text: t.settings.saveFailed })
+      }
+    } catch {
+      setTimeoutMsg({ type: 'error', text: t.settings.saveFailed })
+    } finally {
+      setIsSavingTimeout(false)
+      setTimeout(() => setTimeoutMsg(null), 3000)
+    }
+  }
+
   const modelCount = availableModels.length
 
   // Helper for status color
@@ -246,6 +288,60 @@ export function SettingsView() {
             </div>
             <span className="text-emerald-400 text-lg">✓</span>
           </a>
+        </section>
+
+        {/* Timeout Settings - Compact Card */}
+        <section className="bg-[#0f172a] rounded-xl p-4 border border-slate-700/50 hover:border-violet-500/30 transition-all duration-200 hover:shadow-[0_0_20px_rgba(168,85,247,0.1)]">
+          <h3 className="text-[11px] uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
+            ⏱️ {t.settings.timeouts}
+          </h3>
+          <div className="space-y-3">
+            {/* LLM Timeout */}
+            <div>
+              <label className="text-[10px] text-slate-500 block mb-1">{t.settings.llmTimeout}</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={10}
+                  max={1800}
+                  value={llmTimeout}
+                  onChange={(e) => setLlmTimeout(Number(e.target.value))}
+                  className="w-full bg-[#172033] border border-slate-600 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-violet-500 transition-colors"
+                />
+                <span className="text-xs text-slate-400">{t.settings.seconds}</span>
+              </div>
+              <p className="text-[9px] text-slate-600 mt-0.5">{t.settings.llmTimeoutHelp}</p>
+            </div>
+            {/* Executor Timeout */}
+            <div>
+              <label className="text-[10px] text-slate-500 block mb-1">{t.settings.executorTimeout}</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={5}
+                  max={600}
+                  value={executorTimeout}
+                  onChange={(e) => setExecutorTimeout(Number(e.target.value))}
+                  className="w-full bg-[#172033] border border-slate-600 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-violet-500 transition-colors"
+                />
+                <span className="text-xs text-slate-400">{t.settings.seconds}</span>
+              </div>
+              <p className="text-[9px] text-slate-600 mt-0.5">{t.settings.executorTimeoutHelp}</p>
+            </div>
+          </div>
+          <button
+            onClick={handleSaveTimeouts}
+            disabled={isSavingTimeout}
+            className="mt-3 w-full px-3 py-1.5 bg-violet-600 hover:bg-violet-700 disabled:bg-violet-800/70 disabled:cursor-wait text-white text-xs font-medium rounded-lg transition-all flex items-center justify-center gap-1.5"
+          >
+            {isSavingTimeout ? '...' : '💾'}
+            {isSavingTimeout ? 'Saving...' : 'Save'}
+          </button>
+          {timeoutMsg && (
+            <p className={`mt-2 text-[10px] text-center rounded px-2 py-1 ${timeoutMsg.type === 'success' ? 'bg-emerald-900/50 text-emerald-400' : 'bg-red-900/50 text-red-400'}`}>
+              {timeoutMsg.text}
+            </p>
+          )}
         </section>
 
         {/* Model Count - Compact Card */}

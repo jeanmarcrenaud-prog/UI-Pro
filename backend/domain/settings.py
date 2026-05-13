@@ -83,7 +83,7 @@ LMSTUDIO_URL = os.getenv("LMSTUDIO_URL", "http://localhost:1234")
 MODEL_FAST = os.getenv("MODEL_FAST") or ""  # Required - no default
 MODEL_REASONING = os.getenv("MODEL_REASONING") or ""  # Required - no default
 MODEL_CODE = os.getenv("MODEL_CODE") or ""  # Required - no default
-LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", 120))  # 120s for reasoning/code models
+LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", 300))  # 300s for reasoning/code models
 
 # Executor Settings
 EXECUTOR_TIMEOUT = int(os.getenv("EXECUTOR_TIMEOUT", 60))
@@ -93,6 +93,39 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 # HF_TOKEN should be loaded carefully (see memory.py or .env)
 # DO NOT hardcode in this file!
+
+
+def _save_timeout_to_env(llm_timeout: int, executor_timeout: int) -> None:
+    """Persist timeout settings to .env file."""
+    env_file = PROJECT_ROOT / ".env"
+    try:
+        lines = []
+        if env_file.exists():
+            with open(env_file, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+
+        updated_keys = {"LLM_TIMEOUT": str(llm_timeout), "EXECUTOR_TIMEOUT": str(executor_timeout)}
+        found_keys = set()
+
+        new_lines = []
+        for line in lines:
+            stripped = line.strip()
+            key = stripped.split("=")[0] if "=" in stripped else ""
+            if key in updated_keys and key not in found_keys:
+                new_lines.append(f"{key}={updated_keys[key]}\n")
+                found_keys.add(key)
+            else:
+                new_lines.append(line)
+
+        for key, val in updated_keys.items():
+            if key not in found_keys:
+                new_lines.append(f"{key}={val}\n")
+
+        with open(env_file, "w", encoding="utf-8") as f:
+            f.writelines(new_lines)
+        logger.info(f"Saved timeouts to .env: LLM={llm_timeout}s, EXECUTOR={executor_timeout}s")
+    except Exception as e:
+        logger.warning(f"Could not save timeouts to .env: {e}")
 
 
 # ========================
@@ -210,6 +243,14 @@ class Settings:
         """Get workspace as string for external I/O."""
         return str(self.workspace)
     
+    def set_timout(self, llm_timeout: int, executor_timeout: int) -> None:
+        """Override timeouts at runtime (persisted to .env)."""
+        # Update in-memory values
+        self.llm_timeout = max(10, min(1800, llm_timeout))
+        self.executor_timeout = max(5, min(600, executor_timeout))
+        # Persist to .env
+        _save_timeout_to_env(self.llm_timeout, self.executor_timeout)
+
     def validate(self) -> tuple[bool, list[str]]:
         """Validate configuration. Returns (is_valid, list_of_errors)."""
         errors = []
