@@ -61,29 +61,42 @@ def _get_executor():
 
 
 def _get_checkpointer():
-    """Persistent checkpointing with proper fallback."""
+    """Persistent checkpointing with best practices (async-first)."""
     global _checkpointer
     if _checkpointer is not None:
         return _checkpointer
 
+    from pathlib import Path as _Path
+    db_path = _Path("data/checkpoints.db")
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
     try:
+        # Preferred: AsyncSqliteSaver for FastAPI/LangGraph async usage
+        try:
+            from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+            _checkpointer = AsyncSqliteSaver.from_conn_string(str(db_path))
+            logger.info(f"Async SQLite checkpointing enabled: {db_path}")
+            return _checkpointer
+        except ImportError:
+            pass
+
+        # Fallback to synchronous SqliteSaver
         from langgraph.checkpoint.sqlite import SqliteSaver
-        from pathlib import Path as _Path
-        db_path = _Path("data/checkpoints.db")
-        db_path.parent.mkdir(parents=True, exist_ok=True)
         _checkpointer = SqliteSaver.from_conn_string(str(db_path))
         logger.info(f"SQLite checkpointing enabled: {db_path}")
         return _checkpointer
+
     except ImportError:
         from langgraph.checkpoint.memory import MemorySaver
         _checkpointer = MemorySaver()
-        logger.warning("langgraph-checkpoint-sqlite not installed. Using in-memory checkpointing.")
-        logger.info("Install with: pip install langgraph-checkpoint-sqlite")
+        logger.warning("langgraph-checkpoint-sqlite not installed → Using in-memory checkpointing")
+        logger.info("Fix: pip install langgraph-checkpoint-sqlite")
         return _checkpointer
+
     except Exception as e:
         from langgraph.checkpoint.memory import MemorySaver
         _checkpointer = MemorySaver()
-        logger.error(f"Failed to initialize SQLite checkpointer: {e}")
+        logger.error(f"Failed to initialize checkpointing: {e}")
         return _checkpointer
 
 
