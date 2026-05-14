@@ -41,6 +41,21 @@ class CodeExecutionService:
         if not code or not code.strip():
             return ExecutionResult(success=False, error="Empty code provided")
 
+        # Security: block dangerous patterns
+        dangerous = [
+            "os.system", "os.popen", "subprocess", "open(",
+            "().__", "__import__", "eval(", "exec(",
+            "sys.", "os.environ", " pathlib",
+            ".read()", ".write()", "shutil", "socket.",
+        ]
+        code_flat = code.replace(" ", "").replace("\n", "")
+        for pattern in dangerous:
+            if pattern.replace(" ", "") in code_flat:
+                return ExecutionResult(
+                    success=False,
+                    error=f"Blocked dangerous pattern: {pattern.strip()}"
+                )
+
         review_result: Optional[ReviewResult] = None
 
         # === 1. STATIC CODE REVIEW ===
@@ -116,6 +131,12 @@ class CodeExecutionService:
 
         if not file_dict or not isinstance(file_dict, dict):
             return ExecutionResult(success=False, error="No files to execute")
+
+        # Path traversal defense
+        safe_chars = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-/")
+        for fname in file_dict:
+            if not all(c in safe_chars for c in fname) or ".." in fname or fname.startswith("/"):
+                return ExecutionResult(success=False, error=f"Invalid filename (path traversal): {fname}")
 
         results: list[Dict[str, Any]] = []
         all_success = True

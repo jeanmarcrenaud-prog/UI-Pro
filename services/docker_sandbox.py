@@ -1,15 +1,7 @@
-# services/docker_sandbox.py - Backward Compatibility Re-export
+# services/docker_sandbox.py - DEPRECATED
 #
-# DEPRECATED: Import from backend.infrastructure.docker_sandbox instead
-
-from backend.infrastructure.docker_sandbox import (
-    SandboxResult,
-    DockerSandbox,
-    get_docker_sandbox,
-)
-
-__all__ = [
-    "SandboxResult",
-    "DockerSandbox",
-    "get_docker_sandbox",
-]
+# Docker sandbox was removed. The current safe execution is via
+# backend.infrastructure.code_execution.CodeExecutionService
+#
+# This file is kept as a placeholder for backward compatibility.
+# Replace imports from here with CodeExecutionService if needed.
