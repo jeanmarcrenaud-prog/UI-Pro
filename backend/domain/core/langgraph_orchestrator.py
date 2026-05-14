@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 import re
+import threading
 from datetime import datetime
 from typing import Any, Literal, Optional
 
@@ -40,19 +41,24 @@ class AgentState(TypedDict, total=False):
 # ========================================
 
 _llm_router = None
-_executor = None
-_checkpointer = None
 
 
 def _get_llm_router():
+    """Lazy init of LLM router."""
     global _llm_router
     if _llm_router is None:
-        from backend.infrastructure.llm_router import get_llm_router
-        _llm_router = get_llm_router()
+        from backend.infrastructure.llm_router import LLMRouter
+        _llm_router = LLMRouter()
     return _llm_router
 
 
+_executor = None
+_checkpointer = None
+_checkpointer_ready = threading.Event()
+
+
 def _get_executor():
+    """Lazy init of code executor."""
     global _executor
     if _executor is None:
         from backend.infrastructure.code_execution import CodeExecutionService
@@ -61,8 +67,9 @@ def _get_executor():
 
 
 def _get_checkpointer():
-    """Persistent checkpointing with best practices (async-first)."""
-    global _checkpointer
+    """Persistent checkpointing with async SQLite (properly initialized)."""
+    global _checkpointer, _checkpointer_ready
+
     if _checkpointer is not None:
         return _checkpointer
 
@@ -70,38 +77,53 @@ def _get_checkpointer():
     db_path = _Path("data/checkpoints.db")
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Try async SqliteSaver with proper async context manager initialization
     try:
-        # Preferred: AsyncSqliteSaver for FastAPI/LangGraph async usage
-        try:
-            from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-            _checkpointer = AsyncSqliteSaver.from_conn_string(str(db_path))
-            logger.info(f"Async SQLite checkpointing enabled: {db_path}")
-            return _checkpointer
-        except ImportError:
-            pass
+        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+        import asyncio
 
-        # Fallback to synchronous SqliteSaver
-        from langgraph.checkpoint.sqlite import SqliteSaver
-        _checkpointer = SqliteSaver.from_conn_string(str(db_path))
-        logger.info(f"SQLite checkpointing enabled: {db_path}")
-        return _checkpointer
+        # Must be run in an async context - use a flag to ensure one-time init
+        def _init():
+            global _checkpointer, _checkpointer_ready
+            if _checkpointer is None:
+                try:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    saver = loop.run_until_complete(
+                        AsyncSqliteSaver.from_conn_string(str(db_path)).__aenter__()
+                    )
+                    _checkpointer = saver
+                    logger.info(f"Async SQLite checkpointing enabled: {db_path}")
+                except Exception as e:
+                    logger.warning(f"Async SQLite checkpointing failed: {e}")
+
+        t = threading.Thread(target=_init, daemon=True)
+        t.start()
+        t.join(timeout=5)
+
+        if _checkpointer is not None:
+            return _checkpointer
 
     except ImportError:
-        from langgraph.checkpoint.memory import MemorySaver
-        _checkpointer = MemorySaver()
-        logger.warning("langgraph-checkpoint-sqlite not installed → Using in-memory checkpointing")
-        logger.info("Fix: pip install langgraph-checkpoint-sqlite")
-        return _checkpointer
+        pass
+    except Exception:
+        pass
 
-    except Exception as e:
-        from langgraph.checkpoint.memory import MemorySaver
-        _checkpointer = MemorySaver()
-        logger.error(f"Failed to initialize checkpointing: {e}")
-        return _checkpointer
+    # Fallback: in-memory
+    from langgraph.checkpoint.memory import MemorySaver
+    _checkpointer = MemorySaver()
+    logger.warning("SQLite checkpointing unavailable -> Using in-memory checkpointing")
+    return _checkpointer
 
 
 def _emit_agent_step(phase: str, message: str):
+    """Emit agent step event, stripping non-ASCII for Windows console."""
     try:
+        # Strip non-ASCII chars for Windows console (cp1252)
+        try:
+            message.encode('cp1252').decode('cp1252')
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            message = message.encode('ascii', 'replace').decode('ascii')
         from backend.domain.core.events import emit_agent_step
         emit_agent_step(phase, message)
     except Exception:
@@ -294,14 +316,14 @@ def should_continue(state: AgentState) -> Literal["review", "end"]:
     max_attempts = state.get("max_attempts", 3)
 
     if review and review.get("passed", False):
-        _emit_agent_step("review_passed", "✅ Code review passed")
+        _emit_agent_step("review_passed", "[OK] Code review passed")
         return "end"
 
     if attempt >= max_attempts:
         _emit_agent_step("max_attempts_reached", f"Max attempts ({max_attempts}) reached")
         return "end"
 
-    _emit_agent_step("fixing", f"🔄 Auto-fix attempt {attempt + 1}/{max_attempts}")
+    _emit_agent_step("fixing", f"Auto-fix attempt {attempt + 1}/{max_attempts}")
     return "review"
 
 
@@ -363,7 +385,7 @@ async def run_agent(message: str, session_id: str = "default", max_attempts: int
         "metadata": {"start_time": datetime.now().isoformat()},
     }
 
-    _emit_agent_step("orchestrator", f"🚀 Starting session {session_id}")
+    _emit_agent_step("orchestrator", f"Starting session {session_id}")
 
     try:
         result = await app.ainvoke(
@@ -413,7 +435,7 @@ async def stream_agent(
     }
 
     _last_message_length[session_id] = 0
-    _emit_agent_step("orchestrator", f"🚀 Starting streaming session {session_id}")
+    _emit_agent_step("orchestrator", f"Starting streaming session {session_id}")
 
     try:
         yield "[STEP]orchestrator:Starting agent pipeline"
@@ -423,19 +445,21 @@ async def stream_agent(
             config={"configurable": {"thread_id": session_id}},
             stream_mode="values",
         ):
-            # STEP EVENTS
-            if "plan" in event and event.get("plan"):
-                yield f"[STEP]planning:Plan created"
-            if "code" in event and event.get("code"):
-                yield f"[STEP]coding:Code generation completed"
-            if "review" in event and event.get("review"):
-                review = event["review"]
-                status = "✅ PASSED" if review.get("passed") else "⚠️ Needs improvement"
+            # STEP EVENTS (detected in full state snapshots)
+            plan_val = event.get("plan")
+            if plan_val:
+                yield "[STEP]planning:Plan created"
+            code_val = event.get("code")
+            if code_val:
+                yield "[STEP]coding:Code generation completed"
+            review_val = event.get("review")
+            if review_val:
+                status = "PASSED" if review_val.get("passed") else "Needs improvement"
                 yield f"[STEP]reviewing:Review - {status}"
-            if "execution_result" in event:
-                result = event["execution_result"]
-                success = result.get("success", False) if isinstance(result, dict) else False
-                yield f"[STEP]executing:Execution {'✅ Success' if success else '❌ Failed'}"
+            exec_val = event.get("execution_result")
+            if exec_val:
+                success = exec_val.get("success", False) if isinstance(exec_val, dict) else False
+                yield f"[STEP]executing:Execution {'OK' if success else 'FAILED'}"
 
             # REAL TOKEN STREAMING from latest assistant message
             if "messages" in event and event["messages"]:
@@ -451,8 +475,9 @@ async def stream_agent(
                         _last_message_length[session_id] = len(content)
 
             # Tool events
-            if "execution_result" in event and isinstance(event["execution_result"], dict):
-                res = event["execution_result"]
+            exec_result = event.get("execution_result")
+            if exec_result and isinstance(exec_result, dict):
+                res = exec_result
                 if res.get("files_written"):
                     for f in res["files_written"]:
                         yield f"[TOOL]write_file:Created {f}"

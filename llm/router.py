@@ -7,6 +7,9 @@ Used by: orchestrator, code_review, streaming service
 from dataclasses import dataclass
 from typing import Literal, Optional, Iterator, AsyncGenerator
 import logging
+import asyncio
+import queue
+import threading
 
 from models.settings import settings
 
@@ -154,30 +157,32 @@ class OllamaClient:
         temperature: float = 0.7,
     ) -> AsyncGenerator[str, None]:
         """
-        Native async token streaming.
-        Wraps the synchronous stream() in a thread executor for non-blocking operation.
+        True async token streaming using a queue.
+        Runs the sync stream in a thread and yields tokens as they arrive.
         """
-        import asyncio
-
+        q: queue.Queue = queue.Queue()
         loop = asyncio.get_running_loop()
 
-        def _sync_stream():
+        def _sync_producer():
+            """Run sync stream in thread, push tokens to queue."""
             try:
-                return list(self.stream(prompt, model, system_prompt, temperature))
+                for token in self.stream(prompt, model, system_prompt, temperature):
+                    q.put_nowait((False, token))
             except Exception as e:
                 logger.error(f"[OllamaClient.astream] sync stream failed: {e}")
-                return [f"[Streaming Error: {e}]"]
+                q.put_nowait((True, f"[Streaming Error: {e}]"))
+            finally:
+                q.put_nowait((True, None))  # Sentinel: done=True, token=None
 
-        stream_future = loop.run_in_executor(None, _sync_stream)
-        wrapped = asyncio.wrap_future(stream_future)
+        t = threading.Thread(target=_sync_producer, daemon=True)
+        t.start()
 
-        try:
-            async for token in wrapped:
-                if token:
-                    yield token
-        except Exception as e:
-            logger.error(f"[OllamaClient.astream] error: {e}")
-            yield f"[Streaming Error: {e}]"
+        while True:
+            done, token = await loop.run_in_executor(None, q.get)
+            if done and token is None:
+                break
+            if token:
+                yield token
 
 
 # ==================== CONFIG ====================
