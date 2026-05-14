@@ -33,6 +33,7 @@ watchdog>=4.0.0
 langgraph>=0.2.0
 langgraph-checkpoint-sqlite>=0.1.0
 langchain-core>=0.3.0
+langsmith>=0.1.0
 
 ## Web & UI
 jinja2>=3.1.0
