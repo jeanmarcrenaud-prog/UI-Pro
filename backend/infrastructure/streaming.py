@@ -105,7 +105,7 @@ class StreamingService:
         self._active_streams[stream_id] = current if current else None
 
         try:
-            from backend.domain.core.langgraph_orchestrator import stream_agent
+            from backend.domain.core.langgraph import stream_agent
 
             # Step: Analyzing
             yield StreamChunk(
