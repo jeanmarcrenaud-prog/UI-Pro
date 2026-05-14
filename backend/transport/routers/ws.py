@@ -95,7 +95,7 @@ async def _stream_with_langgraph(task: str, session_id: str, max_attempts: int, 
     """Stream using LangGraph orchestrator with proper event formatting and user-selected model."""
     try:
         # Import here to avoid circular imports
-        from backend.domain.core.langgraph_orchestrator import stream_agent as langgraph_stream
+        from backend.domain.core.langgraph import stream_agent as langgraph_stream
 
         async for event in langgraph_stream(
             message=task,

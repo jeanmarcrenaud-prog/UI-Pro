@@ -83,6 +83,16 @@ filterwarnings = [
     "ignore::PendingDeprecationWarning",
 ]
 
+[tool.pyright]
+include = ["backend/**"]
+exclude = ["workspace/**", "**/__pycache__/**", ".venv/**"]
+typeCheckingMode = "basic"
+reportMissingImports = false
+reportOptionalMemberAccess = false
+reportTypedDictNotRequiredAccess = false
+reportGeneralTypeIssues = false
+pythonVersion = "3.10"
+
 [tool.coverage.run]
 branch = true
 source = ["ui-pro"]
