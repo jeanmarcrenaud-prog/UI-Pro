@@ -183,19 +183,34 @@ class LLMWrapper:
 async def analyzing_node(state: AgentState):
     """Node with streaming"""
     _emit_agent_step("analyzing", "Analyse des exigences...")
-    last_message = state["messages"][-1].get("content", "")
 
-    # Get user-selected model from metadata
     metadata = state.get("metadata", {})
     user_model = metadata.get("model", "")
     user_provider = metadata.get("provider", "ollama")
 
     llm = LLMWrapper(_get_llm_router(), user_model=user_model, user_provider=user_provider)
-    prompt = f"Analyse cette requête utilisateur et identifie le type de tâche:\n\n{last_message}"
+    messages = state.get("messages", [])
+    user_message = messages[0].get("content", "") if messages else ""
+
+    prompt = (
+        f"User request: {user_message}\n\n"
+        "Classify the task type and respond with ONLY valid JSON:\n"
+        '{"task_type": "code|reasoning|general", "summary": "brief description"}\n'
+        "No markdown, no explanation - only JSON."
+    )
 
     full_response = ""
     async for token in llm.stream_generate(prompt, model_type="reasoning", temperature=0.3):
         full_response += token
+
+    # Extract JSON
+    response_clean = full_response.strip()
+    if response_clean.startswith("```"):
+        lines = response_clean.split("\n")
+        response_clean = "\n".join(lines[1:] if lines[0].startswith("```") else lines)
+        if response_clean.endswith("```"):
+            response_clean = response_clean[:-3]
+        response_clean = response_clean.strip()
 
     state["messages"].append({"role": "assistant", "content": full_response})
     return state
@@ -203,54 +218,179 @@ async def analyzing_node(state: AgentState):
 
 async def planning_node(state: AgentState):
     """Node with streaming"""
-    _emit_agent_step("planning", "Création du plan d'implémentation...")
+    _emit_agent_step("planning", "Creation du plan d'implementation...")
 
     metadata = state.get("metadata", {})
     user_model = metadata.get("model", "")
     user_provider = metadata.get("provider", "ollama")
 
     llm = LLMWrapper(_get_llm_router(), user_model=user_model, user_provider=user_provider)
-    prompt = "Crée un plan détaillé pour cette tâche. Inclut: étapes, fichiers à créer, approche technique."
+    messages = state.get("messages", [])
+    user_message = messages[0].get("content", "") if messages else ""
+
+    # Force JSON-only output - no commentary, no markdown
+    prompt = (
+        f"User request: {user_message}\n\n"
+        "Create a detailed implementation plan as VALID JSON ONLY. "
+        "No markdown, no code blocks, no explanations - ONLY raw JSON.\n"
+        'Structure: {"steps": [{"description": "...", "file": "...", "approach": "..."}], "files": {"filename.py": "brief description"}}\n'
+        "Respond with ONLY the JSON object."
+    )
 
     full_response = ""
     async for token in llm.stream_generate(prompt, model_type="reasoning", temperature=0.3):
         full_response += token
 
-    try:
-        plan = json.loads(full_response)
-    except:
-        plan = {"raw": full_response}
+    # Extract JSON from response (strip markdown code blocks if present)
+    response_clean = full_response.strip()
+    if response_clean.startswith("```"):
+        # Remove markdown code block syntax
+        lines = response_clean.split("\n")
+        response_clean = "\n".join(lines[1:] if lines[0].startswith("```") else lines)
+        if response_clean.endswith("```"):
+            response_clean = response_clean[:-3]
+        response_clean = response_clean.strip()
 
-    state["plan"] = plan
-    state["messages"].append({"role": "assistant", "content": str(plan)})
+    try:
+        plan = json.loads(response_clean)
+    except json.JSONDecodeError:
+        # Try to find JSON object in the text
+        import re
+        json_match = re.search(r'\{[\s\S]*\}', response_clean)
+        if json_match:
+            try:
+                plan = json.loads(json_match.group(0))
+            except:
+                plan = {"raw": response_clean, "steps": [], "files": {}}
+        else:
+            plan = {"raw": response_clean, "steps": [], "files": {}}
+
+    # Clean plan - remove thinking/raw content that would pollute the prompt
+    plan_clean = {k: v for k, v in plan.items() if k not in ("raw", "thinking", "analysis")}
+    state["plan"] = plan_clean
+    state["messages"].append({"role": "assistant", "content": str(plan_clean)})
     return state
 
 
 async def coding_node(state: AgentState):
     """Most important node - heavy streaming"""
-    _emit_agent_step("coding", "Génération du code...")
+    _emit_agent_step("coding", "Generation du code...")
 
     metadata = state.get("metadata", {})
     user_model = metadata.get("model", "")
     user_provider = metadata.get("provider", "ollama")
 
     llm = LLMWrapper(_get_llm_router(), user_model=user_model, user_provider=user_provider)
+    messages = state.get("messages", [])
+    user_message = messages[0].get("content", "") if messages else ""
     plan = state.get("plan", {})
+    plan_clean = {k: v for k, v in plan.items() if k not in ("raw", "thinking", "analysis")}
 
-    prompt = f"""Implémente le plan suivant de façon complète et fonctionnelle:
-
-{json.dumps(plan, ensure_ascii=False)}
-
-Retourne uniquement un JSON valide avec la structure: {{"files": {{"nom_fichier.py": "code complet"}}}}"""
+    prompt = (
+        f"User request: {user_message}\n\n"
+        f"Implementation plan: {json.dumps(plan_clean, ensure_ascii=False)}\n\n"
+        "IMPORTANT: Return ONLY valid JSON. No markdown, no explanations.\n"
+        'Format: {"files": {"filename.py": "python code here - NO comments, NO docstrings, ONLY executable code"}}\n'
+        "Write complete, working Python code in the files. No prose, no comments, no markdown."
+    )
 
     full_response = ""
-    async for token in llm.stream_generate(prompt, model_type="fast", temperature=0.7):
+    async for token in llm.stream_generate(prompt, model_type="fast", temperature=0.3):
         full_response += token
 
-    try:
-        code_dict = json.loads(full_response)
-    except:
-        code_dict = {"files": {"main.py": full_response}}
+    import re
+    import textwrap
+
+    response_clean = full_response.strip()
+    response_clean = re.sub(r'^```(?:json|python)?\s*', '', response_clean, flags=re.MULTILINE)
+    response_clean = re.sub(r'\s*```$', '', response_clean)
+    response_clean = response_clean.strip()
+
+    code_dict = None
+
+    # Strategy 1: Try direct JSON parse
+    if code_dict is None:
+        try:
+            candidate = json.loads(response_clean)
+            if isinstance(candidate, dict) and "files" in candidate:
+                for fname, fcontent in candidate["files"].items():
+                    if not isinstance(fcontent, str):
+                        raise ValueError(f"File {fname} content is not a string")
+                code_dict = candidate
+        except (json.JSONDecodeError, ValueError, TypeError, KeyError):
+            pass
+
+    # Strategy 2: Find JSON object with "files" key
+    if code_dict is None:
+        json_matches = re.findall(r'\{[\s\S]*?\}', response_clean)
+        for match in json_matches:
+            try:
+                candidate = json.loads(match)
+                if isinstance(candidate, dict) and "files" in candidate:
+                    files = candidate["files"]
+                    if isinstance(files, dict) and all(isinstance(v, str) for v in files.values()):
+                        valid_files = {}
+                        for fname, fcontent in files.items():
+                            try:
+                                compile(fcontent, fname, 'exec')
+                                valid_files[fname] = fcontent
+                            except SyntaxError:
+                                try:
+                                    fixed = textwrap.dedent(fcontent).strip()
+                                    compile(fixed, fname, 'exec')
+                                    valid_files[fname] = fixed + '\n'
+                                except SyntaxError:
+                                    pass
+                        if valid_files:
+                            code_dict = {"files": valid_files}
+                            break
+            except (json.JSONDecodeError, TypeError, KeyError):
+                continue
+
+    # Strategy 3: Extract python code blocks and normalize
+    if code_dict is None:
+        py_blocks = re.findall(r'```python\s*([\s\S]*?)```', response_clean)
+        if py_blocks:
+            files = {}
+            for i, block in enumerate(py_blocks):
+                block = block.strip()
+                if not block:
+                    continue
+                lines = block.expandtabs(4).split('\n')
+                non_empty = [l for l in lines if l.strip()]
+                if not non_empty:
+                    continue
+                min_indent = min(len(l) - len(l.lstrip()) for l in non_empty)
+                fixed_lines = []
+                for line in lines:
+                    if line.strip():
+                        fixed_lines.append(line[min_indent:])
+                    else:
+                        fixed_lines.append('')
+                normalized = '\n'.join(fixed_lines).strip()
+                try:
+                    compile(normalized, f'file_{i+1}.py', 'exec')
+                except SyntaxError:
+                    try:
+                        normalized = textwrap.dedent(normalized).strip()
+                        compile(normalized, f'file_{i+1}.py', 'exec')
+                    except SyntaxError:
+                        normalized = textwrap.dedent(normalized).strip()
+                if normalized.strip():
+                    files[f"file_{i+1}.py"] = normalized + '\n'
+            if files:
+                code_dict = {"files": files}
+
+    # Strategy 4: Direct Python code detection
+    if code_dict is None:
+        py_start = re.search(r'^def\s+\w+|^\s*def\s+\w+|^class\s+\w+|^import\s+|^from\s+',
+                            response_clean, re.MULTILINE)
+        if py_start:
+            code_dict = {"files": {"main.py": response_clean.strip()}}
+
+    # Fallback
+    if code_dict is None:
+        code_dict = {"files": {"main.py": response_clean}}
 
     state["code"] = code_dict
     return state
