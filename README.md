@@ -15,10 +15,12 @@
 
 - **Beautiful modern UI** (ChatGPT-style) with real-time streaming
 - **Visible Agent** with live step-by-step progress
+- **LangGraph Orchestrator** with persistent checkpointing
 - **Multi-backend LLM support** (Ollama, LM Studio, llama.cpp, Lemonade)
-- **Tool calling** & function execution
+- **Tool calling** & safe code execution
 - **Vector memory** with FAISS
-- **Event-driven architecture** for smooth real-time experience
+- **Distributed tracing** via LangSmith
+- **Configurable timeouts** via Settings UI
 
 ## 🏗️ Architecture
 
@@ -29,7 +31,7 @@
             │
             ▼ WebSocket / SSE
 ┌──────────▼──────────┐
-│   FastAPI (8000)    │ ← Orchestrator + API
+│   FastAPI (8000)    │ ← LangGraph Orchestrator + API
 └──────────┬──────────┘
             │
             ▼
@@ -40,20 +42,22 @@
 
 ## ✨ Key Features
 
-- **Real-time Token Streaming** with live token/s graph
-- **Visible Agent** with animated step progress
+- **Real-time Token Streaming** — token-by-token with live tokens/s graph
+- **Visible Agent** — animated step progress (Analyze → Plan → Code → Review → Execute)
+- **Persistent Checkpointing** — SQLite-backed session resumption across restarts
 - **Multi-Model Discovery** — automatic detection of available models
-- **Tool Calling** with execution visibility
-- **Persistent Memory** via FAISS + rich metadata
-- **Safe Code Execution** with sandboxing & review
-- **i18n Support** (English + French)
-- **Settings Dashboard** with live backend metrics
+- **Configurable Timeouts** — LLM and Executor timeouts via Settings UI
+- **Safe Code Execution** — sandboxed execution with static analysis
+- **Distributed Tracing** — LangSmith integration for debugging and monitoring
+- **i18n Support** — English + French
+- **Settings Dashboard** — live backend metrics, model selection, timeout config
 
-### UI Highlights
-- Elegant dark theme with smooth animations
-- Contextual message actions (Regenerate, Continue, Copy)
-- Live agent steps with progress tracking
-- Responsive and performant
+### Agent Pipeline
+1. **Analyzing** — classifies task and selects strategy
+2. **Planning** — creates implementation roadmap
+3. **Coding** — generates code via LLM with token streaming
+4. **Reviewing** — static analysis and security check
+5. **Executing** — runs generated code in sandbox with retry loop
 
 ## 🛠️ Tech Stack
 
@@ -61,10 +65,12 @@
 |----------------|-------------------------------------------------|
 | **Frontend**   | Next.js 16, React 18, Tailwind, Framer Motion, Zustand |
 | **Backend**    | FastAPI, Python 3.10+, Pydantic                 |
-| **LLM**        | Ollama, LM Studio, llama.cpp, Lemonade          |
+| **Orchestration** | LangGraph with AsyncSqliteSaver checkpointer  |
+| **LLM**        | Ollama, LM Studio, llama.cpp, Lemonade         |
 | **Memory**     | FAISS + SentenceTransformers                    |
 | **Events**     | Thread-safe Pub/Sub                             |
 | **Streaming**  | WebSocket + SSE                                 |
+| **Tracing**    | LangSmith (optional)                             |
 
 ## 🚀 Quick Start
 
@@ -108,6 +114,17 @@ python run.py --all
 
 Open http://localhost:3000
 
+### Enable LangSmith Tracing (Optional)
+
+1. Get your API key at https://smith.langchain.com
+2. Edit `.env` and uncomment the LangSmith section:
+```env
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=lsv2_your_key_here
+LANGSMITH_PROJECT=ui-pro-production
+```
+3. Restart the server
+
 ## 📋 Commands
 
 | Command               | Description                    |
@@ -122,60 +139,78 @@ Open http://localhost:3000
 
 ## 📁 Project Structure
 
+> **Note**: `backend/` is the source of truth. Legacy folders (`core/`, `services/`, `api/`, `views/`) are re-exports for backward compatibility.
+
 ```
 ui-pro/
 ├── run.py                    # Main launcher
 ├── setup.py                  # Automated setup
 ├── requirements.txt
 ├── .env.example
+├── data/                     # Checkpoint DB (gitignored)
+│   └── checkpoints.db
 │
-├── core/                     # Core logic
-│   ├── executor.py          # Safe code executor
-│   ├── state_manager.py    # State management
-│   ├── memory.py            # FAISS memory
-│   └── events.py           # Thread-safe events
-│
-├── services/                 # Service layer
-│   ├── llm_router.py       # LLM routing
-│   ├── model_service.py    # Model management
-│   ├── model_discovery.py  # Multi-backend discovery
-│   ├── streaming.py        # Streaming service
-│   └── tools.py            # Tool registry
-│
-├── controllers/              # Business logic
-│   ├── orchestrator.py     # Pipeline orchestrator
-│   └── websocket.py        # WebSocket handling
+├── backend/                  # SOURCE OF TRUTH
+│   ├── domain/
+│   │   └── core/            # Business logic
+│   │       ├── langgraph_orchestrator.py  # Agent pipeline
+│   │       ├── orchestrator_async.py      # Legacy orchestrator
+│   │       ├── code_review.py            # Static analysis
+│   │       ├── events.py                 # Event bus
+│   │       └── settings.py               # Configuration
+│   ├── infrastructure/       # Services
+│   │   ├── llm_router.py    # LLM routing + streaming
+│   │   ├── streaming.py     # SSE/WebSocket streaming
+│   │   ├── code_execution.py # Sandbox execution
+│   │   ├── model_service.py
+│   │   └── memory.py        # FAISS vector store
+│   └── transport/            # API layer
+│       ├── views_api.py     # FastAPI app
+│       ├── dashboard.py     # Gradio dashboard
+│       └── routers/         # API endpoints
+│           ├── ws.py         # WebSocket
+│           ├── stream.py     # SSE
+│           ├── chat.py       # REST fallback
+│           └── health.py     # Health + settings
 │
 ├── llm/                      # LLM clients
-│   └── router.py           # OllamaClient
+│   └── router.py           # OllamaClient (with astream)
 │
-├── views/                    # API views
-│   └── api.py              # FastAPI endpoints
-│
-├── models/                   # Data models
-│   └── settings.py         # Configuration
+├── models/                   # Data models (re-exports backend/)
+│   └── settings.py
 │
 └── ui-pro-ui/                # Next.js frontend
-    ├── app/
-    │   ├── page.tsx         # Main page
-    │   └── layout.tsx       # Layout
     ├── components/
-    │   ├── chat/            # Chat components
-    │   ├── ui/              # UI components
-    │   └── settings/        # Settings components
-    ├── lib/
-    │   ├── stores/          # Zustand stores
-    │   ├── i18n.ts          # Internationalization
-    │   └── events.ts       # Event system
-    └── services/            # API services
+    │   ├── SettingsView.tsx  # Model selection + timeouts
+    │   ├── SystemStats.tsx   # Live metrics
+    │   └── ...
+    ├── services/
+    │   └── modelDiscovery.ts # Backend model discovery
+    └── lib/
+        ├── i18n.ts          # EN + FR translations
+        └── stores/         # Zustand state
 ```
+
+## ⚙️ Configuration
+
+All settings are configurable via the **Settings UI** or `.env`:
+
+| Setting              | Default | Description |
+|----------------------|---------|-------------|
+| `OLLAMA_URL`         | localhost:11434 | Ollama server URL |
+| `MODEL_FAST`         | qwen3.5:9b | Fast model (coding) |
+| `MODEL_REASONING`    | qwen3.5:9b | Reasoning model (planning) |
+| `LLM_TIMEOUT`       | 300s | Max time for LLM responses |
+| `EXECUTOR_TIMEOUT`   | 60s | Max time for code execution |
+| `LANGSMITH_API_KEY`  | (none) | Enable LangSmith tracing |
 
 ## 🔐 Security
 
-- Sandboxed code execution with review
+- Sandboxed code execution with static review
 - Input sanitization
-- Timeout protection
+- Configurable timeout protection
 - No secrets committed (`.env` is gitignored)
+- Restricted `exec()` globals in sandbox
 
 ## 📝 License
 
