@@ -41,6 +41,7 @@ class AgentState(TypedDict, total=False):
 
 _llm_router = None
 _executor = None
+_checkpointer = None
 
 
 def _get_llm_router():
@@ -57,6 +58,23 @@ def _get_executor():
         from backend.infrastructure.code_execution import CodeExecutionService
         _executor = CodeExecutionService()
     return _executor
+
+
+def _get_checkpointer():
+    """Persistent checkpointing (SQLite by default, memory fallback)."""
+    global _checkpointer
+    if _checkpointer is None:
+        try:
+            from langgraph.checkpoint.sqlite import SqliteSaver
+            from pathlib import Path as _Path
+            db_path = _Path("data/checkpoints.db")
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+            _checkpointer = SqliteSaver.from_conn_string(str(db_path))
+            logger.info(f"Persistent checkpointing enabled: {db_path}")
+        except Exception as e:
+            from langgraph.checkpoint.memory import MemorySaver
+            _checkpointer = MemorySaver()
+            logger.warning(f"SqliteSaver unavailable ({e}), using in-memory checkpointer")
 
 
 def _emit_agent_step(phase: str, message: str):
@@ -293,12 +311,8 @@ def build_graph():
         {"review": "review", "end": END},
     )
 
-    try:
-        from langgraph.checkpoint.memory import MemorySaver
-        return workflow.compile(checkpointer=MemorySaver())
-    except ImportError:
-        logger.warning("LangGraph checkpointer not available")
-        return workflow.compile()
+    checkpointer = _get_checkpointer()
+    return workflow.compile(checkpointer=checkpointer)
 
 
 # ========================================
