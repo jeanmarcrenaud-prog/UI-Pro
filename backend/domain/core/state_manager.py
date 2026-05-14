@@ -1,9 +1,9 @@
 # **State Manager** - Global State Management
 #
-# ✅ State object
-# ✅ Full trace
-# ✅ Debug possible
-# ✅ Crash recovery
+# * State object
+# * Full trace
+# * Debug possible
+# * Crash recovery
 
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
@@ -112,9 +112,9 @@ class StateManager:
     """
     Singleton manager pour State.
     
-    ✅ Accès lazy
-    ✅ Thread-safe (simplifié)
-    ✅ Persistence optionnel
+    * Accès lazy
+    * Thread-safe (simplifié)
+    * Persistence optionnel
     
     Usage:
       state_mgr = StateManager()

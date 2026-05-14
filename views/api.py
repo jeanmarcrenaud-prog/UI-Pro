@@ -207,8 +207,8 @@ def home(request: Request):
 <head><title>UI Pro</title></head>
 <body>
     <h1>UI Pro - LLM Orchestration Platform</h1>
-    <p>🚀 Agent Orchestration System Ready</p>
-    <p>Status: <strong>✅ Running</strong></p>
+    <p>[START] Agent Orchestration System Ready</p>
+    <p>Status: <strong>* Running</strong></p>
     <p>Models: <code>{model_fast}</code> + <code>{model_reasoning}</code></p>
     <p>⚡ Powered by <strong>Ollama</strong> + <strong>FastAPI</strong></p>
     

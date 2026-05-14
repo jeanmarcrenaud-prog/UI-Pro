@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-🚀 UI-Pro Launcher
+[START] UI-Pro Launcher
 
 Entry point for UI-Pro application.
 Handles:
@@ -59,7 +59,7 @@ def print_header(text: str):
 
 def print_hint(text: str):
     """Print hint/suggestion."""
-    print(f"{Colors.CYAN}💡 {text}{Colors.RESET}")
+    print(f"{Colors.CYAN}[IDEA] {text}{Colors.RESET}")
 
 
 def print_success(text: str):

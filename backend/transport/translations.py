@@ -58,7 +58,7 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "memory_search": "Requête de recherche",
         "memory_placeholder": "Rechercher dans les tâches précédentes...",
         "memory_results": "Résultats",
-        "memory_not_available": "⚠️ Mémoire non disponible (FAISS non installé)",
+        "memory_not_available": "⚠ Mémoire non disponible (FAISS non installé)",
         
         # Metrics
         "metrics_title": "Métriques d'exécution",
@@ -67,7 +67,7 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "metrics_avg": "Durée moyenne (ms)",
         "metrics_refresh": "Actualiser les métriques",
         "metrics_recent": "Exécutions récentes",
-        "metrics_not_available": "⚠️ Métriques non disponibles",
+        "metrics_not_available": "⚠ Métriques non disponibles",
         
         # Settings/Language
         "language": "Langue",
@@ -123,7 +123,7 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "memory_search": "Search query",
         "memory_placeholder": "Ask about previous tasks...",
         "memory_results": "Results",
-        "memory_not_available": "⚠️ Memory not available (FAISS not installed)",
+        "memory_not_available": "⚠ Memory not available (FAISS not installed)",
         
         # Metrics
         "metrics_title": "Execution Metrics",
@@ -132,7 +132,7 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "metrics_avg": "Avg Duration (ms)",
         "metrics_refresh": "Refresh Metrics",
         "metrics_recent": "Recent Executions",
-        "metrics_not_available": "⚠️ Metrics not available",
+        "metrics_not_available": "⚠ Metrics not available",
         
         # Settings/Language
         "language": "Language",

@@ -140,7 +140,7 @@ def _build_main_ui():
                         mem_q = gr.Textbox(label=t.get("memory_search", "Search query"), placeholder=t.get("memory_placeholder", "Ask about previous tasks..."))
                         mem_res = gr.Textbox(label=t.get("memory_results", "Results"), value="", lines=6, interactive=False)
                     else:
-                        gr.Markdown(t.get("memory_not_available", "⚠️ Memory not available"))
+                        gr.Markdown(t.get("memory_not_available", "⚠ Memory not available"))
                 
                 # Section: Metrics
                 with gr.Column(visible=False, elem_id="section-metrics"):
@@ -179,7 +179,7 @@ def _build_main_ui():
                         
                         refresh_metrics_btn.click(_refresh_metrics, outputs=[metrics_success_rate, metrics_total, metrics_avg_time, metrics_recent])
                     else:
-                        gr.Markdown("⚠️ Metrics not available")
+                        gr.Markdown("⚠ Metrics not available")
 
         # Submit handler - runs real pipeline
         def _on_submit(text):
@@ -227,7 +227,7 @@ def _build_main_ui():
                 
                 if "architecture" in result:
                     output_lines.append("")
-                    output_lines.append("🏗️ **Architecture**:")
+                    output_lines.append("🏗 **Architecture**:")
                     output_lines.append(json.dumps(result.get("architecture", {}), indent=2))
                 
                 if "code" in result:
@@ -353,7 +353,7 @@ def create_dashboard():
 
 
 def run():
-    print("🚀 Starting UI-Pro Dashboard on http://localhost:7860")
+    print("[START] Starting UI-Pro Dashboard on http://localhost:7860")
     print("📋 Pipeline: Planner → Architect → Coder → Reviewer → Executor (auto-fix)")
     
     # Get CSS content
