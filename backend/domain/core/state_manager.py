@@ -122,7 +122,7 @@ class StateManager:
       state.task = "My task"
     """
     
-    def __init__(self, auto_save: bool = False, save_dir: str = None):
+    def __init__(self, auto_save: bool = False, save_dir: Optional[str] = None):
         self.auto_save = auto_save
         self.save_dir = save_dir or "workspace"
         self._states: Dict[str, State] = {}
@@ -152,7 +152,7 @@ class StateManager:
         
         return state
     
-    def get(self, task_id: str = None) -> Optional[State]:
+    def get(self, task_id: Optional[str] = None) -> Optional[State]:
         """
         Récupérer existing state.
         
@@ -204,7 +204,7 @@ def init_state(task: str = "My task") -> State:
     return state
 
 
-def save_state(state: State, filename: str = None):
+def save_state(state: State, filename: Optional[str] = None):
     """Sauvegarder state dans file"""
     state.save_json(filename or f"{state.task_id}.json")
 
