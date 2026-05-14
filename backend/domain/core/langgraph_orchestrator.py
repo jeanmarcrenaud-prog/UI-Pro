@@ -61,20 +61,30 @@ def _get_executor():
 
 
 def _get_checkpointer():
-    """Persistent checkpointing (SQLite by default, memory fallback)."""
+    """Persistent checkpointing with proper fallback."""
     global _checkpointer
-    if _checkpointer is None:
-        try:
-            from langgraph.checkpoint.sqlite import SqliteSaver
-            from pathlib import Path as _Path
-            db_path = _Path("data/checkpoints.db")
-            db_path.parent.mkdir(parents=True, exist_ok=True)
-            _checkpointer = SqliteSaver.from_conn_string(str(db_path))
-            logger.info(f"Persistent checkpointing enabled: {db_path}")
-        except Exception as e:
-            from langgraph.checkpoint.memory import MemorySaver
-            _checkpointer = MemorySaver()
-            logger.warning(f"SqliteSaver unavailable ({e}), using in-memory checkpointer")
+    if _checkpointer is not None:
+        return _checkpointer
+
+    try:
+        from langgraph.checkpoint.sqlite import SqliteSaver
+        from pathlib import Path as _Path
+        db_path = _Path("data/checkpoints.db")
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        _checkpointer = SqliteSaver.from_conn_string(str(db_path))
+        logger.info(f"SQLite checkpointing enabled: {db_path}")
+        return _checkpointer
+    except ImportError:
+        from langgraph.checkpoint.memory import MemorySaver
+        _checkpointer = MemorySaver()
+        logger.warning("langgraph-checkpoint-sqlite not installed. Using in-memory checkpointing.")
+        logger.info("Install with: pip install langgraph-checkpoint-sqlite")
+        return _checkpointer
+    except Exception as e:
+        from langgraph.checkpoint.memory import MemorySaver
+        _checkpointer = MemorySaver()
+        logger.error(f"Failed to initialize SQLite checkpointer: {e}")
+        return _checkpointer
 
 
 def _emit_agent_step(phase: str, message: str):
