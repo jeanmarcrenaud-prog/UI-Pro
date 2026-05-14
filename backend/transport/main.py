@@ -13,9 +13,9 @@ logger = logging.getLogger("api")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("🚀 UI-Pro API starting...")
+    logger.info("[START] UI-Pro API starting...")
     yield
-    logger.info("👋 UI-Pro API shutting down...")
+    logger.info("[STOP] UI-Pro API shutting down...")
 
 
 app = FastAPI(

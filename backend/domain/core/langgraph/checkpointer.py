@@ -36,7 +36,7 @@ def _get_checkpointer():
                         AsyncSqliteSaver.from_conn_string(str(db_path)).__aenter__()
                     )
                     _checkpointer = saver
-                    logger.info(f"Async SQLite checkpointing enabled: {db_path}")
+                    logger.info(f"Async SQLite checkpointing: {db_path}")
                 except Exception as e:
                     logger.warning(f"Async SQLite checkpointing failed: {e}")
 
@@ -55,5 +55,5 @@ def _get_checkpointer():
     # Fallback: in-memory
     from langgraph.checkpoint.memory import MemorySaver
     _checkpointer = MemorySaver()
-    logger.warning("SQLite checkpointing unavailable -> Using in-memory checkpointing")
+    logger.warning("SQLite checkpointing unavailable - using in-memory")
     return _checkpointer
