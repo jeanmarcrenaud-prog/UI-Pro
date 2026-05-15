@@ -168,8 +168,8 @@ export const useChat = () => {
 
   // ===================== MESSAGE LISTENER =====================
   useEffect(() => {
-    const unsubscribe = chatService.onMessage((msg: any) => {
-      console.log('[useChat] Received message:', msg.type, msg.step_id, msg.status)
+    const unsubscribeMsg = chatService.onMessage((msg: any) => {
+      console.log('[useChat] Received message:', msg.type, msg.step_id, 'isActive:', isStreamActiveRef.current)
       if (!isStreamActiveRef.current) {
         console.log('[useChat] Stream not active, ignoring')
         return
@@ -218,7 +218,7 @@ export const useChat = () => {
       }
     })
 
-    return unsubscribe
+    return unsubscribeMsg
   }, [
     updateMessageById,
     updateLastChunkIndex,
@@ -227,6 +227,22 @@ export const useChat = () => {
     updateStep,
     resetCurrentMessage,
     trimMessageHistory,
+  ])
+
+  // ===================== GLOBAL EVENT LISTENER =====================
+  // Listen to global agentStep events (emitted by ChatServiceAdapter)
+  useEffect(() => {
+    const unsubscribeEvents = events.on('agentStep', (data: { stepId: string; status: string }) => {
+      console.log('[useChat] Global agentStep event:', data.stepId, data.status, 'isActive:', isStreamActiveRef.current)
+      if (!isStreamActiveRef.current) {
+        console.log('[useChat] Stream not active, ignoring event')
+        return
+      }
+      updateStep(data.stepId, data.status === 'done' ? 'done' : 'active')
+    })
+
+    return unsubscribeEvents
+  }, [updateStep])
     initialSteps,
   ])
 
