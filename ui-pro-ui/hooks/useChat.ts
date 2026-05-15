@@ -169,10 +169,15 @@ export const useChat = () => {
   // ===================== MESSAGE LISTENER =====================
   useEffect(() => {
     const unsubscribe = chatService.onMessage((msg: any) => {
-      if (!isStreamActiveRef.current) return
+      console.log('[useChat] Received message:', msg.type, msg.step_id, msg.status)
+      if (!isStreamActiveRef.current) {
+        console.log('[useChat] Stream not active, ignoring')
+        return
+      }
 
       // Step updates
       if (msg.type === 'step' && msg.step_id) {
+        console.log('[useChat] Updating step:', msg.step_id, msg.status)
         updateStep(msg.step_id, msg.status === 'done' ? 'done' : 'active')
         return
       }
