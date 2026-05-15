@@ -1,24 +1,25 @@
 """
 backend/infrastructure/streaming.py - Streaming Service (LangGraph Version)
-Intègre l'OrchestratorAsync basé sur LangGraph pour l'orchestration agentique.
+Streaming service robuste avec protections async, backpressure,
+heartbeat websocket et gestion propre des cancellations.
 """
 
-from typing import AsyncIterator, Dict, Any, Optional
-import json
+from __future__ import annotations
+
 import asyncio
 import logging
-import uuid
 import time
+import uuid
+from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from typing import Any, AsyncIterator, Dict, Optional
 
-from fastapi import WebSocket
+from fastapi import WebSocket, WebSocketDisconnect
 
 logger = logging.getLogger(__name__)
 
-
-# ====================== Enums & Dataclasses ======================
 
 class StreamStatus(Enum):
     STARTING = "starting"
@@ -28,9 +29,8 @@ class StreamStatus(Enum):
     CANCELLED = "cancelled"
 
 
-@dataclass
+@dataclass(slots=True)
 class StreamChunk:
-    """Standardized streaming chunk for frontend consumption."""
     text: str
     status: StreamStatus
     stream_id: str
@@ -38,243 +38,152 @@ class StreamChunk:
     tokens_generated: int = 0
     latency_ms: float = 0.0
     error: Optional[str] = None
-    step_id: Optional[str] = None
-    step_status: Optional[str] = None
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=datetime.utcnow)
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to frontend-compatible format (WebSocket / SSE)"""
-        type_map = {
-            StreamStatus.STARTING: "step",
-            StreamStatus.GENERATING: "token",
-            StreamStatus.COMPLETED: "done",
-            StreamStatus.ERROR: "error",
-            StreamStatus.CANCELLED: "error",
-        }
-
-        result: Dict[str, Any] = {
-            "type": type_map.get(self.status, "token"),
+        return {
+            "type": self._map_type(),
             "status": self.status.value,
             "stream_id": self.stream_id,
             "index": self.chunk_index,
             "content": self.text,
-            "data": self.text,
-            "response": self.text,
             "tokens": self.tokens_generated,
             "latency_ms": round(self.latency_ms, 2),
             "error": self.error,
             "timestamp": self.timestamp.isoformat(),
         }
 
-        if self.step_id:
-            result["type"] = "step"
-            result["step_id"] = self.step_id
-            result["step_status"] = self.step_status
+    def _map_type(self) -> str:
+        return {
+            StreamStatus.STARTING: "step",
+            StreamStatus.GENERATING: "token",
+            StreamStatus.COMPLETED: "done",
+            StreamStatus.ERROR: "error",
+            StreamStatus.CANCELLED: "error",
+        }[self.status]
 
-        return result
-
-
-# ====================== Streaming Service ======================
 
 class StreamingService:
-    """Service de streaming qui utilise l'orchestrateur LangGraph."""
-
-    def __init__(self):
-        self._active_streams: Dict[str, Optional[asyncio.Task]] = {}
-        self._stream_counter = 0
+    def __init__(self) -> None:
+        self._streams: Dict[str, asyncio.Task] = {}
+        self._lock = asyncio.Lock()
+        self._counter = 0
 
     async def stream_generate(
         self,
-        message: str,
-        session_id: str,
-        model: Optional[str] = None,
-        provider: Optional[str] = None,
-        temperature: float = 0.7,
-        start_chunk: int = 0,
+        generator: AsyncIterator[str],
+        websocket: Optional[WebSocket] = None,
     ) -> AsyncIterator[Dict[str, Any]]:
-        """
-        Génère une réponse en streaming via LangGraph.
-        Compatible avec WebSocket et SSE.
-        """
-        self._stream_counter += 1
-        stream_id = f"stream-{self._stream_counter}-{uuid.uuid4().hex[:8]}"
-        start_time = time.time()
-        chunk_index = 0
+        async with self._lock:
+            self._counter += 1
+            stream_id = f"stream-{self._counter}-{uuid.uuid4().hex[:8]}"
 
-        current = asyncio.current_task()
-        self._active_streams[stream_id] = current if current else None
+        queue: asyncio.Queue[Optional[StreamChunk]] = asyncio.Queue(maxsize=100)
+
+        producer = asyncio.create_task(
+            self._producer(generator, queue, stream_id)
+        )
+
+        heartbeat_task = None
 
         try:
-            from backend.domain.core.langgraph import stream_agent
+            if websocket:
+                heartbeat_task = asyncio.create_task(
+                    self._heartbeat(websocket)
+                )
 
-            # Step: Analyzing
-            yield StreamChunk(
-                text="", status=StreamStatus.STARTING, stream_id=stream_id,
-                chunk_index=chunk_index, step_id="step-analyzing", step_status="active"
-            ).to_dict()
-            chunk_index += 1
+            while True:
+                chunk = await asyncio.wait_for(queue.get(), timeout=60)
 
-            # Run orchestrator with streaming
-            async for event in stream_agent(
-                message=message,
-                session_id=session_id,
-                model=model,
-                provider=provider,
-            ):
-                # Check for cancellation
-                task = self._active_streams.get(stream_id)
-                if task is not None and task.cancelled():
-                    raise asyncio.CancelledError()
+                if chunk is None:
+                    break
 
-                # Normalize event for frontend
-                normalized = self._normalize_event(event, session_id, stream_id, chunk_index, start_time)
-                yield normalized
-                chunk_index += 1
+                payload = chunk.to_dict()
 
-                await asyncio.sleep(0.01)  # Yield control
+                if websocket:
+                    await websocket.send_json(payload)
 
-            # Final event
-            yield StreamChunk(
-                text="", status=StreamStatus.COMPLETED, stream_id=stream_id,
-                chunk_index=chunk_index, latency_ms=(time.time() - start_time) * 1000
-            ).to_dict()
+                yield payload
+
+        except asyncio.TimeoutError:
+            logger.warning("stream timeout", extra={"stream_id": stream_id})
+
+        except WebSocketDisconnect:
+            logger.info("websocket disconnected", extra={"stream_id": stream_id})
 
         except asyncio.CancelledError:
-            logger.info(f"Stream {stream_id} was cancelled")
-            yield StreamChunk(
-                text="", status=StreamStatus.CANCELLED, stream_id=stream_id,
-                chunk_index=chunk_index, error="Request cancelled by user"
-            ).to_dict()
+            logger.warning("stream cancelled", extra={"stream_id": stream_id})
+            raise
 
-        except Exception as e:
-            logger.exception(f"Unexpected error in streaming, session_id={session_id}")
-            yield StreamChunk(
-                text="", status=StreamStatus.ERROR, stream_id=stream_id,
-                chunk_index=chunk_index, error=str(e)
-            ).to_dict()
+        except Exception:
+            logger.exception("streaming failure")
+            raise
 
         finally:
-            self._active_streams.pop(stream_id, None)
+            producer.cancel()
 
-    def _normalize_event(
+            if heartbeat_task:
+                heartbeat_task.cancel()
+
+            with suppress(Exception):
+                await producer
+
+            if heartbeat_task:
+                with suppress(Exception):
+                    await heartbeat_task
+
+    async def _producer(
         self,
-        event: Dict,
-        session_id: str,
+        generator: AsyncIterator[str],
+        queue: asyncio.Queue,
         stream_id: str,
-        chunk_index: int,
-        start_time: float
-    ) -> Dict[str, Any]:
-        """Convertit les événements LangGraph en format attendu par le frontend."""
-        # Check for step events
-        if isinstance(event, dict):
-            if event.get("status") == "failed":
-                return StreamChunk(
-                    text="", status=StreamStatus.ERROR, stream_id=stream_id,
-                    chunk_index=chunk_index, error=event.get("error", "Unknown error"),
-                    latency_ms=(time.time() - start_time) * 1000
-                ).to_dict()
+    ) -> None:
+        start = time.perf_counter()
+        index = 0
 
-            # Check for state changes
-            state = event.get("state", {})
-            if isinstance(state, dict):
-                # Analyze step
-                if "messages" in state and len(state.get("messages", [])) > 1:
-                    return StreamChunk(
-                        text="[Analyzing] ", status=StreamStatus.GENERATING, stream_id=stream_id,
-                        chunk_index=chunk_index, step_id="step-analyzing", step_status="done",
-                        latency_ms=(time.time() - start_time) * 1000
-                    ).to_dict()
-
-                # Plan step
-                if state.get("plan"):
-                    return StreamChunk(
-                        text="[Planning] ", status=StreamStatus.GENERATING, stream_id=stream_id,
-                        chunk_index=chunk_index, step_id="step-planning", step_status="done",
-                        latency_ms=(time.time() - start_time) * 1000
-                    ).to_dict()
-
-                # Code step
-                if state.get("code"):
-                    return StreamChunk(
-                        text="[Coding] ", status=StreamStatus.GENERATING, stream_id=stream_id,
-                        chunk_index=chunk_index, step_id="step-coding", step_status="done",
-                        latency_ms=(time.time() - start_time) * 1000
-                    ).to_dict()
-
-                # Review step
-                if state.get("review"):
-                    review = state.get("review", {})
-                    status = "done" if review.get("passed") else "active"
-                    return StreamChunk(
-                        text="[Reviewing] ", status=StreamStatus.GENERATING, stream_id=stream_id,
-                        chunk_index=chunk_index, step_id="step-reviewing", step_status=status,
-                        latency_ms=(time.time() - start_time) * 1000
-                    ).to_dict()
-
-                # Execution step
-                if state.get("execution_result"):
-                    result = state.get("execution_result", {})
-                    success = result.get("success", False)
-                    return StreamChunk(
-                        text=f"[Executing] {'Success' if success else 'Failed'}",
-                        status=StreamStatus.GENERATING, stream_id=stream_id,
-                        chunk_index=chunk_index, step_id="step-executing", step_status="done",
-                        latency_ms=(time.time() - start_time) * 1000
-                    ).to_dict()
-
-        # Default: token
-        return StreamChunk(
-            text=str(event)[:100], status=StreamStatus.GENERATING, stream_id=stream_id,
-            chunk_index=chunk_index, latency_ms=(time.time() - start_time) * 1000
-        ).to_dict()
-
-    def cancel_stream(self, stream_id: str) -> bool:
-        """Cancel an active stream."""
-        task = self._active_streams.get(stream_id)
-        if task and not task.cancelled():
-            task.cancel()
-            logger.debug(f"Cancellation requested for stream {stream_id}")
-            return True
-        return False
-
-    def get_active_count(self) -> int:
-        return len(self._active_streams)
-
-
-# ====================== Singleton ======================
-
-_streaming_service: Optional[StreamingService] = None
-
-
-def get_streaming_service() -> StreamingService:
-    """Singleton du service de streaming."""
-    global _streaming_service
-    if _streaming_service is None:
-        _streaming_service = StreamingService()
-    return _streaming_service
-
-
-# ====================== WebSocket Helper ======================
-
-async def handle_websocket_stream(ws: WebSocket, message: str, session_id: str):
-    """Helper pour gérer un stream WebSocket complet."""
-    service = get_streaming_service()
-
-    async for chunk in service.stream_generate(
-        message=message,
-        session_id=session_id,
-    ):
         try:
-            await ws.send_text(json.dumps(chunk))
-        except Exception:
-            logger.warning("WebSocket client disconnected", session_id=session_id)
-            break
+            async for token in generator:
+                chunk = StreamChunk(
+                    text=token,
+                    status=StreamStatus.GENERATING,
+                    stream_id=stream_id,
+                    chunk_index=index,
+                    tokens_generated=index + 1,
+                    latency_ms=(time.perf_counter() - start) * 1000,
+                )
 
+                await queue.put(chunk)
+                index += 1
 
-__all__ = [
-    "StreamingService",
-    "StreamChunk",
-    "StreamStatus",
-    "get_streaming_service",
-    "handle_websocket_stream",
-]
+            await queue.put(
+                StreamChunk(
+                    text="",
+                    status=StreamStatus.COMPLETED,
+                    stream_id=stream_id,
+                    chunk_index=index,
+                )
+            )
+
+        except asyncio.CancelledError:
+            raise
+
+        except Exception as exc:
+            logger.exception("producer error")
+
+            await queue.put(
+                StreamChunk(
+                    text="",
+                    status=StreamStatus.ERROR,
+                    stream_id=stream_id,
+                    chunk_index=index,
+                    error=str(exc),
+                )
+            )
+
+        finally:
+            await queue.put(None)
+
+    async def _heartbeat(self, websocket: WebSocket) -> None:
+        while True:
+            await asyncio.sleep(15)
+            await websocket.send_json({"type": "ping"})

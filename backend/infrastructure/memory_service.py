@@ -111,8 +111,12 @@ class MemoryService(BaseService):
         """Initialize vector store and load persisted data."""
         try:
             # Lazy import to avoid circular dependencies
-            from core.memory import get_memory_manager
-            self._vector_store = get_memory_manager()
+            from backend.infrastructure.memory import MemoryManager
+
+            self._vector_store = MemoryManager(
+                persist_path=str(Path(self.persist_path) / "index"),
+                max_memories=1500
+            )
 
             await self._load_entries()
             logger.info(f"MemoryService initialized — {len(self._entries)} entries")
@@ -175,7 +179,6 @@ class MemoryService(BaseService):
         task_type: Optional[str] = None,
         importance: float = 0.5,
         metadata: Optional[Dict] = None,
-        auto_save: bool = True,
     ) -> Optional[str]:
         """Add a new memory entry."""
         if not text or not text.strip():
@@ -202,8 +205,17 @@ class MemoryService(BaseService):
                     metadata=metadata or {},
                 )
 
+                # Pass metadata to vector store for synchronization
                 if self._vector_store:
-                    await asyncio.to_thread(self._vector_store.add_memory, text, auto_save=auto_save)
+                    vector_metadata = {
+                        "session_id": session_id,
+                        "task_type": task_type,
+                        "importance": importance,
+                        "entry_id": entry.id,
+                    }
+                    await asyncio.to_thread(
+                        self._vector_store.add_memory, text, metadata=vector_metadata
+                    )
 
                 self._entries[entry.id] = entry
                 self._text_to_id[text_hash] = entry.id
@@ -231,7 +243,7 @@ class MemoryService(BaseService):
             return []
 
         try:
-            vector_results = await asyncio.to_thread(self._vector_store.search, query, k=k * 2)
+            vector_results = await asyncio.to_thread(self._vector_store.search, query, limit=k * 2)
 
             results = []
             for vr in vector_results:
@@ -330,11 +342,12 @@ class MemoryService(BaseService):
                 logger.info("All memories cleared")
 
     def get_stats(self) -> Dict[str, Any]:
+        vector_stats = self._vector_store.get_stats() if self._vector_store and hasattr(self._vector_store, 'get_stats') else {}
         return {
             "total_entries": self.count(),
             "active_sessions": len(self._session_index),
             "max_tokens": self.max_tokens,
-            "vector_store_count": self._vector_store.count() if self._vector_store and hasattr(self._vector_store, 'count') else 0,
+            "vector_store": vector_stats,
         }
 
     def get_metrics(self) -> Dict[str, Any]:
