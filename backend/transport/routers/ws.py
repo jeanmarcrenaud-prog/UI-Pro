@@ -97,6 +97,9 @@ async def _stream_with_langgraph(task: str, session_id: str, max_attempts: int, 
         # Import here to avoid circular imports
         from backend.domain.core.langgraph import stream_agent as langgraph_stream
 
+        logger.info(f"[stream] Starting langgraph stream for task: {task[:50]}...")
+
+        event_count = 0
         async for event in langgraph_stream(
             message=task,
             session_id=session_id,
@@ -116,6 +119,9 @@ async def _stream_with_langgraph(task: str, session_id: str, max_attempts: int, 
 
             # Parse stream_agent events
             if isinstance(event, str):
+                event_count += 1
+                logger.info(f"[stream] Event {event_count}: {event[:80]}...")
+
                 if event.startswith("[STEP]"):
                     # Format: [STEP]phase:message
                     parts = event[6:].split(":", 1)
