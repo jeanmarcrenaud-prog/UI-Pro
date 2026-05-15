@@ -34,8 +34,8 @@ async def stream_agent(
     provider: str = "ollama",
 ):
     """Stream agent with step events and token emission."""
-    from backend.domain.core.langgraph import build_graph
-    app = build_graph()
+    from backend.domain.core.langgraph import get_orchestrator
+    app = await get_orchestrator()
 
     initial_state: AgentState = {
         "messages": [{"role": "user", "content": message}],
