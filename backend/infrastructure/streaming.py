@@ -83,7 +83,9 @@ class StreamingService:
             stream_id = f"stream-{self._counter}-{uuid.uuid4().hex[:8]}"
 
         # Track stream for future metrics
-        self._streams[stream_id] = asyncio.current_task()
+        task = asyncio.current_task()
+        if task:
+            self._streams[stream_id] = task
 
         queue: asyncio.Queue[Optional[StreamChunk]] = asyncio.Queue(maxsize=50)
 
