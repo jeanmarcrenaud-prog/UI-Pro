@@ -104,6 +104,16 @@ async def _stream_with_langgraph(task: str, session_id: str, max_attempts: int, 
             model=model,  # Pass user-selected model
             provider=provider  # Pass user-selected provider
         ):
+            # Map backend phases to frontend step IDs
+            PHASE_MAP = {
+                "orchestrator": "analyzing",
+                "planning": "planning",
+                "coding": "executing",
+                "reviewing": "reviewing",
+                "executing": "executing",
+                "completed": "completed",
+            }
+
             # Parse stream_agent events
             if isinstance(event, str):
                 if event.startswith("[STEP]"):
@@ -112,9 +122,12 @@ async def _stream_with_langgraph(task: str, session_id: str, max_attempts: int, 
                     phase = parts[0] if parts else "step"
                     msg = parts[1] if len(parts) > 1 else ""
 
+                    # Map phase to frontend step ID
+                    step_id = f"step-{PHASE_MAP.get(phase, phase)}"
+
                     yield {
                         "type": "step",
-                        "step_id": f"step-{phase}",
+                        "step_id": step_id,
                         "title": phase.replace("_", " ").title(),
                         "status": "active",
                         "message_id": message_id,
