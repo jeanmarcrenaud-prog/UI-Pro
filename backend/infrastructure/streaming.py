@@ -65,9 +65,10 @@ class StreamChunk:
 
 class StreamingService:
     DEFAULT_TIMEOUT = 180  # seconds
+    HEARTBEAT_INTERVAL = 15  # seconds
 
     def __init__(self) -> None:
-        self._streams: Dict[str, asyncio.Task] = {}
+        self._streams: Dict[str, asyncio.Task] = {}  # For future tracking
         self._lock = asyncio.Lock()
         self._counter = 0
 
@@ -80,6 +81,9 @@ class StreamingService:
         async with self._lock:
             self._counter += 1
             stream_id = f"stream-{self._counter}-{uuid.uuid4().hex[:8]}"
+
+        # Track stream for future metrics
+        self._streams[stream_id] = asyncio.current_task()
 
         queue: asyncio.Queue[Optional[StreamChunk]] = asyncio.Queue(maxsize=50)
 
@@ -100,7 +104,7 @@ class StreamingService:
                 try:
                     chunk = await asyncio.wait_for(queue.get(), timeout=stream_timeout)
                 except asyncio.TimeoutError:
-                    logger.warning("stream timeout", extra={"stream_id": stream_id, "timeout": stream_timeout})
+                    logger.warning("Stream timeout", extra={"stream_id": stream_id, "timeout": stream_timeout})
                     break
 
                 if chunk is None:
@@ -111,18 +115,20 @@ class StreamingService:
                 if websocket:
                     try:
                         await websocket.send_json(payload)
-                    except WebSocketDisconnect:
-                        logger.info("websocket disconnected", extra={"stream_id": stream_id})
+                    except (WebSocketDisconnect, RuntimeError):
+                        logger.info("WebSocket disconnected", extra={"stream_id": stream_id})
                         break
+                    except Exception as e:
+                        logger.warning(f"Send error: {e}", extra={"stream_id": stream_id})
 
                 yield payload
 
         except asyncio.CancelledError:
-            logger.warning("stream cancelled", extra={"stream_id": stream_id})
+            logger.info("Stream cancelled by client", extra={"stream_id": stream_id})
             raise
 
-        except Exception:
-            logger.exception("streaming failure", extra={"stream_id": stream_id})
+        except Exception as e:
+            logger.exception("Streaming failure", extra={"stream_id": stream_id})
             raise
 
         finally:
@@ -137,6 +143,9 @@ class StreamingService:
             if heartbeat_task:
                 with suppress(Exception):
                     await heartbeat_task
+
+            # Cleanup
+            self._streams.pop(stream_id, None)
 
     async def _producer(
         self,
@@ -193,7 +202,7 @@ class StreamingService:
         """Heartbeat task that sends periodic pings to keep connection alive."""
         try:
             while True:
-                await asyncio.sleep(15)
+                await asyncio.sleep(self.HEARTBEAT_INTERVAL)
                 await websocket.send_json({"type": "ping", "stream_id": stream_id})
         except (WebSocketDisconnect, asyncio.CancelledError, RuntimeError):
             pass
