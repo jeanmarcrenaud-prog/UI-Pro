@@ -137,3 +137,46 @@ class CodeExecutionService:
                 error=traceback.format_exc(limit=5),
                 review_result=review,
             )
+
+    def run(self, files: Dict[str, Any]) -> ExecutionResult:
+        """Execute multiple files from a {"files": {"name.py": "content"}} dict."""
+        if not isinstance(files, dict):
+            return ExecutionResult(False, error=f"Expected dict, got {type(files).__name__}")
+
+        file_dict = files.get("files", files)
+
+        if not file_dict or not isinstance(file_dict, dict):
+            return ExecutionResult(False, error="No files to execute")
+
+        results = []
+        all_success = True
+
+        for filename, code in file_dict.items():
+            if not isinstance(code, str):
+                logger.warning(f"Skipping {filename}: not a string")
+                continue
+            logger.info(f"Executing file: {filename}")
+            result = asyncio.run(self.execute(code))
+            results.append({
+                "filename": filename,
+                "success": result.success,
+                "output": result.output,
+                "error": result.error,
+                "execution_time_ms": result.execution_time_ms,
+            })
+            if not result.success:
+                all_success = False
+            if not result.success:
+                break
+
+        combined_output = "\n".join(
+            f"=== {r['filename']} ===\n{r['output'] or r['error']}"
+            for r in results
+        )
+
+        return ExecutionResult(
+            success=all_success,
+            output=combined_output,
+            error="" if all_success else results[-1].get("error", "Execution failed"),
+            execution_time_ms=sum(r["execution_time_ms"] for r in results),
+        )
