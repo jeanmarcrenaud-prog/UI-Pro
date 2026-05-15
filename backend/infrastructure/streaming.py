@@ -64,6 +64,8 @@ class StreamChunk:
 
 
 class StreamingService:
+    DEFAULT_TIMEOUT = 180  # seconds
+
     def __init__(self) -> None:
         self._streams: Dict[str, asyncio.Task] = {}
         self._lock = asyncio.Lock()
@@ -73,27 +75,33 @@ class StreamingService:
         self,
         generator: AsyncIterator[str],
         websocket: Optional[WebSocket] = None,
+        timeout: Optional[int] = None,
     ) -> AsyncIterator[Dict[str, Any]]:
         async with self._lock:
             self._counter += 1
             stream_id = f"stream-{self._counter}-{uuid.uuid4().hex[:8]}"
 
-        queue: asyncio.Queue[Optional[StreamChunk]] = asyncio.Queue(maxsize=100)
+        queue: asyncio.Queue[Optional[StreamChunk]] = asyncio.Queue(maxsize=50)
 
         producer = asyncio.create_task(
             self._producer(generator, queue, stream_id)
         )
 
         heartbeat_task = None
+        stream_timeout = timeout or self.DEFAULT_TIMEOUT
 
         try:
             if websocket:
                 heartbeat_task = asyncio.create_task(
-                    self._heartbeat(websocket)
+                    self._heartbeat(websocket, stream_id)
                 )
 
             while True:
-                chunk = await asyncio.wait_for(queue.get(), timeout=60)
+                try:
+                    chunk = await asyncio.wait_for(queue.get(), timeout=stream_timeout)
+                except asyncio.TimeoutError:
+                    logger.warning("stream timeout", extra={"stream_id": stream_id, "timeout": stream_timeout})
+                    break
 
                 if chunk is None:
                     break
@@ -101,22 +109,20 @@ class StreamingService:
                 payload = chunk.to_dict()
 
                 if websocket:
-                    await websocket.send_json(payload)
+                    try:
+                        await websocket.send_json(payload)
+                    except WebSocketDisconnect:
+                        logger.info("websocket disconnected", extra={"stream_id": stream_id})
+                        break
 
                 yield payload
-
-        except asyncio.TimeoutError:
-            logger.warning("stream timeout", extra={"stream_id": stream_id})
-
-        except WebSocketDisconnect:
-            logger.info("websocket disconnected", extra={"stream_id": stream_id})
 
         except asyncio.CancelledError:
             logger.warning("stream cancelled", extra={"stream_id": stream_id})
             raise
 
         except Exception:
-            logger.exception("streaming failure")
+            logger.exception("streaming failure", extra={"stream_id": stream_id})
             raise
 
         finally:
@@ -183,7 +189,13 @@ class StreamingService:
         finally:
             await queue.put(None)
 
-    async def _heartbeat(self, websocket: WebSocket) -> None:
-        while True:
-            await asyncio.sleep(15)
-            await websocket.send_json({"type": "ping"})
+    async def _heartbeat(self, websocket: WebSocket, stream_id: str) -> None:
+        """Heartbeat task that sends periodic pings to keep connection alive."""
+        try:
+            while True:
+                await asyncio.sleep(15)
+                await websocket.send_json({"type": "ping", "stream_id": stream_id})
+        except (WebSocketDisconnect, asyncio.CancelledError, RuntimeError):
+            pass
+        except Exception as e:
+            logger.debug(f"Heartbeat error: {e}", extra={"stream_id": stream_id})
