@@ -165,8 +165,11 @@ class MemoryService(BaseService):
 
     async def shutdown(self) -> None:
         """Graceful shutdown."""
-        if self._vector_store and hasattr(self._vector_store, 'save'):
-            await asyncio.to_thread(self._vector_store.save)
+        if self._vector_store:
+            if hasattr(self._vector_store, 'save'):
+                await asyncio.to_thread(self._vector_store.save)
+            elif hasattr(self._vector_store, '_persist'):
+                await asyncio.to_thread(self._vector_store._persist)
         self._save_entries()
         logger.info("MemoryService shutdown completed")
 
@@ -195,6 +198,7 @@ class MemoryService(BaseService):
                     # Update importance if higher
                     if importance > self._entries[entry_id].importance:
                         self._entries[entry_id].importance = importance
+                        logger.debug(f"Updated importance of existing memory {entry_id}")
                     return entry_id
 
                 entry = MemoryEntry(
@@ -342,7 +346,12 @@ class MemoryService(BaseService):
                 logger.info("All memories cleared")
 
     def get_stats(self) -> Dict[str, Any]:
-        vector_stats = self._vector_store.get_stats() if self._vector_store and hasattr(self._vector_store, 'get_stats') else {}
+        vector_stats = {}
+        if self._vector_store and hasattr(self._vector_store, 'get_stats'):
+            try:
+                vector_stats = self._vector_store.get_stats()
+            except Exception:
+                pass
         return {
             "total_entries": self.count(),
             "active_sessions": len(self._session_index),
