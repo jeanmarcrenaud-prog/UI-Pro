@@ -194,8 +194,8 @@ class MemoryManager:
             actual_count = self._vector_index.ntotal
             
             if expected_count != actual_count:
-                logger.warning(f"Index count mismatch: {actual_count} vs {expected_count}")
-                self._dirty = True
+                logger.warning(f"Index count mismatch: {actual_count} vs {expected_count}, triggering rebuild")
+                self._rebuild_index()
 
             if __debug__:
                 for doc_id in self._doc_map:

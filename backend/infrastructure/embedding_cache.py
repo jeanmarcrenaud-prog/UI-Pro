@@ -92,7 +92,7 @@ class EmbeddingCache:
             for idx, emb in zip(uncached_indices, embeddings):
                 result[idx] = emb
         
-        return np.stack(result).astype(np.float32)
+        return np.stack(result).astype(np.float32)  # type: ignore[arg-type]
     
     def clear(self) -> None:
         """Clear the cache."""

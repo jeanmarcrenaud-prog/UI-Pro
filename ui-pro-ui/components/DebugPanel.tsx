@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { useI18n } from '@/lib/i18n'
+import { VirtualizedLogs } from '@/components/VirtualizedLogs'
 import type { AgentStep } from '@/lib/types'
 
 interface DebugPanelProps {
@@ -190,7 +191,7 @@ export function DebugPanel({
           </div>
         )}
 
-        {/* LIVE LOGS */}
+        {/* LIVE LOGS - Virtualized */}
         <div className="flex-1 flex flex-col min-h-0">
           <div className="px-4 py-2 border-b border-slate-800 flex justify-between items-center">
             <span className="text-xs text-slate-500">
@@ -206,20 +207,11 @@ export function DebugPanel({
               </button>
             )}
           </div>
-          <div className="flex-1 p-4 font-mono text-[10px] overflow-y-auto bg-slate-950/50">
-            {logs.length === 0 ? (
-              <span className="text-slate-600 italic">
-                {t.debug?.waiting || 'Waiting for execution...'}
-              </span>
-            ) : (
-              (Array.isArray(logs) ? logs : logs.getAll?.() || []).map((log, index) => (
-                <div key={`log-${index}`} className="py-0.5 break-all">
-                  {log}
-                </div>
-              ))
-            )}
-            <div ref={logsEndRef} />
-          </div>
+          <VirtualizedLogs
+            logs={logs || []}
+            lineHeight={18}
+            containerHeight={300}
+          />
         </div>
       </div>
 
