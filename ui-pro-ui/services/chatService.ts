@@ -260,36 +260,131 @@ class ChatService {
     this.isFallingBack = true
 
     try {
-      const host = window.location.hostname || 'localhost'
-      const response = await fetch(
-        `${API_CONFIG.apiUrl.replace('localhost', host)}/api/chat`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message: this.activeRequest.prompt,
-            model: this.activeRequest.model,
-            provider: this.activeRequest.provider,
-          }),
-        }
-      )
+      // Try SSE first (streaming fallback)
+      const success = await this.fallbackWithSSE()
+      if (success) {
+        this.isFallingBack = false
+        return
+      }
+    } catch (err) {
+      console.warn('[chatService] SSE fallback failed, trying REST...', err)
+    }
 
-      const data = await response.json()
-      const text = data?.result || data?.response || data?.message || ''
-
-      this.emit({
-        id: this.activeRequest.assistantId,
-        role: 'assistant',
-        content: text,
-        status: 'done',
-      })
+    // Fall back to REST (non-streaming)
+    try {
+      await this.fallbackWithREST()
     } catch {
-      this.emitError('Backend unreachable - fallback failed')
+      this.emitError('Backend unreachable - all fallbacks failed')
     } finally {
       this.isFallingBack = false
       this.activeRequest = null
       this.lifecycleState = 'idle'
     }
+  }
+
+  private async fallbackWithSSE(): Promise<boolean> {
+    if (!this.activeRequest) return false
+
+    try {
+      const host = window.location.hostname || 'localhost'
+      const url = `${API_CONFIG.apiUrl.replace('localhost', host)}/api/chat/stream`
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: this.activeRequest.prompt,
+          model: this.activeRequest.model,
+          provider: this.activeRequest.provider,
+        }),
+      })
+
+      if (!response.ok || !response.body) {
+        return false
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+
+        // Process complete lines, keep incomplete line in buffer
+        buffer = lines[lines.length - 1]
+
+        for (let i = 0; i < lines.length - 1; i++) {
+          const line = lines[i].trim()
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6))
+              this.emit({
+                id: this.activeRequest.assistantId,
+                role: 'assistant',
+                content: data.content || data.token || '',
+                delta: data.content || data.token || '',
+                status: data.done ? 'done' : 'streaming',
+              })
+            } catch (e) {
+              console.warn('[chatService] Failed to parse SSE line:', line)
+            }
+          }
+        }
+      }
+
+      // Handle remaining buffer
+      if (buffer.trim()) {
+        try {
+          const data = JSON.parse(buffer.slice(6))
+          this.emit({
+            id: this.activeRequest.assistantId,
+            role: 'assistant',
+            content: data.content || '',
+            status: 'done',
+          })
+        } catch (e) {
+          // Ignore final buffer parse errors
+        }
+      }
+
+      this.emitCompletion()
+      return true
+    } catch (err) {
+      console.error('[chatService] SSE fallback error:', err)
+      return false
+    }
+  }
+
+  private async fallbackWithREST(): Promise<void> {
+    if (!this.activeRequest) return
+
+    const response = await fetch(
+      `${API_CONFIG.apiUrl.replace('localhost', window.location.hostname || 'localhost')}/api/chat`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: this.activeRequest.prompt,
+          model: this.activeRequest.model,
+          provider: this.activeRequest.provider,
+        }),
+      }
+    )
+
+    const data = await response.json()
+    const text = data?.result || data?.response || data?.message || ''
+
+    this.emit({
+      id: this.activeRequest.assistantId,
+      role: 'assistant',
+      content: text,
+      status: 'done',
+    })
+    this.emitCompletion()
   }
 
   private emit(message: Message) {
