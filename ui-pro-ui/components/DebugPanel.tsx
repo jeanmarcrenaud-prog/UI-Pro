@@ -3,17 +3,10 @@
 
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { motion } from 'framer-motion'
-import { useI18n, type Translations } from '@/lib/i18n'
-import { useUIStore } from '@/lib/stores/uiStore'
-
-interface AgentStep {
-  id: string
-  title: string
-  detail?: string
-  status: 'pending' | 'active' | 'done' | 'error'
-}
+import { useI18n } from '@/lib/i18n'
+import type { AgentStep } from '@/lib/types'
 
 interface DebugPanelProps {
   steps?: AgentStep[]
@@ -22,16 +15,14 @@ interface DebugPanelProps {
   onToggle?: () => void
   status?: 'idle' | 'running' | 'completed' | 'error'
   modelName?: string
-  backend?: string  // Provider: ollama, lmstudio, lemonade
+  backend?: string
   elapsedSeconds?: number
   tokenCount?: number
   connectionStatus?: string
   lastErrorMsg?: string
-  currentStep?: number
   logs?: string[]
   onClearLogs?: () => void
-  currentCode?: string  // Code being generated during coding phase
-  locale?: 'en' | 'fr'
+  currentCode?: string
 }
 
 export function DebugPanel({
@@ -45,17 +36,14 @@ export function DebugPanel({
   elapsedSeconds = 0,
   tokenCount = 0,
   lastErrorMsg,
-  currentStep = 0,
   logs = [],
   onClearLogs,
   currentCode = '',
-  locale = 'en',
 }: DebugPanelProps) {
   const { t } = useI18n()
-  
   const logsEndRef = useRef<HTMLDivElement>(null)
 
-  // Derived state optimization
+  // Derived values
   const completed = useMemo(
     () => steps.filter((s) => s.status === 'done').length,
     [steps]
@@ -65,26 +53,43 @@ export function DebugPanel({
     return steps.length ? Math.round((completed / steps.length) * 100) : 0
   }, [steps.length, completed])
 
-  // Use active step index as the source of truth for current step (consistent with StepProgress)
-  const activeStepNumber = useMemo(() => {
-    const activeIdx = steps.findIndex((s) => s.status === 'active')
-    return activeIdx !== -1 ? activeIdx + 1 : steps.length > 0 ? Math.max(1, currentStep + 1) : 1
-  }, [steps, currentStep])
+  const activeStepIndex = useMemo(() => {
+    return steps.findIndex((s) => s.status === 'active')
+  }, [steps])
 
+  const activeStepNumber = activeStepIndex !== -1
+    ? activeStepIndex + 1
+    : steps.length > 0
+      ? 1
+      : 0
+
+  // Backend display name
+  const backendDisplay = useMemo(() => {
+    switch (backend) {
+      case 'ollama': return '🦙 Ollama'
+      case 'lmstudio': return '🖥️ LM Studio'
+      case 'lemonade': return '🍋 Lemonade'
+      default: return backend
+    }
+  }, [backend])
+
+  // Auto-scroll logs
   useEffect(() => {
-    if (!isOpen) return
-    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (isOpen && logs.length > 0) {
+      logsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
   }, [logs.length, isOpen])
 
-  const closeFn = useCallback(() => {
+  const handleClose = useCallback(() => {
     onClose?.() ?? onToggle?.()
   }, [onClose, onToggle])
 
   if (!isOpen) {
     return (
       <button
-        onClick={closeFn}
-        className="fixed right-4 top-4 bg-slate-800 border border-slate-700 text-slate-400 px-3 py-2 rounded-lg text-xs hover:bg-slate-700 z-50"
+        onClick={handleClose}
+        aria-label="Open debug panel"
+        className="fixed right-4 top-4 bg-slate-800 border border-slate-700 text-slate-400 px-3 py-2 rounded-lg text-xs hover:bg-slate-700 transition-colors z-50"
       >
         🔧 {t.debug?.title || 'Debug'} {status === 'running' && '●'}
       </button>
@@ -95,6 +100,7 @@ export function DebugPanel({
     <motion.div
       initial={{ x: '100%' }}
       animate={{ x: 0 }}
+      exit={{ x: '100%' }}
       transition={{ type: 'spring', damping: 28, stiffness: 400 }}
       className="w-80 border-l border-slate-800/60 bg-[#0a0a0f] flex flex-col h-full shadow-2xl"
     >
@@ -102,8 +108,9 @@ export function DebugPanel({
       <div className="bg-slate-900/50 px-4 py-3 border-b border-slate-800/60 flex items-center justify-between">
         <span className="text-sm font-semibold">🔧 {t.debug?.title || 'Debug'}</span>
         <button
-          onClick={closeFn}
-          className="text-slate-400 hover:text-white text-xs"
+          onClick={handleClose}
+          aria-label="Close debug panel"
+          className="text-slate-400 hover:text-white text-xl leading-none transition-colors"
         >
           ✕
         </button>
@@ -114,19 +121,20 @@ export function DebugPanel({
         <div className="p-4 space-y-3 border-b border-slate-800/60">
           <Row label={t.debug?.status || 'Status'} value={status.toUpperCase()} />
           <Row label={t.debug?.model || 'Model'} value={modelName} color="violet" />
-          <Row 
-            label={t.debug?.backend || 'Backend'} 
-            value={backend === 'ollama' ? '🦙 Ollama' : backend === 'lmstudio' ? '🖥️ LM Studio' : backend === 'lemonade' ? '🍋 Lemonade' : backend} 
-          />
+          <Row label={t.debug?.backend || 'Backend'} value={backendDisplay} />
           <Row label={t.debug?.elapsed || 'Elapsed'} value={`${elapsedSeconds}s`} />
-          <Row label={t.debug?.tokens || 'Tokens'} value={tokenCount ?? 0} color="violet" bold />
+          <Row label={t.debug?.tokens || 'Tokens'} value={tokenCount} color="violet" bold />
         </div>
 
-        {/* PROGRESS - only show when agent is actively running (not idle/error) */}
+        {/* PROGRESS */}
         {steps.length > 0 && status === 'running' && (
           <div className="p-4 border-b border-slate-800/60">
             <div className="flex justify-between text-xs mb-2">
-              <span>{typeof t.steps.stepLabel === 'function' ? t.steps.stepLabel(activeStepNumber, steps.length) : `Step ${activeStepNumber}/${steps.length}`}</span>
+              <span>
+                {typeof t.steps?.stepLabel === 'function'
+                  ? t.steps.stepLabel(activeStepNumber, steps.length)
+                  : `Step ${activeStepNumber}/${steps.length}`}
+              </span>
               <span>{elapsedSeconds}s</span>
             </div>
             <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
@@ -134,6 +142,7 @@ export function DebugPanel({
                 className="h-full bg-violet-500"
                 initial={{ width: 0 }}
                 animate={{ width: `${progress}%` }}
+                transition={{ duration: 0.3 }}
               />
             </div>
           </div>
@@ -141,80 +150,91 @@ export function DebugPanel({
 
         {/* STEPS */}
         <div className="p-4 border-b border-slate-800/60">
-          <div className="text-xs text-slate-500 mb-3">{t.debug?.agentExecution || 'Agent Execution'}</div>
+          <div className="text-xs text-slate-500 mb-3">
+            {t.debug?.agentExecution || 'Agent Execution'}
+          </div>
           {steps.map((step, i) => (
-            <div key={`${step.id}-${i}`} className="flex gap-3 text-sm mb-2">
-              <div className="w-5 h-5 flex items-center justify-center rounded-full text-xs bg-slate-800">
+            <div key={step.id} className="flex gap-3 text-sm mb-3 last:mb-0">
+              <div className="w-5 h-5 flex items-center justify-center rounded-full text-xs bg-slate-800 flex-shrink-0">
                 {step.status === 'done'
                   ? '✓'
                   : step.status === 'active'
-                  ? '●'
-                  : Math.max(1, activeStepNumber)}
+                    ? '●'
+                    : i + 1}
               </div>
-              <div>
+              <div className="min-w-0">
                 <div
                   className={step.status === 'active' ? 'text-white' : 'text-slate-400'}
                 >
                   {step.title}
                 </div>
                 {step.detail && (
-                  <div className="text-xs text-slate-500">{step.detail}</div>
+                  <div className="text-xs text-slate-500 mt-0.5">{step.detail}</div>
                 )}
               </div>
             </div>
           ))}
         </div>
 
-        {/* CODE PREVIEW */}
+        {/* CURRENT CODE */}
         {currentCode && (
-          <div className="p-4 border-b border-slate-800/60 max-h-64 flex flex-col">
-            <div className="text-xs text-slate-500 mb-2">{t.debug?.generatedCode || 'Generated Code'}</div>
-            <pre className="flex-1 overflow-auto text-[10px] text-slate-300 bg-slate-900/50 p-2 rounded font-mono whitespace-pre-wrap">
-              {currentCode.slice(-2000)}{currentCode.length > 2000 ? '\n... (truncated)' : ''}
+          <div className="p-4 border-b border-slate-800/60">
+            <div className="text-xs text-slate-500 mb-2">
+              {t.debug?.generatedCode || 'Generated Code'}
+            </div>
+            <pre className="max-h-64 overflow-auto text-[10px] text-slate-300 bg-slate-900/50 p-3 rounded font-mono whitespace-pre-wrap border border-slate-800">
+              {currentCode.length > 2000
+                ? currentCode.slice(-2000) + '\n... (truncated)'
+                : currentCode}
             </pre>
           </div>
         )}
 
-        {/* LOGS */}
+        {/* LIVE LOGS */}
         <div className="flex-1 flex flex-col min-h-0">
-          <div className="px-4 py-2 border-b border-slate-800 flex justify-between">
-            <span className="text-xs text-slate-500">{t.debug?.liveLogs || 'Logs'}</span>
-            <button
-              onClick={onClearLogs}
-              className="text-[10px] text-slate-500"
-            >
-              {t.debug?.clear || 'Clear'}
-            </button>
+          <div className="px-4 py-2 border-b border-slate-800 flex justify-between items-center">
+            <span className="text-xs text-slate-500">
+              {t.debug?.liveLogs || 'Live Logs'}
+            </span>
+            {onClearLogs && (
+              <button
+                onClick={onClearLogs}
+                aria-label="Clear logs"
+                className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors"
+              >
+                {t.debug?.clear || 'Clear'}
+              </button>
+            )}
           </div>
-          <div className="flex-1 p-4 font-mono text-[10px] overflow-y-auto">
+          <div className="flex-1 p-4 font-mono text-[10px] overflow-y-auto bg-slate-950/50">
             {logs.length === 0 ? (
-              <span className="text-slate-600 italic">{t.debug?.waiting || 'Waiting...'}</span>
+              <span className="text-slate-600 italic">
+                {t.debug?.waiting || 'Waiting for execution...'}
+              </span>
             ) : (
               logs.map((log, index) => (
-  <div 
-    key={log.length > 20 ? `log-${index}-${log.slice(0, 20)}` : `log-${index}`}
-  >
-    {log}
-  </div>
-))
+                <div key={`log-${index}`} className="py-0.5 break-all">
+                  {log}
+                </div>
+              ))
             )}
             <div ref={logsEndRef} />
           </div>
         </div>
       </div>
 
-      {/* ERROR - only show when status is error */}
-      {lastErrorMsg && status === 'error' ? (
-        <div className="p-3 text-xs text-red-400 border-t border-red-900/30">
+      {/* ERROR */}
+      {lastErrorMsg && status === 'error' && (
+        <div className="p-3 text-xs text-red-400 border-t border-red-900/30 bg-red-950/30">
           ⚠ {lastErrorMsg.split('\n')[0]}
         </div>
-      ) : null}
+      )}
     </motion.div>
   )
 }
 
 // =====================
-// SMALL UI HELPER
+// HELPER
 // =====================
 function Row({
   label,
@@ -223,7 +243,7 @@ function Row({
   bold,
 }: {
   label: string
-  value: any
+  value: React.ReactNode
   color?: 'violet'
   bold?: boolean
 }) {
