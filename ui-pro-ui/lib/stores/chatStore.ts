@@ -8,6 +8,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { Message, ChatState, ChatHistoryItem } from '@/lib/types'
 import { events } from '@/lib/events'
+import { CircularBuffer } from '@/lib/circularBuffer'
 
 // Log event types (only what's actually used)
 const LogEvents = {
@@ -140,14 +141,18 @@ export const useChatStore = create<ChatStore>()(
 
       getPromptById: (id) => get().messageHistory[id],
 
-      // Logs
-      logs: [],
+      // Logs with circular buffer to prevent memory bloat
+      logs: new CircularBuffer<string>(150),
       addLog: (message) =>
-        set((state) => ({
-          // Keep only last 100 logs to prevent memory bloat
-          logs: [...state.logs, message].slice(-100),
-        })),
-      clearLogs: () => set({ logs: [] }),
+        set((state) => {
+          const newBuffer = new CircularBuffer<string>(150)
+          // Copy existing logs
+          state.logs.getAll().forEach(log => newBuffer.push(log))
+          // Add new log
+          newBuffer.push(message)
+          return { logs: newBuffer }
+        }),
+      clearLogs: () => set({ logs: new CircularBuffer<string>(150) }),
       
       // Tokens
       tokenCount: 0,
@@ -279,10 +284,11 @@ export const useChatStore = create<ChatStore>()(
       },
 
       addMessage: (message) =>
-        set((state) => ({
-          // Keep only last 100 messages in memory to prevent memory bloat
-          messages: [...state.messages, message].slice(-100),
-        })),
+        set((state) => {
+          // Keep circular buffer for messages (200 max to prevent memory bloat)
+          const messages = [...state.messages, message]
+          return { messages: messages.slice(-200) }
+        }),
 
       updateLastMessage: (content, status) =>
         set((state) => {
