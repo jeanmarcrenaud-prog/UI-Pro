@@ -20,7 +20,8 @@ export {
 
 // Events
 export { STREAM_EVENTS, type StreamEventType } from './events/StreamEvents'
-export { EventEmitter, type EventHandler, type EventMap, type AnyEventHandler } from './events/EventTypes'
+export { EventEmitter } from './events/EventEmitter'
+export { type EventHandler, type EventMap, type AnyEventHandler } from './events/EventTypes'
 
 // Config
 export { 
@@ -28,5 +29,4 @@ export {
   LLM_CONFIG, 
   type API_CONFIG_TYPE, 
   type LLM_CONFIG_TYPE,
-  config,
 } from './config/Config'

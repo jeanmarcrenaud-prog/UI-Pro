@@ -14,8 +14,8 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from .state import AgentState
 from .checkpointer import _get_checkpointer
+from .state import AgentState
 
 logger = logging.getLogger(__name__)
 
@@ -35,10 +35,15 @@ def _get_llm_router():
 # ========================================
 
 def build_graph():
-    from langgraph.graph import StateGraph, END, START
+    from langgraph.graph import END, START, StateGraph
+
     from .nodes import (
-        analyzing_node, planning_node, coding_node,
-        reviewing_node, executing_node, should_continue,
+        analyzing_node,
+        coding_node,
+        executing_node,
+        planning_node,
+        reviewing_node,
+        should_continue,
     )
 
     workflow = StateGraph(AgentState)

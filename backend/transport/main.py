@@ -3,10 +3,11 @@
 UI-Pro API - FastAPI application entry point
 """
 
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
-import logging
 
 logger = logging.getLogger("api")
 
@@ -34,7 +35,7 @@ app.add_middleware(
 )
 
 # Include routers
-from backend.transport.routers import health, chat, execute, ws, logs
+from backend.transport.routers import chat, execute, health, logs, ws
 
 app.include_router(health.router)
 app.include_router(chat.router)

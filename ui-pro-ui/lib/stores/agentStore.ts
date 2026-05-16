@@ -36,8 +36,16 @@ export const useAgentStore = create<AgentStore>((set, _get) => ({
       
       // Don't allow status to go backwards (done -> active)
       if (currentStep && currentStep.status === 'done' && status !== 'done') {
-        console.log('[agentStore] Ignoring backwards status update:', id, currentStep.status, '->', status)
         return state
+      }
+      
+      // If step doesn't exist, add it
+      if (stepIdx === -1) {
+        return {
+          steps: [...state.steps, { id, title: id.replace('step-', '').replace('-', ' '), status }],
+          currentStepId: id,
+          currentStep: state.steps.length
+        }
       }
       
       return {
@@ -45,7 +53,7 @@ export const useAgentStore = create<AgentStore>((set, _get) => ({
           s.id === id ? { ...s, status } : s
         ),
         currentStepId: id,
-        currentStep: stepIdx !== -1 ? stepIdx : state.currentStep
+        currentStep: stepIdx
       }
     }),
 

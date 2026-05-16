@@ -32,6 +32,7 @@ export default function Home() {
   const isLoading = useChatStore(state => state.isLoading)
   const logs = useChatStore(state => state.logs)
   const tokenCount = useChatStore(state => state.tokenCount)
+  const currentCode = useChatStore(state => state.currentCode)
   const messages = useChatStore(state => state.messages)
   const clearMessages = useChatStore(state => state.clearMessages)
   const addLog = useChatStore(state => state.addLog)
@@ -169,6 +170,7 @@ const handleClearLogs = useCallback(() => {
           tokenCount={tokenCount}
           connectionStatus={isLoading ? 'connecting' : 'connected'}
           logs={logs}
+          currentCode={currentCode}
         />
       )}
 
