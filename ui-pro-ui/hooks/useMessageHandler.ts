@@ -72,13 +72,14 @@ export const useMessageHandler = ({
     }
 
     // === TOKEN STREAMING ===
-    if (msg.type === 'token' && msg.content) {
-      contentRef.current += msg.content
+    const tokenContent = msg.content || msg.delta || ''
+    if ((msg.type === 'token' || msg.status === 'streaming') && tokenContent) {
+      contentRef.current += tokenContent
 
       // Compter les tokens
       tokenCountRef.current = estimateTokens(contentRef.current)
       setTokenCount(tokenCountRef.current)
-      
+
       // Update current code for debug panel
       setCurrentCode(contentRef.current)
 
@@ -88,14 +89,14 @@ export const useMessageHandler = ({
 
       updateMessageById(
         assistantMessageIdRef.current,
-        (prev) => prev + msg.content,
+        (prev) => prev + tokenContent,
         'streaming'
       )
       return
     }
 
     // === COMPLETION ===
-    if (msg.type === 'done' || msg.done === true) {
+    if (msg.type === 'done' || msg.done === true || msg.status === 'done') {
       isStreamActiveRef.current = false
       isSendingRef.current = false
 
