@@ -30,7 +30,11 @@ export default function Home() {
   // Store selectors - more efficient than getState()
   const { selectedModel, availableModels, focusMode } = useUIStore()
   const isLoading = useChatStore(state => state.isLoading)
-  const logs = useChatStore(state => state.logs)
+  const logs = useChatStore(state => {
+    const logsStore = state.logs
+    // Handle CircularBuffer: extract array
+    return Array.isArray(logsStore) ? logsStore : logsStore.getAll?.() || []
+  })
   const tokenCount = useChatStore(state => state.tokenCount)
   const currentCode = useChatStore(state => state.currentCode)
   const messages = useChatStore(state => state.messages)

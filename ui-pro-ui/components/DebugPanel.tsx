@@ -212,7 +212,7 @@ export function DebugPanel({
                 {t.debug?.waiting || 'Waiting for execution...'}
               </span>
             ) : (
-              logs.map((log, index) => (
+              (Array.isArray(logs) ? logs : logs.getAll?.() || []).map((log, index) => (
                 <div key={`log-${index}`} className="py-0.5 break-all">
                   {log}
                 </div>
