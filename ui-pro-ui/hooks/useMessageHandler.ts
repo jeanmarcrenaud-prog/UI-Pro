@@ -26,6 +26,8 @@ interface UseMessageHandlerProps {
   initialSteps: AgentStep[]
 }
 
+const STEP_ORDER = ['step-analyzing', 'step-planning', 'step-executing', 'step-reviewing'] as const
+
 export const useMessageHandler = ({
   assistantMessageIdRef,
   contentRef,
@@ -62,11 +64,8 @@ export const useMessageHandler = ({
     if (msg.type === 'step' && msg.step_id) {
       const stepName = msg.step_id.replace('step-', '').replace('-', ' ')
       const status = msg.status === 'done' ? 'done' : 'active'
-      const content = msg.content || ''
-      
-      // Log the step event for debug panel
-      addLog(`[STEP] ${stepName}: ${content || status}`)
-      
+
+      addLog(`[STEP] ${stepName}: ${msg.content || status}`)
       updateStep(msg.step_id, status)
       return
     }
@@ -83,7 +82,7 @@ export const useMessageHandler = ({
       // Update current code for debug panel
       setCurrentCode(contentRef.current)
 
-      const newIndex = (lastChunkIndexRef.current || 0) + 1
+      const newIndex = lastChunkIndexRef.current + 1
       lastChunkIndexRef.current = newIndex
       updateLastChunkIndex(newIndex)
 
@@ -113,10 +112,14 @@ export const useMessageHandler = ({
 
       resetCurrentMessage()
       trimMessageHistory()
+
+      // Cleanup refs
       contentRef.current = ''
       tokenCountRef.current = 0
+      lastChunkIndexRef.current = 0
       setTokenCount(0)
       setCurrentCode('')
+      return
     }
 
     // === ERROR ===
@@ -124,7 +127,7 @@ export const useMessageHandler = ({
       isStreamActiveRef.current = false
       isSendingRef.current = false
 
-      const errorMsg = msg.message || 'Unknown error'
+      const errorMsg = msg.message || msg.error || 'Erreur inconnue'
       setError(errorMsg)
 
       updateMessageById(
@@ -132,6 +135,12 @@ export const useMessageHandler = ({
         () => errorMsg,
         'error'
       )
+      return
+    }
+
+    // === FALLBACK: Log unexpected message types ===
+    if (msg.type) {
+      addLog(`[UNKNOWN] ${msg.type}: ${JSON.stringify(msg).slice(0, 150)}`)
     }
   }, [
     assistantMessageIdRef,
@@ -157,11 +166,9 @@ export const useMessageHandler = ({
 
     // Quand un nouveau step devient actif, marquer le précédent comme done
     if (data.status === 'active') {
-      const stepOrder = ['step-analyzing', 'step-planning', 'step-executing', 'step-reviewing']
-      const currentIdx = stepOrder.indexOf(data.stepId)
+      const currentIdx = STEP_ORDER.indexOf(data.stepId as typeof STEP_ORDER[number])
       if (currentIdx > 0) {
-        const prevStepId = stepOrder[currentIdx - 1]
-        updateStep(prevStepId, 'done')
+        updateStep(STEP_ORDER[currentIdx - 1], 'done')
       }
     }
 
