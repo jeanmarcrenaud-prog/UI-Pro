@@ -37,7 +37,7 @@ else:
 # Paths - relative to PROJECT_ROOT
 WORKSPACE = PROJECT_ROOT / os.getenv("WORKSPACE", "workspace")
 TEMPLATES = PROJECT_ROOT / "templates"
-
+DATA_DIR = PROJECT_ROOT / "data"
 
 def _parse_bool(value: str | None, default: bool = False) -> bool:
     """Parse boolean from environment variable."""
@@ -91,6 +91,23 @@ EXECUTOR_TIMEOUT = int(os.getenv("EXECUTOR_TIMEOUT", 60))
 # Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
+
+# ========================
+# Backend configuration (inline in Settings.backends field)
+# ========================
+
+# Reasoning keywords for smart model selection
+REASONING_KEYWORDS = frozenset(["error", "debug", "optimize", "architecture", "complex", "plan", "architect"])
+
+# ========================
+# NEW: Checkpointing Settings
+# ========================
+CHECKPOINT_DB_PATH = os.getenv("CHECKPOINT_DB_PATH", str(DATA_DIR / "checkpoints.db"))
+CHECKPOINT_MAX_PER_THREAD = int(os.getenv("CHECKPOINT_MAX_PER_THREAD", 100))
+CHECKPOINT_PRUNE_AGE_DAYS = int(os.getenv("CHECKPOINT_PRUNE_AGE_DAYS", 30))
+USE_POSTGRES_CHECKPOINTER = _parse_bool(os.getenv("USE_POSTGRES_CHECKPOINTER"), False)
+POSTGRES_DB_URL = os.getenv("POSTGRES_DB_URL")  # e.g. postgresql+psycopg://user:pass@localhost/langgraph
+
 # HF_TOKEN should be loaded carefully (see memory.py or .env)
 # DO NOT hardcode in this file!
 
@@ -128,12 +145,6 @@ def _save_timeout_to_env(llm_timeout: int, executor_timeout: int) -> None:
         logger.warning(f"Could not save timeouts to .env: {e}")
 
 
-# ========================
-# Backend configuration (inline in Settings.backends field)
-# ========================
-
-# Reasoning keywords for smart model selection
-REASONING_KEYWORDS = frozenset(["error", "debug", "optimize", "architecture", "complex", "plan", "architect"])
 
 
 # ========================
@@ -146,6 +157,7 @@ class Settings:
     project_root: Path = PROJECT_ROOT
     workspace: Path = WORKSPACE
     templates: Path = TEMPLATES
+    data_dir: Path = DATA_DIR
     
     # Backend URLs
     ollama_url: str = OLLAMA_URL
@@ -176,6 +188,17 @@ class Settings:
     memory_enabled: bool = True
     memory_limit_mb: int = 512
     
+    # Checkpointing
+    checkpoint_db_path: str = "data/checkpoints.db"
+    checkpoint_max_per_thread: int = 100          # Keep last N checkpoints per thread
+    checkpoint_prune_age_days: int = 30
+    use_postgres_checkpointer: bool = False
+    postgres_db_url: Optional[str] = None         # e.g. "postgresql+psycopg://..."
+
+    # State management
+    enable_state_compression: bool = True         # Summarize old messages
+    max_message_history: int = 50                 # Before summarization
+
     # Config
     load_dotenv: bool = LOAD_DOTENV
     backends: dict = field(default_factory=lambda: {
@@ -213,7 +236,18 @@ class Settings:
         self.dashboard_port = int(os.getenv("DASHBOARD_PORT", yaml_api.get("dashboard_port", self.dashboard_port)))
         self.memory_enabled = _parse_bool(os.getenv("MEMORY_ENABLED"), yaml_memory.get("enabled", self.memory_enabled))
         self.memory_limit_mb = int(os.getenv("MEMORY_LIMIT_MB", yaml_memory.get("limit_mb", self.memory_limit_mb)))
-    
+
+# NEW: Checkpoint helper
+    def get_checkpoint_config(self) -> dict:
+        """Return checkpoint configuration for LangGraph."""
+        return {
+            "db_path": self.checkpoint_db_path,
+            "max_per_thread": self.checkpoint_max_per_thread,
+            "prune_age_days": self.checkpoint_prune_age_days,
+            "use_postgres": self.use_postgres_checkpointer,
+            "postgres_url": self.postgres_db_url,
+        }
+
     def get_model_for_task(self, task: str) -> str:
         """
         Simple model selection for basic task types.

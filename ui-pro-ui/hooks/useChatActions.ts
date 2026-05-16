@@ -1,0 +1,164 @@
+// useChatActions.ts
+// Role: Chat actions - sendMessage, regenerate, cancel
+
+'use client'
+
+import { useCallback, useRef } from 'react'
+import { useChatStore } from '@/lib/stores/chatStore'
+import { useAgentStore } from '@/lib/stores/agentStore'
+import { useUIStore } from '@/lib/stores/uiStore'
+import { chatService } from '@/services/chatService'
+import type { AgentStep } from '@/lib/types'
+
+export const useChatActions = () => {
+  const { selectedModel, availableModels } = useUIStore()
+  const {
+    addMessage,
+    updateMessageById,
+    updateLastChunkIndex,
+    setCurrentMessage,
+    resetCurrentMessage,
+    trimMessageHistory,
+    saveToHistory,
+    removeMessage,
+    setLoading,
+    setError,
+    getPromptById,
+    messages,
+  } = useChatStore()
+
+  const { start, updateStep, reset: resetAgent } = useAgentStore()
+
+  // Refs pour l'état mutable pendant le streaming
+  const isSendingRef = useRef(false)
+  const isStreamActiveRef = useRef(false)
+  const contentRef = useRef('')
+  const assistantMessageIdRef = useRef('')
+  const safetyTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  const getCurrentModelInfo = useCallback(() => {
+    const modelInfo = availableModels.find(m =>
+      m.name === selectedModel || m.id === selectedModel
+    )
+
+    const provider = modelInfo?.provider || 'ollama'
+    const fallbackModel = provider === 'lmstudio'
+      ? 'qwen/qwen3.5-9b'
+      : 'qwen3.6:latest'
+
+    return {
+      model: modelInfo?.id || selectedModel || fallbackModel,
+      provider,
+    }
+  }, [selectedModel, availableModels])
+
+  const initialSteps: AgentStep[] = [
+    { id: 'step-analyzing', title: 'Analyzing request', status: 'pending' },
+    { id: 'step-planning', title: 'Planning solution', status: 'pending' },
+    { id: 'step-executing', title: 'Executing', status: 'pending' },
+    { id: 'step-reviewing', title: 'Reviewing', status: 'pending' },
+  ]
+
+  const initializeNewGeneration = useCallback(async (
+    content: string,
+    messageId: string,
+    assistantId: string
+  ) => {
+    assistantMessageIdRef.current = assistantId
+    contentRef.current = ''
+
+    addMessage({
+      role: 'assistant',
+      content: '',
+      status: 'thinking',
+      id: assistantId,
+    })
+
+    setLoading(true)
+    resetAgent()
+    start(initialSteps)
+
+    const { model, provider } = getCurrentModelInfo()
+    return chatService.sendMessage(content, messageId, 0, model, provider)
+  }, [addMessage, setLoading, resetAgent, start, getCurrentModelInfo])
+
+  const cancel = useCallback(() => {
+    chatService.cancel()
+
+    isStreamActiveRef.current = false
+    isSendingRef.current = false
+
+    if (safetyTimeoutRef.current) {
+      clearTimeout(safetyTimeoutRef.current)
+      safetyTimeoutRef.current = null
+    }
+  }, [])
+
+  const sendMessage = useCallback(async (content: string) => {
+    if (isSendingRef.current || !content?.trim()) return
+
+    cancel() // Nettoyage préalable
+
+    isSendingRef.current = true
+    isStreamActiveRef.current = true
+
+    const messageId = crypto.randomUUID()
+    const assistantId = crypto.randomUUID()
+
+    setCurrentMessage(messageId, content)
+    addMessage({ role: 'user', content, id: crypto.randomUUID() })
+
+    try {
+      await initializeNewGeneration(content, messageId, assistantId)
+
+      safetyTimeoutRef.current = setTimeout(() => {
+        if (isStreamActiveRef.current) {
+          setError('Request timed out after 5 minutes')
+          cancel()
+        }
+      }, 300_000)
+    } catch (err) {
+      console.error('[useChatActions] Send failed:', err)
+      setError(err instanceof Error ? err.message : 'Failed to send message')
+      isSendingRef.current = false
+      isStreamActiveRef.current = false
+    }
+  }, [initializeNewGeneration, setCurrentMessage, addMessage, setError, cancel])
+
+  const regenerate = useCallback(async (messageId: string) => {
+    const userIndex = messages.findIndex(m => m.id === messageId && m.role === 'user')
+    if (userIndex === -1) return
+
+    const content = messages[userIndex].content
+
+    // Supprimer les messages suivants
+    messages.slice(userIndex + 1).forEach(m => removeMessage(m.id))
+
+    const newMessageId = crypto.randomUUID()
+    const assistantId = crypto.randomUUID()
+
+    isSendingRef.current = true
+    isStreamActiveRef.current = true
+
+    try {
+      await initializeNewGeneration(content, newMessageId, assistantId)
+    } catch (err) {
+      console.error('[useChatActions] Regenerate failed:', err)
+      setError('Failed to regenerate response')
+    }
+  }, [messages, removeMessage, initializeNewGeneration, setError])
+
+  return {
+    sendMessage,
+    regenerate,
+    cancel,
+    refs: {
+      isSendingRef,
+      isStreamActiveRef,
+      contentRef,
+      assistantMessageIdRef,
+      safetyTimeoutRef,
+    },
+    initialSteps,
+  }
+}

@@ -1,6 +1,7 @@
 """
 models/settings.py - Backward Compatibility Re-export
 """
+
 from backend.domain.settings import (
     Settings,
     PROJECT_ROOT,

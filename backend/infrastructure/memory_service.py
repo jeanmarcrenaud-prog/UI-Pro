@@ -114,8 +114,8 @@ class MemoryService(BaseService):
             from backend.infrastructure.memory import MemoryManager
 
             self._vector_store = MemoryManager(
-                persist_path=str(Path(self.persist_path) / "index"),
-                max_memories=1500
+                persist_path=str(Path(self.persist_path) / "faiss_index"),
+                max_memories=2000
             )
 
             await self._load_entries()

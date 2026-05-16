@@ -3,7 +3,7 @@
 
 import type { Message } from '@/domain/entities/Message';
 import { STREAM_EVENTS } from '@/domain/events/StreamEvents';
-import * as events from '@/infrastructure/events/EventBus';
+import { events } from '@/infrastructure/events/EventBus';
 
 type LifecycleState = 'idle' | 'connecting' | 'open' | 'closing' | 'fallback';
 

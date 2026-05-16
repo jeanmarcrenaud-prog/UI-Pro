@@ -1,6 +1,5 @@
 // infrastructure/config/Config.ts
 // Role: Centralized configuration - single source of truth for frontend
-import type { API_CONFIG_TYPE, LLM_CONFIG_TYPE } from './Config'
 
 export const API_CONFIG = {
   apiUrl: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
@@ -23,6 +22,5 @@ export const config = {
   ...LLM_CONFIG,
 }
 
-export type { API_CONFIG_TYPE, LLM_CONFIG_TYPE }
-export type { API_CONFIG as ApiConfig } from './Config'
-export type { LLM_CONFIG as LlmConfig } from './Config'
+export type ApiConfig = typeof API_CONFIG
+export type LlmConfig = typeof LLM_CONFIG

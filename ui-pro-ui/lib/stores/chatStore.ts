@@ -36,6 +36,9 @@ interface ChatStore extends ChatState {
   // Tokens
   tokenCount: number
   setTokenCount: (count: number) => void
+  // Current code being generated
+  currentCode: string
+  setCurrentCode: (code: string) => void
   // History
   history: ChatHistoryItem[]
   currentChatId: string | null
@@ -149,6 +152,10 @@ export const useChatStore = create<ChatStore>()(
       // Tokens
       tokenCount: 0,
       setTokenCount: (tokenCount) => set({ tokenCount }),
+      
+      // Current code being generated
+      currentCode: '',
+      setCurrentCode: (currentCode) => set({ currentCode }),
       
       // Messages
       messages: [],

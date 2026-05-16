@@ -2,14 +2,14 @@
 services/llm_router.py - Advanced LLM Router with Real Token Streaming
 """
 
-import logging
 import asyncio
-from typing import Optional, Dict, List, Any, AsyncGenerator
+import logging
 from dataclasses import dataclass
-from enum import Enum
 from datetime import datetime
+from enum import Enum
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
-from models.settings import settings, OLLAMA_URL
+from models.settings import OLLAMA_URL, settings
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +162,7 @@ class LLMRouter:
                     actual_model = actual_model[len(prefix):]
                     break
 
-        from llm.router import OllamaClient, ModelConfig
+        from llm.router import ModelConfig, OllamaClient
 
         # Determine base URL based on provider
         if provider == "ollama" or not provider:
@@ -216,7 +216,7 @@ class LLMRouter:
                     break
 
         try:
-            from llm.router import OllamaClient, ModelConfig
+            from llm.router import ModelConfig, OllamaClient
 
             # Determine base URL based on provider
             if provider == "ollama" or not provider:

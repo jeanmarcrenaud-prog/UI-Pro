@@ -30,6 +30,7 @@ interface DebugPanelProps {
   currentStep?: number
   logs?: string[]
   onClearLogs?: () => void
+  currentCode?: string  // Code being generated during coding phase
   locale?: 'en' | 'fr'
 }
 
@@ -47,6 +48,7 @@ export function DebugPanel({
   currentStep = 0,
   logs = [],
   onClearLogs,
+  currentCode = '',
   locale = 'en',
 }: DebugPanelProps) {
   const { t } = useI18n()
@@ -162,6 +164,16 @@ export function DebugPanel({
             </div>
           ))}
         </div>
+
+        {/* CODE PREVIEW */}
+        {currentCode && (
+          <div className="p-4 border-b border-slate-800/60 max-h-64 flex flex-col">
+            <div className="text-xs text-slate-500 mb-2">{t.debug?.generatedCode || 'Generated Code'}</div>
+            <pre className="flex-1 overflow-auto text-[10px] text-slate-300 bg-slate-900/50 p-2 rounded font-mono whitespace-pre-wrap">
+              {currentCode.slice(-2000)}{currentCode.length > 2000 ? '\n... (truncated)' : ''}
+            </pre>
+          </div>
+        )}
 
         {/* LOGS */}
         <div className="flex-1 flex flex-col min-h-0">

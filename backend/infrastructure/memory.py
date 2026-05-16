@@ -82,13 +82,13 @@ class MemoryManager:
 
             # Compute embedding once (cached)
             embedding = self.embed(text)
-            vector = np.array([embedding], dtype=np.float32)
+            vector = np.ascontiguousarray(embedding.reshape(1, -1), dtype=np.float32)
 
             idx = len(self.documents)
-            ids = np.array([idx], dtype=np.int64)
+            ids = np.ascontiguousarray(np.array([idx]), dtype=np.int64)
 
             # Add to existing index (NOT recreate!)
-            self.index.add_with_ids(vector, ids)
+            self.index.add_with_ids(vector, ids)  # type: ignore[attr-defined]
 
             # Store embedding in document for fast rebuild
             self.documents.append(
@@ -116,11 +116,11 @@ class MemoryManager:
                 return []
 
             # Compute query embedding once
-            query_vector = np.array([self.embed(query)], dtype=np.float32)
+            query_vector = np.ascontiguousarray(self.embed(query).reshape(1, -1), dtype=np.float32)
             k = min(int(limit), len(self.documents))
 
             # Search the index
-            distances, labels = self.index.search(query_vector, k)
+            distances, labels = self.index.search(query_vector, k)  # type: ignore[attr-defined]
 
             results = []
             for i, doc_id in enumerate(labels[0]):
@@ -216,12 +216,12 @@ class MemoryManager:
             return
 
         # Use stored embeddings (much faster than re-embedding)
-        vectors = np.array([doc["embedding"] for doc in self.documents], dtype=np.float32)
-        ids = np.arange(len(self.documents), dtype=np.int64)
+        vectors = np.ascontiguousarray([doc["embedding"] for doc in self.documents], dtype=np.float32)
+        ids = np.ascontiguousarray(np.arange(len(self.documents), dtype=np.int64))
 
         base = faiss.IndexFlatL2(self.dimension)
         self.index = faiss.IndexIDMap(base)
-        self.index.add_with_ids(vectors, ids)
+        self.index.add_with_ids(vectors, ids)  # type: ignore[attr-defined]
 
         # Rebuild access_order with new indices
         self.access_order = OrderedDict((i, doc.get("last_access", time.time())) for i, doc in enumerate(self.documents))
