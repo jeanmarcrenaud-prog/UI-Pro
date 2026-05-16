@@ -22,6 +22,7 @@ interface ActiveRequest {
 class ChatService {
   private ws: WebSocket | null = null
   private handlers = new Set<(message: Message) => void>()
+  private readonly MAX_HANDLERS = 10
 
   private lifecycleState: LifecycleState = 'idle'
   private activeRequest: ActiveRequest | null = null
@@ -43,6 +44,12 @@ class ChatService {
   // =====================
 
   onMessage(handler: (message: Message) => void): () => void {
+    // Prevent handler accumulation (memory leak prevention)
+    if (this.handlers.size >= this.MAX_HANDLERS) {
+      console.warn('[chatService] Max handlers reached, clearing stale ones')
+      this.handlers.clear()
+    }
+
     this.handlers.add(handler)
     return () => {
       this.handlers.delete(handler)

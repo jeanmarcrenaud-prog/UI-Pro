@@ -99,6 +99,9 @@ export const useChatActions = () => {
 
     cancel() // Nettoyage préalable
 
+    // Capturer le modèle IMMÉDIATEMENT pour éviter race condition
+    const { model, provider } = getCurrentModelInfo()
+
     isSendingRef.current = true
     isStreamActiveRef.current = true
 
@@ -109,7 +112,7 @@ export const useChatActions = () => {
     addMessage({ role: 'user', content, id: crypto.randomUUID() })
 
     try {
-      await initializeNewGeneration(content, messageId, assistantId)
+      await initializeNewGeneration(content, messageId, assistantId, model, provider)
 
       safetyTimeoutRef.current = setTimeout(() => {
         if (isStreamActiveRef.current) {
@@ -123,7 +126,7 @@ export const useChatActions = () => {
       isSendingRef.current = false
       isStreamActiveRef.current = false
     }
-  }, [initializeNewGeneration, setCurrentMessage, addMessage, setError, cancel])
+  }, [getCurrentModelInfo, initializeNewGeneration, setCurrentMessage, addMessage, setError, cancel])
 
   const regenerate = useCallback(async (messageId: string) => {
     const userIndex = messages.findIndex(m => m.id === messageId && m.role === 'user')
