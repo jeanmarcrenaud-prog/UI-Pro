@@ -60,6 +60,7 @@ export interface Translations {
     liveLogs: string
     clear: string
     waiting: string
+    generatedCode: string
   }
   codeBlock: {
     copy: string
@@ -170,6 +171,7 @@ const en: Translations = {
     liveLogs: 'Live Logs',
     clear: 'Clear',
     waiting: 'Waiting...',
+    generatedCode: 'Generated Code',
   },
   codeBlock: { copy: 'Copy', copied: 'Copied', save: 'Save', run: 'Run', running: 'Running...', installing: 'Installing...', dependencies: 'Deps' },
   messageBubble: { regenerate: 'Regenerate', continue: 'Continue', copy: 'Copy', copied: 'Copied' },
@@ -245,6 +247,7 @@ const fr: Translations = {
     liveLogs: 'Logs en direct',
     clear: 'Effacer',
     waiting: 'En attente...',
+    generatedCode: 'Code Généré',
   },
   codeBlock: { copy: 'Copier', copied: 'Copié', save: 'Enregistrer', run: 'Exécuter', running: 'Exécution...', installing: 'Installation...', dependencies: 'Deps' },
   messageBubble: { regenerate: 'Régénérer', continue: 'Continuer', copy: 'Copier', copied: 'Copié' },
