@@ -6,6 +6,7 @@
 import { useEffect, useCallback, useRef } from 'react'
 import { chatService } from '@/services/chatService'
 import { events } from '@/lib/events'
+import { normalizeMessage } from '@/lib/messageAdapter'
 import type { AgentStep } from '@/lib/types'
 
 interface UseMessageHandlerProps {
@@ -60,23 +61,27 @@ export const useMessageHandler = ({
       return
     }
 
-    // === STEP UPDATES ===
-    if (msg.type === 'step' && msg.step_id) {
-      const stepName = msg.step_id.replace('step-', '').replace('-', ' ')
-      const status = msg.status === 'done' ? 'done' : 'active'
+    // Normalize message to unified format
+    const normalized = normalizeMessage(msg)
 
-      addLog(`[STEP] ${stepName}: ${msg.content || status}`)
-      updateStep(msg.step_id, status)
+    // === STEP UPDATES ===
+    if (normalized.type === 'step' && normalized.stepId) {
+      const stepName = normalized.stepId.replace('step-', '').replace('-', ' ')
+      addLog(`[STEP] ${stepName}: ${normalized.content || normalized.status}`)
+      updateStep(normalized.stepId, normalized.status === 'done' ? 'done' : 'active')
       return
     }
 
     // === TOKEN STREAMING ===
-    const tokenContent = msg.content || msg.delta || ''
-    if ((msg.type === 'token' || msg.status === 'streaming') && tokenContent) {
-      contentRef.current += tokenContent
+    if (normalized.type === 'token' && normalized.content) {
+      contentRef.current += normalized.content
 
-      // Compter les tokens
-      tokenCountRef.current = estimateTokens(contentRef.current)
+      // Use real token count if provided, otherwise estimate
+      if (normalized.tokenCount !== undefined) {
+        tokenCountRef.current = normalized.tokenCount
+      } else {
+        tokenCountRef.current = estimateTokens(contentRef.current)
+      }
       setTokenCount(tokenCountRef.current)
 
       // Update current code for debug panel
@@ -88,14 +93,14 @@ export const useMessageHandler = ({
 
       updateMessageById(
         assistantMessageIdRef.current,
-        (prev) => prev + tokenContent,
+        (prev) => prev + normalized.content,
         'streaming'
       )
       return
     }
 
     // === COMPLETION ===
-    if (msg.type === 'done' || msg.done === true || msg.status === 'done') {
+    if (normalized.type === 'done') {
       isStreamActiveRef.current = false
       isSendingRef.current = false
 
@@ -107,7 +112,7 @@ export const useMessageHandler = ({
 
       saveToHistory()
 
-      // Marquer toutes les étapes comme terminées
+      // Марку all steps as done
       initialSteps.forEach(step => updateStep(step.id, 'done'))
 
       resetCurrentMessage()
@@ -123,11 +128,11 @@ export const useMessageHandler = ({
     }
 
     // === ERROR ===
-    if (msg.type === 'error') {
+    if (normalized.type === 'error') {
       isStreamActiveRef.current = false
       isSendingRef.current = false
 
-      const errorMsg = msg.message || msg.error || 'Erreur inconnue'
+      const errorMsg = normalized.content || normalized.code || 'Unknown error'
       setError(errorMsg)
 
       updateMessageById(
@@ -139,8 +144,8 @@ export const useMessageHandler = ({
     }
 
     // === FALLBACK: Log unexpected message types ===
-    if (msg.type) {
-      addLog(`[UNKNOWN] ${msg.type}: ${JSON.stringify(msg).slice(0, 150)}`)
+    if (normalized.type !== 'unknown') {
+      addLog(`[DEBUG] Unhandled message type: ${normalized.type}`)
     }
   }, [
     assistantMessageIdRef,

@@ -100,6 +100,8 @@ async def _stream_with_langgraph(task: str, session_id: str, max_attempts: int, 
         logger.info(f"[stream] Starting langgraph stream for task: {task[:50]}...")
 
         event_count = 0
+        accumulated_content = ""  # Track for token counting
+
         async for event in langgraph_stream(
             message=task,
             session_id=session_id,
@@ -143,12 +145,19 @@ async def _stream_with_langgraph(task: str, session_id: str, max_attempts: int, 
                 elif event.startswith("[TOKEN]"):
                     # Format: [TOKEN]content
                     content = event[7:]
+                    accumulated_content += content
+
+                    # Calculate token count (rough: 1 token ≈ 2 chars for LLM output)
+                    # Better: integrate tiktoken if performance needed
+                    token_count = max(1, len(accumulated_content) // 2)
+
                     yield {
                         "type": "token",
                         "content": content,
                         "response": content,
                         "done": False,
                         "message_id": message_id,
+                        "token_count": token_count,  # 👈 Real token count
                     }
 
                 elif event.startswith("[TOOL]"):
