@@ -20,6 +20,33 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 logger = logging.getLogger(__name__)
 
+# Token counting with tiktoken
+_token_encoder = None
+
+def _get_encoder():
+    """Lazy load tiktoken encoder."""
+    global _token_encoder
+    if _token_encoder is None:
+        try:
+            import tiktoken
+            # Use cl100k_base for most models (GPT-4, Qwen, etc.)
+            _token_encoder = tiktoken.get_encoding("cl100k_base")
+        except Exception as e:
+            logger.warning(f"tiktoken not available: {e}")
+            return None
+    return _token_encoder
+
+def count_tokens(text: str) -> int:
+    """Count tokens in text using tiktoken."""
+    encoder = _get_encoder()
+    if encoder:
+        try:
+            return len(encoder.encode(text))
+        except Exception:
+            pass
+    # Fallback: ~4 chars per token
+    return len(text) // 4
+
 
 class StreamStatus(Enum):
     STARTING = "starting"
@@ -157,15 +184,19 @@ class StreamingService:
     ) -> None:
         start = time.perf_counter()
         index = 0
+        accumulated_text = ""
 
         try:
             async for token in generator:
+                accumulated_text += token
+                token_count = count_tokens(accumulated_text)
+                
                 chunk = StreamChunk(
                     text=token,
                     status=StreamStatus.GENERATING,
                     stream_id=stream_id,
                     chunk_index=index,
-                    tokens_generated=index + 1,
+                    tokens_generated=token_count,
                     latency_ms=(time.perf_counter() - start) * 1000,
                 )
 
@@ -178,6 +209,7 @@ class StreamingService:
                     status=StreamStatus.COMPLETED,
                     stream_id=stream_id,
                     chunk_index=index,
+                    tokens_generated=count_tokens(accumulated_text),
                 )
             )
 
