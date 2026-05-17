@@ -117,21 +117,17 @@ ui-pro/                           # Projet principal
 ├── run.py                        # Launcher principal
 ├── app/launcher.py              # Multi-service launcher
 │
-├── backend/                      # SOURCE DE VÉRITÉ
+├── backend/                      # SOURCE DE VÉRITÉ (SEUL)
 │   ├── domain/                  # Business logic
 │   │   └── core/                # Core modules
 │   ├── infrastructure/          # Services layer
 │   ├── application/              # App layer
 │   └── transport/                # API endpoints
 │
-├── core/                         # Legacy (ré-export → backend/)
-├── services/                     # Legacy (ré-export → backend/)
-├── api/                          # Legacy (ré-export → backend/)
-├── views/                        # Legacy (ré-export → backend/)
-├── llm/                          # LLM clients
-├── controllers/                  # HTTP/WS
-├── models/                       # Data types
+├── llm/                          # LLM clients (module séparé)
+├── models/                       # Data types + Settings
 ├── tests/                        # Tests
+├── scripts/                     # Scripts utilitaires
 ├── ui-pro-ui/                    # Next.js frontend
 │   └── components/
 │       ├── chat/                # 7 composants
