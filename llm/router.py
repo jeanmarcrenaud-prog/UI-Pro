@@ -43,31 +43,52 @@ class OllamaClient:
         import requests
 
         model = model or self.config.model
-        url = self.config.url or f"{settings.ollama_url}/api/generate"
+        backend = self.config.backend or "ollama"
 
-        payload = {
-            "model": model,
-            "prompt": prompt,
-            "system": system_prompt or "",
-            "stream": False,
-            "options": {"temperature": temperature}
-        }
+        # Determine URL and payload format based on backend
+        if backend in ("lmstudio", "lemonade"):
+            url = self.config.url or f"{settings.ollama_url}/v1/chat/completions"
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": prompt})
+            payload = {
+                "model": model,
+                "messages": messages,
+                "stream": False,
+                "temperature": temperature
+            }
+        else:
+            # Ollama format
+            url = self.config.url or f"{settings.ollama_url}/api/generate"
+            payload = {
+                "model": model,
+                "prompt": prompt,
+                "system": system_prompt or "",
+                "stream": False,
+                "options": {"temperature": temperature}
+            }
 
         try:
             resp = requests.post(url, json=payload, timeout=self.config.timeout)
             resp.raise_for_status()
             data = resp.json()
-            return data.get('response', '')
+
+            # Parse response based on backend format
+            if backend in ("lmstudio", "lemonade"):
+                return data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            else:
+                return data.get('response', '')
         except requests.RequestException as e:
-            logger.error(f"Ollama request failed: {e}")
+            logger.error(f"Request failed: {e}")
             error_msg = str(e).lower()
             if "subscription" in error_msg or "upgrade" in error_msg:
                 return "[Error: Ce modèle nécessite un abonnement. Utilisez un modèle local.]"
             elif "404" in error_msg:
                 return "[Error: Modèle non trouvé. Vérifiez 'ollama list']"
             elif "connection" in error_msg:
-                return "[Error: Impossible de se connecter à Ollama.]"
-            return f"[OllamaError: {e}]"
+                return "[Error: Impossible de se connecter à Ollama/LMStudio.]"
+            return f"[Error: {e}]"
 
     def stream(
         self,
@@ -119,21 +140,28 @@ class OllamaClient:
                         if text.startswith("data: "):
                             text = text[6:]
                         if text == "[DONE]":
+                            logger.debug(f"[stream] received [DONE] marker for {backend}")
                             break
                         try:
                             data = json.loads(text)
                             # Parse based on backend format
                             if backend in ("lmstudio", "lemonade", "llamacpp"):
                                 content = data.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                                finish_reason = data.get("choices", [{}])[0].get("finish_reason")
+                                if finish_reason:
+                                    logger.debug(f"[stream] {backend} finish_reason={finish_reason}")
                             else:
                                 # Ollama format
                                 content = data.get('response', '') or data.get('thinking', '')
+                                finish_reason = data.get("done", False)
                             if content:
                                 yield content
                             if data.get("done", False):
+                                logger.debug(f"[stream] received done=true for {backend}")
                                 break
                             choices = data.get("choices", [])
                             if choices and choices[0].get("finish_reason"):
+                                logger.debug(f"[stream] {backend} finish_reason received, breaking")
                                 break
                         except json.JSONDecodeError:
                             logger.warning(f"Failed to parse stream line: {text[:50]}")
@@ -168,21 +196,41 @@ class OllamaClient:
             try:
                 for token in self.stream(prompt, model, system_prompt, temperature):
                     q.put_nowait((False, token))
+                    logger.debug(f"[astream] token sent to queue: {token[:20] if token else '(empty)'}...")
             except Exception as e:
-                logger.error(f"[OllamaClient.astream] sync stream failed: {e}")
+                logger.error(f"[OllamaClient.astream] sync stream failed: {e}", exc_info=True)
                 q.put_nowait((True, f"[Streaming Error: {e}]"))
             finally:
+                logger.debug("[astream] stream ended, sending sentinel")
                 q.put_nowait((True, None))  # Sentinel: done=True, token=None
 
-        t = threading.Thread(target=_sync_producer, daemon=True)
+        t = threading.Thread(target=_sync_producer, daemon=False)  # Non-daemon to ensure cleanup
         t.start()
 
-        while True:
-            done, token = await loop.run_in_executor(None, q.get)
-            if done and token is None:
-                break
-            if token:
-                yield token
+        timeout_counter = 0
+        max_idle_iterations = 100
+
+        try:
+            while True:
+                try:
+                    done, token = await asyncio.wait_for(
+                        loop.run_in_executor(None, q.get),
+                        timeout=30  # 30s timeout per token to catch hangs
+                    )
+                    timeout_counter = 0
+                    if done and token is None:
+                        logger.debug("[astream] received sentinel, stream complete")
+                        break
+                    if token:
+                        yield token
+                except asyncio.TimeoutError:
+                    timeout_counter += 1
+                    logger.warning(f"[astream] queue.get timeout, iteration {timeout_counter}")
+                    if timeout_counter > 3:
+                        logger.error("[astream] too many timeouts, breaking stream")
+                        break
+        finally:
+            t.join(timeout=5)  # Wait up to 5s for thread to finish
 
 
 # ==================== CONFIG ====================

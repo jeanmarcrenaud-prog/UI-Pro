@@ -285,6 +285,45 @@ class Settings:
         # Persist to .env
         _save_timeout_to_env(self.llm_timeout, self.executor_timeout)
 
+    def set_log_level(self, level: str) -> None:
+        """Set and persist log level."""
+        level_upper = level.upper()
+        valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+        if level_upper not in valid_levels:
+            raise ValueError(f"Invalid log level. Must be one of: {', '.join(valid_levels)}")
+
+        self.log_level = level_upper
+        self._save_log_level_to_env(level_upper)
+        logger.info(f"Log level changed to {level_upper}")
+
+    @staticmethod
+    def _save_log_level_to_env(level: str) -> None:
+        """Persist log level setting to .env file."""
+        env_file = PROJECT_ROOT / ".env"
+        try:
+            lines = []
+            if env_file.exists():
+                with open(env_file, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+
+            found = False
+            new_lines = []
+            for line in lines:
+                if line.strip().startswith("LOG_LEVEL="):
+                    new_lines.append(f"LOG_LEVEL={level}\n")
+                    found = True
+                else:
+                    new_lines.append(line)
+
+            if not found:
+                new_lines.append(f"LOG_LEVEL={level}\n")
+
+            with open(env_file, "w", encoding="utf-8") as f:
+                f.writelines(new_lines)
+            logger.debug(f"Saved LOG_LEVEL to .env: {level}")
+        except Exception as e:
+            logger.warning(f"Could not save LOG_LEVEL to .env: {e}")
+
     def validate(self) -> tuple[bool, list[str]]:
         """Validate configuration. Returns (is_valid, list_of_errors)."""
         errors = []

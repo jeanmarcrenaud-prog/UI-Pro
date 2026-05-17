@@ -167,18 +167,22 @@ class LLMRouter:
         # Determine base URL based on provider
         if provider == "ollama" or not provider:
             ollama_base = getattr(settings, 'ollama_url', OLLAMA_URL).rstrip('/')
+            endpoint = "/api/generate"
         elif provider == "lmstudio":
             ollama_base = getattr(settings, 'lmstudio_url', "http://localhost:1234").rstrip('/')
+            endpoint = "/v1/chat/completions"
         elif provider == "lemonade":
             ollama_base = getattr(settings, 'lemonade_url', "http://localhost:13305").rstrip('/')
+            endpoint = "/v1/chat/completions"
         else:
             ollama_base = getattr(settings, 'ollama_url', OLLAMA_URL).rstrip('/')
+            endpoint = "/api/generate"
 
         if not ollama_base.startswith('http'):
             ollama_base = "http://localhost:11434"
 
         config = ModelConfig(
-            url=f"{ollama_base}/api/generate",
+            url=f"{ollama_base}{endpoint}",
             model=actual_model,
             timeout=settings.llm_timeout,
             backend=provider,
@@ -221,18 +225,22 @@ class LLMRouter:
             # Determine base URL based on provider
             if provider == "ollama" or not provider:
                 ollama_base = getattr(settings, 'ollama_url', OLLAMA_URL).rstrip('/')
+                endpoint = "/api/generate"
             elif provider == "lmstudio":
                 ollama_base = getattr(settings, 'lmstudio_url', "http://localhost:1234").rstrip('/')
+                endpoint = "/v1/chat/completions"
             elif provider == "lemonade":
                 ollama_base = getattr(settings, 'lemonade_url', "http://localhost:13305").rstrip('/')
+                endpoint = "/v1/chat/completions"
             else:
                 ollama_base = getattr(settings, 'ollama_url', OLLAMA_URL).rstrip('/')
+                endpoint = "/api/generate"
 
             if not ollama_base.startswith('http'):
                 ollama_base = "http://localhost:11434"
 
             config = ModelConfig(
-                url=f"{ollama_base}/api/generate",
+                url=f"{ollama_base}{endpoint}",
                 model=actual_model,
                 timeout=settings.llm_timeout,
                 backend=provider,
