@@ -1,517 +1,248 @@
 // services/chatService.ts
 /**
- * Chat Service - WebSocket client with auto-reconnect and resume support
- * Used for real-time streaming with fallback to REST
+ * Chat Service - Orchestrator for WebSocket + SSE/REST fallback
+ * 
+ * Architecture:
+ * - ChatService: Main orchestrator (lightweight)
+ * - WebSocketManager: Connection lifecycle + heartbeat
+ * - MessageHandler: Parse and emit messages
+ * - FallbackHandler: SSE/REST fallbacks with AbortController
+ * 
+ * Refactored for:
+ * - Single Responsibility
+ * - Better testability
+ * - Cleaner state management
  */
 
 import type { Message } from '@/lib/types'
 import { events } from '@/lib/events'
 import { API_CONFIG } from '@/lib/config'
-
-type LifecycleState = 'idle' | 'connecting' | 'open' | 'closing' | 'fallback'
-
-interface ActiveRequest {
-  id: string
-  prompt: string
-  model: string
-  provider: string  // ollama, lmstudio, lemonade, llamacpp
-  assistantId: string
-  lastChunkIndex: number
-}
+import { WebSocketManager } from './WebSocketManager'
+import { MessageHandler } from './MessageHandler'
+import { FallbackHandler } from './FallbackHandler'
+import { DEFAULT_MODEL, DEFAULT_PROVIDER, MAX_HANDLERS, REQUEST_TIMEOUT } from './constants'
+import type { ActiveRequest, PendingModel } from './types'
 
 class ChatService {
-  private ws: WebSocket | null = null
+  // Dependencies
+  private wsManager = new WebSocketManager()
+  private fallback = new FallbackHandler()
+  private messageHandler: MessageHandler
+
+  // State
   private handlers = new Set<(message: Message) => void>()
-  private readonly MAX_HANDLERS = 10
-
-  private lifecycleState: LifecycleState = 'idle'
   private activeRequest: ActiveRequest | null = null
-
-  private reconnectAttempts = 0
-  private readonly MAX_RECONNECT_ATTEMPTS = 5
-  private reconnectTimeout: ReturnType<typeof setTimeout> | null = null
-
-  private timers = {
-    flush: null as ReturnType<typeof setTimeout> | null,
-    heartbeat: null as ReturnType<typeof setInterval> | null,
-  }
-
   private manuallyClosed = false
-  private isFallingBack = false
+  private pendingModel: PendingModel | null = null
+
+  constructor() {
+    // Initialize message handler with bound callbacks
+    this.messageHandler = new MessageHandler(
+      this.handleToken.bind(this),
+      this.handleStep.bind(this),
+      this.handleError.bind(this),
+      this.handleComplete.bind(this)
+    )
+  }
 
   // =====================
   // PUBLIC API
   // =====================
 
   onMessage(handler: (message: Message) => void): () => void {
-    // Prevent handler accumulation (memory leak prevention)
-    if (this.handlers.size >= this.MAX_HANDLERS) {
-      console.warn('[chatService] Max handlers reached, clearing stale ones')
+    if (this.handlers.size >= MAX_HANDLERS) {
+      console.warn('[chatService] Max handlers reached, clearing')
       this.handlers.clear()
     }
-
     this.handlers.add(handler)
-    return () => {
-      this.handlers.delete(handler)
-    }
+    return () => this.handlers.delete(handler)
   }
 
-  async sendMessage(content: string, resumeMessageId?: string, resumeChunkIndex = 0, model?: string, provider?: string) {
-    // If a request is in progress, wait for it to complete first (fix race condition)
+  async sendMessage(
+    content: string,
+    resumeMessageId?: string,
+    resumeChunkIndex = 0,
+    model?: string,
+    provider?: string
+  ): Promise<void> {
+    // Capture model before creating request
+    const effectiveModel = model || this.pendingModel?.model || DEFAULT_MODEL
+    const effectiveProvider = provider || this.pendingModel?.provider || DEFAULT_PROVIDER
+    this.pendingModel = null
+
+    // Wait for existing request
     if (this.activeRequest) {
       console.warn('[chatService] Request in progress, waiting...')
-      // Wait up to 30 seconds for the previous request to complete
-      const waitStart = Date.now()
-      while (this.activeRequest && Date.now() - waitStart < 30000) {
-        await new Promise(resolve => setTimeout(resolve, 100))
+      const start = Date.now()
+      while (this.activeRequest && Date.now() - start < REQUEST_TIMEOUT) {
+        await new Promise(r => setTimeout(r, 100))
       }
       if (this.activeRequest) {
-        console.error('[chatService] Previous request timed out, cancelling...')
         this.stop()
       }
     }
 
-    const messageId = resumeMessageId || crypto.randomUUID()
-    const assistantId = crypto.randomUUID()
-
+    // Create request
     this.activeRequest = {
-      id: messageId,
+      id: resumeMessageId || crypto.randomUUID(),
       prompt: content,
-      model: model || 'qwen3.6:latest',
-      provider: provider || 'ollama',
-      assistantId,
+      model: effectiveModel,
+      provider: effectiveProvider,
+      assistantId: crypto.randomUUID(),
       lastChunkIndex: resumeChunkIndex,
     }
-
-    this.reconnectAttempts = 0
     this.manuallyClosed = false
 
+    // Try WebSocket first
     try {
-      await this.connect()
-      this.sendOverWebSocket()
+      await this.wsManager.connect(
+        (data) => this.messageHandler.process(data, this.activeRequest),
+        () => this.handleClose()
+      )
+      this.sendPayload()
     } catch (error) {
-      console.warn('[chatService] WebSocket connection failed, trying reconnect...', error)
-      // Try reconnect, if fails use SSE fallback
-      try {
-        await this.attemptReconnect()
-      } catch (reconnectError) {
-        console.warn('[chatService] Reconnect failed, using SSE fallback...')
-        await this.sendViaSSE(content, messageId, model, provider)
-      }
+      console.warn('[chatService] WS failed, trying fallback...', error)
+      await this.tryFallback()
     }
   }
 
-  // SSE fallback when WebSocket fails
-  private async sendViaSSE(content: string, messageId: string, model?: string, provider?: string) {
-    const url = `${API_CONFIG.apiUrl}/api/chat/stream`
-    
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: content,
-          model: model || 'qwen3.6:latest',
-          provider: provider || 'ollama',
-        }),
-      })
-
-      if (!response.ok) {
-        throw new Error(`SSE fallback failed: ${response.status}`)
-      }
-
-      const reader = response.body?.getReader()
-      if (!reader) throw new Error('No response body')
-
-      const decoder = new TextDecoder()
-      let buffer = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6))
-              if (data.type === 'token' && data.content) {
-                const msg: Message = {
-                  id: messageId,
-                  role: 'assistant',
-                  content: data.content,
-                  timestamp: Date.now(),
-                }
-                this.handlers.forEach(h => h(msg))
-              } else if (data.type === 'done') {
-                this.activeRequest = null
-              }
-            } catch {}
-          }
-        }
-      }
-    } catch (error) {
-      console.error('[chatService] SSE fallback failed:', error)
-      this.activeRequest = null
-      // Emit error to handlers
-      const errorMsg: Message = {
-        id: messageId,
-        role: 'assistant',
-        content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        timestamp: Date.now(),
-        isError: true,
-      }
-      this.handlers.forEach(h => h(errorMsg))
-    }
+  setModel(model: string, provider: string = DEFAULT_PROVIDER): void {
+    this.pendingModel = { model, provider }
   }
 
-  // Set model AFTER initialization (so caller controls it)
-  setModel(model: string, provider: string = 'ollama') {
-    if (this.activeRequest) {
-      this.activeRequest.model = model
-      this.activeRequest.provider = provider
-    }
-  }
-
-  cancel() {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: 'cancel' }))
-    }
+  cancel(): void {
+    this.fallback.cancel()
+    this.wsManager.send({ type: 'cancel' })
     this.stop()
   }
 
-  stop() {
+  stop(): void {
     this.manuallyClosed = true
-    this.clearAllTimers()
     this.activeRequest = null
-    this.reconnectAttempts = 0
-
-    if (this.ws) {
-      this.ws.close()
-      this.ws = null
-    }
-
-    this.lifecycleState = 'idle'
+    this.wsManager.close()
+    this.fallback.cancel()
     events.emit('status', { status: 'idle' })
   }
 
-  // =====================
-  // INTERNAL
-  // =====================
-
-  private async connect(): Promise<void> {
-    if (this.ws?.readyState === WebSocket.OPEN) return
-
-    return new Promise((resolve, reject) => {
-      this.lifecycleState = 'connecting'
-
-      const host = window.location.hostname || 'localhost'
-      const wsUrl = `${API_CONFIG.wsUrl.replace('localhost', host)}/ws`
-
-      this.ws = new WebSocket(wsUrl)
-
-      const timeoutId = setTimeout(() => {
-        this.ws?.close()
-        reject(new Error('WebSocket connection timeout'))
-      }, 8000)
-
-      this.ws.onopen = () => {
-        clearTimeout(timeoutId)
-        this.lifecycleState = 'open'
-        this.reconnectAttempts = 0
-        this.startHeartbeat()
-        resolve()
-      }
-
-      this.ws.onerror = () => {
-        clearTimeout(timeoutId)
-        reject(new Error('WebSocket connection error'))
-      }
-
-      this.ws.onmessage = this.handleMessage
-      this.ws.onclose = this.handleClose
-    })
+  destroy(): void {
+    this.stop()
+    this.handlers.clear()
+    this.pendingModel = null
   }
 
-  private sendOverWebSocket() {
-    if (!this.ws || !this.activeRequest) return
+  // =====================
+  // INTERNAL - Payload
+  // =====================
 
-    const payload = {
+  private sendPayload(): void {
+    if (!this.activeRequest) return
+    this.wsManager.send({
       message_id: this.activeRequest.id,
       message: this.activeRequest.prompt,
       model: this.activeRequest.model,
       provider: this.activeRequest.provider,
       last_chunk_index: this.activeRequest.lastChunkIndex,
-    }
-    console.log('[chatService] Sending payload:', JSON.stringify(payload, null, 2))
-    this.ws.send(JSON.stringify(payload))
+    })
   }
 
-  private handleMessage = (event: MessageEvent) => {
-    let msg: any
-    try {
-      msg = typeof event.data === 'string' ? JSON.parse(event.data) : event.data
-    } catch {
-      return
-    }
+  // =====================
+  // INTERNAL - Handlers (bound methods)
+  // =====================
 
-    if (msg.type === 'pong') return
-    if (msg.type === 'resume_ack') {
-      if (this.activeRequest && msg.resuming_from !== undefined) {
-        this.activeRequest.lastChunkIndex = Math.max(
-          this.activeRequest.lastChunkIndex,
-          Number(msg.resuming_from) || 0
-        )
-      }
-      return
-    }
+  private handleToken(id: string, content: string, done: boolean): void {
+    this.emit({ id, role: 'assistant', content, delta: content, status: done ? 'done' : 'streaming' })
+  }
 
-    // Step events
-    if (msg.type === 'step') {
-      events.emit('agentStep', {
-        stepId: msg.step_id,
-        status: msg.step_status || msg.status || 'active',
-      })
-      return
-    }
+  private handleStep(stepId: string, status: string): void {
+    events.emit('agentStep', { stepId, status: status as 'pending' | 'active' | 'done' })
+  }
 
-    // Error
-    if (msg.type === 'error') {
-      this.emitError(msg.message || msg.error || 'Unknown error')
-      return
-    }
+  private handleError(message: string): void {
+    this.emit({ id: crypto.randomUUID(), role: 'assistant', content: message, status: 'error' })
+    this.clearRequest()
+  }
 
-    const content = msg.response || msg.content || msg.data || msg.token || ''
+  private handleComplete(id: string): void {
+    this.emit({ id, role: 'assistant', content: '', status: 'done' })
+    this.clearRequest()
+  }
 
-    // Token streaming
-    if (content && this.activeRequest) {
-      this.emit({
-        id: this.activeRequest.assistantId,
-        role: 'assistant',
-        content: '', // full content is built in the store
-        delta: content,
-        status: 'streaming',
-      })
-    }
+  // =====================
+  // INTERNAL - Connection Management
+  // =====================
 
-    // Stream completed
-    if (msg.done || msg.type === 'done' || msg.status === 'completed') {
-      this.emitCompletion()
+  private handleClose(): void {
+    if (!this.manuallyClosed && this.activeRequest) {
+      this.tryReconnect()
     }
   }
 
-  private handleClose = () => {
-    this.ws = null
-    this.clearAllTimers()
+  private async tryReconnect(): Promise<void> {
+    while (this.activeRequest && this.wsManager.canReconnect()) {
+      this.wsManager.incrementReconnect()
+      const delay = this.wsManager.calculateReconnectDelay()
+      
+      await new Promise(r => setTimeout(r, delay))
+      
+      if (this.manuallyClosed || !this.activeRequest) break
 
-    if (this.manuallyClosed) {
-      this.lifecycleState = 'idle'
-      return
-    }
-
-    this.attemptReconnect()
-  }
-
-  private async attemptReconnect() {
-    if (this.manuallyClosed || !this.activeRequest || this.reconnectAttempts >= this.MAX_RECONNECT_ATTEMPTS) {
-      await this.fallback()
-      return
-    }
-
-    this.reconnectAttempts++
-    const delay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts), 10000)
-
-    this.reconnectTimeout = setTimeout(async () => {
       try {
-        await this.sendMessage(
-          this.activeRequest!.prompt,
-          this.activeRequest!.id,
-          this.activeRequest!.lastChunkIndex
+        await this.wsManager.connect(
+          (data) => this.messageHandler.process(data, this.activeRequest),
+          () => this.handleClose()
         )
+        this.sendPayload()
+        return // Success
       } catch {
-        await this.attemptReconnect()
+        // Continue loop
       }
-    }, delay)
-  }
-
-  private async fallback() {
-    if (!this.activeRequest || this.isFallingBack) return
-    this.isFallingBack = true
-
-    try {
-      // Try SSE first (streaming fallback)
-      const success = await this.fallbackWithSSE()
-      if (success) {
-        this.isFallingBack = false
-        return
-      }
-    } catch (err) {
-      console.warn('[chatService] SSE fallback failed, trying REST...', err)
     }
 
-    // Fall back to REST (non-streaming)
-    try {
-      await this.fallbackWithREST()
-    } catch {
-      this.emitError('Backend unreachable - all fallbacks failed')
-    } finally {
-      this.isFallingBack = false
-      this.activeRequest = null
-      this.lifecycleState = 'idle'
-    }
+    await this.tryFallback()
   }
 
-  private async fallbackWithSSE(): Promise<boolean> {
-    if (!this.activeRequest) return false
-
-    try {
-      const host = window.location.hostname || 'localhost'
-      const url = `${API_CONFIG.apiUrl.replace('localhost', host)}/api/chat/stream`
-
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: this.activeRequest.prompt,
-          model: this.activeRequest.model,
-          provider: this.activeRequest.provider,
-        }),
-      })
-
-      if (!response.ok || !response.body) {
-        return false
-      }
-
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-
-      while (true) {
-        const { value, done } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-
-        // Process complete lines, keep incomplete line in buffer
-        buffer = lines[lines.length - 1]
-
-        for (let i = 0; i < lines.length - 1; i++) {
-          const line = lines[i].trim()
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6))
-              this.emit({
-                id: this.activeRequest.assistantId,
-                role: 'assistant',
-                content: data.content || data.token || '',
-                delta: data.content || data.token || '',
-                status: data.done ? 'done' : 'streaming',
-              })
-            } catch (e) {
-              console.warn('[chatService] Failed to parse SSE line:', line)
-            }
-          }
-        }
-      }
-
-      // Handle remaining buffer
-      if (buffer.trim()) {
-        try {
-          const data = JSON.parse(buffer.slice(6))
-          this.emit({
-            id: this.activeRequest.assistantId,
-            role: 'assistant',
-            content: data.content || '',
-            status: 'done',
-          })
-        } catch (e) {
-          // Ignore final buffer parse errors
-        }
-      }
-
-      this.emitCompletion()
-      return true
-    } catch (err) {
-      console.error('[chatService] SSE fallback error:', err)
-      return false
-    }
-  }
-
-  private async fallbackWithREST(): Promise<void> {
+  private async tryFallback(): Promise<void> {
     if (!this.activeRequest) return
 
-    const response = await fetch(
-      `${API_CONFIG.apiUrl.replace('localhost', window.location.hostname || 'localhost')}/api/chat`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: this.activeRequest.prompt,
-          model: this.activeRequest.model,
-          provider: this.activeRequest.provider,
-        }),
-      }
+    const host = window.location.hostname || 'localhost'
+    const baseUrl = API_CONFIG.apiUrl.replace('localhost', host)
+    const streamUrl = `${baseUrl}/api/stream`
+    console.log('[chatService] tryFallback:', { host, baseUrl, streamUrl })
+    
+    const { prompt, model, provider, assistantId } = this.activeRequest
+
+    // Try SSE
+    const sseSuccess = await this.fallback.sendSSE(
+      streamUrl,
+      { message: prompt, model, provider },
+      (content, done) => this.emit({ id: assistantId, role: 'assistant', content, delta: content, status: done ? 'done' : 'streaming' })
     )
 
-    const data = await response.json()
-    const text = data?.result || data?.response || data?.message || ''
-
-    this.emit({
-      id: this.activeRequest.assistantId,
-      role: 'assistant',
-      content: text,
-      status: 'done',
-    })
-    this.emitCompletion()
-  }
-
-  private emit(message: Message) {
-    this.handlers.forEach((handler) => handler(message))
-  }
-
-  private emitError(message: string) {
-    this.emit({
-      id: crypto.randomUUID(),
-      role: 'assistant',
-      content: message,
-      status: 'error',
-    })
-    this.stop()
-  }
-
-  private emitCompletion() {
-    if (this.activeRequest) {
-      this.emit({
-        id: this.activeRequest.assistantId,
-        role: 'assistant',
-        content: '',
-        status: 'done',
-      })
+    if (sseSuccess) {
+      this.clearRequest()
+      return
     }
-    this.stop()
+
+    // Fall back to REST
+    try {
+      const text = await this.fallback.sendREST(`${baseUrl}/api/chat`, { message: prompt, model, provider })
+      this.emit({ id: assistantId, role: 'assistant', content: text, status: 'done' })
+    } catch {
+      this.handleError('Backend unreachable')
+    }
+
+    this.clearRequest()
   }
 
-  private startHeartbeat() {
-    this.clearAllTimers()
-    this.timers.heartbeat = setInterval(() => {
-      if (this.ws?.readyState === WebSocket.OPEN) {
-        this.ws.send(JSON.stringify({ type: 'ping' }))
-      }
-    }, 15000)
+  private clearRequest(): void {
+    this.activeRequest = null
+    this.manuallyClosed = true
+    this.wsManager.close()
+    events.emit('status', { status: 'idle' })
   }
 
-  private clearAllTimers() {
-    if (this.timers.flush) clearTimeout(this.timers.flush)
-    if (this.timers.heartbeat) clearInterval(this.timers.heartbeat)
-    if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout)
-
-    this.timers.flush = null
-    this.timers.heartbeat = null
-    this.reconnectTimeout = null
+  private emit(message: Message): void {
+    this.handlers.forEach(h => h(message))
   }
 }
 

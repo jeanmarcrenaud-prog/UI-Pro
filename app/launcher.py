@@ -371,7 +371,7 @@ def start_api(block: bool = True):
     import sys
     venv_python = sys.executable
     subprocess.run([
-        venv_python, "-m", "uvicorn", "api.main:app", 
+        venv_python, "-m", "uvicorn", "backend.transport.views_api:app", 
         "--host", "0.0.0.0", 
         "--port", str(API_PORT)
     ])
