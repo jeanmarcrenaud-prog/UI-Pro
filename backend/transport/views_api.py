@@ -19,18 +19,39 @@ from typing import Optional, Any, Callable
 # ==================== LOGGING ====================
 
 def setup_logging():
-    """Configure structured logging."""
+    """Configure structured logging with settings-aware levels."""
+    from settings import settings
+
+    # Get log level from settings (env variable)
+    log_level_str = getattr(settings, 'log_level', 'INFO').upper()
+    log_levels = {
+        "DEBUG": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARNING": logging.WARNING,
+        "ERROR": logging.ERROR,
+        "CRITICAL": logging.CRITICAL,
+    }
+    log_level = log_levels.get(log_level_str, logging.INFO)
+
     logger = logging.getLogger("api")
-    logger.setLevel(logging.INFO)
-    
+    logger.setLevel(log_level)
+
+    # Root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
+
+    # Clear existing handlers to avoid duplication
+    logger.handlers.clear()
+
     # Console handler
     console = logging.StreamHandler()
+    console.setLevel(log_level)
     console.setFormatter(logging.Formatter(
         "%(asctime)s | %(levelname)-8s | %(message)s",
         datefmt="%H:%M:%S"
     ))
     logger.addHandler(console)
-    
+
     # File handler with rotation
     try:
         file_handler = RotatingFileHandler(
@@ -38,13 +59,15 @@ def setup_logging():
             maxBytes=5_000_000,
             backupCount=3
         )
+        file_handler.setLevel(log_level)
         file_handler.setFormatter(logging.Formatter(
             "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
         ))
         logger.addHandler(file_handler)
-    except Exception:
-        pass
-    
+    except Exception as e:
+        logger.warning(f"Could not set up file logging: {e}")
+
+    logger.info(f"Logging initialized at level: {log_level_str}")
     return logger
 
 logger = setup_logging()
@@ -246,11 +269,13 @@ from backend.transport.routers.health import router as health_router
 from backend.transport.routers.ws import router as ws_router
 from backend.transport.routers.stream import router as stream_router
 from backend.transport.routers.execute import router as execute_router
+from backend.transport.routers.logs import router as logs_router
 
 app.include_router(health_router)
 app.include_router(ws_router)
 app.include_router(stream_router)
 app.include_router(execute_router)
+app.include_router(logs_router)
 
 
 # ==================== CHAT ENDPOINT ====================
@@ -269,22 +294,32 @@ class ChatResponse(BaseModel):
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
     """REST chat endpoint (non-streaming)."""
-    from backend.infrastructure.streaming import get_streaming_service
-    
-    stream_service = get_streaming_service()
-    
-    full_response = ""
-    async for chunk in stream_service.stream_generate(
-        prompt=request.message,
-        model=request.model or _get_setting('model_fast', 'qwen3.5:0.8b'),
-        provider=request.provider or "ollama"
-    ):
-        if chunk.text:
-            full_response += chunk.text
-        if chunk.status.value == "completed":
-            break
-    
-    return ChatResponse(response=full_response, done=True)
+    try:
+        logger.debug(f"[CHAT] Request: message={request.message[:50]}... model={request.model}")
+
+        from backend.infrastructure.streaming import get_streaming_service
+
+        stream_service = get_streaming_service()
+
+        full_response = ""
+        chunk_count = 0
+        async for chunk in stream_service.stream_generate(
+            prompt=request.message,
+            model=request.model or _get_setting('model_fast', 'qwen3.5:0.8b'),
+            provider=request.provider or "ollama"
+        ):
+            if chunk.text:
+                full_response += chunk.text
+                chunk_count += 1
+            if chunk.status.value == "completed":
+                break
+
+        logger.info(f"[CHAT] Response generated: {len(full_response)} chars in {chunk_count} chunks")
+        return ChatResponse(response=full_response, done=True)
+
+    except Exception as e:
+        logger.error(f"[CHAT] Error: {type(e).__name__}: {str(e)}")
+        raise
 
 
 # ==================== EXECUTE ENDPOINT ====================

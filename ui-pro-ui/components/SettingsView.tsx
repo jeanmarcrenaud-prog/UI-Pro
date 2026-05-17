@@ -36,6 +36,12 @@ export function SettingsView() {
   const [isSavingTimeout, setIsSavingTimeout] = useState(false)
   const [timeoutMsg, setTimeoutMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
+  // Log level settings
+  const [logLevel, setLogLevel] = useState('INFO')
+  const [availableLogLevels] = useState(['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'])
+  const [isSavingLogLevel, setIsSavingLogLevel] = useState(false)
+  const [logLevelMsg, setLogLevelMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+
   // Get selected model's metadata
   const selectedModelInfo = availableModels.find(m => m.name === selectedModel)
 
@@ -192,6 +198,16 @@ export function SettingsView() {
       .catch(() => {})
   }, [])
 
+  // Load log level from API on mount
+  useEffect(() => {
+    fetch('/api/logs/level')
+      .then(r => r.json())
+      .then(data => {
+        if (data.current_level) setLogLevel(data.current_level)
+      })
+      .catch(() => {})
+  }, [])
+
   const handleSaveTimeouts = async () => {
     setIsSavingTimeout(true)
     setTimeoutMsg(null)
@@ -214,6 +230,30 @@ export function SettingsView() {
     } finally {
       setIsSavingTimeout(false)
       setTimeout(() => setTimeoutMsg(null), 3000)
+    }
+  }
+
+  const handleSaveLogLevel = async () => {
+    setIsSavingLogLevel(true)
+    setLogLevelMsg(null)
+    try {
+      const res = await fetch('/api/logs/level', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ level: logLevel }),
+      })
+      const data = await res.json()
+      if (data.current_level) {
+        setLogLevel(data.current_level)
+        setLogLevelMsg({ type: 'success', text: t.settings.savedSuccess })
+      } else {
+        setLogLevelMsg({ type: 'error', text: t.settings.saveFailed })
+      }
+    } catch {
+      setLogLevelMsg({ type: 'error', text: t.settings.saveFailed })
+    } finally {
+      setIsSavingLogLevel(false)
+      setTimeout(() => setLogLevelMsg(null), 3000)
     }
   }
 
@@ -344,7 +384,46 @@ export function SettingsView() {
           )}
         </section>
 
-        {/* Model Count - Compact Card */}
+        {/* Log Level Settings - Compact Card */}
+        <section className="bg-[#0f172a] rounded-xl p-4 border border-slate-700/50 hover:border-violet-500/30 transition-all duration-200 hover:shadow-[0_0_20px_rgba(168,85,247,0.1)]">
+          <h3 className="text-[11px] uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
+            📋 Log Level
+          </h3>
+          <div className="space-y-3">
+            <div>
+              <label className="text-[10px] text-slate-500 block mb-2">Current Level</label>
+              <select
+                value={logLevel}
+                onChange={(e) => setLogLevel(e.target.value)}
+                className="w-full bg-[#172033] border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-violet-500 transition-colors"
+              >
+                {availableLogLevels.map(level => (
+                  <option key={level} value={level}>{level}</option>
+                ))}
+              </select>
+              <p className="text-[9px] text-slate-600 mt-1">
+                {logLevel === 'DEBUG' && 'Detailed debugging information'}
+                {logLevel === 'INFO' && 'General informational messages'}
+                {logLevel === 'WARNING' && 'Warning messages for issues'}
+                {logLevel === 'ERROR' && 'Error messages only'}
+                {logLevel === 'CRITICAL' && 'Critical errors only'}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={handleSaveLogLevel}
+            disabled={isSavingLogLevel}
+            className="mt-3 w-full px-3 py-1.5 bg-violet-600 hover:bg-violet-700 disabled:bg-violet-800/70 disabled:cursor-wait text-white text-xs font-medium rounded-lg transition-all flex items-center justify-center gap-1.5"
+          >
+            {isSavingLogLevel ? '...' : '💾'}
+            {isSavingLogLevel ? 'Saving...' : 'Save'}
+          </button>
+          {logLevelMsg && (
+            <p className={`mt-2 text-[10px] text-center rounded px-2 py-1 ${logLevelMsg.type === 'success' ? 'bg-emerald-900/50 text-emerald-400' : 'bg-red-900/50 text-red-400'}`}>
+              {logLevelMsg.text}
+            </p>
+          )}
+        </section>
         <section className="bg-[#0f172a] rounded-xl p-4 border border-slate-700/50">
           <h3 className="text-[11px] uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
             📊 Modèles
