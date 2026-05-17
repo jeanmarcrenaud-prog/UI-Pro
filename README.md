@@ -137,12 +137,12 @@ LANGSMITH_PROJECT=ui-pro-production
 | `python setup.py`     | Auto-setup environment        |
 | `python setup.py --yes` | Non-interactive setup      |
 
-## 📁 Project Structure
+## 📁 Project Structure (2026-05)
 
-> **Note**: `backend/` is the source of truth. Legacy folders (`core/`, `services/`, `api/`, `views/`) are re-exports for backward compatibility.
+> **NOTE**: `backend/` is the source of truth. Legacy re-export folders (`core/`, `services/`, `api/`, `views/`, `controllers/`) have been **deleted**. All code now imports directly from `backend/`.
 
 ```
-ui-pro/
+ui-pro/                    # Racine projet
 ├── run.py                    # Main launcher
 ├── setup.py                  # Automated setup
 ├── requirements.txt
@@ -150,11 +150,11 @@ ui-pro/
 ├── data/                     # Checkpoint DB (gitignored)
 │   └── checkpoints.db
 │
-├── backend/                  # SOURCE OF TRUTH
+├── backend/                  # SOURCE DE VÉRITÉ (uniquement)
 │   ├── domain/
 │   │   └── core/            # Business logic
 │   │       ├── langgraph_orchestrator.py  # Agent pipeline
-│   │       ├── orchestrator_async.py      # Legacy orchestrator
+│   │       ├── orchestrator_async.py      # Async orchestrator
 │   │       ├── code_review.py            # Static analysis
 │   │       ├── events.py                 # Event bus
 │   │       └── settings.py               # Configuration

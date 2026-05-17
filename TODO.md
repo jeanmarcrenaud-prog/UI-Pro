@@ -16,6 +16,17 @@
 | 6 | Mettre à jour AGENTS.md | ✅ |
 | 7 | Mettre à jour ARCHITECTURE.md | ✅ |
 
+### Cleanup Final (2026-05-17)
+
+| # | Tâche | Statut |
+|---|-----|-|------|
+| 1 | Supprimer les legacy folders (core/, services/, api/, views/, controllers/) | ✅ |
+| 2 | Mettre à jour tous les imports vers backend/* | ✅ |
+| 3 | Créer scripts/check_cleanup.py | ✅ |
+| 4 | Nettoyer fichiers obsolètes (start_api.py, test.db, etc.) | ✅ |
+| 5 | Déplacer kill_port.py vers scripts/ | ✅ |
+| 6 | Mettre à jour documentation (ARCHITECTURE.md, AGENTS.md, README.md) | ✅ |
+
 ### Refactoring Terminé (2026-04-28)
 
 | # | Tâche | Statut |

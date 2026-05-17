@@ -53,11 +53,7 @@ ui-pro/                           # Racine projet
 │       ├── translations.py      # i18n
 │       └── routers/             # API routers
 │
-├── core/                         # Legacy (ré-export → backend/domain/core/)
-├── services/                     # Legacy (ré-export → backend/infrastructure/)
-├── api/                          # Legacy (ré-export → backend/transport/)
-├── views/                        # Legacy (ré-export → backend/transport/)
-├── llm/                          # LLM clients
+├── llm/                          # LLM clients (module séparé)
 │   ├── __init__.py
 │   └── router.py                # Multi-model routing (OllamaClient, LLMRouter)
 │

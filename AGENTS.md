@@ -58,31 +58,30 @@ backend/
         └── logs.py
 ```
 
-### Legacy Folders (Backward Compatibility Re-exports)
+### Project Structure (2026-05)
 
-> **IMPORTANT**: These folders now re-export from `backend/`. Import from here for backward compatibility, or import directly from `backend/` for new code.
+> **NOTE**: Legacy re-export folders (core/, services/, api/, views/, controllers/) have been **deleted**. All code now imports directly from `backend/`.
 
 ```
-ui-pro/                    # Legacy root (re-exports to backend/)
-├── core/                 # → backend/domain/core/
-├── services/             # → backend/infrastructure/
-├── api/                  # → backend/transport/
-├── views/                # → backend/transport/
-├── llm/                  # LLM clients (unchanged)
-├── models/               # Data types (unchanged)
-├── controllers/           # Business logic (unchanged)
-├── app/                  # App layer (unchanged)
-└── tests/                # Test suite
+ui-pro/                    # Racine projet
+├── backend/               # SOURCE DE VÉRITÉ (uniquement)
+├── llm/                   # LLM clients (module séparé)
+├── models/                # Types + Config (re-exports settings)
+├── tests/                 # Tests pytest
+├── scripts/               # Scripts utilitaires
+├── ui-pro-ui/             # Frontend Next.js
+└── workspace/             # Code généré
 ```
 
-## Migration Status
+## Migration Status (COMPLETED)
 
 | Legacy Folder | Target | Status |
 |---------------|--------|--------|
-| `core/` | `backend/domain/core/` | ✅ Re-export |
-| `services/` | `backend/infrastructure/` | ✅ Re-export |
-| `api/` | `backend/transport/` | ✅ Re-export |
-| `views/` | `backend/transport/` | ✅ Re-export |
+| `core/` | `backend/domain/core/` | ✅ Supprimé |
+| `services/` | `backend/infrastructure/` | ✅ Supprimé |
+| `api/` | `backend/transport/` | ✅ Supprimé |
+| `views/` | `backend/transport/` | ✅ Supprimé |
+| `controllers/` | `backend/application/` | ✅ Supprimé |
 
 ## Critical Quirks
 
@@ -106,8 +105,8 @@ Settings uses `model_fast`/`model_reasoning`, NOT `fast`/`reasoning`. The `.env`
 Available models are shown at startup. Default `.env` uses `gemma4:latest`. Other configured models may not exist.
 
 ### 6. Import Pattern
-- **New code**: Import directly from `backend/domain/core/`, `backend/infrastructure/`, etc.
-- **Legacy code**: Import from `core/`, `services/`, etc. (re-exports work)
+- **Nouveau code**: Importez directement depuis `backend/domain/core/`, `backend/infrastructure/`, etc.
+- **Plus de legacy folders**: Les dossiers re-export ont été supprimés.
 
 ## Commands
 
