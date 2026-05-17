@@ -47,6 +47,12 @@ export class MessageHandler {
       return
     }
 
+    // Handle cancelled (from stop button)
+    if (type === 'cancelled') {
+      this.onComplete(activeRequest?.assistantId || '')
+      return
+    }
+
     // Handle token/content
     const content = data.response || data.content || data.data || data.token || ''
     const done = data.done || type === WS_EVENTS.DONE || data.status === 'completed'
