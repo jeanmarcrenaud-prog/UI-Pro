@@ -15,6 +15,7 @@ from typing import Any, Dict, Optional
 
 from backend.domain.core.code_review import ReviewResult, review_code
 from backend.infrastructure.secure_executor import SecureCodeExecutor
+from backend.infrastructure.multi_lang_executor import MultiLangExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -64,11 +65,13 @@ class CodeExecutionService:
     }
 
     def __init__(self):
-        # Secure executor with AST analysis
+        # Secure executor with AST analysis (Python only)
         self._secure_executor = SecureCodeExecutor(
             timeout=self.TIMEOUT_SECONDS,
             memory_limit_mb=512
         )
+        # Multi-language executor (Python, JS, Bash)
+        self._multi_executor = MultiLangExecutor()
 
     async def execute(
         self,
@@ -187,4 +190,25 @@ class CodeExecutionService:
             output=combined_output,
             error="" if all_success else results[-1].get("error", "Execution failed"),
             execution_time_ms=sum(r["execution_time_ms"] for r in results),
+        )
+
+    async def execute_multi(
+        self,
+        code: str,
+        filename: Optional[str] = None,
+    ) -> ExecutionResult:
+        """
+        Exécute du code multi-langage (Python, JavaScript, Bash).
+        Détection automatique du langage.
+        """
+        import time
+        start = time.perf_counter()
+        
+        result = self._multi_executor.execute(code, filename)
+        
+        return ExecutionResult(
+            success=result["success"],
+            output=result["output"],
+            error=result.get("error"),
+            execution_time_ms=result["execution_time"] * 1000,
         )
