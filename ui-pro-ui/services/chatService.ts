@@ -57,9 +57,18 @@ class ChatService {
   }
 
   async sendMessage(content: string, resumeMessageId?: string, resumeChunkIndex = 0, model?: string, provider?: string) {
+    // If a request is in progress, wait for it to complete first (fix race condition)
     if (this.activeRequest) {
-      console.warn('[chatService] A request is already in progress')
-      return
+      console.warn('[chatService] Request in progress, waiting...')
+      // Wait up to 30 seconds for the previous request to complete
+      const waitStart = Date.now()
+      while (this.activeRequest && Date.now() - waitStart < 30000) {
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+      if (this.activeRequest) {
+        console.error('[chatService] Previous request timed out, cancelling...')
+        this.stop()
+      }
     }
 
     const messageId = resumeMessageId || crypto.randomUUID()
@@ -82,7 +91,80 @@ class ChatService {
       this.sendOverWebSocket()
     } catch (error) {
       console.warn('[chatService] WebSocket connection failed, trying reconnect...', error)
-      await this.attemptReconnect()
+      // Try reconnect, if fails use SSE fallback
+      try {
+        await this.attemptReconnect()
+      } catch (reconnectError) {
+        console.warn('[chatService] Reconnect failed, using SSE fallback...')
+        await this.sendViaSSE(content, messageId, model, provider)
+      }
+    }
+  }
+
+  // SSE fallback when WebSocket fails
+  private async sendViaSSE(content: string, messageId: string, model?: string, provider?: string) {
+    const url = `${API_CONFIG.apiUrl}/api/chat/stream`
+    
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: content,
+          model: model || 'qwen3.6:latest',
+          provider: provider || 'ollama',
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`SSE fallback failed: ${response.status}`)
+      }
+
+      const reader = response.body?.getReader()
+      if (!reader) throw new Error('No response body')
+
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6))
+              if (data.type === 'token' && data.content) {
+                const msg: Message = {
+                  id: messageId,
+                  role: 'assistant',
+                  content: data.content,
+                  timestamp: Date.now(),
+                }
+                this.handlers.forEach(h => h(msg))
+              } else if (data.type === 'done') {
+                this.activeRequest = null
+              }
+            } catch {}
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[chatService] SSE fallback failed:', error)
+      this.activeRequest = null
+      // Emit error to handlers
+      const errorMsg: Message = {
+        id: messageId,
+        role: 'assistant',
+        content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        timestamp: Date.now(),
+        isError: true,
+      }
+      this.handlers.forEach(h => h(errorMsg))
     }
   }
 
