@@ -94,7 +94,7 @@ class ModelService:
             return
 
         from backend.infrastructure.model_discovery import get_model_discovery
-        from services.llm_router import get_llm_router
+        from backend.infrastructure.llm_router import get_llm_router
 
         self._discovery = get_model_discovery()
         self._router = get_llm_router()

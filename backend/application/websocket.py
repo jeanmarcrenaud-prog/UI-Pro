@@ -12,7 +12,7 @@ import json
 import uuid
 from typing import Dict, Any, AsyncIterator, Optional
 
-from core.logger import get_logger
+from backend.domain.core.logger import get_logger
 
 logger = get_logger(__name__)
 

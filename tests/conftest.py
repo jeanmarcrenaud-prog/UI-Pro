@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from llm import call, MODELS
 from models.settings import OLLAMA_URL
-from core.memory import MemoryManager
+from backend.infrastructure.memory import MemoryManager
 from settings import settings
 
 # =========================================

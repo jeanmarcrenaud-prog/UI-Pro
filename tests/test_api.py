@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 @pytest.fixture
 def client():
     """Create test client"""
-    from views.api import app
+    from backend.transport.views_api import app
     return TestClient(app)
 
 
@@ -97,6 +97,6 @@ class TestWebSocketEndpoint:
     
     def test_ws_endpoint_exists(self, client):
         """WebSocket endpoint should be registered"""
-        from views.api import app
+        from backend.transport.views_api import app
         routes = [r.path for r in app.routes]
         assert "/ws" in routes

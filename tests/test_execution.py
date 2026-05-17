@@ -18,8 +18,8 @@ Pattern :
 import tempfile
 import time
 import pytest
-from core.executor import CodeExecutor, ExecutionConfig
-from core.state_manager import StateManager, State
+from backend.domain.core.executor import CodeExecutor, ExecutionConfig
+from backend.domain.core.state_manager import StateManager, State
 
 
 class TestCodeExecutor:
@@ -196,7 +196,7 @@ class TestLoggerRotation:
     
     def test_rotation_config(self):
         """Test log rotation configuration"""
-        from core.logger import LOGS_DIR, MAX_LOG_SIZE, BACKUP_COUNT
+        from backend.domain.core.logger import LOGS_DIR, MAX_LOG_SIZE, BACKUP_COUNT
         
         assert LOGS_DIR.exists()
         assert MAX_LOG_SIZE == 10 * 1024 * 1024  # 10 MB
