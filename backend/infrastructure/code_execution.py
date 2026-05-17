@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 from backend.domain.core.code_review import ReviewResult, review_code
+from backend.infrastructure.secure_executor import SecureCodeExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,13 @@ class CodeExecutionService:
         "pathlib",
         "sys.exit",
     }
+
+    def __init__(self):
+        # Secure executor with AST analysis
+        self._secure_executor = SecureCodeExecutor(
+            timeout=self.TIMEOUT_SECONDS,
+            memory_limit_mb=512
+        )
 
     async def execute(
         self,
