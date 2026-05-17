@@ -116,7 +116,17 @@ class MetricsManager:
         )
         self.records.append(record)
         self._save()
-    
+
+    def track_error(self, task: str, error: str):
+        """Track an error occurrence"""
+        self.record_execution(
+            task_id=f"error_{int(time.time() * 1000)}",
+            task=task,
+            status="error",
+            duration_ms=0,
+            error=error,
+        )
+
     def get_metrics(self) -> Metrics:
         """Calculate aggregate metrics"""
         if not self.records:

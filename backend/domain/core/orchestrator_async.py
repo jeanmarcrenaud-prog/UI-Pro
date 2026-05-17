@@ -10,9 +10,9 @@ from __future__ import annotations
 import json
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Literal, Optional
+from typing import Any, Literal, Optional, TypedDict
 
 from models.settings import settings
 import asyncio
@@ -55,18 +55,18 @@ def _emit_agent_step(phase: str, message: str):
 
 
 # ====================== STATE ======================
-class AgentState(dict):
+class AgentState(TypedDict, total=False):
     """État persistant du graphe LangGraph"""
-    messages: list[dict[str, Any]] = field(default_factory=list)
-    plan: Optional[dict] = None
-    code: Optional[dict] = None
-    review: Optional[dict] = None
-    execution_result: Optional[dict] = None
-    error: Optional[str] = None
-    attempt: int = 0
-    max_attempts: int = 3
-    session_id: str = ""
-    metadata: dict[str, Any] = field(default_factory=dict)
+    messages: list[dict[str, Any]]
+    plan: Optional[dict]
+    code: Optional[dict]
+    review: Optional[dict]
+    execution_result: Optional[dict]
+    error: Optional[str]
+    attempt: int
+    max_attempts: int
+    session_id: str
+    metadata: dict[str, Any]
 
 
 # ====================== LLM WRAPPER ======================
@@ -288,11 +288,11 @@ class OrchestratorAsync:
             workflow = StateGraph(AgentState)
 
             # Add nodes
-            workflow.add_node("analyzing", lambda s: asyncio.run(analyzing_node(s, self.llm)))
-            workflow.add_node("planning", lambda s: asyncio.run(planning_node(s, self.llm)))
-            workflow.add_node("coding", lambda s: asyncio.run(coding_node(s, self.llm)))
-            workflow.add_node("reviewing", lambda s: asyncio.run(review_node(s, self.llm)))
-            workflow.add_node("executing", lambda s: asyncio.run(execute_node(s, self.executor)))
+            workflow.add_node("analyzing", lambda state: asyncio.run(analyzing_node(state, self.llm)))  # type: ignore[arg-type]
+            workflow.add_node("planning", lambda state: asyncio.run(planning_node(state, self.llm)))  # type: ignore[arg-type]
+            workflow.add_node("coding", lambda state: asyncio.run(coding_node(state, self.llm)))  # type: ignore[arg-type]
+            workflow.add_node("reviewing", lambda state: asyncio.run(review_node(state, self.llm)))  # type: ignore[arg-type]
+            workflow.add_node("executing", lambda state: asyncio.run(execute_node(state, self.executor)))  # type: ignore[arg-type]
 
             # Main flow
             workflow.add_edge(START, "analyzing")
