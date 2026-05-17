@@ -56,7 +56,13 @@ async def websocket_endpoint(ws: WebSocket):
             # Handle cancel
             if request.get("type") == "cancel":
                 logger.info(f"[ws] Cancel requested for {current_message_id}")
-                continue
+                # Send cancelled event and close gracefully
+                await ws.send_text(json.dumps({
+                    "type": "cancelled",
+                    "message_id": current_message_id,
+                    "content": ""
+                }))
+                break  # Exit the loop to close connection
 
             # Validate request
             is_valid, error_msg, parsed = await ws_controller.validate_request(request)
