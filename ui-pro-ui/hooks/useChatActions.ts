@@ -62,7 +62,9 @@ export const useChatActions = () => {
   const initializeNewGeneration = useCallback(async (
     content: string,
     messageId: string,
-    assistantId: string
+    assistantId: string,
+    model: string,
+    provider: string
   ) => {
     assistantMessageIdRef.current = assistantId
     contentRef.current = ''
@@ -78,9 +80,9 @@ export const useChatActions = () => {
     resetAgent()
     start(initialSteps)
 
-    const { model, provider } = getCurrentModelInfo()
+    // Use passed model/provider directly - no race condition
     return chatService.sendMessage(content, messageId, 0, model, provider)
-  }, [addMessage, setLoading, resetAgent, start, getCurrentModelInfo])
+  }, [addMessage, setLoading, resetAgent, start])
 
   const cancel = useCallback(() => {
     chatService.cancel()
@@ -134,6 +136,9 @@ export const useChatActions = () => {
 
     const content = messages[userIndex].content
 
+    // Capture model immediately to avoid race condition
+    const { model, provider } = getCurrentModelInfo()
+
     // Supprimer les messages suivants
     messages.slice(userIndex + 1).forEach(m => removeMessage(m.id))
 
@@ -144,12 +149,12 @@ export const useChatActions = () => {
     isStreamActiveRef.current = true
 
     try {
-      await initializeNewGeneration(content, newMessageId, assistantId)
+      await initializeNewGeneration(content, newMessageId, assistantId, model, provider)
     } catch (err) {
       console.error('[useChatActions] Regenerate failed:', err)
       setError('Failed to regenerate response')
     }
-  }, [messages, removeMessage, initializeNewGeneration, setError])
+  }, [messages, removeMessage, initializeNewGeneration, getCurrentModelInfo, setError])
 
   return {
     sendMessage,
