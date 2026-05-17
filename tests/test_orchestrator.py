@@ -2,10 +2,10 @@ import pytest
 import os
 from pathlib import Path
 from unittest.mock import patch, MagicMock, mock_open
-from core.old_orchestrator import run_team, save_file
+from backend.domain.core.orchestrator_async import OrchestratorAsync
 
 # Fix patches: use correct module path
-WORKSPACE_FIXTURE = "core.old_orchestrator.WORKSPACE"
+WORKSPACE_FIXTURE = "backend.domain.core.orchestrator_async.WORKSPACE"
 
 
 class TestSaveFile:

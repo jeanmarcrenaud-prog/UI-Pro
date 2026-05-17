@@ -12,12 +12,12 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import real orchestrator components
-from core.orchestrator_async import Orchestrator
-from core.state_manager import StateManager
-from core.executor import CodeExecutor
+from backend.domain.core.orchestrator_async import Orchestrator
+from backend.domain.core.state_manager import StateManager
+from backend.domain.core.executor import CodeExecutor
 
 # Translation imports
-from api.translations import (
+from backend.transport.translations import (
     get_current_translations,
     LANGUAGE_OPTIONS,
     DEFAULT_LANGUAGE,
@@ -26,7 +26,7 @@ from api.translations import (
 
 # Metrics integration
 try:
-    from core.metrics import get_dashboard_data, MetricsManager
+    from backend.domain.core.metrics import get_dashboard_data, MetricsManager
     METRICS_AVAILABLE = True
 except Exception as e:
     print(f"Metrics import error: {e}")
@@ -35,7 +35,7 @@ except Exception as e:
 
 # Memory integration
 try:
-    from core.memory import MemoryManager
+    from backend.infrastructure.memory import MemoryManager
     MEMORY_AVAILABLE = True
 except Exception as e:
     print(f"Memory import error: {e}")

@@ -54,7 +54,7 @@ async def execute(request: ExecuteRequest):
     
     try:
         if request.language == "python":
-            from core.executor import CodeExecutor
+            from backend.domain.core.executor import CodeExecutor
             executor = CodeExecutor(timeout=request.timeout)
             
             main_file = Path(__file__).parent.parent / "main.py"

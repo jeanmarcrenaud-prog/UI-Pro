@@ -242,7 +242,9 @@ def home(request: Request):
 
 # ==================== IMPORT ROUTERS ====================
 
-from views.routers import health_router, ws_router, stream_router
+from backend.transport.routers.health import router as health_router
+from backend.transport.routers.ws import router as ws_router
+from backend.transport.routers.stream import router as stream_router
 
 app.include_router(health_router)
 app.include_router(ws_router)
@@ -299,7 +301,7 @@ class ExecuteResponse(BaseModel):
 @app.post("/api/execute", response_model=ExecuteResponse)
 async def execute_endpoint(request: ExecuteRequest):
     """Execute code in sandbox."""
-    from core.executor import CodeExecutor
+    from backend.domain.core.executor import CodeExecutor
     
     executor = CodeExecutor()
     

@@ -69,7 +69,7 @@ class CodeExecutor:
         
         if self.config.code_review_enabled:
             try:
-                from core.code_review import CodeReviewer
+                from backend.domain.core.code_review import CodeReviewer
                 self._reviewer = CodeReviewer()
             except ImportError:
                 logger.warning("Code review not available")

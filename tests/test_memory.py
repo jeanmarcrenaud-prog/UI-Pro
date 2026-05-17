@@ -24,7 +24,7 @@ class TestMemoryManager:
         """Test MemoryManager initialization"""
         # Skip if FAISS not available in test environment
         try:
-            from core.memory import MemoryManager
+            from backend.infrastructure.memory import MemoryManager
         except ImportError as e:
             pytest.skip(f"Cannot import MemoryManager: {e}")
         
@@ -35,7 +35,7 @@ class TestMemoryManager:
     def test_add_memory_empty(self):
         """Test adding empty memory doesn't crash"""
         try:
-            from core.memory import MemoryManager
+            from backend.infrastructure.memory import MemoryManager
         except ImportError:
             pytest.skip("Cannot import MemoryManager")
         
@@ -51,7 +51,7 @@ class TestMemoryManager:
     def test_add_memory_multiple(self):
         """Test adding multiple memories"""
         try:
-            from core.memory import MemoryManager
+            from backend.infrastructure.memory import MemoryManager
         except ImportError:
             pytest.skip("Cannot import MemoryManager")
         
@@ -63,7 +63,7 @@ class TestMemoryManager:
     def test_search_memory_returns_results(self):
         """Test search returns results when available"""
         try:
-            from core.memory import MemoryManager
+            from backend.infrastructure.memory import MemoryManager
         except ImportError:
             pytest.skip("Cannot import MemoryManager")
         
@@ -73,7 +73,7 @@ class TestMemoryManager:
     def test_search_memory_empty_index(self):
         """Test search handles empty index"""
         try:
-            from core.memory import MemoryManager
+            from backend.infrastructure.memory import MemoryManager
         except ImportError:
             pytest.skip("Cannot import MemoryManager")
         
@@ -93,7 +93,7 @@ class TestVectorization:
     def test_vectorizer_initialization(self):
         """Test vectorizer is initialized"""
         try:
-            from core.memory import MemoryManager
+            from backend.infrastructure.memory import MemoryManager
         except ImportError:
             pytest.skip("Cannot import MemoryManager")
         
@@ -104,7 +104,7 @@ class TestVectorization:
     def test_vectorizer_similarity(self):
         """Test vectorizer can compute similarity"""
         try:
-            from core.memory import model
+            from backend.infrastructure.memory import model
         except ImportError:
             pytest.skip("Cannot import model")
         
@@ -123,7 +123,7 @@ class TestEdgeCases:
     def test_search_with_no_matches(self):
         """Test search with no matching results"""
         try:
-            from core.memory import MemoryManager
+            from backend.infrastructure.memory import MemoryManager
         except ImportError:
             pytest.skip("Cannot import MemoryManager")
         
@@ -139,7 +139,7 @@ class TestEdgeCases:
     def test_search_with_special_characters(self):
         """Test search with special characters"""
         try:
-            from core.memory import MemoryManager
+            from backend.infrastructure.memory import MemoryManager
         except ImportError:
             pytest.skip("Cannot import MemoryManager")
         
@@ -154,7 +154,7 @@ class TestEdgeCases:
     def test_search_large_k_value(self):
         """Test search with large k value"""
         try:
-            from core.memory import MemoryManager
+            from backend.infrastructure.memory import MemoryManager
         except ImportError:
             pytest.skip("Cannot import MemoryManager")
         
@@ -172,7 +172,7 @@ class TestEdgeCases:
 def test_add_memory_call():
     """Test add_memory function"""
     try:
-        from core.memory import add_memory
+        from backend.infrastructure.memory import add_memory
     except ImportError:
         pytest.skip("add_memory function not found")
     
@@ -183,7 +183,7 @@ def test_add_memory_call():
 def test_search_memory_call():
     """Test search_memory function"""
     try:
-        from core.memory import search_memory
+        from backend.infrastructure.memory import search_memory
     except ImportError:
         pytest.skip("search_memory function not found")
     

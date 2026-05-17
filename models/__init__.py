@@ -5,24 +5,17 @@ Models - Data schemas and business structures.
 Ce dossier contient les types Pydantic/dataclass qui décrivent les structures
 de données de l'application (et NON la logique).
 
- POUR LA LOGIQUE, utiliser :
- - core/memory.py    : FAISS memory integration
- - core/state_manager.py : State management  
- - core/executor.py : Code execution
- - llm/router.py   : LLM routing
- - services/*     : Services
+ POUR LA LOGIQUE, utiliser backend/ :
+  - backend/domain/core/ : Core business logic
+  - backend/infrastructure/ : Services and infrastructure
+  - backend/transport/ : API and transport
 
   Exports:
  - Configuration: Settings, settings (NOTE: import depuis .settings)
- - Metrics: Metrics, MetricsManager (NOTE: import depuis .metrics)
- - LLM: LLMRouter, ModelsConfig (NOTE: import depuis llm.router)
+ - Metrics: Metrics, MetricsManager (NOTE: import depuis backend.domain.core.metrics)
 """
-from core.metrics import Metrics, MetricsManager
+from backend.domain.core.metrics import Metrics, MetricsManager
 from .settings import Settings, settings
-
-# MemoryManager EST dans core/memory.py (logique), PAS ici
-# State et StateManager sont dans core/state_manager.py
-# LLMRouter et ModelsConfig sont dans llm.router
 
 __all__ = [ 
     "Metrics",

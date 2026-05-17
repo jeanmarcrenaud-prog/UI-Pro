@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # Import only what conftest needs
 from llm import call, MODELS
 from models.settings import OLLAMA_URL
-from core.memory import MemoryManager, add_memory, search_memory
+from backend.infrastructure.memory import MemoryManager, add_memory, search_memory
 
 # =========================================
 # FIXTURES
