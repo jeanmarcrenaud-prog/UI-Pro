@@ -110,47 +110,45 @@ ui-pro/                           # Racine projet
 
 ## 🔄 Règles d'Import (Dependency Graph)
 
+> **NOTE**: La structure legacy a été supprimée. Tout importe maintenant depuis `backend/`.
+
 ```
-views/api.py ──→ controllers/* ──→ services/* ──→ adapters/*
-     │              │                 │               │
-     └──────────────┴─────────────────┴───────────────┘
-                         ↓
-                      core/*
-                         ↓
-                    models/*
+backend/transport/views_api.py ──→ backend/application/* ──→ backend/infrastructure/* ──→ backend/domain/core/*
+     │                              │                              │                                │
+     └─────────────────────────────┴──────────────────────────────┴────────────────────────────────┘
+                                                  ↓
+                                           models/* (settings)
 
 # RÈGLES:
-# - views N'IMPORTE PAS services
-# - controllers N'IMPORTE PAS views
-# - services N'IMPORTE PAS views
-# - adapters importé PAR services SEULEMENT
-# - core importé PAR tous
+# - backend/transport N'IMPORTE PAS backend/infrastructure directement (via application/)
+# - backend/infrastructure N'IMPORTE PAS backend/transport
+# - Tout importe depuis backend/domain/core/
+# - settings via models/ ou backend/domain/settings
 ```
 
 ### Import autorisées
 
 | Module | Peut importer |
 |--------|---------------|
-| `views/api.py` | `controllers/*`, `core/*`, `models/*` |
-| `controllers/*` | `services/*`, `core/*`, `models/*`, `adapters/*` |
-| `services/*` | `adapters/*`, `core/*`, `models/*` |
-| `adapters/*` | `core/*`, `models/*` |
-| `core/*` | `models/*` |
+| `backend/transport/*` | `backend/application/*`, `backend/domain/core/*`, `models/*` |
+| `backend/application/*` | `backend/infrastructure/*`, `backend/domain/core/*`, `models/*` |
+| `backend/infrastructure/*` | `backend/domain/core/*`, `models/*` |
+| `backend/domain/core/*` | `models/*` |
 
 ### Import INTERDITES
 
 ```python
-# ❌ INTERDIT - views ne doit pas importer services
-from services.chat_service import ChatService  # NON!
+# ❌ INTERDIT - transport ne doit pas importer infrastructure directement
+from backend.infrastructure.llm_router import LLMRouter  # NON!
 
-# ✅ AUTORISÉ - controllers importe services
-from services.chat_service import ChatService  # OUI!
+# ✅ AUTORISÉ - via application layer
+from backend.application.websocket import WebSocketController  # OUI!
 
-# ✅ AUTORISÉ - tout importe core
-from core.events import emit_agent_step  # OUI!
+# ✅ AUTORISÉ - tout importe domain/core
+from backend.domain.core.events import emit_agent_step  # OUI!
 ```
 
-## 🎯 Frontière Controllers/ vs Services/
+## 🎯 Structure backend/
 
 ### Controllers (coordination requête/réponse)
 - Reçoivent les requêtes HTTP/WS
@@ -307,11 +305,13 @@ profile = "black"
 ```
 Request HTTP
     ↓
-views/api.py (FastAPI)
+backend/transport/views_api.py (FastAPI)
     ↓
-services/streaming.py (async generator)
+backend/transport/routers/*.py (endpoints)
     ↓
-llm/router.py (OllamaClient)
+backend/infrastructure/streaming.py (async generator)
+    ↓
+backend/infrastructure/llm_router.py (LLMRouter)
     ↓
 Ollama API
 ```
