@@ -12,7 +12,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import real orchestrator components
-from backend.domain.core.orchestrator_async import Orchestrator
+from backend.domain.core.orchestrator_async import OrchestratorAsync
 from backend.domain.core.state_manager import StateManager
 from backend.domain.core.executor import CodeExecutor
 
@@ -51,7 +51,7 @@ _memory_manager = None
 def get_orchestrator():
     global _orchestrator, _executor, _memory_manager
     if _orchestrator is None:
-        _orchestrator = Orchestrator()
+        _orchestrator = OrchestratorAsync()
     if _executor is None:
         _executor = CodeExecutor()
     if _memory_manager is None and MEMORY_AVAILABLE:

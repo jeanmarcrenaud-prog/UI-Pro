@@ -20,7 +20,7 @@ def _get_ws_controller_cached():
 
     @lru_cache()
     def get_controller():
-        from controllers.websocket import get_websocket_controller
+        from backend.application.websocket import get_websocket_controller
         return get_websocket_controller()
 
     return get_controller()
