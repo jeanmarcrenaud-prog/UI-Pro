@@ -1,10 +1,13 @@
 # services/memory_service.py - Unified Memory Service
 #
-# Role: Unified memory service with persistent rich metadata
-# - FAISS vector search
-# - Rich metadata with UUID-based entries
+# Role: Source of truth for rich metadata
+# - FAISS vector search (delegated to MemoryManager)
+# - Rich metadata with UUID-based entries (_entries)
 # - Context building with token budget
 # - Session management
+#
+# IMPORTANT: MemoryManager is now a pure vector store (no metadata).
+# MemoryService manages _entries as the source of truth.
 
 import logging
 from pathlib import Path
@@ -17,6 +20,7 @@ import uuid
 import threading
 import asyncio
 import hashlib
+import numpy as np
 
 from models.settings import settings
 from .base import BaseService, ServiceMetrics
@@ -80,7 +84,11 @@ class ContextBuilder:
 
 
 class MemoryService(BaseService):
-    """Unified memory service with persistent rich metadata."""
+    """Source of truth for rich metadata.
+    
+    MemoryManager is a pure vector store (no metadata persistence).
+    This class manages _entries as the source of truth.
+    """
 
     def __init__(
         self,
@@ -94,11 +102,14 @@ class MemoryService(BaseService):
 
         self._lock = threading.RLock()
 
-        # Core storage
+        # Core storage - SOURCE OF TRUTH
         self._vector_store = None
-        self._entries: Dict[str, MemoryEntry] = {}
-        self._text_to_id: Dict[str, str] = {}  # Use hash to avoid collision
+        self._entries: Dict[str, MemoryEntry] = {}  # Rich metadata source of truth
+        self._text_to_id: Dict[str, str] = {}  # text hash -> entry id
         self._session_index: Dict[str, List[str]] = defaultdict(list)
+        
+        # Vector ID tracking (for sync with MemoryManager)
+        self._entry_to_vector_id: Dict[str, int] = {}  # entry id -> vector id
 
         self.context_builder = ContextBuilder(max_tokens=max_tokens)
         self._service_metrics = ServiceMetrics()
@@ -119,6 +130,10 @@ class MemoryService(BaseService):
             )
 
             await self._load_entries()
+            
+            # Sync vector store with entries if needed
+            await self._sync_vector_store()
+            
             logger.info(f"MemoryService initialized — {len(self._entries)} entries")
 
         except Exception as e:
@@ -142,7 +157,6 @@ class MemoryService(BaseService):
             self._session_index.clear()
 
             for entry in self._entries.values():
-                # Use hash to avoid text collision
                 text_hash = hashlib.sha256(entry.text.encode()).hexdigest()[:16]
                 self._text_to_id[text_hash] = entry.id
                 if entry.session_id:
@@ -163,13 +177,54 @@ class MemoryService(BaseService):
         except Exception as e:
             logger.error(f"Failed to save memory entries: {e}")
 
+    async def _sync_vector_store(self) -> None:
+        """Sync vector store with entries - rebuild if out of sync."""
+        if not self._vector_store:
+            return
+            
+        vector_count = self._vector_store.get_stats()["total_vectors"]
+        entry_count = len(self._entries)
+        
+        if vector_count != entry_count:
+            logger.warning(f"Vector store out of sync: {vector_count} vectors vs {entry_count} entries. Rebuilding...")
+            await self._rebuild_vector_store()
+
+    async def _rebuild_vector_store(self) -> None:
+        """Rebuild vector store from entries."""
+        if not self._entries:
+            return
+            
+        # Get embeddings for all entries
+        from backend.infrastructure.memory import get_memory_manager
+        mm = get_memory_manager()
+        
+        texts = list(self._entries.values())
+        embeddings = mm.embed_many([e.text for e in texts])
+        
+        # Build arrays
+        vectors = []
+        ids = []
+        for i, entry in enumerate(texts):
+            vectors.append(embeddings[i])
+            ids.append(i)
+        
+        vectors_arr = np.stack(vectors)
+        ids_arr = np.ascontiguousarray(ids, dtype=np.int64)
+        
+        # Rebuild
+        self._vector_store.rebuild_from_arrays(vectors_arr, ids_arr)
+        
+        # Update mapping
+        self._entry_to_vector_id = {
+            entry.id: i for i, entry in enumerate(texts)
+        }
+        
+        logger.info(f"Rebuilt vector store with {len(self._entries)} vectors")
+
     async def shutdown(self) -> None:
         """Graceful shutdown."""
         if self._vector_store:
-            if hasattr(self._vector_store, 'save'):
-                await asyncio.to_thread(self._vector_store.save)
-            elif hasattr(self._vector_store, '_persist'):
-                await asyncio.to_thread(self._vector_store._persist)
+            await asyncio.to_thread(self._vector_store.save)
         self._save_entries()
         logger.info("MemoryService shutdown completed")
 
@@ -209,17 +264,10 @@ class MemoryService(BaseService):
                     metadata=metadata or {},
                 )
 
-                # Pass metadata to vector store for synchronization
+                # Add to vector store (no metadata - MemoryManager is pure vector store)
                 if self._vector_store:
-                    vector_metadata = {
-                        "session_id": session_id,
-                        "task_type": task_type,
-                        "importance": importance,
-                        "entry_id": entry.id,
-                    }
-                    await asyncio.to_thread(
-                        self._vector_store.add_memory, text, metadata=vector_metadata
-                    )
+                    vector_id = await asyncio.to_thread(self._vector_store.add_text, text)
+                    self._entry_to_vector_id[entry.id] = vector_id
 
                 self._entries[entry.id] = entry
                 self._text_to_id[text_hash] = entry.id
@@ -251,12 +299,21 @@ class MemoryService(BaseService):
 
             results = []
             for vr in vector_results:
-                text = vr.get("text", "")
-                text_hash = hashlib.sha256(text.encode()).hexdigest()[:16]
-                entry_id = self._text_to_id.get(text_hash)
+                # Map vector ID back to entry
+                vector_id = vr.get("id")
+                if vector_id is None:
+                    continue
+                
+                # Find entry by vector ID (reverse lookup)
+                entry_id = None
+                for eid, vid in self._entry_to_vector_id.items():
+                    if vid == vector_id:
+                        entry_id = eid
+                        break
+                
                 if not entry_id:
                     continue
-
+                
                 entry = self._entries.get(entry_id)
                 if not entry:
                     continue
@@ -271,6 +328,7 @@ class MemoryService(BaseService):
                     "id": entry.id,
                     "text": entry.text,
                     "score": vr.get("score", 0.0),
+                    "similarity": vr.get("similarity", 0.0),
                     "session_id": entry.session_id,
                     "task_type": entry.task_type,
                     "importance": entry.importance,
@@ -336,12 +394,14 @@ class MemoryService(BaseService):
                     if entry:
                         text_hash = hashlib.sha256(entry.text.encode()).hexdigest()[:16]
                         self._text_to_id.pop(text_hash, None)
+                        self._entry_to_vector_id.pop(eid, None)
                 logger.info(f"Cleared session {session_id}")
             else:
                 self._entries.clear()
                 self._text_to_id.clear()
                 self._session_index.clear()
-                if self._vector_store and hasattr(self._vector_store, 'clear'):
+                self._entry_to_vector_id.clear()
+                if self._vector_store:
                     self._vector_store.clear()
                 logger.info("All memories cleared")
 
