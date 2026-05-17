@@ -245,10 +245,12 @@ def home(request: Request):
 from backend.transport.routers.health import router as health_router
 from backend.transport.routers.ws import router as ws_router
 from backend.transport.routers.stream import router as stream_router
+from backend.transport.routers.execute import router as execute_router
 
 app.include_router(health_router)
 app.include_router(ws_router)
 app.include_router(stream_router)
+app.include_router(execute_router)
 
 
 # ==================== CHAT ENDPOINT ====================
