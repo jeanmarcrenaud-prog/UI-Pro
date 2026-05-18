@@ -135,7 +135,7 @@ class Settings(BaseSettings):
     )
 
     # Runtime only (excluded from init)
-    _runtime_overrides: Dict[str, Any] = Field(default_factory=dict, exclude=True, init=False)
+    runtime_overrides: Dict[str, Any] = Field(default_factory=dict, exclude=True, init=False)
 
     # ========================
     # Validators
@@ -160,7 +160,7 @@ class Settings(BaseSettings):
                 self.model_code = preset.model_code
 
         # Applique overrides runtime (UI)
-        for k, v in self._runtime_overrides.items():
+        for k, v in self.runtime_overrides.items():
             if hasattr(self, k):
                 setattr(self, k, v)
 
@@ -204,12 +204,12 @@ class Settings(BaseSettings):
         self._save_to_env({"LOG_LEVEL": self.log_level})
 
     def set_runtime_override(self, key: str, value: Any) -> None:
-        self._runtime_overrides[key] = value
+        self.runtime_overrides[key] = value
         if hasattr(self, key):
             setattr(self, key, value)
 
     def clear_runtime_override(self, key: str) -> None:
-        self._runtime_overrides.pop(key, None)
+        self.runtime_overrides.pop(key, None)
 
     def get_workspace_str(self) -> str:
         return str(self.workspace)
