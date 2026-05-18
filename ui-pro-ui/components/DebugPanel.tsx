@@ -61,7 +61,8 @@ export function DebugPanel() {
     }
   }
 
-  <>
+  return (
+    <>
       {/* Floating buttons */}
       <Button
         onClick={toggleDebug}
