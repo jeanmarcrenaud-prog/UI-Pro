@@ -1,245 +1,220 @@
 """
-backend/domain/settings.py - Unified Configuration
-
-Role: Single source of truth for all settings (YAML + env backends)
-
-NOTE:
-- YAML config is intended for application-level settings (app, api, memory, dashboard).
-- LLM and backend settings are managed exclusively via environment variables.
-- Sensitive settings (API keys) MUST be set via environment variables only.
+backend/domain/settings.py - Configuration unifiée (Pydantic v2)
+Single Source of Truth: YAML < ENV < Runtime Overrides
 """
 
-import copy
 import os
 import logging
 from pathlib import Path
-from dataclasses import dataclass, field
-from typing import Dict, Any, Optional
-from dotenv import load_dotenv
-import yaml
+from typing import Optional, Dict, Any, List
 
-# Note: Configure logging.basicConfig(...) before importing this module
-# to see logs from settings.py
+from pydantic import Field, field_validator, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from functools import lru_cache
+
 logger = logging.getLogger(__name__)
 
-# Paths - use parents[3] to go from backend/domain/ to project root
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-
-# Load .env file relative to PROJECT_ROOT
-ENV_FILE = PROJECT_ROOT / ".env"
-LOAD_DOTENV = ENV_FILE.exists()
-if LOAD_DOTENV:
-    load_dotenv(ENV_FILE)
-    logger.debug(f"[settings] Loaded .env from {ENV_FILE}")
-else:
-    logger.debug(f"[settings] No .env file found at {ENV_FILE}")
-
-# Paths - relative to PROJECT_ROOT
-WORKSPACE = PROJECT_ROOT / os.getenv("WORKSPACE", "workspace")
-TEMPLATES = PROJECT_ROOT / "templates"
-DATA_DIR = PROJECT_ROOT / "data"
-
-def _parse_bool(value: str | None, default: bool = False) -> bool:
-    """Parse boolean from environment variable."""
-    if value is None:
-        return default
-    lower = value.lower()
-    if lower in ("true", "1", "yes", "on"):
-        return True
-    if lower in ("false", "0", "no", "off"):
-        return False
-    return default
-
-
-def _load_yaml_config() -> Dict[str, Any]:
-    """Load config from YAML file"""
-    config_file = PROJECT_ROOT / "config.yaml"
-    if config_file.exists():
-        try:
-            with open(config_file, "r", encoding="utf-8") as f:
-                return yaml.safe_load(f) or {}
-        except Exception as e:
-            logger.warning(f"Failed to load config.yaml: {e}")
-            return {}
-    return {}
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 # ========================
-# Load base config from YAML
+# Model Presets
 # ========================
-_YAML_CONFIG = _load_yaml_config()
+class ModelPreset(BaseSettings):
+    id: str
+    name: str
+    description: str
+    model_fast: str
+    model_reasoning: str
+    model_code: str
+    max_context: int = 8192
+    recommended_for: List[str] = Field(default_factory=list)
 
 
-# ========================
-# LLM Backend Settings
-# ========================
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-LEMONADE_URL = os.getenv("LEMONADE_URL", "http://localhost:13305")
-LLAMACPP_URL = os.getenv("LLAMACPP_URL", "http://localhost:8080")
-LMSTUDIO_URL = os.getenv("LMSTUDIO_URL", "http://localhost:1234")
-
-# Model Settings - MUST be set via environment variables!
-# No hardcoded defaults - models are dynamically detected via /api/tags
-MODEL_FAST = os.getenv("MODEL_FAST") or ""  # Required - no default
-MODEL_REASONING = os.getenv("MODEL_REASONING") or ""  # Required - no default
-MODEL_CODE = os.getenv("MODEL_CODE") or ""  # Required - no default
-LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", 300))  # 300s for reasoning/code models
-
-# Executor Settings
-EXECUTOR_TIMEOUT = int(os.getenv("EXECUTOR_TIMEOUT", 60))
-
-# Logging
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-
-
-# ========================
-# Backend configuration (inline in Settings.backends field)
-# ========================
-
-# Reasoning keywords for smart model selection
-REASONING_KEYWORDS = frozenset(["error", "debug", "optimize", "architecture", "complex", "plan", "architect"])
-
-# ========================
-# NEW: Checkpointing Settings
-# ========================
-CHECKPOINT_DB_PATH = os.getenv("CHECKPOINT_DB_PATH", str(DATA_DIR / "checkpoints.db"))
-CHECKPOINT_MAX_PER_THREAD = int(os.getenv("CHECKPOINT_MAX_PER_THREAD", 100))
-CHECKPOINT_PRUNE_AGE_DAYS = int(os.getenv("CHECKPOINT_PRUNE_AGE_DAYS", 30))
-USE_POSTGRES_CHECKPOINTER = _parse_bool(os.getenv("USE_POSTGRES_CHECKPOINTER"), False)
-POSTGRES_DB_URL = os.getenv("POSTGRES_DB_URL")  # e.g. postgresql+psycopg://user:pass@localhost/langgraph
-
-# HF_TOKEN should be loaded carefully (see memory.py or .env)
-# DO NOT hardcode in this file!
-
-
-def _save_timeout_to_env(llm_timeout: int, executor_timeout: int) -> None:
-    """Persist timeout settings to .env file."""
-    env_file = PROJECT_ROOT / ".env"
-    try:
-        lines = []
-        if env_file.exists():
-            with open(env_file, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-
-        updated_keys = {"LLM_TIMEOUT": str(llm_timeout), "EXECUTOR_TIMEOUT": str(executor_timeout)}
-        found_keys = set()
-
-        new_lines = []
-        for line in lines:
-            stripped = line.strip()
-            key = stripped.split("=")[0] if "=" in stripped else ""
-            if key in updated_keys and key not in found_keys:
-                new_lines.append(f"{key}={updated_keys[key]}\n")
-                found_keys.add(key)
-            else:
-                new_lines.append(line)
-
-        for key, val in updated_keys.items():
-            if key not in found_keys:
-                new_lines.append(f"{key}={val}\n")
-
-        with open(env_file, "w", encoding="utf-8") as f:
-            f.writelines(new_lines)
-        logger.info(f"Saved timeouts to .env: LLM={llm_timeout}s, EXECUTOR={executor_timeout}s")
-    except Exception as e:
-        logger.warning(f"Could not save timeouts to .env: {e}")
-
-
+DEFAULT_PRESETS: Dict[str, ModelPreset] = {
+    "light": ModelPreset(
+        id="light", name="Light", description="Rapide et léger",
+        model_fast="qwen3.5:0.8b", model_reasoning="qwen3.5:0.8b", model_code="qwen3.5:0.8b",
+        max_context=4096, recommended_for=["quick", "simple"]
+    ),
+    "balanced": ModelPreset(
+        id="balanced", name="Balanced", description="Bon équilibre",
+        model_fast="qwen3.5:9b", model_reasoning="qwen3.5:9b", model_code="qwen3.5:9b",
+        max_context=8192, recommended_for=["general", "coding"]
+    ),
+    "heavy": ModelPreset(
+        id="heavy", name="Heavy", description="Maximum puissance",
+        model_fast="qwen3.6:latest", model_reasoning="qwen3.6:latest", model_code="qwen3.6:latest",
+        max_context=16384, recommended_for=["complex", "large_codebase"]
+    ),
+}
 
 
 # ========================
-# Unified Settings class
+# Settings Principal
 # ========================
-@dataclass(kw_only=True)
-class Settings:
-    """Immutable configuration singleton - unified source of truth."""
-    # Paths
-    project_root: Path = PROJECT_ROOT
-    workspace: Path = WORKSPACE
-    templates: Path = TEMPLATES
-    data_dir: Path = DATA_DIR
-    
-    # Backend URLs
-    ollama_url: str = OLLAMA_URL
-    lemonade_url: str = LEMONADE_URL
-    llamacpp_url: str = LLAMACPP_URL
-    lmstudio_url: str = LMSTUDIO_URL
-    
-    # Model settings
-    model_fast: str = MODEL_FAST
-    model_reasoning: str = MODEL_REASONING
-    model_code: str = MODEL_CODE
-    llm_timeout: int = LLM_TIMEOUT
-    
-    # Executor settings
-    executor_timeout: int = EXECUTOR_TIMEOUT
-    
-    # Logging
-    log_level: str = LOG_LEVEL
-    
-    # YAML-based settings (for backward compatibility)
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        env_prefix="",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    # ========================
+    # Paths (computed)
+    # ========================
+    @property
+    def project_root(self) -> Path:
+        return PROJECT_ROOT
+
+    @property
+    def workspace(self) -> Path:
+        return PROJECT_ROOT / os.getenv("WORKSPACE", "workspace")
+
+    @property
+    def data_dir(self) -> Path:
+        return PROJECT_ROOT / "data"
+
+    @property
+    def templates(self) -> Path:
+        return PROJECT_ROOT / "templates"
+
+    # ========================
+    # Configuration
+    # ========================
     app_name: str = "UI-Pro"
     version: str = "1.0.0"
     debug: bool = False
-    api_host: str = "localhost"
-    api_port: int = 8000
-    api_key: str = ""
-    dashboard_port: int = 7860
+
+    ollama_url: str = "http://localhost:11434"
+    lemonade_url: str = "http://localhost:13305"
+    llamacpp_url: str = "http://localhost:8080"
+    lmstudio_url: str = "http://localhost:1234"
+
+    model_fast: str = ""
+    model_reasoning: str = ""
+    model_code: str = ""
+
+    llm_timeout: int = Field(default=300, ge=10, le=1800)
+    executor_timeout: int = Field(default=60, ge=5, le=600)
+
+    log_level: str = Field(default="INFO")
+
+    api_host: str = "0.0.0.0"
+    api_port: int = Field(default=8000, ge=1, le=65535)
+    api_key: Optional[str] = None
+
+    dashboard_port: int = Field(default=7860, ge=1, le=65535)
+
     memory_enabled: bool = True
-    memory_limit_mb: int = 512
-    
+    memory_limit_mb: int = Field(default=512, ge=100, le=4096)
+
+    active_preset: str = Field(default="balanced", pattern="^(light|balanced|heavy)$")
+
     # Checkpointing
     checkpoint_db_path: str = "data/checkpoints.db"
-    checkpoint_max_per_thread: int = 100          # Keep last N checkpoints per thread
-    checkpoint_prune_age_days: int = 30
+    checkpoint_max_per_thread: int = Field(default=100, ge=10, le=1000)
+    checkpoint_prune_age_days: int = Field(default=30, ge=1, le=365)
     use_postgres_checkpointer: bool = False
-    postgres_db_url: Optional[str] = None         # e.g. "postgresql+psycopg://..."
+    postgres_db_url: Optional[str] = None
 
     # State management
-    enable_state_compression: bool = True         # Summarize old messages
-    max_message_history: int = 50                 # Before summarization
+    enable_state_compression: bool = True
+    max_message_history: int = Field(default=50, ge=10, le=200)
 
-    # Config
-    load_dotenv: bool = LOAD_DOTENV
-    backends: dict = field(default_factory=lambda: {
-        "ollama": {"url": OLLAMA_URL, "enabled": True, "models_endpoint": "/api/tags"},
-        "lemonade": {"url": LEMONADE_URL, "enabled": True, "models_endpoint": "/api/v1/models"},
-        "llamacpp": {"url": LLAMACPP_URL, "enabled": False, "models_endpoint": "/props"},
-        "lmstudio": {"url": LMSTUDIO_URL, "enabled": True, "models_endpoint": "/api/v1/models"},
-    })
+    # Backends config
+    backends: Dict[str, Dict[str, Any]] = Field(
+        default_factory=lambda: {
+            "ollama": {"url": "http://localhost:11434", "enabled": True, "models_endpoint": "/api/tags"},
+            "lemonade": {"url": "http://localhost:13305", "enabled": True, "models_endpoint": "/api/v1/models"},
+            "llamacpp": {"url": "http://localhost:8080", "enabled": False, "models_endpoint": "/props"},
+            "lmstudio": {"url": "http://localhost:1234", "enabled": True, "models_endpoint": "/api/v1/models"},
+        }
+    )
 
-    def __new__(cls):
-        """Singleton pattern - return existing instance if available."""
-        if hasattr(cls, '_instance'):
-            return cls._instance
-        instance = super().__new__(cls)
-        cls._instance = instance
-        return instance
+    # Runtime only (excluded from init)
+    _runtime_overrides: Dict[str, Any] = Field(default_factory=dict, exclude=True, init=False)
 
-    def __init__(self, **kwargs):
-        """Custom init to apply env/yaml overrides without object.__setattr__."""
-        # Get YAML config
-        yaml_app = _YAML_CONFIG.get("app", {})
-        yaml_api = _YAML_CONFIG.get("api", {})
-        yaml_memory = _YAML_CONFIG.get("memory", {})
+    # ========================
+    # Validators
+    # ========================
+    @field_validator("log_level")
+    @classmethod
+    def validate_log_level(cls, v: str) -> str:
+        valid = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+        return v.upper() if v.upper() in valid else "INFO"
 
-        # Apply overrides (env takes priority over yaml)
-        self.app_name = os.getenv("APP_NAME", yaml_app.get("name", self.app_name))
-        self.version = os.getenv("VERSION", yaml_app.get("version", self.version))
-        self.debug = _parse_bool(os.getenv("DEBUG"), yaml_app.get("debug", self.debug))
-        self.api_host = os.getenv("API_HOST", yaml_api.get("host", self.api_host))
-        self.api_port = int(os.getenv("API_PORT", yaml_api.get("port", self.api_port)))
-        # Security: api_key MUST come from env only
-        api_key_env = os.getenv("API_KEY")
-        if api_key_env:
-            self.api_key = api_key_env
-        self.dashboard_port = int(os.getenv("DASHBOARD_PORT", yaml_api.get("dashboard_port", self.dashboard_port)))
-        self.memory_enabled = _parse_bool(os.getenv("MEMORY_ENABLED"), yaml_memory.get("enabled", self.memory_enabled))
-        self.memory_limit_mb = int(os.getenv("MEMORY_LIMIT_MB", yaml_memory.get("limit_mb", self.memory_limit_mb)))
+    @model_validator(mode="after")
+    def apply_preset_and_overrides(self) -> "Settings":
+        """Applique le preset et les overrides runtime"""
+        if self.active_preset in DEFAULT_PRESETS:
+            preset = DEFAULT_PRESETS[self.active_preset]
+            # Respecte les variables d'environnement
+            if not os.getenv("MODEL_FAST"):
+                self.model_fast = preset.model_fast
+            if not os.getenv("MODEL_REASONING"):
+                self.model_reasoning = preset.model_reasoning
+            if not os.getenv("MODEL_CODE"):
+                self.model_code = preset.model_code
 
-# NEW: Checkpoint helper
+        # Applique overrides runtime (UI)
+        for k, v in self._runtime_overrides.items():
+            if hasattr(self, k):
+                setattr(self, k, v)
+
+        return self
+
+    # ========================
+    # Méthodes métier
+    # ========================
+    def get_model_for_task(self, task: str) -> str:
+        t = task.lower().strip()
+        if t == "fast":
+            return self.model_fast
+        if t in ("reasoning", "reasoner"):
+            return self.model_reasoning
+        if t == "code":
+            return self.model_code
+        return self.model_fast or "qwen3.5:9b"
+
+    def get_preset(self) -> ModelPreset:
+        """Get the active model preset."""
+        return DEFAULT_PRESETS.get(self.active_preset, DEFAULT_PRESETS["balanced"])
+
+    def get_all_presets(self) -> Dict[str, ModelPreset]:
+        """Get all available presets."""
+        return DEFAULT_PRESETS.copy()
+
+    def set_preset(self, preset_id: str) -> None:
+        if preset_id not in DEFAULT_PRESETS:
+            raise ValueError(f"Preset invalide: {preset_id}")
+        self.active_preset = preset_id
+        logger.info(f"Preset activé : {preset_id}")
+
+    def set_timeout(self, llm: int, executor: int) -> None:
+        self.llm_timeout = max(10, min(1800, llm))
+        self.executor_timeout = max(5, min(600, executor))
+        self._save_to_env({"LLM_TIMEOUT": str(self.llm_timeout),
+                           "EXECUTOR_TIMEOUT": str(self.executor_timeout)})
+
+    def set_log_level(self, level: str) -> None:
+        self.log_level = level.upper()
+        self._save_to_env({"LOG_LEVEL": self.log_level})
+
+    def set_runtime_override(self, key: str, value: Any) -> None:
+        self._runtime_overrides[key] = value
+        if hasattr(self, key):
+            setattr(self, key, value)
+
+    def clear_runtime_override(self, key: str) -> None:
+        self._runtime_overrides.pop(key, None)
+
+    def get_workspace_str(self) -> str:
+        return str(self.workspace)
+
     def get_checkpoint_config(self) -> dict:
-        """Return checkpoint configuration for LangGraph."""
         return {
             "db_path": self.checkpoint_db_path,
             "max_per_thread": self.checkpoint_max_per_thread,
@@ -248,121 +223,66 @@ class Settings:
             "postgres_url": self.postgres_db_url,
         }
 
-    def get_model_for_task(self, task: str) -> str:
-        """
-        Simple model selection for basic task types.
-        Complex keyword-based routing is handled by LLMRouter.
-        
-        Args:
-            task: Task type ("fast", "reasoning", "code") or natural language
-        
-        Returns:
-            Model name for the task
-        """
-        task_lower = task.lower().strip()
-        
-        # Simple mode selection (for backward compatibility)
-        # Complex keyword-based routing is handled by LLMRouter only
-        if task_lower == "fast":
-            return self.model_fast
-        if task_lower in ("reasoning", "reasoner"):
-            return self.model_reasoning
-        if task_lower == "code":
-            return self.model_code
-        
-        # Default to fast for unknown simple tasks
-        return self.model_fast
-    
-    def get_workspace_str(self) -> str:
-        """Get workspace as string for external I/O."""
-        return str(self.workspace)
-    
-    def set_timout(self, llm_timeout: int, executor_timeout: int) -> None:
-        """Override timeouts at runtime (persisted to .env)."""
-        # Update in-memory values
-        self.llm_timeout = max(10, min(1800, llm_timeout))
-        self.executor_timeout = max(5, min(600, executor_timeout))
-        # Persist to .env
-        _save_timeout_to_env(self.llm_timeout, self.executor_timeout)
-
-    def set_log_level(self, level: str) -> None:
-        """Set and persist log level."""
-        level_upper = level.upper()
-        valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
-        if level_upper not in valid_levels:
-            raise ValueError(f"Invalid log level. Must be one of: {', '.join(valid_levels)}")
-
-        self.log_level = level_upper
-        self._save_log_level_to_env(level_upper)
-        logger.info(f"Log level changed to {level_upper}")
-
-    @staticmethod
-    def _save_log_level_to_env(level: str) -> None:
-        """Persist log level setting to .env file."""
-        env_file = PROJECT_ROOT / ".env"
-        try:
-            lines = []
-            if env_file.exists():
-                with open(env_file, "r", encoding="utf-8") as f:
-                    lines = f.readlines()
-
-            found = False
-            new_lines = []
-            for line in lines:
-                if line.strip().startswith("LOG_LEVEL="):
-                    new_lines.append(f"LOG_LEVEL={level}\n")
-                    found = True
-                else:
-                    new_lines.append(line)
-
-            if not found:
-                new_lines.append(f"LOG_LEVEL={level}\n")
-
-            with open(env_file, "w", encoding="utf-8") as f:
-                f.writelines(new_lines)
-            logger.debug(f"Saved LOG_LEVEL to .env: {level}")
-        except Exception as e:
-            logger.warning(f"Could not save LOG_LEVEL to .env: {e}")
-
-    def validate(self) -> tuple[bool, list[str]]:
-        """Validate configuration. Returns (is_valid, list_of_errors)."""
+    def validate(self) -> tuple[bool, List[str]]:
+        """Validate configuration."""
         errors = []
         
         if self.api_port <= 0 or self.api_port > 65535:
             errors.append(f"Invalid api_port: {self.api_port}")
-        
         if self.dashboard_port <= 0 or self.dashboard_port > 65535:
             errors.append(f"Invalid dashboard_port: {self.dashboard_port}")
+        if not self.model_fast:
+            errors.append("MODEL_FAST is required (set via env or preset)")
+        if not self.model_reasoning:
+            errors.append("MODEL_REASONING is required (set via env or preset)")
+        if not self.model_code:
+            errors.append("MODEL_CODE is required (set via env or preset)")
         
-        # Validate model configuration (required for LLM operations)
-        if not self.model_fast or self.model_fast == "":
-            errors.append("MODEL_FAST environment variable is required")
-        if not self.model_reasoning or self.model_reasoning == "":
-            errors.append("MODEL_REASONING environment variable is required")
-        if not self.model_code or self.model_code == "":
-            errors.append("MODEL_CODE environment variable is required")
-        
-        # Check workspace exists or can be created
         if not self.workspace.exists():
             try:
                 self.workspace.mkdir(parents=True, exist_ok=True)
             except Exception as e:
-                errors.append(f"Cannot create workspace {self.workspace}: {e}")
+                errors.append(f"Cannot create workspace: {e}")
         
-        return (len(errors) == 0, errors)
+        return len(errors) == 0, errors
+
+    def _save_to_env(self, updates: Dict[str, str]) -> None:
+        """Écriture atomique dans .env"""
+        env_path = PROJECT_ROOT / ".env"
+        try:
+            lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
+            new_lines = []
+            updated = set()
+
+            for line in lines:
+                if "=" in line:
+                    key = line.split("=", 1)[0].strip()
+                    if key in updates:
+                        new_lines.append(f"{key}={updates[key]}")
+                        updated.add(key)
+                        continue
+                new_lines.append(line)
+
+            for key, val in updates.items():
+                if key not in updated:
+                    new_lines.append(f"{key}={val}")
+
+            # Écriture atomique
+            tmp = env_path.with_suffix(".tmp")
+            tmp.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+            tmp.replace(env_path)
+            logger.info(f"Updated .env: {list(updates.keys())}")
+
+        except Exception as e:
+            logger.error(f"Impossible de mettre à jour .env: {e}")
 
 
-# True singleton pattern
-_settings: Optional[Settings] = None
-
-
+# ========================
+# Singleton
+# ========================
+@lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    """Get singleton settings instance."""
-    global _settings
-    if _settings is None:
-        _settings = Settings()
-    return _settings
+    return Settings()
 
 
-# Public API
 settings = get_settings()
