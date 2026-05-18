@@ -14,7 +14,7 @@
 **UI-Pro** is a full-featured AI Agent orchestration platform that combines:
 
 - **Beautiful modern UI** (ChatGPT-style) with real-time streaming
-- **Visible Agent** with live step-by-step progress
+- **Visible Agent** with live step-by-step progress ("Thinking Process")
 - **LangGraph Orchestrator** with persistent checkpointing
 - **Multi-backend LLM support** (Ollama, LM Studio, llama.cpp, Lemonade)
 - **Tool calling** & safe code execution
@@ -43,8 +43,9 @@
 ## ✨ Key Features
 
 - **Real-time Token Streaming** — token-by-token with live tokens/s graph
-- **Visible Agent** — animated step progress (Analyze → Plan → Code → Review → Execute)
+- **Thinking Process Display** — animated step progress with visual prominence
 - **Persistent Checkpointing** — SQLite-backed session resumption across restarts
+- **Model Presets** — light / balanced / heavy for automatic model selection
 - **Multi-Model Discovery** — automatic detection of available models
 - **Configurable Timeouts** — LLM and Executor timeouts via Settings UI
 - **Safe Code Execution** — sandboxed execution with static analysis
@@ -64,7 +65,8 @@
 | Layer          | Technology                                      |
 |----------------|-------------------------------------------------|
 | **Frontend**   | Next.js 16, React 18, Tailwind, Framer Motion, Zustand |
-| **Backend**    | FastAPI, Python 3.10+, Pydantic                 |
+| **Backend**    | FastAPI, Python 3.10+, Pydantic v2               |
+| **Config**     | pydantic-settings (YAML + env + runtime)       |
 | **Orchestration** | LangGraph with AsyncSqliteSaver checkpointer  |
 | **LLM**        | Ollama, LM Studio, llama.cpp, Lemonade         |
 | **Memory**     | FAISS + SentenceTransformers                    |
@@ -139,70 +141,108 @@ LANGSMITH_PROJECT=ui-pro-production
 
 ## 📁 Project Structure (2026-05)
 
-> **NOTE**: `backend/` is the source of truth. Legacy re-export folders (`core/`, `services/`, `api/`, `views/`, `controllers/`) have been **deleted**. All code now imports directly from `backend/`.
+> **NOTE**: `backend/domain/settings.py` is the single source of truth for configuration using pydantic-settings.
 
 ```
-ui-pro/                    # Racine projet
+ui-pro/                    # Project root
 ├── run.py                    # Main launcher
 ├── setup.py                  # Automated setup
+├── settings.py               # Config wrapper (backward compat)
 ├── requirements.txt
 ├── .env.example
+├── config.yaml.example      # YAML configuration template
 ├── data/                     # Checkpoint DB (gitignored)
 │   └── checkpoints.db
 │
-├── backend/                  # SOURCE DE VÉRITÉ (uniquement)
+├── backend/                  # SOURCE OF TRUTH
 │   ├── domain/
-│   │   └── core/            # Business logic
+│   │   ├── settings.py      # Unified config (pydantic-settings)
+│   │   └── core/           # Business logic
 │   │       ├── langgraph_orchestrator.py  # Agent pipeline
 │   │       ├── orchestrator_async.py      # Async orchestrator
 │   │       ├── code_review.py            # Static analysis
 │   │       ├── events.py                 # Event bus
-│   │       └── settings.py               # Configuration
+│   │       └── langgraph/               # LangGraph nodes
 │   ├── infrastructure/       # Services
 │   │   ├── llm_router.py    # LLM routing + streaming
+│   │   ├── model_discovery.py  # Model discovery + presets
 │   │   ├── streaming.py     # SSE/WebSocket streaming
 │   │   ├── code_execution.py # Sandbox execution
-│   │   ├── model_service.py
 │   │   └── memory.py        # FAISS vector store
-│   └── transport/            # API layer
+│   └── transport/           # API layer
 │       ├── views_api.py     # FastAPI app
-│       ├── dashboard.py     # Gradio dashboard
-│       └── routers/         # API endpoints
-│           ├── ws.py         # WebSocket
-│           ├── stream.py     # SSE
-│           ├── chat.py       # REST fallback
-│           └── health.py     # Health + settings
-│
-├── llm/                      # LLM clients
-│   └── router.py           # OllamaClient (with astream)
+│       └── routers/        # API endpoints
+│           ├── ws.py        # WebSocket
+│           ├── stream.py    # SSE
+│           ├── logs.py      # Log management
+│           └── health.py    # Health + settings
 │
 ├── models/                   # Data models (re-exports backend/)
 │   └── settings.py
 │
 └── ui-pro-ui/                # Next.js frontend
     ├── components/
-    │   ├── SettingsView.tsx  # Model selection + timeouts
-    │   ├── SystemStats.tsx   # Live metrics
-    │   └── ...
+    │   ├── settings/        # Modular settings components
+    │   │   ├── SettingsView.tsx
+    │   │   ├── LanguageSelector.tsx
+    │   │   ├── TimeoutSettings.tsx
+    │   │   ├── LogLevelSettings.tsx
+    │   │   ├── ModelSelector.tsx
+    │   │   ├── BackendStatusGrid.tsx
+    │   │   └── hooks/       # Custom hooks
+    │   ├── chat/
+    │   │   ├── AgentSteps.tsx   # Thinking Process display
+    │   │   └── StepProgress.tsx
+    │   └── SystemStats.tsx   # Live metrics
     ├── services/
-    │   └── modelDiscovery.ts # Backend model discovery
+    │   └── modelDiscovery.ts
     └── lib/
         ├── i18n.ts          # EN + FR translations
-        └── stores/         # Zustand state
+        └── stores/          # Zustand state
 ```
 
 ## ⚙️ Configuration
 
-All settings are configurable via the **Settings UI** or `.env`:
+### Configuration Priority
 
-| Setting              | Default | Description |
-|----------------------|---------|-------------|
-| `OLLAMA_URL`         | localhost:11434 | Ollama server URL |
-| `MODEL_FAST`         | qwen3.5:9b | Fast model (coding) |
-| `MODEL_REASONING`    | qwen3.5:9b | Reasoning model (planning) |
-| `LLM_TIMEOUT`       | 300s | Max time for LLM responses |
-| `EXECUTOR_TIMEOUT`   | 60s | Max time for code execution |
-| `LANGSMITH_API_KEY`  | (none) | Enable LangSmith tracing |
+Settings are loaded in this order (later sources override earlier):
+1. **config.yaml** - Application defaults
+2. **Environment variables** - User overrides
+3. **Runtime (UI)** - Live changes from Settings UI
+
+### Model Presets
+
+Three presets are available for automatic model selection:
+
+| Preset | Models | Use Case |
+|-------|--------|----------|
+| **light** | qwen3.5:0.8b | Quick tasks, low resources |
+| **balanced** | qwen3.5:9b | General use, good balance |
+| **heavy** | qwen3.6:latest | Complex reasoning, large codebases |
+
+### Settings UI
+
+All settings are configurable via the **Settings UI** at http://localhost:3000:
+
+- **Language** — English / French
+- **Timeouts** — LLM and Executor timeouts
+- **Log Level** — DEBUG / INFO / WARNING / ERROR / CRITICAL
+- **Model Selection** — Choose from discovered models
+- **Backend Status** — Live connectivity check
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OLLAMA_URL` | http://localhost:11434 | Ollama server URL |
+| `MODEL_FAST` | (from preset) | Fast model for simple tasks |
+| `MODEL_REASONING` | (from preset) | Reasoning model for complex tasks |
+| `MODEL_CODE` | (from preset) | Code-specific model |
+| `ACTIVE_PRESET` | balanced | Model preset (light/balanced/heavy) |
+| `LLM_TIMEOUT` | 300s | Max time for LLM responses |
+| `EXECUTOR_TIMEOUT` | 60s | Max time for code execution |
+| `LOG_LEVEL` | INFO | Logging level |
+| `LANGSMITH_API_KEY` | (none) | Enable LangSmith tracing |
 
 ## 🔐 Security
 

@@ -9,6 +9,17 @@ import { LLM_CONFIG } from '@/lib/config'
 type Locale = 'en' | 'fr'
 type Theme = 'dark' | 'light'
 
+// Debug event types
+export interface DebugEvent {
+  id: string
+  timestamp: number
+  type: 'step' | 'token' | 'tool' | 'error' | 'info'
+  step?: string
+  content: string
+  duration?: number
+  tokens?: number
+}
+
 // Model with provider and rich metadata info
 export interface ModelInfo {
   id: string           // Backend key (e.g., "qwen/qwen3.5-9b" for LM Studio)
@@ -44,6 +55,12 @@ interface UIState {
   // Focus mode
   focusMode: boolean
   toggleFocusMode: () => void
+  // Debug panel
+  isDebugEnabled: boolean
+  toggleDebug: () => void
+  debugLogs: DebugEvent[]
+  addDebugLog: (log: Omit<DebugEvent, 'id' | 'timestamp'>) => void
+  clearDebugLogs: () => void
 }
 
 export const useUIStore = create<UIState>()(
@@ -72,6 +89,21 @@ export const useUIStore = create<UIState>()(
       // Focus mode
       focusMode: false,
       toggleFocusMode: () => set((state) => ({ focusMode: !state.focusMode })),
+      // Debug panel
+      isDebugEnabled: false,
+      toggleDebug: () => set((state) => ({ isDebugEnabled: !state.isDebugEnabled })),
+      debugLogs: [],
+      addDebugLog: (log) => set((state) => ({
+        debugLogs: [
+          ...state.debugLogs,
+          {
+            ...log,
+            id: `debug-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+            timestamp: Date.now(),
+          },
+        ],
+      })),
+      clearDebugLogs: () => set({ debugLogs: [] }),
     }),
     {
       name: 'ui-pro-storage',
