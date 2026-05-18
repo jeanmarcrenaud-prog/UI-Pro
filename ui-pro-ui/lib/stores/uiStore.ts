@@ -1,16 +1,7 @@
-// uiStore.ts
-// Role: Global UI store via Zustand with persistence - manages sidebar state, compact mode toggle,
-// model selection, locale settings, and available models list across the application
-
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
-import { LLM_CONFIG } from '@/lib/config'
+import { persist, createJSONStorage } from 'zustand/middleware'
 
-type Locale = 'en' | 'fr'
-type Theme = 'dark' | 'light'
-
-// Debug event types
-export interface DebugEvent {
+export interface DebugLog {
   id: string
   timestamp: number
   type: 'step' | 'token' | 'tool' | 'error' | 'info'
@@ -20,103 +11,133 @@ export interface DebugEvent {
   tokens?: number
 }
 
-// Model with provider and rich metadata info
-export interface ModelInfo {
-  id: string           // Backend key (e.g., "qwen/qwen3.5-9b" for LM Studio)
-  name: string         // Display name (e.g., "Qwen3.5 9B")
-  provider: 'ollama' | 'lmstudio' | 'lemonade'
-  // Rich metadata
-  parameterSize?: string      // ex: "8.0B", "70B"
-  quantization?: string       // ex: "Q4_K_M", "FP16"
-  sizeGb?: number            // Size in GB
-  maxContext?: number        // Estimated context window
-  speedTier?: 'very_fast' | 'fast' | 'medium' | 'slow'
-  isCoder?: boolean
-  isReasoning?: boolean
-  isVision?: boolean
-  capabilities?: string[]     // List of capabilities
+export interface AgentStep {
+  id: string
+  name: string
+  status: 'pending' | 'active' | 'completed' | 'error'
+  description?: string
+  duration?: number
+  progress?: number // 0-100
 }
 
 interface UIState {
+  // Debug Panel
+  debugLogs: DebugLog[]
+  isDebugEnabled: boolean
+  currentAgentSteps: AgentStep[]
+
+  // UI Generale
   sidebarOpen: boolean
-  toggleSidebar: () => void
+  activeTab: 'chat' | 'history' | 'settings'
   compactMode: boolean
-  toggleCompactMode: () => void
+
+  // Model
   selectedModel: string
   setSelectedModel: (model: string) => void
-  locale: Locale
-  setLocale: (locale: Locale) => void
-  availableModels: ModelInfo[]
-  setAvailableModels: (models: ModelInfo[]) => void
+  availableModels: { id: string; name: string; provider: string }[]
+  setAvailableModels: (models: { id: string; name: string; provider: string }[]) => void
+
+  // Locale
+  locale: 'en' | 'fr'
+  setLocale: (locale: 'en' | 'fr') => void
+
   // Theme
-  theme: Theme
-  setTheme: (theme: Theme) => void
+  theme: 'dark' | 'light'
+  setTheme: (theme: 'dark' | 'light') => void
   toggleTheme: () => void
+
   // Focus mode
   focusMode: boolean
   toggleFocusMode: () => void
-  // Debug panel
-  isDebugEnabled: boolean
-  toggleDebug: () => void
-  debugLogs: DebugEvent[]
-  addDebugLog: (log: Omit<DebugEvent, 'id' | 'timestamp'>) => void
+
+  // Actions Debug
+  addDebugLog: (log: Omit<DebugLog, 'id' | 'timestamp'>) => void
   clearDebugLogs: () => void
+  setDebugEnabled: (enabled: boolean) => void
+
+  // Actions Agent Steps
+  setAgentSteps: (steps: AgentStep[]) => void
+  updateStep: (stepId: string, updates: Partial<AgentStep>) => void
+  clearAgentSteps: () => void
+
+  // UI Actions
+  toggleSidebar: () => void
+  setActiveTab: (tab: 'chat' | 'history' | 'settings') => void
+  toggleCompactMode: () => void
 }
 
 export const useUIStore = create<UIState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
+      debugLogs: [],
+      isDebugEnabled: true,
+      currentAgentSteps: [],
+
       sidebarOpen: true,
-      toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
+      activeTab: 'chat',
       compactMode: false,
-      toggleCompactMode: () => set((state) => ({ compactMode: !state.compactMode })),
-      selectedModel: LLM_CONFIG.defaultModel,
-      setSelectedModel: (model) => {
-        console.log('[useUIStore] setSelectedModel called:', model)
-        set({ selectedModel: model })
-      },
+
+      selectedModel: '',
+      setSelectedModel: (model) => set({ selectedModel: model }),
+      availableModels: [],
+      setAvailableModels: (models) => set({ availableModels: models }),
+
       locale: 'fr',
-      setLocale: (locale) => {
-        console.log('[useUIStore] setLocale called:', locale)
-        set({ locale })
-      },
-      availableModels: [],  // Dynamically discovered, no defaults
-      setAvailableModels: (availableModels) => set({ availableModels }),
-      // Theme
+      setLocale: (locale) => set({ locale }),
+
       theme: 'dark',
       setTheme: (theme) => set({ theme }),
       toggleTheme: () => set((state) => ({ theme: state.theme === 'dark' ? 'light' : 'dark' })),
-      // Focus mode
+
       focusMode: false,
       toggleFocusMode: () => set((state) => ({ focusMode: !state.focusMode })),
-      // Debug panel
-      isDebugEnabled: false,
-      toggleDebug: () => set((state) => ({ isDebugEnabled: !state.isDebugEnabled })),
-      debugLogs: [],
-      addDebugLog: (log) => set((state) => ({
-        debugLogs: [
-          ...state.debugLogs,
-          {
-            ...log,
-            id: `debug-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-            timestamp: Date.now(),
-          },
-        ],
-      })),
+
+      // ==================== DEBUG LOGS ====================
+      addDebugLog: (logData) => {
+        const newLog: DebugLog = {
+          id: `log_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+          timestamp: Date.now(),
+          ...logData,
+        }
+
+        set((state) => ({
+          debugLogs: [...state.debugLogs.slice(-149), newLog],
+        }))
+      },
+
       clearDebugLogs: () => set({ debugLogs: [] }),
+
+      setDebugEnabled: (enabled) => set({ isDebugEnabled: enabled }),
+
+      // ==================== AGENT STEPS ====================
+      setAgentSteps: (steps) => set({ currentAgentSteps: steps }),
+
+      updateStep: (stepId, updates) =>
+        set((state) => ({
+          currentAgentSteps: state.currentAgentSteps.map((step) =>
+            step.id === stepId ? { ...step, ...updates } : step
+          ),
+        })),
+
+      clearAgentSteps: () => set({ currentAgentSteps: [] }),
+
+      // ==================== UI ====================
+      toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
+      setActiveTab: (tab) => set({ activeTab: tab }),
+      toggleCompactMode: () => set((state) => ({ compactMode: !state.compactMode })),
     }),
+
     {
       name: 'ui-pro-storage',
+      storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
-        selectedModel: state.selectedModel,
         sidebarOpen: state.sidebarOpen,
         compactMode: state.compactMode,
+        isDebugEnabled: state.isDebugEnabled,
+        selectedModel: state.selectedModel,
         locale: state.locale,
+        theme: state.theme,
       }),
     }
   )
 )
-
-export const uiStore = {
-  getState: () => useUIStore.getState(),
-}
