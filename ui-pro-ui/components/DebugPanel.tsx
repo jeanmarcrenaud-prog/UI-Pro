@@ -8,8 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useUIStore } from '@/lib/stores/uiStore'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import { BadgeComponent as Badge } from '@/components/ui/badge'
 import { X, Play, Pause, Download, Trash2, Bug } from 'lucide-react'
 
 export function DebugPanel() {
@@ -146,7 +145,7 @@ export function DebugPanel() {
               </TabsList>
 
               <TabsContent value="steps" className="flex-1 m-0 overflow-hidden">
-                <ScrollArea className="h-full" ref={scrollRef}>
+                <div className="h-full overflow-y-auto" ref={scrollRef}>
                   <div className="p-4 space-y-3">
                     {filteredLogs.filter((l) => l.type === 'step').length === 0 ? (
                       <p className="text-slate-500 text-center py-8">Aucun step enregistré</p>
@@ -174,11 +173,11 @@ export function DebugPanel() {
                         ))
                     )}
                   </div>
-                </ScrollArea>
+                </div>
               </TabsContent>
 
               <TabsContent value="stream" className="flex-1 m-0 overflow-hidden">
-                <ScrollArea className="h-full">
+                <div className="h-full overflow-y-auto">
                   <div className="p-4 space-y-2">
                     {filteredLogs.filter((l) => l.type === 'token').length === 0 ? (
                       <p className="text-slate-500 text-center py-8">Aucun token enregistré</p>
@@ -197,11 +196,11 @@ export function DebugPanel() {
                         ))
                     )}
                   </div>
-                </ScrollArea>
+                </div>
               </TabsContent>
 
               <TabsContent value="errors" className="flex-1 m-0 overflow-hidden">
-                <ScrollArea className="h-full">
+                <div className="h-full overflow-y-auto">
                   <div className="p-4 space-y-2">
                     {filteredLogs.filter((l) => l.type === 'error').length === 0 ? (
                       <p className="text-slate-500 text-center py-8">Aucune erreur</p>
@@ -221,15 +220,15 @@ export function DebugPanel() {
                         ))
                     )}
                   </div>
-                </ScrollArea>
+                </div>
               </TabsContent>
 
               <TabsContent value="raw" className="flex-1 m-0 overflow-hidden">
-                <ScrollArea className="h-full">
+                <div className="h-full overflow-y-auto">
                   <pre className="p-4 text-xs font-mono text-slate-400 whitespace-pre-wrap">
                     {JSON.stringify(debugLogs, null, 2)}
                   </pre>
-                </ScrollArea>
+                </div>
               </TabsContent>
             </Tabs>
           </motion.div>
