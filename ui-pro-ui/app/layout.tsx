@@ -5,6 +5,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { DebugPanel } from '@/components/DebugPanel'
 
 export const metadata: Metadata = {
   title: 'UI-Pro - AI Agent Orchestration',
@@ -17,11 +18,12 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className="dark">
+    <html lang="fr" className="dark">
       <body className="antialiased bg-black text-white">
         <ErrorBoundary>
           {children}
         </ErrorBoundary>
+        <DebugPanel />
       </body>
     </html>
   )
