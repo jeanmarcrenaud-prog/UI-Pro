@@ -6,9 +6,9 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useUIStore } from '@/lib/stores/uiStore'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
-import { Button } from './ui/button'
-import { BadgeComponent as Badge } from './ui/badge'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Button } from '@/components/ui/button'
+import { BadgeComponent as Badge } from '@/components/ui/badge'
 import { X, Play, Pause, Download, Trash2, Bug } from 'lucide-react'
 
 export function DebugPanel() {
