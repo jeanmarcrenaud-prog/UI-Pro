@@ -88,12 +88,22 @@ export function StepProgress({
   if (steps.length === 0) {
     return (
       <div className="flex gap-3 items-center">
-        <div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-xs shrink-0">
-          🤖
+        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-violet-600 to-fuchsia-600 flex items-center justify-center text-sm shrink-0 shadow-lg shadow-violet-500/30">
+          <motion.span
+            animate={{ scale: [1, 1.2, 1] }}
+            transition={{ repeat: Infinity, duration: 2 }}
+          >
+            🧠
+          </motion.span>
         </div>
-        <div className="bg-slate-800 text-slate-200 rounded-2xl px-4 py-3 flex-1">
-          <span className="text-sm flex items-center gap-2 text-violet-400">
-            ⚙️ {t.steps?.initializing ?? 'Initializing...'}
+        <div className="bg-gradient-to-r from-slate-800 to-slate-800/80 border border-violet-500/20 text-slate-200 rounded-2xl px-4 py-3 flex-1">
+          <span className="text-sm flex items-center gap-2 text-violet-400 font-medium">
+            <motion.span
+              animate={{ opacity: [1, 0.3, 1] }}
+              transition={{ repeat: Infinity, duration: 1.5 }}
+              className="w-2 h-2 bg-violet-500 rounded-full"
+            />
+            {t.steps?.initializing ?? 'Initializing Thinking Process...'}
           </span>
         </div>
       </div>
@@ -136,11 +146,11 @@ export function StepProgress({
   if (isComplete) {
     return (
       <div className="flex gap-3 items-center">
-        <div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-xs shrink-0">
-          🤖
+        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center text-sm shrink-0 shadow-lg shadow-emerald-500/30">
+          ✅
         </div>
-        <div className="bg-slate-800 text-emerald-400 rounded-2xl px-4 py-3 flex-1 text-sm">
-          ✅ {t.steps?.complete ?? 'Task completed'}
+        <div className="bg-gradient-to-r from-slate-800 to-slate-800/80 border border-emerald-500/20 text-emerald-400 rounded-2xl px-4 py-3 flex-1 text-sm font-medium">
+          ✅ {t.steps?.complete ?? 'Task completed successfully'}
         </div>
       </div>
     );
@@ -148,46 +158,75 @@ export function StepProgress({
 
   return (
     <div className="flex gap-3 items-start">
-      <div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-xs shrink-0">
-        🤖
+      {/* Enhanced robot icon with glow */}
+      <div className="relative shrink-0">
+        <motion.div 
+          className="w-10 h-10 rounded-full bg-gradient-to-br from-violet-600 to-fuchsia-600 flex items-center justify-center text-sm shadow-lg shadow-violet-500/30"
+          animate={isStreaming ? { scale: [1, 1.05, 1] } : {}}
+          transition={{ repeat: Infinity, duration: 2 }}
+        >
+          <motion.span
+            animate={isStreaming ? { rotate: [0, 15, -15, 0] } : {}}
+            transition={{ repeat: Infinity, duration: 1.5 }}
+          >
+            🧠
+          </motion.span>
+        </motion.div>
+        {isStreaming && (
+          <motion.div
+            className="absolute inset-0 rounded-full bg-violet-500/30 blur-md"
+            animate={{ opacity: [0.3, 0.6, 0.3] }}
+            transition={{ repeat: Infinity, duration: 1.5 }}
+          />
+        )}
       </div>
 
-      <div className="bg-slate-800 text-slate-200 rounded-2xl px-4 py-4 flex-1 space-y-4">
-        {/* Header */}
+      {/* Enhanced card with gradient border */}
+      <div className="bg-gradient-to-br from-slate-800 to-slate-800/80 border border-violet-500/20 text-slate-200 rounded-2xl px-4 py-4 flex-1 space-y-4 shadow-lg shadow-violet-5/5">
+        {/* Header with Thinking Process badge */}
         <div className="space-y-3">
-          <div className="text-sm flex items-center gap-2">
-            <motion.span
-              animate={{ opacity: [1, 0.4, 1] }}
-              transition={{ repeat: Infinity, duration: 1.8 }}
-              className="inline-block w-2 h-2 bg-violet-500 rounded-full"
-            />
-            Step {activeIndex + 1} of {steps.length}
+          <div className="flex items-center justify-between">
+            <div className="text-sm flex items-center gap-2">
+              <motion.span
+                animate={{ opacity: [1, 0.3, 1] }}
+                transition={{ repeat: Infinity, duration: 1.8 }}
+                className="inline-block w-2 h-2 bg-violet-500 rounded-full"
+              />
+              <span className="text-violet-300 font-medium">Thinking Process</span>
+              <span className="text-slate-500">•</span>
+              <span className="text-slate-400">Step {activeIndex + 1} of {steps.length}</span>
+            </div>
           </div>
 
-          {/* Progress Bar */}
+          {/* Progress Bar with glow */}
           <div className="flex items-center gap-3">
-            <div className="flex-1 h-1 bg-slate-700 rounded-full overflow-hidden">
+            <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
               <motion.div
-                className="h-full bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-full"
+                className="h-full bg-gradient-to-r from-violet-500 via-fuchsia-500 to-violet-500 rounded-full"
                 animate={{ width: `${progressPercentage}%` }}
                 transition={{ duration: 0.4, ease: 'easeOut' }}
               />
             </div>
-            <span className="text-xs font-mono text-slate-400 w-9 text-right">
+            <span className="text-xs font-mono text-violet-400 font-bold w-9 text-right">
               {progressPercentage}%
             </span>
           </div>
         </div>
 
-        {/* Current Step Status */}
-        <div className="text-xs text-slate-400 line-clamp-2">
-          {getStatusLabel}
+        {/* Current Step Status - more prominent */}
+        <div className="text-sm text-white bg-violet-500/10 border border-violet-500/20 rounded-lg px-3 py-2 line-clamp-2">
+          <motion.span
+            animate={isStreaming ? { opacity: [1, 0.7, 1] } : {}}
+            transition={{ repeat: Infinity, duration: 1.5 }}
+          >
+            {getStatusLabel}
+          </motion.span>
         </div>
 
         {/* Step List */}
         {showStepList && (
-          <div className="pt-3 border-t border-slate-700">
-            <div className="uppercase text-[10px] tracking-widest text-slate-500 mb-2.5">
+          <div className="pt-3 border-t border-slate-700/50">
+            <div className="uppercase text-[10px] tracking-widest text-violet-400/70 mb-2.5 font-medium">
               Progress
             </div>
             <div className="space-y-2.5">
