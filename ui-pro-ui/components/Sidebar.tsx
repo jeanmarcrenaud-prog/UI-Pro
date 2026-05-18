@@ -149,8 +149,8 @@ function ModelSelectDropdown({
                 
                 return (
                   <option
-                    key={`${model.provider}-${model.name}`}
-                    value={model.name}
+                    key={`${model.provider}-${model.id}`}
+                    value={model.id}
                   >
                     {parts.join(' • ')}
                   </option>

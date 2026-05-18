@@ -471,7 +471,7 @@ export function SettingsView() {
                   parts.push(model.provider)
                   
                   return (
-                    <option key={`${model.provider}-${model.name}`} value={model.name}>
+                    <option key={`${model.provider}-${model.id}`} value={model.id}>
                       {parts.join(' • ')}
                     </option>
                   )
