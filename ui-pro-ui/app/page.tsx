@@ -1,5 +1,5 @@
 // page.tsx (app/)
-// Role: Main dashboard page - renders the full UI with Sidebar, ChatContainer, DebugPanel, HistoryView,
+// Role: Main dashboard page - renders the full UI with Sidebar, ChatContainer, HistoryView,
 // and SettingsView based on active tab, with model logging and elapsed time timer
 
 'use client'
@@ -10,7 +10,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { ChatContainer } from '@/components/ChatContainer'
 import { CommandPalette, useKeyboardShortcuts } from '@/components/CommandPalette'
 import { Sidebar } from '@/components/Sidebar'
-import { DebugPanel } from '@/components/DebugPanel'
+
 import { SettingsView } from '@/components/SettingsView'
 import { HistoryView } from '@/components/HistoryView'
 import { useUIStore } from '@/lib/stores/uiStore'
@@ -145,9 +145,6 @@ const handleClearLogs = useCallback(() => {
           </div>
         )}
       </main>
-
-      {/* Debug Panel - uses store directly */}
-      <DebugPanel />
 
       {/* Command Palette */}
       <CommandPalette isOpen={paletteOpen} onClose={() => setPaletteOpen(false)} />
