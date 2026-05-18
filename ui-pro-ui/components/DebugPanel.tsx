@@ -66,9 +66,9 @@ export function DebugPanel() {
       {/* Floating buttons */}
       <Button
         onClick={toggleDebug}
-        variant={isDebugEnabled ? 'primary' : 'ghost'}
+        variant="ghost"
         size="sm"
-        className="fixed bottom-6 right-24 z-50"
+        className={`fixed bottom-6 right-24 z-50 ${isDebugEnabled ? 'bg-violet-600 text-white' : ''}`}
         title={isDebugEnabled ? 'Disable Debug' : 'Enable Debug'}
       >
         <Bug className="w-4 h-4" />
