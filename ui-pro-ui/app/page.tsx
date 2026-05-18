@@ -21,7 +21,7 @@ type TabType = 'chat' | 'history' | 'settings'
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabType>('chat')
-  const [showDebug, setShowDebug] = useState(true)
+  
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const hasLoggedModel = useRef(false)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
@@ -123,21 +123,7 @@ const handleClearLogs = useCallback(() => {
               <p className="text-xs text-slate-500">AI Agent Orchestration</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            {activeTab === 'chat' && (
-              <button
-                onClick={() => setShowDebug(!showDebug)}
-                aria-label={showDebug ? 'Hide debug panel' : 'Show debug panel'}
-                className={`px-3 py-1.5 rounded-lg text-xs transition-colors ${
-                  showDebug 
-                    ? 'bg-violet-600 text-white' 
-                    : 'bg-slate-800 text-slate-400 hover:text-white'
-                }`}
-              >
-                🔧 Debug
-              </button>
-            )}
-          </div>
+          
         </header>
         )}
         
