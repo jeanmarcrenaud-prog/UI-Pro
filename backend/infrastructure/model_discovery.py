@@ -14,7 +14,7 @@
 import logging
 import time
 import requests
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from dataclasses import dataclass, field
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
@@ -286,6 +286,107 @@ class ModelDiscovery:
 
     def is_model_available(self, model_name: str) -> bool:
         return any(m.name == model_name for m in self.discover_all())
+    
+    def get_models_for_preset(self, preset_id: str) -> Dict[str, Optional[DiscoveredModel]]:
+        """
+        Get best available models for a preset.
+        
+        Args:
+            preset_id: "light", "balanced", or "heavy"
+            
+        Returns:
+            Dict with "fast", "reasoning", "code" keys and DiscoveredModel or None
+        """
+        from models.settings import DEFAULT_PRESETS
+        
+        preset = DEFAULT_PRESETS.get(preset_id)
+        if not preset:
+            return {"fast": None, "reasoning": None, "code": None}
+        
+        all_models = self.discover_all()
+        
+        # Find best match for each model type
+        result = {}
+        for model_type in ["fast", "reasoning", "code"]:
+            target_model = getattr(preset, f"model_{model_type}", "")
+            
+            # Exact match
+            exact = next((m for m in all_models if m.name == target_model), None)
+            if exact:
+                result[model_type] = exact
+                continue
+            
+            # Partial match (e.g., "qwen3.5" matches "qwen3.5:9b")
+            partial = next((m for m in all_models if target_model in m.name or m.name in target_model), None)
+            if partial:
+                result[model_type] = partial
+                continue
+            
+            # Fallback: find any model of appropriate size for preset
+            if preset_id == "light":
+                # Prefer small models
+                result[model_type] = next((m for m in all_models if m.speed_tier == "very_fast"), all_models[0] if all_models else None)
+            elif preset_id == "balanced":
+                # Prefer medium models
+                result[model_type] = next((m for m in all_models if m.speed_tier == "fast"), all_models[0] if all_models else None)
+            else:  # heavy
+                # Prefer larger models
+                result[model_type] = next((m for m in all_models if m.speed_tier == "slow"), all_models[0] if all_models else None)
+        
+        return result
+    
+    def get_preset_recommendations(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Get preset recommendations with available models.
+        
+        Returns:
+            Dict with preset_id -> {preset_info, available_models, is_fully_available}
+        """
+        from models.settings import DEFAULT_PRESETS
+        
+        recommendations = {}
+        
+        for preset_id, preset in DEFAULT_PRESETS.items():
+            models = self.get_models_for_preset(preset_id)
+            
+            # Check if all required models are available
+            is_available = all(models.values())
+            
+            # Count available models
+            available_count = sum(1 for m in models.values() if m is not None)
+            
+            recommendations[preset_id] = {
+                "preset": preset,
+                "models": {
+                    "fast": models["fast"].name if models["fast"] else None,
+                    "reasoning": models["reasoning"].name if models["reasoning"] else None,
+                    "code": models["code"].name if models["code"] else None,
+                },
+                "is_available": is_available,
+                "available_count": available_count,
+                "total_required": 3,
+            }
+        
+        return recommendations
+    
+    def auto_select_best_preset(self) -> str:
+        """
+        Automatically select the best preset based on available models.
+        
+        Returns:
+            Preset ID that has the most models available
+        """
+        recommendations = self.get_preset_recommendations()
+        
+        # Sort by availability (most models first)
+        sorted_presets = sorted(
+            recommendations.items(),
+            key=lambda x: (x[1]["available_count"], x[1]["is_available"]),
+            reverse=True
+        )
+        
+        # Return best available preset
+        return sorted_presets[0][0] if sorted_presets else "balanced"
 
 
 # ====================== Singleton ======================
@@ -309,6 +410,21 @@ def is_model_available(model_name: str) -> bool:
     return get_model_discovery().is_model_available(model_name)
 
 
+def get_models_for_preset(preset_id: str) -> Dict[str, Optional[DiscoveredModel]]:
+    """Get best available models for a preset."""
+    return get_model_discovery().get_models_for_preset(preset_id)
+
+
+def get_preset_recommendations() -> Dict[str, Dict[str, Any]]:
+    """Get preset recommendations with available models."""
+    return get_model_discovery().get_preset_recommendations()
+
+
+def auto_select_best_preset() -> str:
+    """Automatically select the best preset based on available models."""
+    return get_model_discovery().auto_select_best_preset()
+
+
 __all__ = [
     "ModelDiscovery",
     "DiscoveredModel",
@@ -316,4 +432,13 @@ __all__ = [
     "get_model_discovery",
     "discover_available_models",
     "is_model_available",
+    "ModelDiscovery",
+    "DiscoveredModel",
+    "TaskType",
+    "get_model_discovery",
+    "discover_available_models",
+    "is_model_available",
+    "get_models_for_preset",
+    "get_preset_recommendations",
+    "auto_select_best_preset",
 ]
