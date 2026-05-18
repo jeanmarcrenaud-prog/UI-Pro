@@ -44,6 +44,24 @@ const buttonBase = {
 // Loading state spinner
 const spinner = <span className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
 
+// Simple Button wrapper for backward compatibility
+export function Button({
+  variant = 'secondary',
+  size = 'sm',
+  className,
+  children,
+  ...props
+}: ButtonComponentProps) {
+  return (
+    <button
+      className={`${buttonBase.base} ${buttonBase.sizes[size]} ${buttonBase.variants[variant]} ${className || ''}`}
+      {...props}
+    >
+      {props.isLoading ? spinner : children}
+    </button>
+  )
+}
+
 // MessageBubble description: chat message component with user/assistant distinction
 // User messages are right-aligned with accent background
 // Assistant messages are left-aligned with neutral background
