@@ -19,6 +19,7 @@ export interface ButtonComponentProps extends React.ButtonHTMLAttributes<HTMLBut
   fullWidth?: boolean
   isLoading?: boolean
   icon?: React.ReactNode
+  title?: string
 }
 
 // Button base styles
