@@ -242,14 +242,20 @@ export function SettingsView() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ level: logLevel }),
       })
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`)
+      }
+
       const data = await res.json()
       if (data.current_level) {
         setLogLevel(data.current_level)
         setLogLevelMsg({ type: 'success', text: t.settings.savedSuccess })
       } else {
-        setLogLevelMsg({ type: 'error', text: t.settings.saveFailed })
+        throw new Error('Invalid response format')
       }
-    } catch {
+    } catch (error) {
+      console.error('Log level save error:', error)
       setLogLevelMsg({ type: 'error', text: t.settings.saveFailed })
     } finally {
       setIsSavingLogLevel(false)

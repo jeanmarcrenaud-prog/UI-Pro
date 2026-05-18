@@ -26,6 +26,9 @@ LOG_LEVELS = {
 
 LOGS_DIR = Path("logs")
 
+# Ensure logs directory exists
+LOGS_DIR.mkdir(exist_ok=True)
+
 
 class LogLevelRequest(BaseModel):
     level: str  # DEBUG, INFO, WARNING, ERROR, CRITICAL
@@ -111,14 +114,20 @@ async def get_logs_status():
 @router.get("/logs/level", response_model=LogLevelResponse)
 async def get_log_level():
     """Get current log level"""
-    root_logger = logging.getLogger()
-    level_name = logging.getLevelName(root_logger.level)
+    try:
+        root_logger = logging.getLogger()
+        level_name = logging.getLevelName(root_logger.level)
 
-    return LogLevelResponse(
-        current_level=level_name,
-        available_levels=list(LOG_LEVELS.keys()),
-        timestamp=datetime.now().isoformat()
-    )
+        logger.debug(f"[LOGS] Returning current level: {level_name}")
+
+        return LogLevelResponse(
+            current_level=level_name,
+            available_levels=list(LOG_LEVELS.keys()),
+            timestamp=datetime.now().isoformat()
+        )
+    except Exception as e:
+        logger.error(f"[LOGS] Failed to get log level: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/logs/level", response_model=LogLevelResponse)
@@ -131,13 +140,13 @@ async def set_log_level(request: LogLevelRequest):
         )
 
     try:
-        from settings import settings
-
-        level = LOG_LEVELS[request.level.upper()]
+        level_str = request.level.upper()
+        level = LOG_LEVELS[level_str]
 
         # Set level on root logger
         root_logger = logging.getLogger()
         root_logger.setLevel(level)
+        logger.info(f"[LOGS] Set root logger level to {level_str}")
 
         # Set level on all existing loggers
         for name in logging.Logger.manager.loggerDict:
@@ -145,16 +154,24 @@ async def set_log_level(request: LogLevelRequest):
             logger_obj.setLevel(level)
 
         # Persist to settings
-        settings.set_log_level(request.level.upper())
+        try:
+            from settings import settings
+            settings.set_log_level(level_str)
+            logger.info(f"[LOGS] Persisted log level {level_str} to settings")
+        except Exception as import_err:
+            logger.warning(f"[LOGS] Could not persist to settings: {import_err}")
+            # Still return success - in-memory change worked
 
         return LogLevelResponse(
-            current_level=request.level.upper(),
+            current_level=level_str,
             available_levels=list(LOG_LEVELS.keys()),
             timestamp=datetime.now().isoformat()
         )
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Failed to set log level: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"[LOGS] Failed to set log level: {type(e).__name__}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to set log level: {str(e)}")
 
 
 @router.get("/logs/files/{filename}")
