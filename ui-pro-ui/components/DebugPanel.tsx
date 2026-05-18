@@ -61,8 +61,7 @@ export function DebugPanel() {
     }
   }
 
-  // Always render the button, panel opens when isOpen is true
-    <>
+  <>
       {/* Floating buttons */}
       <Button
         onClick={toggleDebug}
