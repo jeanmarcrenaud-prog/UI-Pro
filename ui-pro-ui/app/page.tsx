@@ -160,23 +160,8 @@ const handleClearLogs = useCallback(() => {
         )}
       </main>
 
-      {/* Debug Panel */}
-      {activeTab === 'chat' && showDebug && (
-        <DebugPanel 
-          steps={storeSteps}
-          isOpen={showDebug}
-          onToggle={handleDebugToggle}
-          onClearLogs={handleClearLogs}
-          status={debugStatus}
-          modelName={modelName}
-          backend={backend}
-          elapsedSeconds={elapsedSeconds}
-          tokenCount={tokenCount}
-          connectionStatus={isLoading ? 'connecting' : 'connected'}
-          logs={logs}
-          currentCode={currentCode}
-        />
-      )}
+      {/* Debug Panel - uses store directly */}
+      <DebugPanel />
 
       {/* Command Palette */}
       <CommandPalette isOpen={paletteOpen} onClose={() => setPaletteOpen(false)} />
