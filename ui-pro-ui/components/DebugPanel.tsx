@@ -12,7 +12,7 @@ import { BadgeComponent as Badge } from '@/components/ui/badge'
 import { X, Play, Pause, Download, Trash2, Bug } from 'lucide-react'
 
 export function DebugPanel() {
-  const { debugLogs, clearDebugLogs, isDebugEnabled } = useUIStore()
+  const { debugLogs, clearDebugLogs, isDebugEnabled, toggleDebug } = useUIStore()
 
   const [isOpen, setIsOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<'steps' | 'stream' | 'errors' | 'raw'>('steps')
@@ -61,11 +61,19 @@ export function DebugPanel() {
     }
   }
 
-  if (!isDebugEnabled) return null
-
-  return (
+  // Always render the button, panel opens when isOpen is true
     <>
-      {/* Floating button */}
+      {/* Floating buttons */}
+      <Button
+        onClick={toggleDebug}
+        variant={isDebugEnabled ? 'primary' : 'ghost'}
+        size="sm"
+        className="fixed bottom-6 right-24 z-50"
+        title={isDebugEnabled ? 'Disable Debug' : 'Enable Debug'}
+      >
+        <Bug className="w-4 h-4" />
+      </Button>
+
       <Button
         onClick={() => setIsOpen(!isOpen)}
         className="fixed bottom-6 right-6 z-50 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white shadow-xl"
