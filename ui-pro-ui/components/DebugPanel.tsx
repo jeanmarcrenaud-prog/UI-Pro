@@ -53,33 +53,26 @@ export function DebugPanel() {
 
   return (
     <>
-      {/* Toggle button */}
+{/* Debug button - toggle and open panel */}
       <Button
-        onClick={toggleDebug}
-        variant="ghost"
+        onClick={() => {
+          if (!isDebugEnabled) {
+            toggleDebug()
+          }
+          setIsOpen(!isOpen)
+        }}
+        variant={isDebugEnabled ? 'primary' : 'secondary'}
         size="sm"
-        className={`fixed bottom-6 right-24 z-50 ${isDebugEnabled ? 'bg-violet-600 text-white' : ''}`}
-        title={isDebugEnabled ? 'Disable Debug' : 'Enable Debug'}
+        className="fixed bottom-6 right-6 z-50"
       >
-        <Bug className="w-4 h-4" />
+        <Bug className="w-4 h-4 mr-2" />
+        {isDebugEnabled ? 'Debug ON' : 'Debug'}
+        {isDebugEnabled && debugLogs.length > 0 && (
+          <Badge className="ml-2 bg-white text-violet-600 text-xs">
+            {debugLogs.length}
+          </Badge>
+        )}
       </Button>
-
-      {/* Debug button - only show when enabled */}
-      {isDebugEnabled && (
-        <Button
-          onClick={() => setIsOpen(!isOpen)}
-          className="fixed bottom-6 right-6 z-50 bg-slate-900 hover:bg-slate-800 border border-slate-700 shadow-xl"
-          size="sm"
-        >
-          <Bug className="w-4 h-4 mr-2" />
-          Debug
-          {debugLogs.length > 0 && (
-            <Badge className="ml-2 bg-violet-600 text-white text-xs">
-              {debugLogs.length}
-            </Badge>
-          )}
-        </Button>
-      )}
 
       <AnimatePresence>
         {isOpen && isDebugEnabled && (
