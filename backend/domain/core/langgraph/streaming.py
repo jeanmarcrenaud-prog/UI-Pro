@@ -108,6 +108,7 @@ async def stream_agent(
 
     try:
         yield "[STEP]orchestrator:Starting agent pipeline"
+        logger.info("[streaming] Starting astream...")
 
         # Use astream with stream_mode="values" for state snapshots
         async for event in app.astream(
@@ -149,6 +150,7 @@ async def stream_agent(
                     if len(content) > last_len:
                         new_text = content[last_len:]
                         if new_text.strip():
+                            logger.info(f"[streaming] Token received: {new_text[:50]}...")
                             # Add to buffer for batching
                             token_buffer.append(new_text)
                             token_count += len(new_text)

@@ -62,6 +62,8 @@ async def analyzing_node(state):
     _emit_step("analyzing", "Analyse des exigences...")
 
     user_model, user_provider = _get_model_info(state)
+    logger.info(f"[analyzing_node] model={user_model}, provider={user_provider}")
+
     from .llm_wrapper import LLMWrapper
     llm = LLMWrapper(_get_llm_router(), user_model, user_provider)
     user_message = _get_user_message(state)
@@ -73,7 +75,10 @@ async def analyzing_node(state):
         "No markdown, no explanation - only JSON."
     )
 
+    logger.info(f"[analyzing_node] Calling LLM with prompt: {prompt[:100]}...")
     full_response = await llm.run_node(prompt, model_type="reasoning")
+    logger.info(f"[analyzing_node] LLM response: {full_response[:200] if full_response else 'EMPTY'}")
+
     state["messages"].append({"role": "assistant", "content": full_response})
     return state
 
