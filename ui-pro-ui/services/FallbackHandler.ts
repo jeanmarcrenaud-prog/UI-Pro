@@ -2,6 +2,7 @@
 // SSE and REST fallback handlers with AbortController support
 
 import type { FallbackParams, MessageHandlerCallback } from './types'
+import { debugLogger } from '@/lib/debug/logger'
 
 export class FallbackHandler {
   private currentAbort: AbortController | null = null
@@ -11,6 +12,8 @@ export class FallbackHandler {
     this.currentAbort = new AbortController()
     const signal = this.currentAbort.signal
 
+    debugLogger.logInfo(`SSE started: ${params.message?.slice(0, 30)}...`, 'sse')
+
     try {
       const response = await fetch(url, {
         method: 'POST',
@@ -19,7 +22,10 @@ export class FallbackHandler {
         signal,
       })
 
-      if (!response.ok || !response.body) return false
+      if (!response.ok || !response.body) {
+        debugLogger.logError('SSE response failed', { status: response.status })
+        return false
+      }
 
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
@@ -28,6 +34,7 @@ export class FallbackHandler {
       while (true) {
         if (signal.aborted) {
           reader.cancel()
+          debugLogger.logInfo('SSE aborted', 'sse')
           return false
         }
 
@@ -42,7 +49,17 @@ export class FallbackHandler {
           if (line.startsWith('data: ')) {
             try {
               const data = JSON.parse(line.slice(6))
-              onToken(data.content || data.token || '', !!data.done)
+              const content = data.content || data.token || ''
+              const isDone = !!data.done
+              
+              if (content) {
+                debugLogger.logToken(content, data.token_count)
+                onToken(content, isDone)
+              }
+              
+              if (isDone) {
+                debugLogger.logInfo('SSE completed', 'sse')
+              }
             } catch (err) {
               console.warn('[SSE] Parse error:', err)
             }
@@ -56,6 +73,7 @@ export class FallbackHandler {
         console.log('[SSE] Aborted')
         return false
       }
+      debugLogger.logError('SSE failed', err)
       console.warn('[SSE] Failed:', err)
       return false
     } finally {
@@ -67,6 +85,8 @@ export class FallbackHandler {
     this.cancel()
     this.currentAbort = new AbortController()
 
+    debugLogger.logInfo(`REST started: ${params.message?.slice(0, 30)}...`, 'rest')
+
     try {
       const response = await fetch(url, {
         method: 'POST',
@@ -75,9 +95,12 @@ export class FallbackHandler {
         signal: this.currentAbort.signal,
       })
       const data = await response.json()
-      return data?.result || data?.response || data?.message || ''
+      const result = data?.result || data?.response || data?.message || ''
+      debugLogger.logInfo(`REST completed: ${result.slice(0, 30)}...`, 'rest')
+      return result
     } catch (err) {
       if ((err as Error).name === 'AbortError') return ''
+      debugLogger.logError('REST failed', err)
       throw err
     } finally {
       this.currentAbort = null
