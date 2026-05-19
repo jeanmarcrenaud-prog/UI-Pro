@@ -48,6 +48,10 @@ async def stream_endpoint_get(
     if not model:
         model = settings.model_fast or "qwen3.5:0.8b"
 
+    # Strip provider prefix from model name
+    if model and provider and model.startswith(f"{provider}-"):
+        model = model[len(provider) + 1:]
+
     return await create_sse_response(
         message=prompt,
         model=model,
@@ -63,11 +67,16 @@ async def stream_endpoint_get(
 async def stream_endpoint_post(request: StreamRequest = Body(...)):
     """Server-Sent Events streaming endpoint (POST) - Unified Protocol"""
     model = request.model or settings.model_fast or "qwen3.5:0.8b"
+    provider = request.provider or "ollama"
+
+    # Strip provider prefix from model name
+    if model and provider and model.startswith(f"{provider}-"):
+        model = model[len(provider) + 1:]
 
     return await create_sse_response(
         message=request.message,
         model=model,
-        provider=request.provider or "ollama",
+        provider=provider,
         temperature=request.temperature or 0.7,
         session_id=request.session_id,
         resume_from=request.resume_from,

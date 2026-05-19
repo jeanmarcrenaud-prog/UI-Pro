@@ -83,6 +83,10 @@ async def websocket_endpoint(ws: WebSocket):
             max_attempts = parsed.get("max_attempts", 3)
             resume_from = parsed.get("resume_stream_id")
 
+            # Strip provider prefix from model name (e.g., "ollama-gemma4:e4b" -> "gemma4:e4b")
+            if model and provider and model.startswith(f"{provider}-"):
+                model = model[len(provider) + 1:]
+
             logger.info(f"[ws] Processing: model='{model}', provider='{provider}', task='{task[:50]}...'")
 
             current_message_id = message_id
