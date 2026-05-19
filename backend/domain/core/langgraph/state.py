@@ -16,3 +16,7 @@ class AgentState(TypedDict, total=False):
     max_attempts: int
     session_id: str
     metadata: dict[str, Any]
+    # Streaming checkpoint fields
+    stream_id: Optional[str]
+    last_token_index: int
+    checkpoint_enabled: bool
