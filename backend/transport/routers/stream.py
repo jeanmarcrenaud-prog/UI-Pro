@@ -14,14 +14,18 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["stream"])
 
+# Import at module level for LSP
+from backend.domain.core.langgraph.streaming import stream_agent, get_stream_checkpoint
 
-async def sse_generator(prompt: str, model: str, provider: str, temperature: float, session_id: Optional[str] = None):
+
+async def sse_generator(prompt: str, model: str, provider: str, temperature: float, session_id: Optional[str] = None, resume_from: Optional[str] = None):
     """Generate SSE events from LangGraph streaming."""
     import asyncio
     from backend.domain.core.langgraph.streaming import stream_agent
     
     session_id = session_id or str(uuid.uuid4())[:8]
     message_id = str(uuid.uuid4())
+    stream_id = None
     
     # Token buffer for chunking (5-8 tokens accumulated before sending)
     token_buffer = ""
@@ -33,8 +37,33 @@ async def sse_generator(prompt: str, model: str, provider: str, temperature: flo
             session_id=session_id,
             model=model,
             provider=provider,
+            resume_from=resume_from,
         ):
             # Parse events from stream_agent
+            # Handle stream_id event
+            if event.startswith("[STREAM_ID]"):
+                stream_id = event[11:]  # Extract stream_id
+                yield f"data: {json.dumps({
+                    'type': 'stream_id',
+                    'stream_id': stream_id,
+                    'message_id': message_id
+                })}\n\n"
+                continue
+                
+            # Handle resume acknowledgment
+            if event.startswith("[RESUME]"):
+                # Format: [RESUME]stream_id:from_index:X
+                parts = event[7:].split(":")
+                resumed_stream_id = parts[0] if len(parts) > 0 else ""
+                from_index = int(parts[2]) if len(parts) > 2 else 0
+                yield f"data: {json.dumps({
+                    'type': 'resumed',
+                    'stream_id': resumed_stream_id,
+                    'from_index': from_index,
+                    'message_id': message_id
+                })}\n\n"
+                continue
+                
             if event.startswith("[STEP]"):
                 parts = event[6:].split(":", 1)
                 phase = parts[0] if parts else "step"
@@ -127,6 +156,14 @@ class StreamRequest(BaseModel):
     provider: Optional[str] = "ollama"
     temperature: Optional[float] = 0.7
     session_id: Optional[str] = None
+    resume_from: Optional[str] = None  # stream_id to resume from
+
+
+class ResumeRequest(BaseModel):
+    stream_id: str
+    message: str
+    model: Optional[str] = None
+    provider: Optional[str] = "ollama"
 
 
 @router.get("/stream")
@@ -137,13 +174,14 @@ async def stream_endpoint_get(
     provider: str = Query("ollama", description="Backend provider"),
     temperature: float = Query(0.7, ge=0.0, le=2.0),
     session_id: str = Query(None, description="Session ID for resume"),
+    resume_from: str = Query(None, description="Stream ID to resume from"),
 ):
     """Server-Sent Events streaming endpoint (GET)"""
     if not model:
         model = settings.model_fast or "qwen3.5:0.8b"
 
     return StreamingResponse(
-        sse_generator(prompt, model, provider, temperature, session_id),
+        sse_generator(prompt, model, provider, temperature, session_id, resume_from),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -160,7 +198,7 @@ async def stream_endpoint_post(request: StreamRequest = Body(...)):
     model = request.model or settings.model_fast or "qwen3.5:0.8b"
 
     return StreamingResponse(
-        sse_generator(request.message, model, request.provider or "ollama", request.temperature or 0.7, request.session_id),
+        sse_generator(request.message, model, request.provider or "ollama", request.temperature or 0.7, request.session_id, request.resume_from),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -168,3 +206,51 @@ async def stream_endpoint_post(request: StreamRequest = Body(...)):
             "X-Accel-Buffering": "no",
         }
     )
+
+
+@router.post("/stream/resume")
+@router.post("/api/stream/resume")
+async def stream_resume(request: ResumeRequest = Body(...)):
+    """Resume a stream from checkpoint."""
+    from backend.domain.core.langgraph.streaming import get_stream_checkpoint
+    
+    checkpoint = get_stream_checkpoint(request.stream_id)
+    if not checkpoint:
+        return {"error": "Stream not found or expired", "stream_id": request.stream_id}
+    
+    model = request.model or settings.model_fast or "qwen3.5:0.8b"
+    
+    return StreamingResponse(
+        sse_generator(
+            request.message, 
+            model, 
+            request.provider or "ollama", 
+            0.7, 
+            checkpoint["session_id"], 
+            request.stream_id  # resume_from
+        ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
+
+@router.get("/stream/checkpoint/{stream_id}")
+@router.get("/api/stream/checkpoint/{stream_id}")
+async def get_checkpoint(stream_id: str):
+    """Get checkpoint info for a stream."""
+    from backend.domain.core.langgraph.streaming import get_stream_checkpoint
+    
+    checkpoint = get_stream_checkpoint(stream_id)
+    if not checkpoint:
+        return {"error": "Stream not found", "stream_id": stream_id}
+    
+    return {
+        "stream_id": stream_id,
+        "last_token_index": checkpoint["last_token_index"],
+        "session_id": checkpoint["session_id"],
+        "timestamp": checkpoint["timestamp"],
+    }
