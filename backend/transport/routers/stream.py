@@ -14,18 +14,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["stream"])
 
 
-def _get_streaming_service():
-    from backend.infrastructure.streaming import get_streaming_service
-    return get_streaming_service()
-
-
 async def sse_generator(prompt: str, model: str, provider: str, temperature: float):
-    stream_service = _get_streaming_service()
-    async for chunk in stream_service.stream_generate(
+    from backend.infrastructure.streaming import stream_chat
+    async for chunk in stream_chat(
         prompt=prompt,
         model=model,
-        provider=provider,
-        temperature=temperature
+        provider=provider
     ):
         yield f"data: {json.dumps(chunk.to_dict())}\n\n"
 
