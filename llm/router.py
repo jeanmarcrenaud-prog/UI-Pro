@@ -209,13 +209,19 @@ class OllamaClient:
 
         timeout_counter = 0
         max_idle_iterations = 100
+        # Use settings for timeout, fallback to 60s
+        try:
+            from models.settings import settings
+            token_timeout = max(30, settings.llm_timeout // 2)  # Half of LLM timeout, min 30s
+        except ImportError:
+            token_timeout = 60  # Default 60s
 
         try:
             while True:
                 try:
                     done, token = await asyncio.wait_for(
                         loop.run_in_executor(None, q.get),
-                        timeout=30  # 30s timeout per token to catch hangs
+                        timeout=token_timeout  # Configurable timeout per token
                     )
                     timeout_counter = 0
                     if done and token is None:
@@ -226,7 +232,8 @@ class OllamaClient:
                 except asyncio.TimeoutError:
                     timeout_counter += 1
                     logger.warning(f"[astream] queue.get timeout, iteration {timeout_counter}")
-                    if timeout_counter > 3:
+                    # Allow more retries for slow models (5 instead of 3)
+                    if timeout_counter > 5:
                         logger.error("[astream] too many timeouts, breaking stream")
                         break
         finally:
