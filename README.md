@@ -106,7 +106,7 @@ source .venv/bin/activate    # Linux/macOS
 pip install -r requirements.txt
 
 # Frontend
-cd ui-pro-ui
+cd frontend
 npm install
 cd ..
 
@@ -180,7 +180,7 @@ ui-pro/                    # Project root
 ├── models/                   # Data models (re-exports backend/)
 │   └── settings.py
 │
-└── ui-pro-ui/                # Next.js frontend
+└── frontend/                # Next.js frontend
     ├── components/
     │   ├── settings/        # Modular settings components
     │   │   ├── SettingsView.tsx

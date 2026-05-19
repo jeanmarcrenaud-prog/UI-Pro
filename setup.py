@@ -206,7 +206,7 @@ def setup_venv(project_root: Path) -> bool:
 
 def setup_frontend(project_root: Path) -> bool:
     """Install frontend dependencies."""
-    ui_path = project_root / 'ui-pro-ui'
+    ui_path = project_root / 'frontend'
     if not ui_path.exists():
         print_warning(f"Frontend directory not found - skipping")
         return True

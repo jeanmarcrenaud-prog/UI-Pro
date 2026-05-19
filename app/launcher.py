@@ -391,10 +391,10 @@ def start_ui():
     print(f"{Colors.GREEN}→ http://localhost:{UI_PORT}{Colors.RESET}")
     
     project_root = Path(__file__).parent.parent
-    ui_dir = project_root / "ui-pro-ui"
+    ui_dir = project_root / "frontend"
     
     if not ui_dir.exists():
-        print_error("ui-pro-ui directory not found")
+        print_error("frontend directory not found")
         return
     
     # Start npm dev - use full path from shutil.which
