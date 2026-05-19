@@ -17,16 +17,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+_ws_controller_cache = None
+
+
 def _get_ws_controller_cached():
     """Get WebSocket controller with caching."""
-    from functools import lru_cache
-
-    @lru_cache()
-    def get_controller():
+    global _ws_controller_cache
+    if _ws_controller_cache is None:
         from backend.application.websocket import get_websocket_controller
-        return get_controller()
-
-    return get_controller()
+        _ws_controller_cache = get_websocket_controller()
+    return _ws_controller_cache
 
 
 @router.websocket("/ws")
