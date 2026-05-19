@@ -81,6 +81,7 @@ async def websocket_endpoint(ws: WebSocket):
             provider = parsed.get("provider", "ollama")
             message_id = parsed.get("message_id", str(uuid.uuid4()))
             max_attempts = parsed.get("max_attempts", 3)
+            resume_from = parsed.get("resume_stream_id")
 
             logger.info(f"[ws] Processing: model='{model}', provider='{provider}', task='{task[:50]}...'")
 
@@ -97,6 +98,7 @@ async def websocket_endpoint(ws: WebSocket):
                 model=model,
                 provider=provider,
                 max_attempts=max_attempts,
+                resume_from=resume_from,
             ):
                 await ws.send_text(event.to_ws())
 

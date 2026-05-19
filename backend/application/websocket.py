@@ -59,18 +59,20 @@ class WebSocketController:
         provider = msg.get("provider")
         message_id = msg.get("message_id") or str(uuid.uuid4())
         last_chunk_index = int(msg.get("last_chunk_index", 0) or 0)
-        
+        resume_stream_id = msg.get("resume_stream_id")
+
         if not model:
             return False, "Model is required", None
-        
+
         request = {
             "task": task,
             "model": model,
             "provider": provider,
             "message_id": message_id,
             "last_chunk_index": last_chunk_index,
+            "resume_stream_id": resume_stream_id,
         }
-        
+
         return True, None, request
     
     async def register_request(self, message_id: str, model: str, task: str) -> Dict[str, Any]:
