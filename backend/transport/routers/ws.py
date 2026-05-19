@@ -107,6 +107,10 @@ async def _stream_with_langgraph(task: str, session_id: str, max_attempts: int, 
 
         event_count = 0
         accumulated_content = ""  # Track for token counting
+        
+        # Token chunking: accumulate 5-8 tokens before sending
+        CHUNK_THRESHOLD = 20  # chars (~5 tokens), send when buffer reaches this
+        token_buffer = ""
 
         async for event in langgraph_stream(
             message=task,
@@ -131,6 +135,20 @@ async def _stream_with_langgraph(task: str, session_id: str, max_attempts: int, 
                 logger.info(f"[stream] Event {event_count}: {event[:80]}...")
 
                 if event.startswith("[STEP]"):
+                    # Flush token buffer before sending step
+                    if token_buffer:
+                        accumulated_content += token_buffer
+                        token_count = max(1, len(accumulated_content) // 2)
+                        yield {
+                            "type": "token",
+                            "content": token_buffer,
+                            "response": token_buffer,
+                            "done": False,
+                            "message_id": message_id,
+                            "token_count": token_count,
+                        }
+                        token_buffer = ""
+                    
                     # Format: [STEP]phase:message
                     parts = event[6:].split(":", 1)
                     phase = parts[0] if parts else "step"
@@ -149,24 +167,39 @@ async def _stream_with_langgraph(task: str, session_id: str, max_attempts: int, 
                     }
 
                 elif event.startswith("[TOKEN]"):
-                    # Format: [TOKEN]content
+                    # Format: [TOKEN]content - accumulate for chunking
                     content = event[7:]
+                    token_buffer += content
                     accumulated_content += content
 
-                    # Calculate token count (rough: 1 token ≈ 2 chars for LLM output)
-                    # Better: integrate tiktoken if performance needed
-                    token_count = max(1, len(accumulated_content) // 2)
-
-                    yield {
-                        "type": "token",
-                        "content": content,
-                        "response": content,
-                        "done": False,
-                        "message_id": message_id,
-                        "token_count": token_count,  # 👈 Real token count
-                    }
+                    # Send chunk when buffer reaches threshold
+                    if len(token_buffer) >= CHUNK_THRESHOLD:
+                        token_count = max(1, len(accumulated_content) // 2)
+                        yield {
+                            "type": "token",
+                            "content": token_buffer,
+                            "response": token_buffer,
+                            "done": False,
+                            "message_id": message_id,
+                            "token_count": token_count,
+                        }
+                        token_buffer = ""
 
                 elif event.startswith("[TOOL]"):
+                    # Flush token buffer before sending tool
+                    if token_buffer:
+                        accumulated_content += token_buffer
+                        token_count = max(1, len(accumulated_content) // 2)
+                        yield {
+                            "type": "token",
+                            "content": token_buffer,
+                            "response": token_buffer,
+                            "done": False,
+                            "message_id": message_id,
+                            "token_count": token_count,
+                        }
+                        token_buffer = ""
+                    
                     # Format: [TOOL]action:message
                     parts = event[6:].split(":", 1)
                     action = parts[0] if parts else "tool"
@@ -182,6 +215,20 @@ async def _stream_with_langgraph(task: str, session_id: str, max_attempts: int, 
                     }
 
                 elif event.startswith("[ERROR]"):
+                    # Flush token buffer before sending error
+                    if token_buffer:
+                        accumulated_content += token_buffer
+                        token_count = max(1, len(accumulated_content) // 2)
+                        yield {
+                            "type": "token",
+                            "content": token_buffer,
+                            "response": token_buffer,
+                            "done": False,
+                            "message_id": message_id,
+                            "token_count": token_count,
+                        }
+                        token_buffer = ""
+                    
                     # Format: [ERROR]code:message
                     parts = event[7:].split(":", 1)
                     code = parts[0] if parts else "500"
@@ -195,6 +242,20 @@ async def _stream_with_langgraph(task: str, session_id: str, max_attempts: int, 
                     }
 
                 elif event == "[DONE]":
+                    # Flush remaining tokens in buffer
+                    if token_buffer:
+                        accumulated_content += token_buffer
+                        token_count = max(1, len(accumulated_content) // 2)
+                        yield {
+                            "type": "token",
+                            "content": token_buffer,
+                            "response": token_buffer,
+                            "done": False,
+                            "message_id": message_id,
+                            "token_count": token_count,
+                        }
+                        token_buffer = ""
+                    
                     yield {
                         "type": "done",
                         "message_id": message_id,
@@ -209,5 +270,10 @@ async def _stream_with_langgraph(task: str, session_id: str, max_attempts: int, 
         yield {
             "type": "error",
             "message": str(e),
+            "message_id": message_id,
+        }
+        # Always emit done after error
+        yield {
+            "type": "done",
             "message_id": message_id,
         }
