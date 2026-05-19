@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useUIStore } from '@/lib/stores/uiStore'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
-import { InputComponent as Input } from '@/components/ui/Input'
+import { InputComponent as Input } from '@/components/ui/input'
 import { BadgeComponent as Badge } from '@/components/ui/badge'
 import { X, Download, Trash2, Bug, Pause, Play } from 'lucide-react'
 
