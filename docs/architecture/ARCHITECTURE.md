@@ -39,7 +39,8 @@ ui-pro/                           # Racine projet
 │   │   ├── model_discovery.py   # Model discovery
 │   │   ├── model_service.py     # Service modèle
 │   │   ├── service_api.py       # API service
-│   │   ├── streaming.py         # Streaming SSE/WS
+│   │   ├── streaming.py         # Legacy streaming
+│   │   ├── streaming_unified.py # Unified SSE/WS protocol
 │   │   └── tools.py              # Tools registry
 │   │
 │   ├── application/             # App layer

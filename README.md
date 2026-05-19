@@ -71,7 +71,7 @@
 | **LLM**        | Ollama, LM Studio, llama.cpp, Lemonade         |
 | **Memory**     | FAISS + SentenceTransformers                    |
 | **Events**     | Thread-safe Pub/Sub                             |
-| **Streaming**  | WebSocket + SSE                                 |
+| **Streaming**  | WebSocket + SSE (Unified Protocol)              |
 | **Tracing**    | LangSmith (optional)                             |
 
 ## 🚀 Quick Start
@@ -166,7 +166,8 @@ ui-pro/                    # Project root
 │   ├── infrastructure/       # Services
 │   │   ├── llm_router.py    # LLM routing + streaming
 │   │   ├── model_discovery.py  # Model discovery + presets
-│   │   ├── streaming.py     # SSE/WebSocket streaming
+│   │   ├── streaming.py     # Legacy streaming
+│   │   ├── streaming_unified.py  # Unified SSE/WS protocol
 │   │   ├── code_execution.py # Sandbox execution
 │   │   └── memory.py        # FAISS vector store
 │   └── transport/           # API layer

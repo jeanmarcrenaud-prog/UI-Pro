@@ -31,7 +31,8 @@ backend/
 │   │   └── constants.py
 │   └── errors.py          # Domain errors
 ├── infrastructure/        # External services
-│   ├── streaming.py       # Token streaming
+│   ├── streaming.py         # Legacy streaming
+│   ├── streaming_unified.py  # Unified SSE/WS protocol
 │   ├── model_service.py   # Model management
 │   ├── model_discovery.py # Multi-backend discovery
 │   ├── memory_service.py # Memory with compression
@@ -69,7 +70,7 @@ ui-pro/                    # Racine projet
 ├── models/                # Types + Config (re-exports settings)
 ├── tests/                 # Tests pytest
 ├── scripts/               # Scripts utilitaires
-├── ui-pro-ui/             # Frontend Next.js
+├── frontend/             # Frontend Next.js
 └── workspace/             # Code généré
 ```
 
