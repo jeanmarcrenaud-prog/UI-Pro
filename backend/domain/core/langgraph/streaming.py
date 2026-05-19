@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 BATCH_SIZE = 6
 
 _stream_checkpoints: dict[str, dict] = {}  # stream_id -> checkpoint data
+_last_message_length: dict[str, int] = {}
 
 
 def _emit_step(phase: str, message: str):
@@ -59,8 +60,6 @@ async def stream_agent(
 ):
     """
     Streaming optimisé avec batching et resume.
-
-    Utilise astream_events pour des événements plus granulaires.
     """
     from backend.domain.core.langgraph import get_orchestrator
     app = await get_orchestrator()
@@ -105,60 +104,92 @@ async def stream_agent(
 
     token_count = start_index
     token_buffer = []
+    _last_message_length[session_id] = start_index
 
     try:
         yield "[STEP]orchestrator:Starting agent pipeline"
 
-        # Use astream_events for more granular event handling
-        async for event in app.astream_events(
+        # Use astream with stream_mode="values" for state snapshots
+        async for event in app.astream(
             initial_state,
             config={"configurable": {"thread_id": session_id}},
+            stream_mode="values",
         ):
-            event_type = event.get("event")
+            # Step events from full state snapshots
+            plan_val = event.get("plan")
+            if plan_val:
+                yield "[STEP]planning:Plan created"
 
-            # Gestion des steps (on_chain_start)
-            if event_type == "on_chain_start":
-                name = event.get("name", "unknown")
-                yield f"[STEP]{name}:Starting"
+            code_val = event.get("code")
+            if code_val:
+                yield "[STEP]coding:Code generation completed"
 
-            # Token streaming avec batching (on_chat_model_stream)
-            if event_type == "on_chat_model_stream":
-                chunk = event.get("data", {}).get("chunk", {})
-                content = getattr(chunk, "content", None)
+            review_val = event.get("review")
+            if review_val:
+                status = "PASSED" if review_val.get("passed") else "Needs improvement"
+                yield f"[STEP]reviewing:Review - {status}"
 
-                if content:
-                    token_buffer.append(content)
-                    token_count += len(content)
+            exec_val = event.get("execution_result")
+            if exec_val:
+                success = exec_val.get("success", False) if isinstance(exec_val, dict) else False
+                yield f"[STEP]executing:Execution {'OK' if success else 'FAILED'}"
 
-                    # Envoyer quand le buffer atteint BATCH_SIZE
-                    if len(token_buffer) >= BATCH_SIZE:
-                        batch = "".join(token_buffer)
-                        yield f"[TOKEN]{batch}"
-                        token_buffer.clear()
+            # Token streaming from latest assistant message
+            if "messages" in event and event["messages"]:
+                last_msg = event["messages"][-1]
+                if last_msg.get("role") == "assistant":
+                    content = last_msg.get("content", "")
+                    last_len = _last_message_length.get(session_id, start_index)
 
-                        # Sauvegarder checkpoint périodiquement
-                        if token_count % 50 == 0:
-                            save_stream_checkpoint(stream_id, session_id, token_count, {})
+                    # Skip tokens already sent (for resume)
+                    if start_index > 0 and len(content) > start_index:
+                        content = content[start_index:]
+                        last_len = start_index
 
-            # Événements terminaux (on_chain_end)
-            if event_type == "on_chain_end":
-                # Flush remaining tokens
-                if token_buffer:
-                    yield f"[TOKEN]{''.join(token_buffer)}"
-                    token_buffer.clear()
+                    if len(content) > last_len:
+                        new_text = content[last_len:]
+                        if new_text.strip():
+                            # Add to buffer for batching
+                            token_buffer.append(new_text)
+                            token_count += len(new_text)
 
-                yield "[DONE]"
+                            # Send batch when buffer reaches BATCH_SIZE
+                            if len(token_buffer) >= BATCH_SIZE:
+                                batch = "".join(token_buffer)
+                                yield f"[TOKEN]{batch}"
+                                token_buffer.clear()
+
+                                # Save checkpoint periodically
+                                if token_count % 50 == 0:
+                                    save_stream_checkpoint(stream_id, session_id, token_count, dict(event))
+
+                        _last_message_length[session_id] = len(content)
+
+            # Tool events
+            exec_result = event.get("execution_result")
+            if exec_result and isinstance(exec_result, dict):
+                if exec_result.get("files_written"):
+                    for f in exec_result["files_written"]:
+                        yield f"[TOOL]write_file:Created {f}"
+
+        # Flush remaining tokens
+        if token_buffer:
+            yield f"[TOKEN]{''.join(token_buffer)}"
 
         # Save final checkpoint
         save_stream_checkpoint(stream_id, session_id, token_count, {})
+
         yield "[STEP]completed:Task completed successfully"
+        yield "[DONE]"
 
     except Exception as e:
         logger.exception("Streaming failed")
-        # Save error checkpoint for potential resume
         save_stream_checkpoint(stream_id, session_id, token_count, {"error": str(e)})
         yield f"[ERROR]500:{str(e)}"
         yield "[DONE]"
+
+    finally:
+        _last_message_length.pop(session_id, None)
 
 
 __all__ = ["stream_agent", "get_stream_checkpoint", "save_stream_checkpoint"]
