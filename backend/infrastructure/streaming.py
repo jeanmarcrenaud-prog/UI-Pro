@@ -242,3 +242,94 @@ class StreamingService:
             pass
         except Exception as e:
             logger.debug(f"Heartbeat error: {e}", extra={"stream_id": stream_id})
+
+
+# Singleton instance
+_streaming_service: Optional[StreamingService] = None
+
+
+def get_streaming_service() -> StreamingService:
+    """Get the singleton StreamingService instance."""
+    global _streaming_service
+    if _streaming_service is None:
+        _streaming_service = StreamingService()
+    return _streaming_service
+
+
+async def _create_generator_from_prompt(prompt: str, model: str = "", provider: str = "ollama") -> AsyncIterator[str]:
+    """Create an async generator from a prompt using the LLM router."""
+    try:
+        from backend.infrastructure.llm_router import get_llm_router
+        router = get_llm_router()
+        
+        if hasattr(router, 'astream'):
+            async for chunk in router.astream(
+                prompt=prompt,
+                model_type=model,
+                model=model,
+                provider=provider,
+            ):
+                if isinstance(chunk, str):
+                    yield chunk
+                elif hasattr(chunk, 'content') and chunk.content:
+                    yield chunk.content
+                elif isinstance(chunk, dict) and chunk.get('content'):
+                    yield chunk['content']
+        else:
+            # Fallback to sync generate
+            full = router.generate(prompt, model)
+            for i in range(0, len(full), 8):
+                yield full[i:i+8]
+                await asyncio.sleep(0.015)
+    except Exception as e:
+        logger.error(f"Error creating generator from prompt: {e}")
+        yield f"Error: {str(e)}"
+
+
+async def stream_chat(
+    prompt: str,
+    model: str = "",
+    provider: str = "ollama",
+    timeout: Optional[int] = None,
+) -> AsyncIterator[StreamChunk]:
+    """
+    Legacy API compatibility method.
+    Stream chat responses from a prompt with model/provider selection.
+    
+    Args:
+        prompt: The user message/prompt
+        model: Model name (e.g., 'qwen3.5:0.8b')
+        provider: LLM provider ('ollama', 'lmstudio', etc.)
+        timeout: Optional timeout in seconds
+    
+    Yields:
+        StreamChunk objects with text and status
+    """
+    generator = _create_generator_from_prompt(prompt, model, provider)
+    stream_service = get_streaming_service()
+    
+    async for event in stream_service.stream_generate(generator, timeout=timeout):
+        if isinstance(event, dict):
+            content = event.get('content', event.get('response', ''))
+            done = event.get('done', False)
+            
+            if done:
+                yield StreamChunk(
+                    text=content,
+                    status=StreamStatus.COMPLETED,
+                    stream_id="legacy",
+                    chunk_index=0,
+                    tokens_generated=event.get('token_count', 0)
+                )
+            else:
+                yield StreamChunk(
+                    text=content,
+                    status=StreamStatus.GENERATING,
+                    stream_id="legacy",
+                    chunk_index=0
+                )
+        else:
+            yield StreamChunk(text=str(event), status=StreamStatus.GENERATING, stream_id="legacy", chunk_index=0)
+
+
+__all__ = ["StreamingService", "get_streaming_service", "StreamEvent", "StreamRequest", "stream_chat"]

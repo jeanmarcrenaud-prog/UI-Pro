@@ -297,13 +297,11 @@ async def chat_endpoint(request: ChatRequest):
     try:
         logger.debug(f"[CHAT] Request: message={request.message[:50]}... model={request.model}")
 
-        from backend.infrastructure.streaming import get_streaming_service
-
-        stream_service = get_streaming_service()
+        from backend.infrastructure.streaming import stream_chat
 
         full_response = ""
         chunk_count = 0
-        async for chunk in stream_service.stream_generate(
+        async for chunk in stream_chat(
             prompt=request.message,
             model=request.model or _get_setting('model_fast', 'qwen3.5:0.8b'),
             provider=request.provider or "ollama"

@@ -41,13 +41,12 @@ async def chat(request: ChatRequest):
     try:
         logger.debug(f"[CHAT] Request: message={request.message[:50]}... model={request.model} provider={request.provider}")
 
-        from backend.infrastructure.streaming import get_streaming_service
-        stream_service = get_streaming_service()
+        from backend.infrastructure.streaming import stream_chat
 
         # Collect full response from streaming (async)
         chunks = []
-        async for chunk in stream_service.stream_generate(
-            request.message,
+        async for chunk in stream_chat(
+            prompt=request.message,
             model=request.model or settings.model_fast,
             provider=request.provider
         ):
@@ -70,12 +69,11 @@ async def stream(request: ChatRequest):
         try:
             logger.debug(f"[STREAM] Starting stream: message={request.message[:50]}... model={request.model}")
 
-            from backend.infrastructure.streaming import get_streaming_service
-            stream_service = get_streaming_service()
+            from backend.infrastructure.streaming import stream_chat
 
             chunk_count = 0
-            async for chunk in stream_service.stream_generate(
-                request.message,
+            async for chunk in stream_chat(
+                prompt=request.message,
                 model=request.model or settings.model_fast,
                 provider=request.provider
             ):
