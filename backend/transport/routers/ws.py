@@ -1,13 +1,16 @@
-# views/routers/ws.py - WebSocket endpoint with LangGraph Streaming
+# views/routers/ws.py - WebSocket endpoint with Unified Streaming Protocol
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Request
-from fastapi.websockets import WebSocketState
-from typing import Optional, Dict, Any
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from typing import Optional
 import json
 import uuid
 import logging
 
 from models.settings import settings
+from backend.infrastructure.streaming_unified import (
+    get_unified_streamer,
+    WebSocketTransport,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,14 +24,14 @@ def _get_ws_controller_cached():
     @lru_cache()
     def get_controller():
         from backend.application.websocket import get_websocket_controller
-        return get_websocket_controller()
+        return get_controller()
 
     return get_controller()
 
 
 @router.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
-    """WebSocket endpoint for real-time streaming with LangGraph."""
+    """WebSocket endpoint for real-time streaming with Unified Protocol."""
     await ws.accept()
 
     ws_controller = _get_ws_controller_cached()
@@ -56,13 +59,12 @@ async def websocket_endpoint(ws: WebSocket):
             # Handle cancel
             if request.get("type") == "cancel":
                 logger.info(f"[ws] Cancel requested for {current_message_id}")
-                # Send cancelled event and close gracefully
                 await ws.send_text(json.dumps({
                     "type": "cancelled",
                     "message_id": current_message_id,
                     "content": ""
                 }))
-                break  # Exit the loop to close connection
+                break
 
             # Validate request
             is_valid, error_msg, parsed = await ws_controller.validate_request(request)
@@ -84,9 +86,19 @@ async def websocket_endpoint(ws: WebSocket):
 
             current_message_id = message_id
 
-            # Stream using new LangGraph orchestrator with user-selected model
-            async for event in _stream_with_langgraph(task, session_id, max_attempts, ws_controller, message_id, model, provider):
-                await ws.send_text(json.dumps(event))
+            # Stream using unified protocol
+            streamer = get_unified_streamer()
+            transport = WebSocketTransport(ws)
+
+            async for event in streamer.stream(
+                transport=transport,
+                message=task,
+                session_id=session_id,
+                model=model,
+                provider=provider,
+                max_attempts=max_attempts,
+            ):
+                await ws.send_text(event.to_ws())
 
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected: {session_id}")
@@ -95,185 +107,3 @@ async def websocket_endpoint(ws: WebSocket):
     finally:
         if ws_controller:
             await ws_controller.handle_disconnect(session_id)
-
-
-async def _stream_with_langgraph(task: str, session_id: str, max_attempts: int, ws_controller, message_id: str, model: str = "", provider: str = "ollama"):
-    """Stream using LangGraph orchestrator with proper event formatting and user-selected model."""
-    try:
-        # Import here to avoid circular imports
-        from backend.domain.core.langgraph import stream_agent as langgraph_stream
-
-        logger.info(f"[stream] Starting langgraph stream for task: {task[:50]}...")
-
-        event_count = 0
-        accumulated_content = ""  # Track for token counting
-        
-        # Token chunking: accumulate 5-8 tokens before sending
-        CHUNK_THRESHOLD = 20  # chars (~5 tokens), send when buffer reaches this
-        token_buffer = ""
-
-        async for event in langgraph_stream(
-            message=task,
-            session_id=session_id,
-            max_attempts=max_attempts,
-            model=model,  # Pass user-selected model
-            provider=provider  # Pass user-selected provider
-        ):
-            # Map backend phases to frontend step IDs
-            PHASE_MAP = {
-                "orchestrator": "analyzing",
-                "planning": "planning",
-                "coding": "executing",
-                "reviewing": "reviewing",
-                "executing": "executing",
-                "completed": "completed",
-            }
-
-            # Parse stream_agent events
-            if isinstance(event, str):
-                event_count += 1
-                logger.info(f"[stream] Event {event_count}: {event[:80]}...")
-
-                if event.startswith("[STEP]"):
-                    # Flush token buffer before sending step
-                    if token_buffer:
-                        accumulated_content += token_buffer
-                        token_count = max(1, len(accumulated_content) // 2)
-                        yield {
-                            "type": "token",
-                            "content": token_buffer,
-                            "response": token_buffer,
-                            "done": False,
-                            "message_id": message_id,
-                            "token_count": token_count,
-                        }
-                        token_buffer = ""
-                    
-                    # Format: [STEP]phase:message
-                    parts = event[6:].split(":", 1)
-                    phase = parts[0] if parts else "step"
-                    msg = parts[1] if len(parts) > 1 else ""
-
-                    # Map phase to frontend step ID
-                    step_id = f"step-{PHASE_MAP.get(phase, phase)}"
-
-                    yield {
-                        "type": "step",
-                        "step_id": step_id,
-                        "title": phase.replace("_", " ").title(),
-                        "status": "active",
-                        "message_id": message_id,
-                        "content": msg
-                    }
-
-                elif event.startswith("[TOKEN]"):
-                    # Format: [TOKEN]content - accumulate for chunking
-                    content = event[7:]
-                    token_buffer += content
-                    accumulated_content += content
-
-                    # Send chunk when buffer reaches threshold
-                    if len(token_buffer) >= CHUNK_THRESHOLD:
-                        token_count = max(1, len(accumulated_content) // 2)
-                        yield {
-                            "type": "token",
-                            "content": token_buffer,
-                            "response": token_buffer,
-                            "done": False,
-                            "message_id": message_id,
-                            "token_count": token_count,
-                        }
-                        token_buffer = ""
-
-                elif event.startswith("[TOOL]"):
-                    # Flush token buffer before sending tool
-                    if token_buffer:
-                        accumulated_content += token_buffer
-                        token_count = max(1, len(accumulated_content) // 2)
-                        yield {
-                            "type": "token",
-                            "content": token_buffer,
-                            "response": token_buffer,
-                            "done": False,
-                            "message_id": message_id,
-                            "token_count": token_count,
-                        }
-                        token_buffer = ""
-                    
-                    # Format: [TOOL]action:message
-                    parts = event[6:].split(":", 1)
-                    action = parts[0] if parts else "tool"
-                    msg = parts[1] if len(parts) > 1 else ""
-
-                    yield {
-                        "type": "step",
-                        "step_id": f"tool-{action}",
-                        "title": action.replace("_", " ").title(),
-                        "status": "done",
-                        "message_id": message_id,
-                        "content": msg
-                    }
-
-                elif event.startswith("[ERROR]"):
-                    # Flush token buffer before sending error
-                    if token_buffer:
-                        accumulated_content += token_buffer
-                        token_count = max(1, len(accumulated_content) // 2)
-                        yield {
-                            "type": "token",
-                            "content": token_buffer,
-                            "response": token_buffer,
-                            "done": False,
-                            "message_id": message_id,
-                            "token_count": token_count,
-                        }
-                        token_buffer = ""
-                    
-                    # Format: [ERROR]code:message
-                    parts = event[7:].split(":", 1)
-                    code = parts[0] if parts else "500"
-                    msg = parts[1] if len(parts) > 1 else ""
-
-                    yield {
-                        "type": "error",
-                        "message": msg,
-                        "code": code,
-                        "message_id": message_id,
-                    }
-
-                elif event == "[DONE]":
-                    # Flush remaining tokens in buffer
-                    if token_buffer:
-                        accumulated_content += token_buffer
-                        token_count = max(1, len(accumulated_content) // 2)
-                        yield {
-                            "type": "token",
-                            "content": token_buffer,
-                            "response": token_buffer,
-                            "done": False,
-                            "message_id": message_id,
-                            "token_count": token_count,
-                        }
-                        token_buffer = ""
-                    
-                    yield {
-                        "type": "done",
-                        "message_id": message_id,
-                    }
-
-            else:
-                # Dict event fallback
-                yield event
-
-    except Exception as e:
-        logger.error(f"LangGraph streaming error: {e}")
-        yield {
-            "type": "error",
-            "message": str(e),
-            "message_id": message_id,
-        }
-        # Always emit done after error
-        yield {
-            "type": "done",
-            "message_id": message_id,
-        }
