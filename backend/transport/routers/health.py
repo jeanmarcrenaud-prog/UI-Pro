@@ -137,3 +137,70 @@ async def set_timeouts(body: TimeoutRequest):
         return {"status": "ok", "llm_timeout": settings.llm_timeout, "executor_timeout": settings.executor_timeout}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+class FullSettingsRequest(BaseModel):
+    model_fast: Optional[str] = None
+    model_reasoning: Optional[str] = None
+    model_code: Optional[str] = None
+    active_preset: Optional[str] = None
+    llm_timeout: Optional[int] = None
+    executor_timeout: Optional[int] = None
+    log_level: Optional[str] = None
+
+
+@router.get("/api/settings")
+async def get_all_settings():
+    """Get all settings for UI sync"""
+    from backend.domain.settings import DEFAULT_PRESETS
+    return {
+        "model_fast": _get_setting('model_fast', 'qwen3.5:0.8b'),
+        "model_reasoning": _get_setting('model_reasoning', 'qwen3.5:0.8b'),
+        "model_code": _get_setting('model_code', 'qwen3.5:0.8b'),
+        "active_preset": _get_setting('active_preset', 'balanced'),
+        "llm_timeout": _get_setting('llm_timeout', 300),
+        "executor_timeout": _get_setting('executor_timeout', 60),
+        "log_level": _get_setting('log_level', 'INFO'),
+        "ollama_url": _get_setting('ollama_url', 'http://localhost:11434'),
+        "presets": {
+            preset_id: {
+                "id": preset.id,
+                "name": preset.name,
+                "description": preset.description,
+                "model_fast": preset.model_fast,
+                "model_reasoning": preset.model_reasoning,
+                "model_code": preset.model_code,
+            }
+            for preset_id, preset in DEFAULT_PRESETS.items()
+        }
+    }
+
+
+@router.post("/api/settings")
+async def update_settings(body: FullSettingsRequest):
+    """Update multiple settings at once"""
+    try:
+        updates = {}
+        
+        if body.model_fast is not None:
+            updates['model_fast'] = body.model_fast
+        if body.model_reasoning is not None:
+            updates['model_reasoning'] = body.model_reasoning
+        if body.model_code is not None:
+            updates['model_code'] = body.model_code
+        if body.active_preset is not None:
+            updates['active_preset'] = body.active_preset
+        if body.llm_timeout is not None:
+            updates['llm_timeout'] = body.llm_timeout
+        if body.executor_timeout is not None:
+            updates['executor_timeout'] = body.executor_timeout
+        if body.log_level is not None:
+            updates['log_level'] = body.log_level
+        
+        # Apply updates
+        for key, value in updates.items():
+            setattr(settings, key, value)
+        
+        return {"status": "ok", "updated": list(updates.keys())}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}

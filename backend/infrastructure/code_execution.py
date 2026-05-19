@@ -46,6 +46,7 @@ class ExecutionResult:
     error: str = ""
     execution_time_ms: float = 0.0
     review_result: Optional[ReviewResult] = None
+    sandbox_type: str = "in-process"  # "in-process" or "docker"
 
 
 class CodeExecutionService:
@@ -64,7 +65,7 @@ class CodeExecutionService:
         "sys.exit",
     }
 
-    def __init__(self):
+    def __init__(self, use_docker: bool = False):
         # Secure executor with AST analysis (Python only)
         self._secure_executor = SecureCodeExecutor(
             timeout=self.TIMEOUT_SECONDS,
@@ -72,15 +73,32 @@ class CodeExecutionService:
         )
         # Multi-language executor (Python, JS, Bash)
         self._multi_executor = MultiLangExecutor()
+        # Docker sandbox (optional)
+        self._docker_sandbox = None
+        self._use_docker = use_docker
+        
+        if use_docker:
+            try:
+                from backend.infrastructure.docker_sandbox import get_docker_sandbox
+                self._docker_sandbox = get_docker_sandbox()
+                logger.info("Docker sandbox enabled for code execution")
+            except ImportError as e:
+                logger.warning(f"Docker sandbox not available: {e}")
 
     async def execute(
         self,
         code: str,
         globals_dict: Optional[Dict[str, Any]] = None,
+        use_docker: Optional[bool] = None,
     ) -> ExecutionResult:
 
         if not code.strip():
             return ExecutionResult(False, error="empty code")
+
+        # Use Docker if requested and available
+        use_docker = use_docker if use_docker is not None else self._use_docker
+        if use_docker and self._docker_sandbox:
+            return await self._execute_docker(code)
 
         lowered = code.replace(" ", "")
 
@@ -101,7 +119,7 @@ class CodeExecutionService:
             )
 
         try:
-            return await asyncio.wait_for(
+            result = await asyncio.wait_for(
                 asyncio.to_thread(
                     self._run_sync,
                     code,
@@ -110,6 +128,8 @@ class CodeExecutionService:
                 ),
                 timeout=self.TIMEOUT_SECONDS,
             )
+            result.sandbox_type = "in-process"
+            return result
 
         except asyncio.TimeoutError:
             return ExecutionResult(False, error="execution timeout")
@@ -117,6 +137,31 @@ class CodeExecutionService:
         except Exception as exc:
             logger.exception("execution failed")
             return ExecutionResult(False, error=str(exc))
+
+    async def _execute_docker(self, code: str) -> ExecutionResult:
+        """Execute code in Docker sandbox."""
+        if not self._docker_sandbox:
+            return ExecutionResult(
+                False,
+                error="Docker sandbox not initialized"
+            )
+        
+        try:
+            result = await self._docker_sandbox.execute(code, "python")
+            return ExecutionResult(
+                success=result.success,
+                output=result.output,
+                error=result.error,
+                execution_time_ms=result.execution_time_ms,
+                sandbox_type="docker"
+            )
+        except Exception as e:
+            logger.exception("Docker execution failed")
+            return ExecutionResult(
+                False,
+                error=f"Docker sandbox error: {str(e)}",
+                sandbox_type="docker"
+            )
 
     def _run_sync(
         self,
@@ -209,6 +254,6 @@ class CodeExecutionService:
         return ExecutionResult(
             success=result["success"],
             output=result["output"],
-            error=result.get("error"),
+            error=result.get("error") or "",
             execution_time_ms=result["execution_time"] * 1000,
         )

@@ -34,6 +34,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add rate limiting middleware (optional - can be disabled via settings)
+try:
+    from backend.infrastructure.rate_limit import RateLimitMiddleware, RateLimitConfig
+    # Only enable in production or when explicitly configured
+    import os
+    if os.getenv("RATE_LIMIT_ENABLED", "").lower() == "true":
+        app.add_middleware(RateLimitMiddleware, config=RateLimitConfig(
+            requests_per_minute=60,
+            requests_per_hour=1000,
+            burst_size=10
+        ))
+        logger.info("Rate limiting enabled")
+except ImportError:
+    logger.warning("Rate limiting not available")
+
+
 # Include routers
 from backend.transport.routers import chat, execute, health, logs, ws
 
