@@ -11,21 +11,27 @@ export interface BackendStreamChunk {
   type: string
   status?: string
   stream_id?: string
+  message_id?: string
   index?: number
   data?: string
   content?: string
   response?: string
   tokens?: number
   tokens_generated?: number
+  token_count?: number
   latency_ms?: number
   error?: string
+  code?: string
   step_id?: string
   step_status?: string
+  title?: string
+  done?: boolean
+  from_index?: number
   timestamp?: string
 }
 
 export interface StreamEvent {
-  type: 'token' | 'step' | 'tool' | 'done' | 'error' | 'cancelled'
+  type: 'token' | 'step' | 'tool' | 'done' | 'error' | 'cancelled' | 'stream_id' | 'resumed'
   content: string
   index?: number
   tokens?: number
@@ -154,19 +160,52 @@ class StreamService {
   private normalizeChunk(data: BackendStreamChunk): StreamEvent {
     const content = data.response || data.content || data.data || ''
 
+    // stream_id event
+    if (data.type === 'stream_id') {
+      return {
+        type: 'step',
+        content: '',
+        stepId: 'stream-init',
+        stepStatus: 'active',
+        streamId: data.stream_id,
+      }
+    }
+
+    // resumed event
+    if (data.type === 'resumed') {
+      return {
+        type: 'step',
+        content: `Resumed from index ${data.from_index || 0}`,
+        stepId: 'stream-resumed',
+        stepStatus: 'active',
+        streamId: data.stream_id,
+      }
+    }
+
     // Step event
     if (data.type === 'step' || data.step_id) {
       return {
         type: 'step',
-        content: '',
+        content: data.content || '',
         stepId: data.step_id,
-        stepStatus: data.step_status,
+        stepStatus: data.step_status || 'active',
+        streamId: data.stream_id,
+      }
+    }
+
+    // Tool event
+    if (data.type === 'tool') {
+      return {
+        type: 'tool',
+        content: data.content || '',
+        stepId: data.step_id,
+        stepStatus: 'done',
         streamId: data.stream_id,
       }
     }
 
     // Terminal events
-    if (data.status === 'completed' || data.type === 'done') {
+    if (data.done || data.status === 'completed' || data.type === 'done') {
       return { type: 'done', content }
     }
 
@@ -174,7 +213,7 @@ class StreamService {
       return {
         type: 'error',
         content: '',
-        error: data.error || 'Unknown error occurred',
+        error: data.error || data.message || 'Unknown error occurred',
       }
     }
 
@@ -187,7 +226,7 @@ class StreamService {
       type: 'token',
       content,
       index: data.index,
-      tokens: data.tokens,
+      tokens: data.tokens || data.token_count,
       tokensGenerated: data.tokens_generated,
       streamId: data.stream_id,
       latencyMs: data.latency_ms,

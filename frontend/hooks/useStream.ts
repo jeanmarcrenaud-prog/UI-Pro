@@ -39,21 +39,30 @@ export function useStream({ url, onToken, onStep, onDone, onError }: UseStreamOp
       await streamService.connect(prompt)
       
       streamService.onEvent((event) => {
+        // Token event
         if (event.type === 'token' && event.content) {
           onToken?.(event.content)
         }
-        if (event.type === 'step' && event.stepId) {
+        // Step event (including stream_id, resumed, tool)
+        if ((event.type === 'step' || event.type === 'tool') && event.stepId) {
           onStep?.(event.stepId)
         }
+        // Done event
         if (event.type === 'done') {
           setIsStreaming(false)
           setCurrentStreamId(null)
           onDone?.()
         }
+        // Error event
         if (event.type === 'error') {
           setIsStreaming(false)
           setCurrentStreamId(null)
           onError?.(new Error(event.error || 'Stream error'))
+        }
+        // Cancelled event
+        if (event.type === 'cancelled') {
+          setIsStreaming(false)
+          setCurrentStreamId(null)
         }
       })
     } catch (err) {
