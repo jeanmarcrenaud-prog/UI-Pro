@@ -6,9 +6,9 @@
 
 export { type ButtonComponentVariant as ButtonVariant } from './button'
 
-export { Card } from './Card'
+export { Card } from './card'
 
-export { InputComponent as Input, type InputComponentProps as InputProps } from './Input'
-export { TextareaComponent as Textarea, type TextareaComponentProps as TextareaProps } from './Textarea'
-export { SelectComponent as Select, type SelectComponentProps as SelectProps } from './Select'
+export { InputComponent as Input, type InputComponentProps as InputProps } from './input'
+export { TextareaComponent as Textarea, type TextareaComponentProps as TextareaProps } from './textarea'
+export { SelectComponent as Select, type SelectComponentProps as SelectProps } from './select'
 export { BadgeComponent as Badge, type BadgeVariant } from './badge'
