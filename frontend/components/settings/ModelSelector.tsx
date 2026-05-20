@@ -54,7 +54,16 @@ export function ModelSelector({ className = '' }: ModelSelectorProps) {
               if (model.sizeGb) parts.push(`${model.sizeGb}GB`)
               if (model.speedTier && model.speedTier !== 'fast') parts.push(model.speedTier)
               parts.push(model.provider)
-              
+
+              // Add loaded status indicator
+              if (model.isLoaded) {
+                if (model.sizeVramGb) {
+                  parts.push(`[📍 ${model.sizeVramGb}GB VRAM]`)
+                } else {
+                  parts.push('[📍 Loaded]')
+                }
+              }
+
               return (
                 <option key={`${model.provider}-${model.id}`} value={model.id}>
                   {parts.join(' • ')}

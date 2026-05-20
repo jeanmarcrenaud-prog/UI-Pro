@@ -34,8 +34,8 @@ interface UIState {
   // Model
   selectedModel: string
   setSelectedModel: (model: string) => void
-  availableModels: { id: string; name: string; provider: string }[]
-  setAvailableModels: (models: { id: string; name: string; provider: string }[]) => void
+  availableModels: { id: string; name: string; provider: string; isLoaded?: boolean; sizeVramGb?: number }[]
+  setAvailableModels: (models: { id: string; name: string; provider: string; isLoaded?: boolean; sizeVramGb?: number }[]) => void
 
   // Locale
   locale: 'en' | 'fr'

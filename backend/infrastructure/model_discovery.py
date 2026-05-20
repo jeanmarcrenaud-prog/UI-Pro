@@ -39,6 +39,10 @@ class DiscoveredModel:
     family: Optional[str] = None
     modified_at: Optional[str] = None
 
+    # Memory state
+    is_loaded: bool = False  # Whether model is currently loaded in VRAM
+    size_vram_gb: Optional[float] = None  # VRAM used if loaded
+
     # Computed attributes
     max_context: int = 8192
     speed_tier: str = "medium"  # very_fast, fast, medium, slow
@@ -230,6 +234,32 @@ class ModelDiscovery:
     def _discover_lemonade(self) -> List[DiscoveredModel]:
         return self._discover_backend("lemonade")
 
+    def _get_loaded_models_ollama(self) -> Dict[str, Dict]:
+        """Get models currently loaded in Ollama's memory."""
+        try:
+            endpoint = self._get_endpoints()["ollama"]["url"].replace("/api/tags", "/api/ps")
+            resp = requests.get(endpoint, timeout=self.timeout)
+            resp.raise_for_status()
+            data = resp.json()
+
+            # Build a map of model names to their loaded status
+            loaded_map = {}
+            for model_data in data.get("models", []):
+                model_name = model_data.get("name", "")
+                size_vram = model_data.get("size_vram", 0)
+                size_vram_gb = round(size_vram / (1024 ** 3), 2) if size_vram else None
+
+                loaded_map[model_name] = {
+                    "is_loaded": True,
+                    "size_vram_gb": size_vram_gb
+                }
+
+            logger.debug(f"[ModelDiscovery] Ollama has {len(loaded_map)} models loaded in memory")
+            return loaded_map
+        except Exception as e:
+            logger.debug(f"[ModelDiscovery] Could not get Ollama loaded models: {e}")
+            return {}
+
     def discover_all(self, force_refresh: bool = False) -> List[DiscoveredModel]:
         """Discover models from all backends in parallel."""
         with self._cache_lock:
@@ -237,6 +267,9 @@ class ModelDiscovery:
                 return self._cache.copy()
 
         all_models: List[DiscoveredModel] = []
+
+        # Get loaded models from Ollama
+        loaded_ollama = self._get_loaded_models_ollama()
 
         with ThreadPoolExecutor(max_workers=4) as executor:
             futures = {
@@ -248,7 +281,13 @@ class ModelDiscovery:
 
             for future in as_completed(futures):
                 try:
-                    all_models.extend(future.result())
+                    models = future.result()
+                    # Mark loaded models
+                    for model in models:
+                        if model.backend == "ollama" and model.name in loaded_ollama:
+                            model.is_loaded = True
+                            model.size_vram_gb = loaded_ollama[model.name]["size_vram_gb"]
+                    all_models.extend(models)
                 except Exception as e:
                     logger.debug(f"Discovery failed for {futures[future]}: {e}")
 
