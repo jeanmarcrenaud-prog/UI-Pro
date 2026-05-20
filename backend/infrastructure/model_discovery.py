@@ -319,6 +319,8 @@ class ModelDiscovery:
                 "speed_tier": m.speed_tier,
                 "max_context": m.max_context,
                 "strengths": [s.value for s in m.strengths],
+                "is_loaded": m.is_loaded,
+                "size_vram_gb": m.size_vram_gb,
             }
             for m in self.discover_all()
         ]

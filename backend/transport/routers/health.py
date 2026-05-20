@@ -106,6 +106,27 @@ async def status():
     }
 
 
+@router.get("/api/models")
+async def get_models():
+    """Get all discovered models with loaded status"""
+    from backend.infrastructure.model_discovery import get_model_discovery
+    discovery = get_model_discovery()
+    return {
+        "models": discovery.get_models_summary()
+    }
+
+
+@router.get("/api/models")
+async def get_models():
+    """Get all discovered models with loaded status"""
+    from backend.infrastructure.model_discovery import get_model_discovery
+    discovery = get_model_discovery()
+    return {
+        "models": discovery.get_models_summary(),
+        "loaded_count": sum(1 for m in discovery.discover_all() if m.is_loaded),
+    }
+
+
 @router.get("/api/settings/default-model")
 async def get_default_model():
     """Default models for frontend"""

@@ -25,9 +25,12 @@ interface Model {
   maxContext?: number         // Estimated context window
   speedTier?: SpeedTier       // very_fast, fast, medium, slow
   isCoder?: boolean          // Code capability
-  isReasoning?: boolean      // Reasoning capability
-  isVision?: boolean         // Vision capability
+  isReasoning?: boolean       // Reasoning capability
+  isVision?: boolean          // Vision capability
   capabilities?: ModelCapability[]  // List of capabilities
+  // VRAM status
+  isLoaded?: boolean          // Whether model is loaded in VRAM
+  sizeVramGb?: number         // VRAM used if loaded
 }
 
 interface BackendConfig {
@@ -62,10 +65,53 @@ class ModelDiscoveryService {
 
     this.isDiscovering = true
     
-    const allModels: Model[] = []
     const errors: string[] = []
 
-    // Discover from each enabled backend in parallel
+    // First try to fetch from backend API (includes isLoaded/sizeVramGb)
+    try {
+      const response = await fetch('/api/models', { signal: AbortSignal.timeout(5000) })
+      if (response.ok) {
+        const data = await response.json()
+        if (data.models && Array.isArray(data.models)) {
+          this.models = data.models.map((m: {
+            name: string
+            backend: string
+            size_gb?: number
+            parameter_size?: string
+            quantization?: string
+            speed_tier?: string
+            max_context?: number
+            is_loaded?: boolean
+            size_vram_gb?: number
+          }) => ({
+            id: m.name,
+            name: m.name,
+            provider: m.backend as 'ollama' | 'lmstudio' | 'lemonade',
+            sizeGb: m.size_gb,
+            parameterSize: m.parameter_size,
+            quantization: m.quantization,
+            speedTier: m.speed_tier as SpeedTier | undefined,
+            maxContext: m.max_context,
+            isLoaded: m.is_loaded,
+            sizeVramGb: m.size_vram_gb,
+            isCoder: this.isCoder(m.name),
+            isReasoning: this.isReasoning(m.name),
+            isVision: this.isVision(m.name),
+            capabilities: this.inferCapabilities(m.name, m.parameter_size || '', ''),
+          }))
+          
+          events.emit('modelsDiscovered', { models: this.models, errors })
+          this.isDiscovering = false
+          return this.models
+        }
+      }
+    } catch (e) {
+      console.debug('[ModelDiscovery] Backend API unavailable, falling back to direct discovery:', e)
+      errors.push(`backend API: ${e?.message || e}`)
+    }
+
+    // Fallback to direct backend discovery
+    const allModels: Model[] = []
     const entries = Object.entries(this.backends).filter(([_, config]) => config.enabled)
     const promises = entries.map(([provider, config]) => 
       this.fetchFromBackend(provider, config.url).catch(e => {
