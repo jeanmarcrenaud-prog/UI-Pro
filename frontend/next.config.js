@@ -7,7 +7,6 @@ const nextConfig = {
       {
         source: '/api/:path*',
         destination: 'http://localhost:8000/api/:path*',
-        has: [{ type: 'method', methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'] }],
       },
       {
         source: '/health',
