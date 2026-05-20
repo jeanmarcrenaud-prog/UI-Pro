@@ -17,8 +17,14 @@ export class WebSocketManager {
     if (this.isConnected) return
 
     return new Promise((resolve, reject) => {
+      // Construct WebSocket URL from current window location
+      // If on http://localhost:3000, connect to ws://localhost:8000
+      // If on https://example.com, connect to wss://example.com:8000
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
       const host = window.location.hostname || 'localhost'
-      const wsUrl = `${API_CONFIG.wsUrl.replace('localhost', host)}/ws`
+      const wsUrl = `${protocol}//${host}:8000/ws`
+
+      console.log('[WebSocketManager] Connecting to:', wsUrl)
       this.ws = new WebSocket(wsUrl)
 
       const timeout = setTimeout(() => {
@@ -30,6 +36,7 @@ export class WebSocketManager {
         clearTimeout(timeout)
         this.reconnectAttempts = 0
         this.startHeartbeat()
+        console.log('[WebSocketManager] Connected')
         resolve()
       }
 

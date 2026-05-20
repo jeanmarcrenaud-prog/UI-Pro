@@ -204,11 +204,11 @@ class ChatService {
   private async tryFallback(): Promise<void> {
     if (!this.activeRequest) return
 
-    const host = window.location.hostname || 'localhost'
-    const baseUrl = API_CONFIG.apiUrl.replace('localhost', host)
-    const streamUrl = `${baseUrl}/api/stream`
-    console.log('[chatService] tryFallback:', { host, baseUrl, streamUrl })
-    
+    // Use relative URLs to leverage Next.js rewrites to backend
+    const streamUrl = '/api/stream'
+    const chatUrl = '/api/chat'
+    console.log('[chatService] tryFallback:', { streamUrl, chatUrl })
+
     const { prompt, model, provider, assistantId } = this.activeRequest
 
     // Try SSE
@@ -225,7 +225,7 @@ class ChatService {
 
     // Fall back to REST
     try {
-      const text = await this.fallback.sendREST(`${baseUrl}/api/chat`, { message: prompt, model, provider })
+      const text = await this.fallback.sendREST(chatUrl, { message: prompt, model, provider })
       this.emit({ id: assistantId, role: 'assistant', content: text, status: 'done' })
     } catch {
       this.handleError('Backend unreachable')

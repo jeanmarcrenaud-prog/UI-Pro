@@ -5,10 +5,11 @@
 
 // API Configuration
 export const API_CONFIG = {
-  // FastAPI backend
-  apiUrl: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
+  // FastAPI backend - Use relative URLs for HTTP (Next.js rewrites them)
+  // WebSocket needs protocol so it can't use rewrites
+  apiUrl: process.env.NEXT_PUBLIC_API_URL || '',
   wsUrl: process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000',
-  
+
   // Timeouts
   connectTimeout: 8000,
   requestTimeout: 60000,
