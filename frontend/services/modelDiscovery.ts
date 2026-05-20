@@ -123,7 +123,7 @@ async discover(): Promise<Model[]> {
       }
     } catch (e) {
       console.debug('[ModelDiscovery] Backend API unavailable, using direct discovery:', e)
-      errors.push(`backend_api: ${e?.message || e}`)
+      errors.push(`backend_api: ${(e as Error)?.message || String(e)}`)
     }
 
     // Fallback to direct backend discovery
