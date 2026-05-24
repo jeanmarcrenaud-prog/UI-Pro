@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 import asyncio
 import json
 import sys
 import time
 from pathlib import Path
+from typing import Any, Optional
 
 import gradio as gr
 
@@ -29,17 +32,17 @@ try:
 except Exception as e:
     print(f"Metrics import error: {e}")
     METRICS_AVAILABLE = False
-    get_dashboard_data = None
+    get_dashboard_data: Any = None
 
 # Memory integration
 try:
-    from backend.infrastructure.memory import MemoryManager
+    from backend.infrastructure.memory import MemoryManager as _MemoryManager
 
     MEMORY_AVAILABLE = True
 except Exception as e:
     print(f"Memory import error: {e}")
     MEMORY_AVAILABLE = False
-    MemoryManager = None
+    _MemoryManager: Any = None
 
 # Global orchestrator instance
 _orchestrator = None
@@ -55,7 +58,7 @@ def get_orchestrator():
         _executor = CodeExecutor()
     if _memory_manager is None and MEMORY_AVAILABLE:
         try:
-            _memory_manager = MemoryManager()
+            _memory_manager = _MemoryManager()
         except Exception as e:
             print(f"MemoryManager init error: {e}")
             _memory_manager = None
@@ -202,6 +205,8 @@ def _build_main_ui():
 
                         # Metrics refresh function
                         def _refresh_metrics():
+                            if not METRICS_AVAILABLE:
+                                return 0, 0, 0, []
                             try:
                                 data = get_dashboard_data()
                                 metrics_data = data.get("metrics", {})
@@ -258,7 +263,7 @@ def _build_main_ui():
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
                     try:
-                        result = loop.run_until_complete(orch.run(text))
+                        result = loop.run_until_complete(orch.run(text, session_id=tid))
                         return result
                     finally:
                         loop.close()
@@ -304,17 +309,17 @@ def _build_main_ui():
                     else:
                         output_lines.append(str(code)[:500])
 
-                if "tests" in result:
+                raw_tests = result.get("tests", {})
+                if isinstance(raw_tests, dict):
                     output_lines.append("")
                     output_lines.append("🧪 **Execution Result**:")
-                    tests = result.get("tests", {})
-                    output_lines.append(f"Success: {tests.get('success', 'N/A')}")
-                    if tests.get("stdout"):
-                        output_lines.append(f"STDOUT: {tests.get('stdout', '')[:200]}")
-                    if tests.get("stderr"):
-                        output_lines.append(f"STDERR: {tests.get('stderr', '')[:200]}")
+                    output_lines.append(f"Success: {raw_tests.get('success', 'N/A')}")
+                    if raw_tests.get("stdout"):
+                        output_lines.append(f"STDOUT: {raw_tests.get('stdout', '')[:200]}")
+                    if raw_tests.get("stderr"):
+                        output_lines.append(f"STDERR: {raw_tests.get('stderr', '')[:200]}")
                     output_lines.append(
-                        f"Duration: {tests.get('duration_ms', 'N/A')}ms"
+                        f"Duration: {raw_tests.get('duration_ms', 'N/A')}ms"
                     )
 
                 output_lines.append("")
@@ -426,7 +431,7 @@ def _build_main_ui():
             def _do_memory_search(q):
                 if _memory_manager and q:
                     try:
-                        results = _memory_manager.search(q, k=5)
+                        results = _memory_manager.search(q, limit=5)
                         if results:
                             return "\n".join(
                                 [
