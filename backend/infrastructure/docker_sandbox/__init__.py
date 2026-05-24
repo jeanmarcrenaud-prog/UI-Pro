@@ -102,9 +102,15 @@ class DockerSandbox:
             )
 
             # Send input and get output
-            stdout, stderr = await result.communicate(
-                input=input_data.encode(), timeout=self.timeout_seconds
-            )
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    result.communicate(input=input_data.encode()),
+                    timeout=self.timeout_seconds,
+                )
+            except asyncio.TimeoutError:
+                raise TimeoutError(
+                    f"Execution timed out after {self.timeout_seconds}s"
+                )
 
             execution_time = (time.time() - start_time) * 1000
 

@@ -7,6 +7,8 @@ import logging
 import time
 from dataclasses import dataclass, field
 
+from typing import Optional
+
 from fastapi import HTTPException, Request
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -35,7 +37,7 @@ class RateLimitResult:
 class RateLimiter:
     """Token bucket rate limiter."""
 
-    def __init__(self, config: RateLimitConfig = None):
+    def __init__(self, config: Optional[RateLimitConfig] = None):
         self.config = config or RateLimitConfig()
         self._buckets: dict[str, dict] = {}
 
@@ -142,7 +144,7 @@ class RateLimiter:
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Middleware for rate limiting."""
 
-    def __init__(self, app, config: RateLimitConfig = None):
+    def __init__(self, app, config: Optional[RateLimitConfig] = None):
         super().__init__(app)
         self.limiter = RateLimiter(config)
 

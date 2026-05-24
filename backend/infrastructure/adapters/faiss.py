@@ -71,11 +71,11 @@ class FAISSAdapter:
         self.persist_path.parent.mkdir(parents=True, exist_ok=True)
 
     @property
-    def model(self):
+    def model(self):  # type: ignore[misc]
         """Lazy load embedding model"""
         if self._model is None:
             f, _, st = _lazy_imports()
-            self._model = st.SentenceTransformer("all-MiniLM-L6-v2")
+            self._model = st("all-MiniLM-L6-v2")  # type: ignore[no-untyped-call]
             self.d = self._model.get_sentence_embedding_dimension()
             if self.index is None:
                 self.index = f.IndexFlatL2(self.d)

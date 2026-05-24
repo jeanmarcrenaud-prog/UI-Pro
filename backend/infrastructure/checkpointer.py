@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+import aiosqlite
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 logger = logging.getLogger(__name__)
@@ -25,9 +26,8 @@ class CheckpointManager:
     async def get_saver(self) -> AsyncSqliteSaver:
         """Get or create the async SQLite checkpoint saver."""
         if not self.saver:
-            self.saver = AsyncSqliteSaver.from_conn_string(
-                f"sqlite+aiosqlite:///{self.db_path}"
-            )
+            conn = await aiosqlite.connect(str(self.db_path))
+            self.saver = AsyncSqliteSaver(conn)
         return self.saver
 
     async def cleanup_old_checkpoints(
@@ -45,8 +45,6 @@ class CheckpointManager:
         Returns:
             Number of checkpoint rows deleted.
         """
-        import aiosqlite
-
         keep = keep_per_thread or self._max_per_thread
         total_deleted = 0
 
@@ -115,17 +113,17 @@ class CheckpointManager:
 
     async def get_stats(self) -> dict:
         """Get checkpoint store statistics."""
-        import aiosqlite
-
         try:
             async with aiosqlite.connect(str(self.db_path)) as db:
                 cursor = await db.execute("SELECT COUNT(*) FROM checkpoints")
-                total = (await cursor.fetchone())[0]
+                row = await cursor.fetchone()
+                total = row[0] if row else 0
 
                 cursor = await db.execute(
                     "SELECT COUNT(DISTINCT thread_id) FROM checkpoints"
                 )
-                threads = (await cursor.fetchone())[0]
+                row = await cursor.fetchone()
+                threads = row[0] if row else 0
 
                 db_size = self.db_path.stat().st_size if self.db_path.exists() else 0
 
