@@ -17,12 +17,20 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, ClassVar
 
 from fastapi import Request, WebSocket
 from fastapi.responses import StreamingResponse
 
 logger = logging.getLogger(__name__)
+
+
+# ====================== Constants ======================
+
+CHUNK_THRESHOLD = 20  # chars ~5 tokens before yielding a token event
+
+
+# ====================== Types ======================
 
 
 class StreamStatus(Enum):
@@ -31,6 +39,61 @@ class StreamStatus(Enum):
     COMPLETED = "completed"
     ERROR = "error"
     CANCELLED = "cancelled"
+
+
+# ====================== Token Buffer ======================
+
+
+class _TokenBuffer:
+    """Accumulates tokens and flushes in chunks or on demand."""
+
+    def __init__(self, chunk_threshold: int = CHUNK_THRESHOLD):
+        self._buffer = ""
+        self._total = 0
+        self._threshold = chunk_threshold
+
+    def append(self, content: str) -> None:
+        self._buffer += content
+        self._total += len(content)
+
+    @property
+    def size(self) -> int:
+        return len(self._buffer)
+
+    @property
+    def total(self) -> int:
+        return self._total
+
+    @property
+    def is_ready(self) -> bool:
+        return self.size >= self._threshold
+
+    @property
+    def is_empty(self) -> bool:
+        return self.size == 0
+
+    def flush(self) -> StreamEvent | None:
+        """Return a flush event if buffer non-empty, then clear."""
+        if self.is_empty:
+            return None
+        event = self._build_event()
+        self._buffer = ""
+        return event
+
+    def drain(self) -> StreamEvent | None:
+        """Force-flush even if below threshold (final/signal flush)."""
+        return self.flush()
+
+    def _build_event(self) -> StreamEvent:
+        return StreamEvent(
+            event_type="token",
+            content=self._buffer,
+            done=False,
+            token_count=max(1, self._total // 2),
+        )
+
+
+# ====================== Event Model ======================
 
 
 @dataclass(slots=True)
@@ -50,6 +113,39 @@ class StreamEvent:
     token_count: int = 0
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
+    # Dispatch table for to_dict — maps event_type -> (key, extractor)
+    _SERIALIZERS: ClassVar[dict[str, dict[str, Any]]] = {
+        "stream_id": {},
+        "step": {
+            "step_id": lambda e: e.step_id or "step-unknown",
+            "title": lambda e: e.title or "Step",
+            "status": lambda e: "active" if e.status == StreamStatus.GENERATING else "done",
+            "content": lambda e: e.content,
+        },
+        "token": {
+            "content": lambda e: e.content,
+            "response": lambda e: e.content,
+            "done": lambda e: e.done,
+            "token_count": lambda e: e.token_count,
+        },
+        "tool": {
+            "step_id": lambda e: e.step_id or "tool-unknown",
+            "title": lambda e: e.title or "Tool",
+            "status": lambda e: "done",
+            "content": lambda e: e.content,
+        },
+        "error": {
+            "message": lambda e: e.content,
+            "code": lambda e: e.code or "500",
+        },
+        "done": {
+            "done": lambda e: True,
+        },
+        "resumed": {
+            "from_index": lambda e: 0,
+        },
+    }
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dict for both SSE and WS transport."""
         result: dict[str, Any] = {
@@ -58,49 +154,106 @@ class StreamEvent:
             "stream_id": self.stream_id,
             "timestamp": self.timestamp.isoformat(),
         }
-
-        if self.event_type == "stream_id":
-            pass  # Only type + stream_id + message_id
-
-        elif self.event_type == "step":
-            result["step_id"] = self.step_id or "step-unknown"
-            result["title"] = self.title or "Step"
-            result["status"] = (
-                "active" if self.status == StreamStatus.GENERATING else "done"
-            )
-            result["content"] = self.content
-
-        elif self.event_type == "token":
-            result["content"] = self.content
-            result["response"] = self.content
-            result["done"] = self.done
-            result["token_count"] = self.token_count
-
-        elif self.event_type == "tool":
-            result["step_id"] = self.step_id or "tool-unknown"
-            result["title"] = self.title or "Tool"
-            result["status"] = "done"
-            result["content"] = self.content
-
-        elif self.event_type == "error":
-            result["message"] = self.content
-            result["code"] = self.code or "500"
-
-        elif self.event_type == "done":
-            result["done"] = True
-
-        elif self.event_type == "resumed":
-            result["from_index"] = 0
-
+        serializer = self._SERIALIZERS.get(self.event_type)
+        if serializer:
+            for key, extractor in serializer.items():
+                result[key] = extractor(self)
         return result
 
     def to_sse(self) -> str:
-        """Convert to SSE format."""
         return f"data: {json.dumps(self.to_dict())}\n\n"
 
     def to_ws(self) -> str:
-        """Convert to WebSocket JSON format."""
         return json.dumps(self.to_dict())
+
+
+# ====================== Prefix-based Event Parser Registry ======================
+
+_EventParser = tuple[str, dict[str, Any] | None]
+"""Return type for parser: (content_after_prefix, extra_fields or None)."""
+
+
+def _parse_prefix(raw: str, prefix: str, delimiter: str = ":") -> _EventParser:
+    """Strip prefix and split on delimiter when present."""
+    rest = raw[len(prefix):]
+    parts = rest.split(delimiter, 1) if delimiter in rest else [rest, ""]
+    return parts[0], {}
+
+
+_PARSERS: dict[str, tuple[str, bool]] = {
+    # prefix -> (event_type, has_delimiter)
+    "[STREAM_ID]": ("stream_id", False),
+    "[RESUME]": ("resumed", True),
+    "[STEP]": ("step", True),
+    "[TOKEN]": ("token", False),
+    "[TOOL]": ("tool", True),
+    "[ERROR]": ("error", True),
+}
+
+
+def _parse_event(raw_event: str | dict, message_id: str) -> StreamEvent | None:
+    """Parse raw event from LangGraph into StreamEvent."""
+    if isinstance(raw_event, dict):
+        logger.warning("Dict event from stream_agent received (unexpected): %s", raw_event.get("type", "?"))
+        return None
+
+    if not isinstance(raw_event, str):
+        return None
+
+    # Fast path: simple sentinels
+    if raw_event == "[DONE]":
+        return StreamEvent(event_type="done", message_id=message_id)
+
+    # Prefix-based dispatch
+    for prefix, (event_type, has_delim) in _PARSERS.items():
+        if raw_event.startswith(prefix):
+            rest = raw_event[len(prefix) :]
+            if has_delim and ":" in rest:
+                key, content = rest.split(":", 1)
+            else:
+                key, content = rest, ""
+
+            if event_type == "stream_id":
+                return StreamEvent(
+                    event_type="stream_id", stream_id=rest, message_id=message_id
+                )
+            if event_type == "resumed":
+                return StreamEvent(
+                    event_type="resumed", stream_id=key, message_id=message_id
+                )
+            if event_type == "step":
+                return StreamEvent(
+                    event_type="step",
+                    step_id=f"step-{key}",
+                    title=key.replace("_", " ").title(),
+                    status=StreamStatus.GENERATING,
+                    content=content,
+                    message_id=message_id,
+                )
+            if event_type == "token":
+                return StreamEvent(
+                    event_type="token", content=rest, message_id=message_id
+                )
+            if event_type == "tool":
+                return StreamEvent(
+                    event_type="tool",
+                    step_id=f"tool-{key}",
+                    title=key.replace("_", " ").title(),
+                    content=content,
+                    message_id=message_id,
+                )
+            if event_type == "error":
+                return StreamEvent(
+                    event_type="error",
+                    content=content,
+                    code=key,
+                    message_id=message_id,
+                )
+
+    return None
+
+
+# ====================== Transports ======================
 
 
 class StreamTransport(ABC):
@@ -109,18 +262,18 @@ class StreamTransport(ABC):
     @abstractmethod
     async def send(self, event: StreamEvent) -> bool:
         """Send event to client. Returns False if connection lost."""
-        pass
+        ...
 
     @abstractmethod
     async def close(self) -> None:
         """Close the transport connection."""
-        pass
+        ...
 
     @property
     @abstractmethod
     def is_connected(self) -> bool:
         """Check if transport is connected."""
-        pass
+        ...
 
 
 class WebSocketTransport(StreamTransport):
@@ -140,7 +293,7 @@ class WebSocketTransport(StreamTransport):
             await self._ws.send_text(event.to_ws())
             return True
         except Exception as e:
-            logger.debug(f"WS send error: {e}")
+            logger.debug("WS send error: %s", e)
             self._connected = False
             return False
 
@@ -169,7 +322,7 @@ class SSETransport(StreamTransport):
             await self._queue.put(event.to_sse())
             return True
         except Exception as e:
-            logger.debug(f"SSE send error: {e}")
+            logger.debug("SSE send error: %s", e)
             self._connected = False
             return False
 
@@ -180,6 +333,9 @@ class SSETransport(StreamTransport):
     @property
     def is_connected(self) -> bool:
         return self._connected
+
+
+# ====================== Unified Streamer ======================
 
 
 class UnifiedStreamer:
@@ -227,7 +383,7 @@ class UnifiedStreamer:
         """
         Stream events through the unified interface.
 
-        This is the main entry point - handles token buffering,
+        This is the main entry point — handles token buffering,
         event formatting, and proper cleanup.
         """
         async with self._lock:
@@ -235,11 +391,7 @@ class UnifiedStreamer:
             stream_id = f"stream-{self._counter}-{uuid.uuid4().hex[:8]}"
 
         message_id = str(uuid.uuid4())
-
-        # Token buffering for chunking
-        CHUNK_THRESHOLD = 20  # chars ~5 tokens
-        token_buffer = ""
-        accumulated_content = ""
+        buf = _TokenBuffer()
 
         # Send stream_id event
         yield StreamEvent(
@@ -271,46 +423,29 @@ class UnifiedStreamer:
                 if not transport.is_connected:
                     break
 
-                # Parse and convert events
-                event = self._parse_event(raw_event, message_id)
+                event = _parse_event(raw_event, message_id)
                 if not event:
                     continue
 
-                # Handle token buffering
+                # Handle token buffering and pass-through for other events
                 if event.event_type == "token":
-                    token_buffer += event.content
-                    accumulated_content += event.content
-
-                    if len(token_buffer) >= CHUNK_THRESHOLD:
-                        event.content = token_buffer
-                        event.token_count = max(1, len(accumulated_content) // 2)
-                        yield event
-                        token_buffer = ""
+                    buf.append(event.content)
+                    while buf.is_ready:
+                        flush = buf.flush()
+                        if flush:
+                            yield flush
                 else:
-                    # Flush token buffer before non-token events
-                    if token_buffer:
-                        flush_event = StreamEvent(
-                            event_type="token",
-                            content=token_buffer,
-                            done=False,
-                            message_id=message_id,
-                            token_count=max(1, len(accumulated_content) // 2),
-                        )
-                        yield flush_event
-                        token_buffer = ""
-                        accumulated_content = ""
+                    # Flush pending tokens before non-token events
+                    flush = buf.drain()
+                    if flush:
+                        yield flush
 
                     yield event
 
-            # Flush remaining tokens
-            if token_buffer:
-                yield StreamEvent(
-                    event_type="token",
-                    content=token_buffer,
-                    done=False,
-                    message_id=message_id,
-                    token_count=max(1, len(accumulated_content + token_buffer) // 2),
-                )
+            # Final flush
+            flush = buf.drain()
+            if flush:
+                yield flush
 
             # Send done
             yield StreamEvent(
@@ -343,88 +478,9 @@ class UnifiedStreamer:
         finally:
             await transport.close()
 
-    def _parse_event(
-        self,
-        raw_event: str | dict,
-        message_id: str,
-    ) -> StreamEvent | None:
-        """Parse raw event from LangGraph into StreamEvent."""
-        if isinstance(raw_event, dict):
-            # Already formatted
-            return None  # Pass through as-is
 
-        if not isinstance(raw_event, str):
-            return None
+# ====================== Singleton ======================
 
-        # Parse string events from LangGraph
-        if raw_event.startswith("[STREAM_ID]"):
-            return StreamEvent(
-                event_type="stream_id",
-                stream_id=raw_event[11:],
-                message_id=message_id,
-            )
-
-        if raw_event.startswith("[RESUME]"):
-            parts = raw_event[7:].split(":")
-            return StreamEvent(
-                event_type="resumed",
-                stream_id=parts[0] if parts else "",
-                message_id=message_id,
-            )
-
-        if raw_event.startswith("[STEP]"):
-            parts = raw_event[6:].split(":", 1)
-            phase = parts[0] if parts else "step"
-            content = parts[1] if len(parts) > 1 else ""
-            return StreamEvent(
-                event_type="step",
-                step_id=f"step-{phase}",
-                title=phase.replace("_", " ").title(),
-                status=StreamStatus.GENERATING,
-                content=content,
-                message_id=message_id,
-            )
-
-        if raw_event.startswith("[TOKEN]"):
-            return StreamEvent(
-                event_type="token",
-                content=raw_event[7:],
-                message_id=message_id,
-            )
-
-        if raw_event.startswith("[TOOL]"):
-            parts = raw_event[6:].split(":", 1)
-            action = parts[0] if parts else "tool"
-            content = parts[1] if len(parts) > 1 else ""
-            return StreamEvent(
-                event_type="tool",
-                step_id=f"tool-{action}",
-                title=action.replace("_", " ").title(),
-                content=content,
-                message_id=message_id,
-            )
-
-        if raw_event.startswith("[ERROR]"):
-            parts = raw_event[7:].split(":", 1)
-            code = parts[0] if parts else "500"
-            content = parts[1] if len(parts) > 1 else ""
-            return StreamEvent(
-                event_type="error",
-                content=content,
-                code=code,
-                message_id=message_id,
-            )
-
-        if raw_event == "[DONE]":
-            return StreamEvent(
-                event_type="done",
-                message_id=message_id,
-            )
-
-        return None
-
-
-# Singleton instance
 _unified_streamer: UnifiedStreamer | None = None
 
 
@@ -436,7 +492,9 @@ def get_unified_streamer() -> UnifiedStreamer:
     return _unified_streamer
 
 
-# Convenience function for SSE endpoint
+# ====================== Convenience: SSE Response ======================
+
+
 async def create_sse_response(
     message: str,
     model: str,
