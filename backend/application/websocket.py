@@ -23,8 +23,6 @@ class WebSocketController:
     def __init__(self):
         # sessions: {session_id: {'tasks': []}}
         self.sessions: dict[str, dict] = {}
-        # Store model per client IP (persistent across reconnections)
-        self.client_models: dict[str, str] = {}
         # active_requests: {message_id: state}
         self._active_requests: dict[str, dict[str, Any]] = {}
         self._lock = asyncio.Lock()
@@ -37,9 +35,12 @@ class WebSocketController:
         return session_id
 
     async def handle_disconnect(self, session_id: str):
-        """Handle disconnection"""
+        """Handle disconnection — cleans up session state."""
         if session_id in self.sessions:
             del self.sessions[session_id]
+        # Prune completed request state on disconnect
+        async with self._lock:
+            self._prune_completed_requests()
         logger.info(f"WebSocket disconnected: {session_id}")
 
     async def parse_message(self, data: str) -> dict[str, Any]:
@@ -80,8 +81,11 @@ class WebSocketController:
     async def register_request(
         self, message_id: str, model: str, task: str
     ) -> dict[str, Any]:
-        """Register or resume a request"""
+        """Register or resume a request. Cleans up stale completed requests first."""
         async with self._lock:
+            # Prune completed requests to prevent memory leak
+            self._prune_completed_requests()
+
             if message_id not in self._active_requests:
                 self._active_requests[message_id] = {
                     "model": model,
@@ -91,6 +95,18 @@ class WebSocketController:
                 }
 
             return self._active_requests[message_id]
+
+    def _prune_completed_requests(self) -> None:
+        """Remove completed requests from tracking (caller must hold _lock)."""
+        completed = [
+            msg_id
+            for msg_id, state in self._active_requests.items()
+            if state.get("is_complete", False)
+        ]
+        for msg_id in completed:
+            del self._active_requests[msg_id]
+        if completed:
+            logger.info(f"[PRUNE] Removed {len(completed)} completed request states")
 
     async def update_request_state(
         self, message_id: str, chunk_index: int, is_complete: bool = False
