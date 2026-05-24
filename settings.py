@@ -5,11 +5,11 @@ Backward compatibility wrapper - imports from models.settings.
 """
 
 from models.settings import (
-    settings,
-    get_settings,
-    Settings,
-    ModelPreset,
     DEFAULT_PRESETS,
+    ModelPreset,
+    Settings,
+    get_settings,
+    settings,
 )
 
 # Properties from settings instance
@@ -34,23 +34,23 @@ def get_model_for_task(task: str) -> str:
 
 
 __all__ = [
-    "settings",
-    "get_settings",
-    "get_model_for_task",
-    "Settings",
-    "ModelPreset",
     "DEFAULT_PRESETS",
-    "PROJECT_ROOT",
-    "WORKSPACE",
-    "TEMPLATES",
-    "OLLAMA_URL",
+    "EXECUTOR_TIMEOUT",
     "LEMONADE_URL",
     "LLAMACPP_URL",
+    "LLM_TIMEOUT",
     "LMSTUDIO_URL",
+    "LOG_LEVEL",
+    "MODEL_CODE",
     "MODEL_FAST",
     "MODEL_REASONING",
-    "MODEL_CODE",
-    "LLM_TIMEOUT",
-    "EXECUTOR_TIMEOUT",
-    "LOG_LEVEL",
+    "OLLAMA_URL",
+    "PROJECT_ROOT",
+    "TEMPLATES",
+    "WORKSPACE",
+    "ModelPreset",
+    "Settings",
+    "get_model_for_task",
+    "get_settings",
+    "settings",
 ]

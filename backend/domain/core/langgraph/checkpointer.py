@@ -54,6 +54,7 @@ def _get_checkpointer():
 
     # Fallback: in-memory
     from langgraph.checkpoint.memory import MemorySaver
+
     _checkpointer = MemorySaver()
     logger.warning("SQLite checkpointing unavailable - using in-memory")
     return _checkpointer

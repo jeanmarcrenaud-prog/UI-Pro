@@ -17,10 +17,10 @@ Usage:
     python run.py --status        Check running services
 """
 
-import sys
 import os
 import socket
 import subprocess
+import sys
 import threading
 import time
 import webbrowser
@@ -33,21 +33,22 @@ UI_PORT = 3000
 # Fix Windows encoding
 if sys.platform == "win32":
     import io
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 import argparse
 
 
 # Couleurs pour le terminal
 class Colors:
-    GREEN = '\033[92m'
-    YELLOW = '\033[93m'
-    RED = '\033[91m'
-    BLUE = '\033[94m'
-    CYAN = '\033[96m'
-    RESET = '\033[0m'
-    BOLD = '\033[1m'
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    RED = "\033[91m"
+    BLUE = "\033[94m"
+    CYAN = "\033[96m"
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
 
 
 def print_header(text: str):
@@ -85,13 +86,14 @@ def check_port(port: int) -> bool:
             s.settimeout(1)
             s.connect(("localhost", port))
             return True
-    except (socket.timeout, ConnectionRefusedError, OSError):
+    except (TimeoutError, ConnectionRefusedError, OSError):
         return False
 
 
 def check_npm_available() -> bool:
     """Check if npm is available."""
     import shutil
+
     # Use shutil.which to find npm in PATH
     npm_path = shutil.which("npm")
     if not npm_path:
@@ -110,6 +112,7 @@ def check_npm_available() -> bool:
 def check_node_available() -> bool:
     """Check if node is available."""
     import shutil
+
     # Use shutil.which to find node in PATH
     node_path = shutil.which("node")
     if not node_path:
@@ -129,6 +132,7 @@ def check_backends() -> dict:
     """Check all LLM backends status using model discovery."""
     try:
         from backend.infrastructure.model_discovery import ModelDiscovery
+
         discovery = ModelDiscovery(timeout=2.0)
         all_models = discovery.discover_all()
 
@@ -144,7 +148,7 @@ def check_backends() -> dict:
             "models": len(all_models),
             "by_backend": by_backend,
         }
-    except Exception as e:
+    except Exception:
         return {"status": "not_running", "models": 0, "by_backend": {}}
 
 
@@ -168,7 +172,9 @@ def check_services():
     backends = check_backends()
     if backends["status"] == "running":
         for backend, models in backends["by_backend"].items():
-            print_success(f"{backend.capitalize()} - {len(models)} modèles: {', '.join(models[:3])}{'...' if len(models) > 3 else ''}")
+            print_success(
+                f"{backend.capitalize()} - {len(models)} modèles: {', '.join(models[:3])}{'...' if len(models) > 3 else ''}"
+            )
     else:
         print_warning("Aucun backend LLM détecté")
 
@@ -192,13 +198,16 @@ def check_python_version() -> bool:
         print_success(f"Python {version.major}.{version.minor}.{version.micro}")
         return True
     else:
-        print_error(f"Python {version.major}.{version.minor} - Version minimum requise: {'.'.join(map(str, min_version))}")
+        print_error(
+            f"Python {version.major}.{version.minor} - Version minimum requise: {'.'.join(map(str, min_version))}"
+        )
         return False
 
 
 def check_ollama_installed() -> bool:
     """Check if Ollama is installed."""
     import shutil
+
     ollama_path = shutil.which("ollama")
     if ollama_path:
         try:
@@ -219,16 +228,23 @@ def check_ollama_installed() -> bool:
 def check_lmstudio_installed() -> bool:
     """Check if LM Studio is installed."""
     import shutil
+
     # Check common LM Studio paths
     lmstudio_paths = [
         shutil.which("lm-studio"),
         shutil.which("LM Studio"),
-        Path(os.getenv("LOCALAPPDATA", "") + "/Programs/LM Studio/lm-studio.exe") if os.getenv("LOCALAPPDATA") else None,
-        Path(os.getenv("PROGRAMFILES", "") + "/LM Studio/lm-studio.exe") if os.getenv("PROGRAMFILES") else None,
+        Path(os.getenv("LOCALAPPDATA", "") + "/Programs/LM Studio/lm-studio.exe")
+        if os.getenv("LOCALAPPDATA")
+        else None,
+        Path(os.getenv("PROGRAMFILES", "") + "/LM Studio/lm-studio.exe")
+        if os.getenv("PROGRAMFILES")
+        else None,
     ]
 
     for path in lmstudio_paths:
-        if path and (isinstance(path, Path) and path.exists() or shutil.which(str(path))):
+        if path and (
+            (isinstance(path, Path) and path.exists()) or shutil.which(str(path))
+        ):
             print_success("LM Studio installé")
             return True
 
@@ -239,6 +255,7 @@ def check_lmstudio_installed() -> bool:
 def check_lemonade_installed() -> bool:
     """Check if Lemonade is installed."""
     import shutil
+
     lemonade_path = shutil.which("lemonade")
     if lemonade_path:
         print_success("Lemonade installé")
@@ -301,8 +318,11 @@ def check_prerequisites() -> dict:
     print(f"\n{Colors.BOLD}🔧 Node.js{Colors.RESET}")
     if check_node_available():
         import shutil
+
         node_path = shutil.which("node")
-        result = subprocess.run([node_path, "--version"], capture_output=True, timeout=5)
+        result = subprocess.run(
+            [node_path, "--version"], capture_output=True, timeout=5
+        )
         print_success(f"Node.js {result.stdout.decode().strip()}")
         results["node"] = True
     else:
@@ -311,6 +331,7 @@ def check_prerequisites() -> dict:
     print(f"\n{Colors.BOLD}📦 npm{Colors.RESET}")
     if check_npm_available():
         import shutil
+
         npm_path = shutil.which("npm")
         result = subprocess.run([npm_path, "--version"], capture_output=True, timeout=5)
         print_success(f"npm {result.stdout.decode().strip()}")
@@ -329,7 +350,12 @@ def check_prerequisites() -> dict:
     # Résumé
     print_header("Résumé")
 
-    required_ok = results["python"] and results["node"] and results["npm"] and results["dependencies"]
+    required_ok = (
+        results["python"]
+        and results["node"]
+        and results["npm"]
+        and results["dependencies"]
+    )
     optional_ok = results["ollama"] or results["lmstudio"] or results["lemonade"]
 
     if required_ok:
@@ -338,7 +364,9 @@ def check_prerequisites() -> dict:
         print_error("Prérequis obligatoires manquants ✗")
 
     if optional_ok:
-        print_success(f"Backends IA détectés ({sum([results['ollama'], results['lmstudio'], results['lemonade']])}/3)")
+        print_success(
+            f"Backends IA détectés ({sum([results['ollama'], results['lmstudio'], results['lemonade']])}/3)"
+        )
     else:
         print_warning("Aucun backend IA détecté (optionnel)")
 
@@ -369,12 +397,20 @@ def start_api(block: bool = True):
 
     # Launch via uvicorn using venv Python
     import sys
+
     venv_python = sys.executable
-    subprocess.run([
-        venv_python, "-m", "uvicorn", "backend.transport.views_api:app",
-        "--host", "0.0.0.0",
-        "--port", str(API_PORT)
-    ])
+    subprocess.run(
+        [
+            venv_python,
+            "-m",
+            "uvicorn",
+            "backend.transport.views_api:app",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            str(API_PORT),
+        ]
+    )
 
 
 def start_ui():
@@ -399,6 +435,7 @@ def start_ui():
 
     # Start npm dev - use full path from shutil.which
     import shutil
+
     npm_path = shutil.which("npm")
     if not npm_path:
         print_error("npm not found. Install Node.js to run UI.")
@@ -418,7 +455,9 @@ def start_all(auto_open: bool = True):
         for backend, models in backends["by_backend"].items():
             print_success(f"{backend.capitalize()}: {len(models)} modèles")
     else:
-        print_warning("Aucun backend LLM détecté - Lancez Ollama/LM Studio/Lemonade si nécessaire")
+        print_warning(
+            "Aucun backend LLM détecté - Lancez Ollama/LM Studio/Lemonade si nécessaire"
+        )
 
     # Start FastAPI in a thread
     print_info("Démarrage FastAPI...")
@@ -450,7 +489,7 @@ def run_tests():
 
     result = subprocess.run(
         [sys.executable, "-m", "pytest", "tests/", "-v", "--tb=short"],
-        cwd=Path(__file__).parent
+        cwd=Path(__file__).parent,
     )
 
     sys.exit(result.returncode)
@@ -469,7 +508,7 @@ Exemples:
   python run.py --check        Vérifie dépendances
   python run.py --prereq      Vérifie tous les prérequis
   python run.py --test       Lance les tests
-        """
+        """,
     )
 
     parser.add_argument("--api", action="store_true", help="Lance FastAPI")
@@ -477,14 +516,20 @@ Exemples:
     parser.add_argument("--all", action="store_true", help="Lance tous les services")
     parser.add_argument("--status", action="store_true", help="Vér status")
     parser.add_argument("--check", action="store_true", help="Vérifie dépendances")
-    parser.add_argument("--prereq", action="store_true", help="Vérifie tous les prérequis")
+    parser.add_argument(
+        "--prereq", action="store_true", help="Vérifie tous les prérequis"
+    )
     parser.add_argument("--test", action="store_true", help="Lance les tests")
-    parser.add_argument("--no-open", action="store_true", help="Pas d'auto-open browser")
+    parser.add_argument(
+        "--no-open", action="store_true", help="Pas d'auto-open browser"
+    )
 
     args = parser.parse_args()
 
     # Default: show status
-    if not any([args.api, args.ui, args.all, args.status, args.check, args.prereq, args.test]):
+    if not any(
+        [args.api, args.ui, args.all, args.status, args.check, args.prereq, args.test]
+    ):
         args.all = True
 
     if args.status:

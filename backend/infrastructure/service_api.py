@@ -7,60 +7,59 @@
 #
 # NOTE: ChatService supprimé - utiliser streaming.py directement
 
-from typing import Optional
-from .base import BaseService
-from .streaming import get_streaming_service
-from .model_service import ModelService, get_model_service
+
 from .memory_service import MemoryService, get_memory_service
+from .model_service import ModelService, get_model_service
+from .streaming import get_streaming_service
 
 
 class ServiceAPI:
     """
     Internal API facade for all services.
-    
+
     Provides:
     - Unified access to all services
     - Health checks for each service
     - Aggregated metrics
     """
-    
+
     def __init__(self):
-        self._model: Optional[ModelService] = None
-        self._memory: Optional[MemoryService] = None
+        self._model: ModelService | None = None
+        self._memory: MemoryService | None = None
         self._initialized = False
-    
+
     @property
     def streaming(self):
         """Get streaming service"""
         return get_streaming_service()
-    
+
     @property
     def model(self) -> ModelService:
         """Get model service (lazy init)"""
         if self._model is None:
             self._model = get_model_service()
         return self._model
-    
+
     @property
     def memory(self) -> MemoryService:
         """Get memory service (lazy init)"""
         if self._memory is None:
             self._memory = get_memory_service()
         return self._memory
-    
+
     async def initialize(self) -> None:
         """Initialize all services"""
         if self._initialized:
             return
-        
+
         # Initialize model service first
         await self.model.initialize()
-        
+
         # Initialize memory
         await self.memory.initialize()
-        
+
         self._initialized = True
-    
+
     async def shutdown(self) -> None:
         """Shutdown all services"""
         if self._model:
@@ -68,7 +67,7 @@ class ServiceAPI:
         if self._memory:
             await self._memory.shutdown()
         self._initialized = False
-    
+
     def health_check(self) -> dict:
         """Get health status of all services"""
         return {
@@ -77,13 +76,11 @@ class ServiceAPI:
             "memory": self.memory.health_check() if self._memory else "not_loaded",
             "streaming": "available",
         }
-    
+
     def get_all_metrics(self) -> dict:
         """Get aggregated metrics from all services"""
         return {
-            "api": {
-                "initialized": self._initialized
-            },
+            "api": {"initialized": self._initialized},
             "model": self.model.get_metrics() if self._model else {},
             "memory": self.memory.get_metrics() if self._memory else {},
             "streaming": {},
@@ -91,7 +88,7 @@ class ServiceAPI:
 
 
 # Singleton instance
-_api: Optional[ServiceAPI] = None
+_api: ServiceAPI | None = None
 
 
 def get_service_api() -> ServiceAPI:

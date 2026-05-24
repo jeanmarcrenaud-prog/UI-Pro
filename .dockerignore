@@ -1,0 +1,44 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# Data
+data/
+
+# Frontend (separate container)
+frontend/
+node_modules/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tests (not needed in production)
+tests/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Temp
+*.log
+*.tmp
+tmp/

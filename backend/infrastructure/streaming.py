@@ -2,6 +2,11 @@
 backend/infrastructure/streaming.py - Streaming Service (LangGraph Version)
 Streaming service robuste avec protections async, backpressure,
 heartbeat websocket et gestion propre des cancellations.
+
+DEPRECATED: Prefer streaming_unified.py for new code.
+streaming_unified.py provides a unified SSE + WebSocket protocol with
+auto-detection of client capability, while this module only supports
+direct WebSocket streaming.
 """
 
 from __future__ import annotations
@@ -10,11 +15,12 @@ import asyncio
 import logging
 import time
 import uuid
+from collections.abc import AsyncIterator
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, AsyncIterator, Dict, Optional
+from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -23,18 +29,21 @@ logger = logging.getLogger(__name__)
 # Token counting with tiktoken
 _token_encoder = None
 
+
 def _get_encoder():
     """Lazy load tiktoken encoder."""
     global _token_encoder
     if _token_encoder is None:
         try:
             import tiktoken
+
             # Use cl100k_base for most models (GPT-4, Qwen, etc.)
             _token_encoder = tiktoken.get_encoding("cl100k_base")
         except Exception as e:
             logger.warning(f"tiktoken not available: {e}")
             return None
     return _token_encoder
+
 
 def count_tokens(text: str) -> int:
     """Count tokens in text using tiktoken."""
@@ -64,10 +73,10 @@ class StreamChunk:
     chunk_index: int
     tokens_generated: int = 0
     latency_ms: float = 0.0
-    error: Optional[str] = None
+    error: str | None = None
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "type": self._map_type(),
             "status": self.status.value,
@@ -95,16 +104,16 @@ class StreamingService:
     HEARTBEAT_INTERVAL = 15  # seconds
 
     def __init__(self) -> None:
-        self._streams: Dict[str, asyncio.Task] = {}  # For future tracking
+        self._streams: dict[str, asyncio.Task] = {}  # For future tracking
         self._lock = asyncio.Lock()
         self._counter = 0
 
     async def stream_generate(
         self,
         generator: AsyncIterator[str],
-        websocket: Optional[WebSocket] = None,
-        timeout: Optional[int] = None,
-    ) -> AsyncIterator[Dict[str, Any]]:
+        websocket: WebSocket | None = None,
+        timeout: int | None = None,
+    ) -> AsyncIterator[dict[str, Any]]:
         async with self._lock:
             self._counter += 1
             stream_id = f"stream-{self._counter}-{uuid.uuid4().hex[:8]}"
@@ -114,11 +123,9 @@ class StreamingService:
         if task:
             self._streams[stream_id] = task
 
-        queue: asyncio.Queue[Optional[StreamChunk]] = asyncio.Queue(maxsize=50)
+        queue: asyncio.Queue[StreamChunk | None] = asyncio.Queue(maxsize=50)
 
-        producer = asyncio.create_task(
-            self._producer(generator, queue, stream_id)
-        )
+        producer = asyncio.create_task(self._producer(generator, queue, stream_id))
 
         heartbeat_task = None
         stream_timeout = timeout or self.DEFAULT_TIMEOUT
@@ -133,7 +140,10 @@ class StreamingService:
                 try:
                     chunk = await asyncio.wait_for(queue.get(), timeout=stream_timeout)
                 except asyncio.TimeoutError:
-                    logger.warning("Stream timeout", extra={"stream_id": stream_id, "timeout": stream_timeout})
+                    logger.warning(
+                        "Stream timeout",
+                        extra={"stream_id": stream_id, "timeout": stream_timeout},
+                    )
                     break
 
                 if chunk is None:
@@ -145,10 +155,14 @@ class StreamingService:
                     try:
                         await websocket.send_json(payload)
                     except (WebSocketDisconnect, RuntimeError):
-                        logger.info("WebSocket disconnected", extra={"stream_id": stream_id})
+                        logger.info(
+                            "WebSocket disconnected", extra={"stream_id": stream_id}
+                        )
                         break
                     except Exception as e:
-                        logger.warning(f"Send error: {e}", extra={"stream_id": stream_id})
+                        logger.warning(
+                            f"Send error: {e}", extra={"stream_id": stream_id}
+                        )
 
                 yield payload
 
@@ -156,7 +170,7 @@ class StreamingService:
             logger.info("Stream cancelled by client", extra={"stream_id": stream_id})
             raise
 
-        except Exception as e:
+        except Exception:
             logger.exception("Streaming failure", extra={"stream_id": stream_id})
             raise
 
@@ -190,7 +204,7 @@ class StreamingService:
             async for token in generator:
                 accumulated_text += token
                 token_count = count_tokens(accumulated_text)
-                
+
                 chunk = StreamChunk(
                     text=token,
                     status=StreamStatus.GENERATING,
@@ -245,7 +259,7 @@ class StreamingService:
 
 
 # Singleton instance
-_streaming_service: Optional[StreamingService] = None
+_streaming_service: StreamingService | None = None
 
 
 def get_streaming_service() -> StreamingService:
@@ -256,13 +270,16 @@ def get_streaming_service() -> StreamingService:
     return _streaming_service
 
 
-async def _create_generator_from_prompt(prompt: str, model: str = "", provider: str = "ollama") -> AsyncIterator[str]:
+async def _create_generator_from_prompt(
+    prompt: str, model: str = "", provider: str = "ollama"
+) -> AsyncIterator[str]:
     """Create an async generator from a prompt using the LLM router."""
     try:
         from backend.infrastructure.llm_router import get_llm_router
+
         router = get_llm_router()
-        
-        if hasattr(router, 'astream'):
+
+        if hasattr(router, "astream"):
             async for chunk in router.astream(
                 prompt=prompt,
                 model_type=model,
@@ -271,65 +288,76 @@ async def _create_generator_from_prompt(prompt: str, model: str = "", provider: 
             ):
                 if isinstance(chunk, str):
                     yield chunk
-                elif hasattr(chunk, 'content') and chunk.content:
+                elif hasattr(chunk, "content") and chunk.content:
                     yield chunk.content
-                elif isinstance(chunk, dict) and chunk.get('content'):
-                    yield chunk['content']
+                elif isinstance(chunk, dict) and chunk.get("content"):
+                    yield chunk["content"]
         else:
             # Fallback to sync generate
             full = router.generate(prompt, model)
             for i in range(0, len(full), 8):
-                yield full[i:i+8]
+                yield full[i : i + 8]
                 await asyncio.sleep(0.015)
     except Exception as e:
         logger.error(f"Error creating generator from prompt: {e}")
-        yield f"Error: {str(e)}"
+        yield f"Error: {e!s}"
 
 
 async def stream_chat(
     prompt: str,
     model: str = "",
     provider: str = "ollama",
-    timeout: Optional[int] = None,
+    timeout: int | None = None,
 ) -> AsyncIterator[StreamChunk]:
     """
     Legacy API compatibility method.
     Stream chat responses from a prompt with model/provider selection.
-    
+
     Args:
         prompt: The user message/prompt
         model: Model name (e.g., 'qwen3.5:0.8b')
         provider: LLM provider ('ollama', 'lmstudio', etc.)
         timeout: Optional timeout in seconds
-    
+
     Yields:
         StreamChunk objects with text and status
     """
     generator = _create_generator_from_prompt(prompt, model, provider)
     stream_service = get_streaming_service()
-    
+
     async for event in stream_service.stream_generate(generator, timeout=timeout):
         if isinstance(event, dict):
-            content = event.get('content', event.get('response', ''))
-            done = event.get('done', False)
-            
+            content = event.get("content", event.get("response", ""))
+            done = event.get("done", False)
+
             if done:
                 yield StreamChunk(
                     text=content,
                     status=StreamStatus.COMPLETED,
                     stream_id="legacy",
                     chunk_index=0,
-                    tokens_generated=event.get('token_count', 0)
+                    tokens_generated=event.get("token_count", 0),
                 )
             else:
                 yield StreamChunk(
                     text=content,
                     status=StreamStatus.GENERATING,
                     stream_id="legacy",
-                    chunk_index=0
+                    chunk_index=0,
                 )
         else:
-            yield StreamChunk(text=str(event), status=StreamStatus.GENERATING, stream_id="legacy", chunk_index=0)
+            yield StreamChunk(
+                text=str(event),
+                status=StreamStatus.GENERATING,
+                stream_id="legacy",
+                chunk_index=0,
+            )
 
 
-__all__ = ["StreamingService", "get_streaming_service", "StreamEvent", "StreamRequest", "stream_chat"]
+__all__ = [
+    "StreamEvent",
+    "StreamRequest",
+    "StreamingService",
+    "get_streaming_service",
+    "stream_chat",
+]

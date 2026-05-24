@@ -4,10 +4,11 @@ services/llm_router.py - Advanced LLM Router with Real Token Streaming
 
 import asyncio
 import logging
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any
 
 from models.settings import OLLAMA_URL, settings
 
@@ -34,38 +35,91 @@ class LLMRouter:
     """Production-ready LLM Router with robust streaming support."""
 
     TASK_KEYWORDS = {
-        TaskType.CODE: ["code", "implement", "function", "class ", "def ", "import ", "api", "endpoint", "sql", "query", "bug", "fix", "refactor"],
-        TaskType.REASONING: ["why", "how", "explain", "analyze", "architecture", "design", "plan", "strategy", "compare", "reason", "optimize"],
-        TaskType.CREATIVE: ["create", "write", "story", "generate", "draft", "poem", "script", "content"],
-        TaskType.ANALYSIS: ["analyze", "review", "evaluate", "assess", "audit", "improve"],
-        TaskType.FAST: ["what", "who", "when", "where", "list", "simple", "quick", "brief", "summary"],
+        TaskType.CODE: [
+            "code",
+            "implement",
+            "function",
+            "class ",
+            "def ",
+            "import ",
+            "api",
+            "endpoint",
+            "sql",
+            "query",
+            "bug",
+            "fix",
+            "refactor",
+        ],
+        TaskType.REASONING: [
+            "why",
+            "how",
+            "explain",
+            "analyze",
+            "architecture",
+            "design",
+            "plan",
+            "strategy",
+            "compare",
+            "reason",
+            "optimize",
+        ],
+        TaskType.CREATIVE: [
+            "create",
+            "write",
+            "story",
+            "generate",
+            "draft",
+            "poem",
+            "script",
+            "content",
+        ],
+        TaskType.ANALYSIS: [
+            "analyze",
+            "review",
+            "evaluate",
+            "assess",
+            "audit",
+            "improve",
+        ],
+        TaskType.FAST: [
+            "what",
+            "who",
+            "when",
+            "where",
+            "list",
+            "simple",
+            "quick",
+            "brief",
+            "summary",
+        ],
     }
 
-    def __init__(self, config: Optional[RouterConfig] = None):
+    def __init__(self, config: RouterConfig | None = None):
         self.config = config or RouterConfig()
-        self._call_history: List[Dict] = []
+        self._call_history: list[dict] = []
 
         self.models = {
             TaskType.FAST: settings.model_fast,
             TaskType.REASONING: settings.model_reasoning,
-            TaskType.CODE: getattr(settings, 'model_code', settings.model_fast),
+            TaskType.CODE: getattr(settings, "model_code", settings.model_fast),
             TaskType.ANALYSIS: settings.model_reasoning,
             TaskType.CREATIVE: settings.model_reasoning,
         }
 
-    def classify_task(self, prompt: Optional[str] = None, messages: Optional[List[Dict]] = None) -> TaskType:
+    def classify_task(
+        self, prompt: str | None = None, messages: list[dict] | None = None
+    ) -> TaskType:
         """Classify task based on content."""
         if messages:
             content = " ".join(
-                msg.get("content", "") for msg in messages
-                if msg.get("role") == "user"
+                msg.get("content", "") for msg in messages if msg.get("role") == "user"
             ).lower()
         elif prompt:
             content = prompt.lower()
         else:
             return TaskType.FAST
 
-        scores = {task: 0 for task in TaskType}
+        scores = dict.fromkeys(TaskType, 0)
 
         for task_type, keywords in self.TASK_KEYWORDS.items():
             scores[task_type] = sum(1 for kw in keywords if kw in content)
@@ -74,10 +128,10 @@ class LLMRouter:
 
     def select_model(
         self,
-        task_type: Optional[TaskType] = None,
-        prompt: Optional[str] = None,
-        messages: Optional[List[Dict]] = None,
-        context_length: Optional[int] = None,
+        task_type: TaskType | None = None,
+        prompt: str | None = None,
+        messages: list[dict] | None = None,
+        context_length: int | None = None,
     ) -> str:
         """Select best model for the task."""
         if task_type is None:
@@ -96,11 +150,11 @@ class LLMRouter:
 
     def route(
         self,
-        prompt: Optional[str] = None,
-        messages: Optional[List[Dict]] = None,
-        mode: Optional[str] = None,
-        context_length: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        prompt: str | None = None,
+        messages: list[dict] | None = None,
+        mode: str | None = None,
+        context_length: int | None = None,
+    ) -> dict[str, Any]:
         """Main routing method."""
         if mode:
             mode = mode.lower()
@@ -110,7 +164,7 @@ class LLMRouter:
                 "reasoning": TaskType.REASONING,
                 "creative": TaskType.CREATIVE,
                 "analysis": TaskType.ANALYSIS,
-            }.get(mode, None)
+            }.get(mode)
         else:
             task_type = self.classify_task(prompt, messages)
 
@@ -118,7 +172,9 @@ class LLMRouter:
 
         text = prompt or ""
         if messages:
-            text = " ".join(msg.get("content", "") for msg in messages if msg.get("content"))
+            text = " ".join(
+                msg.get("content", "") for msg in messages if msg.get("content")
+            )
         estimated_tokens = len(text) // 4
 
         return {
@@ -130,20 +186,31 @@ class LLMRouter:
             "confidence": 0.85,
         }
 
-    def record_call(self, model: str, task_type: TaskType, latency_ms: float, success: bool):
+    def record_call(
+        self, model: str, task_type: TaskType, latency_ms: float, success: bool
+    ):
         """Record usage for analytics."""
-        self._call_history.append({
-            "model": model,
-            "task_type": task_type.value if task_type else "unknown",
-            "latency_ms": latency_ms,
-            "success": success,
-            "timestamp": datetime.now().isoformat(),
-        })
+        self._call_history.append(
+            {
+                "model": model,
+                "task_type": task_type.value if task_type else "unknown",
+                "latency_ms": latency_ms,
+                "success": success,
+                "timestamp": datetime.now().isoformat(),
+            }
+        )
 
         if len(self._call_history) > 200:
             self._call_history = self._call_history[-200:]
 
-    def generate(self, prompt: str, mode: str = "fast", temperature: float = 0.7, model: str = "", provider: str = "ollama") -> str:
+    def generate(
+        self,
+        prompt: str,
+        mode: str = "fast",
+        temperature: float = 0.7,
+        model: str = "",
+        provider: str = "ollama",
+    ) -> str:
         """Synchronous generation (kept for compatibility)."""
         # Use user-selected model if provided, otherwise use routing
         if model:
@@ -151,7 +218,7 @@ class LLMRouter:
             # Clean model name
             for prefix in ["ollama-", "lmstudio-", "lemonade-", "llamacpp-"]:
                 if actual_model.startswith(prefix):
-                    actual_model = actual_model[len(prefix):]
+                    actual_model = actual_model[len(prefix) :]
                     break
         else:
             routing = self.route(prompt=prompt, mode=mode)
@@ -159,26 +226,30 @@ class LLMRouter:
             # Clean model name
             for prefix in ["ollama-", "lmstudio-", "lemonade-", "llamacpp-"]:
                 if actual_model.startswith(prefix):
-                    actual_model = actual_model[len(prefix):]
+                    actual_model = actual_model[len(prefix) :]
                     break
 
         from llm.router import ModelConfig, OllamaClient
 
         # Determine base URL based on provider
         if provider == "ollama" or not provider:
-            ollama_base = getattr(settings, 'ollama_url', OLLAMA_URL).rstrip('/')
+            ollama_base = getattr(settings, "ollama_url", OLLAMA_URL).rstrip("/")
             endpoint = "/api/generate"
         elif provider == "lmstudio":
-            ollama_base = getattr(settings, 'lmstudio_url', "http://localhost:1234").rstrip('/')
+            ollama_base = getattr(
+                settings, "lmstudio_url", "http://localhost:1234"
+            ).rstrip("/")
             endpoint = "/v1/chat/completions"
         elif provider == "lemonade":
-            ollama_base = getattr(settings, 'lemonade_url', "http://localhost:13305").rstrip('/')
+            ollama_base = getattr(
+                settings, "lemonade_url", "http://localhost:13305"
+            ).rstrip("/")
             endpoint = "/v1/chat/completions"
         else:
-            ollama_base = getattr(settings, 'ollama_url', OLLAMA_URL).rstrip('/')
+            ollama_base = getattr(settings, "ollama_url", OLLAMA_URL).rstrip("/")
             endpoint = "/api/generate"
 
-        if not ollama_base.startswith('http'):
+        if not ollama_base.startswith("http"):
             ollama_base = "http://localhost:11434"
 
         config = ModelConfig(
@@ -197,7 +268,7 @@ class LLMRouter:
         temperature: float = 0.7,
         model: str = "",
         provider: str = "ollama",
-        **kwargs
+        **kwargs,
     ) -> AsyncGenerator[str, None]:
         """
         Robust async token streaming.
@@ -208,7 +279,7 @@ class LLMRouter:
             # Clean model name
             for prefix in ["ollama-", "lmstudio-", "lemonade-", "llamacpp-"]:
                 if actual_model.startswith(prefix):
-                    actual_model = actual_model[len(prefix):]
+                    actual_model = actual_model[len(prefix) :]
                     break
         else:
             routing = self.route(prompt=prompt, mode=model_type)
@@ -216,7 +287,7 @@ class LLMRouter:
             # Clean model name
             for prefix in ["ollama-", "lmstudio-", "lemonade-", "llamacpp-"]:
                 if actual_model.startswith(prefix):
-                    actual_model = actual_model[len(prefix):]
+                    actual_model = actual_model[len(prefix) :]
                     break
 
         try:
@@ -224,19 +295,23 @@ class LLMRouter:
 
             # Determine base URL based on provider
             if provider == "ollama" or not provider:
-                ollama_base = getattr(settings, 'ollama_url', OLLAMA_URL).rstrip('/')
+                ollama_base = getattr(settings, "ollama_url", OLLAMA_URL).rstrip("/")
                 endpoint = "/api/generate"
             elif provider == "lmstudio":
-                ollama_base = getattr(settings, 'lmstudio_url', "http://localhost:1234").rstrip('/')
+                ollama_base = getattr(
+                    settings, "lmstudio_url", "http://localhost:1234"
+                ).rstrip("/")
                 endpoint = "/v1/chat/completions"
             elif provider == "lemonade":
-                ollama_base = getattr(settings, 'lemonade_url', "http://localhost:13305").rstrip('/')
+                ollama_base = getattr(
+                    settings, "lemonade_url", "http://localhost:13305"
+                ).rstrip("/")
                 endpoint = "/v1/chat/completions"
             else:
-                ollama_base = getattr(settings, 'ollama_url', OLLAMA_URL).rstrip('/')
+                ollama_base = getattr(settings, "ollama_url", OLLAMA_URL).rstrip("/")
                 endpoint = "/api/generate"
 
-            if not ollama_base.startswith('http'):
+            if not ollama_base.startswith("http"):
                 ollama_base = "http://localhost:11434"
 
             config = ModelConfig(
@@ -282,16 +357,18 @@ class LLMRouter:
         except Exception as e:
             logger.error(f"astream failed for {model}: {e}", exc_info=True)
             # Ultimate fallback
-            full_response = self.generate(prompt, model_type, temperature, model=model, provider=provider)
+            full_response = self.generate(
+                prompt, model_type, temperature, model=model, provider=provider
+            )
             chunk_size = 10
             for i in range(0, len(full_response), chunk_size):
-                yield full_response[i:i + chunk_size]
+                yield full_response[i : i + chunk_size]
                 await asyncio.sleep(0.008)
 
 
 # ======================== Singleton ========================
 
-_router: Optional[LLMRouter] = None
+_router: LLMRouter | None = None
 
 
 def get_llm_router() -> LLMRouter:
@@ -301,4 +378,4 @@ def get_llm_router() -> LLMRouter:
     return _router
 
 
-__all__ = ["LLMRouter", "TaskType", "RouterConfig", "get_llm_router"]
+__all__ = ["LLMRouter", "RouterConfig", "TaskType", "get_llm_router"]

@@ -10,15 +10,15 @@ import atexit
 import signal
 import threading
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import faiss
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
-from .embedding_cache import EmbeddingCache, get_embedding_cache
-from .vector_index import VectorIndex
 from ..domain.core.logger import get_logger
+from .embedding_cache import get_embedding_cache
+from .vector_index import VectorIndex
 
 logger = get_logger(__name__)
 
@@ -28,28 +28,33 @@ DEFAULT_PERSIST_PATH = Path("data/memory.index")
 # Re-export for backward compatibility
 class MockLogger:
     """Mock logger for testing purposes."""
+
     def debug(self, msg, *args, **kwargs):
         pass
+
     def info(self, msg, *args, **kwargs):
         pass
+
     def warning(self, msg, *args, **kwargs):
         pass
+
     def error(self, msg, *args, **kwargs):
         pass
+
     def critical(self, msg, *args, **kwargs):
         pass
 
 
 class MemoryManager:
     """Pure vector store - FAISS index only, no metadata.
-    
+
     MemoryService manages rich metadata (_entries) as source of truth.
     This class only handles vector operations and search.
     """
-    
+
     MODEL_NAME = "all-MiniLM-L6-v2"
 
-    def __init__(self, persist_path: Optional[str] = None, max_memories: int = 1000):
+    def __init__(self, persist_path: str | None = None, max_memories: int = 1000):
         self._lock = threading.RLock()
 
         self.persist_path = Path(persist_path or DEFAULT_PERSIST_PATH)
@@ -60,19 +65,19 @@ class MemoryManager:
         # Dependencies
         self._vector_index = VectorIndex(self.dimension)
         self._embed_cache = get_embedding_cache()
-        
+
         # Simple tracking (no persistence needed - MemoryService handles metadata)
         self._next_id: int = 0
         self._version: int = 0
 
-        self._model: Optional[SentenceTransformer] = None
+        self._model: SentenceTransformer | None = None
         self._model_lock = threading.Lock()
 
         self.persist_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Register shutdown handlers
         atexit.register(self._shutdown)
-        if hasattr(signal, 'SIGTERM'):
+        if hasattr(signal, "SIGTERM"):
             try:
                 signal.signal(signal.SIGTERM, self._signal_handler)
             except (ValueError, OSError):
@@ -103,7 +108,7 @@ class MemoryManager:
     def embed(self, text: str) -> np.ndarray:
         return self._embed_cache.embed_single(text, self.model)
 
-    def embed_many(self, texts: List[str]) -> np.ndarray:
+    def embed_many(self, texts: list[str]) -> np.ndarray:
         return self._embed_cache.embed_batch(texts, self.model)
 
     # ====================== CORE OPERATIONS ======================
@@ -111,7 +116,7 @@ class MemoryManager:
         """Add a vector and return its ID."""
         if embedding.ndim == 1:
             embedding = embedding.reshape(1, -1)
-        
+
         faiss.normalize_L2(embedding)
         vector = np.ascontiguousarray(embedding, dtype=np.float32)
 
@@ -122,7 +127,7 @@ class MemoryManager:
 
             self._vector_index.add_vectors(vector, ids)
             self._version += 1
-            
+
             return doc_id
 
     def add_text(self, text: str) -> int:
@@ -130,21 +135,21 @@ class MemoryManager:
         embedding = self.embed(text)
         return self.add_vector(embedding)
 
-    def search(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
+    def search(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
         """Search vectors and return results with scores."""
         embedding = self.embed(query)
-        
+
         if embedding.ndim == 1:
             embedding = embedding.reshape(1, -1)
-        
+
         faiss.normalize_L2(embedding)
         query_vector = np.ascontiguousarray(embedding, dtype=np.float32)
-        
+
         with self._lock:
             size = self._vector_index.ntotal
             if size == 0:
                 return []
-            
+
             vector_index = self._vector_index
 
         k = min(int(limit), size)
@@ -154,15 +159,17 @@ class MemoryManager:
         for i, doc_id in enumerate(labels[0]):
             if doc_id < 0:
                 continue
-            
+
             squared_l2 = float(distances[0][i])
             similarity = max(0, 1.0 - (squared_l2 / 2.0))
 
-            results.append({
-                "id": int(doc_id),
-                "score": squared_l2,
-                "similarity": similarity,
-            })
+            results.append(
+                {
+                    "id": int(doc_id),
+                    "score": squared_l2,
+                    "similarity": similarity,
+                }
+            )
 
         return results
 
@@ -170,7 +177,7 @@ class MemoryManager:
         """Rebuild index from arrays (for MemoryService sync)."""
         new_index = VectorIndex(self.dimension)
         new_index.rebuild_from_vectors(vectors, ids)
-        
+
         with self._lock:
             self._vector_index = new_index
             self._next_id = int(max(ids)) + 1 if len(ids) > 0 else 0
@@ -191,7 +198,7 @@ class MemoryManager:
                 logger.info(f"Loaded index with {self._vector_index.ntotal} vectors")
 
     # ====================== STATS ======================
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         with self._lock:
             return {
                 "total_vectors": self._vector_index.ntotal,
@@ -212,7 +219,7 @@ class MemoryManager:
 
 # ====================== SINGLETON ======================
 
-_memory_manager: Optional[MemoryManager] = None
+_memory_manager: MemoryManager | None = None
 _memory_lock = threading.Lock()
 
 
@@ -226,6 +233,7 @@ def get_memory_manager() -> MemoryManager:
 
 
 # ====================== Legacy Functions ======================
+
 
 def add_memory(text: str) -> int:
     """Add memory - returns vector ID."""

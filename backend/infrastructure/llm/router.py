@@ -4,9 +4,9 @@ Role: Intelligent routing of tasks to best model based on keywords
 Used by: orchestrator, code_review, streaming service
 """
 
-from dataclasses import dataclass
-from typing import Literal, Optional, Iterator
 import logging
+from collections.abc import Iterator
+from dataclasses import dataclass
 
 from models.settings import settings
 
@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ModelConfig:
     """LLM Backend Configuration"""
+
     url: str = ""
     model: str = ""
     timeout: int = 300
@@ -25,18 +26,17 @@ class ModelConfig:
 class OllamaClient:
     """Unified client supporting multiple backends (Ollama, LM Studio, etc.)"""
 
-    def __init__(self, config: Optional[ModelConfig] = None):
+    def __init__(self, config: ModelConfig | None = None):
         self.config = config or ModelConfig()
 
     def generate(
         self,
         prompt: str,
-        model: Optional[str] = None,
-        system_prompt: Optional[str] = None,
+        model: str | None = None,
+        system_prompt: str | None = None,
         temperature: float = 0.7,
     ) -> str:
         """Synchronous generation."""
-        import json
         import requests
 
         model = model or self.config.model
@@ -47,14 +47,14 @@ class OllamaClient:
             "prompt": prompt,
             "system": system_prompt or "",
             "stream": False,
-            "options": {"temperature": temperature}
+            "options": {"temperature": temperature},
         }
 
         try:
             resp = requests.post(url, json=payload, timeout=self.config.timeout)
             resp.raise_for_status()
             data = resp.json()
-            return data.get('response', '')
+            return data.get("response", "")
         except requests.RequestException as e:
             logger.error(f"Ollama request failed: {e}")
             error_msg = str(e).lower()
@@ -69,12 +69,13 @@ class OllamaClient:
     def stream(
         self,
         prompt: str,
-        model: Optional[str] = None,
-        system_prompt: Optional[str] = None,
+        model: str | None = None,
+        system_prompt: str | None = None,
         temperature: float = 0.7,
     ) -> Iterator[str]:
         """Streaming response."""
         import json
+
         import requests
 
         model = model or self.config.model
@@ -91,7 +92,7 @@ class OllamaClient:
                 "model": model,
                 "messages": messages,
                 "stream": True,
-                "temperature": temperature
+                "temperature": temperature,
             }
         else:
             # Ollama format
@@ -101,11 +102,13 @@ class OllamaClient:
                 "prompt": prompt,
                 "system": system_prompt or "",
                 "stream": True,
-                "options": {"temperature": temperature}
+                "options": {"temperature": temperature},
             }
 
         try:
-            with requests.post(url, json=payload, stream=True, timeout=self.config.timeout) as r:
+            with requests.post(
+                url, json=payload, stream=True, timeout=self.config.timeout
+            ) as r:
                 r.raise_for_status()
                 for line in r.iter_lines():
                     if line:
@@ -121,10 +124,16 @@ class OllamaClient:
                             data = json.loads(text)
                             # Parse based on backend format
                             if backend in ("lmstudio", "lemonade", "llamacpp"):
-                                content = data.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                                content = (
+                                    data.get("choices", [{}])[0]
+                                    .get("delta", {})
+                                    .get("content", "")
+                                )
                             else:
                                 # Ollama format
-                                content = data.get('response', '') or data.get('thinking', '')
+                                content = data.get("response", "") or data.get(
+                                    "thinking", ""
+                                )
                             if content:
                                 yield content
                             if data.get("done", False):
@@ -149,9 +158,11 @@ class OllamaClient:
 
 # ==================== CONFIG ====================
 
+
 @dataclass
 class ModelsConfig:
     """Configuration multi-modèles"""
+
     fast: str = ""
     reasoning: str = ""
     code: str = ""
@@ -162,6 +173,7 @@ class ModelsConfig:
     @classmethod
     def from_settings(cls) -> "ModelsConfig":
         from models.settings import settings
+
         return cls(
             fast=settings.model_fast,
             reasoning=settings.model_reasoning,
@@ -178,10 +190,11 @@ _settings = ModelsConfig.from_settings()
 
 # ==================== ROUTER ====================
 
+
 class LLMRouter:
     """Intelligent model router with weighted scoring."""
 
-    def __init__(self, config: Optional[ModelsConfig] = None):
+    def __init__(self, config: ModelsConfig | None = None):
         self.config = config or _settings
 
     def get_model_for_task(self, task: str) -> str:
@@ -192,12 +205,34 @@ class LLMRouter:
 
         # Weighted keywords
         keywords = {
-            "code": {"code": 2, "implement": 2, "function": 1, "def ": 2, "class ": 2, 
-                     "bug": 2, "fix": 2, "refactor": 2},
-            "reasoner": {"debug": 3, "architecture": 3, "plan": 2, "analyze": 2, 
-                        "design": 2, "strategy": 2, "complex": 2, "optimize": 2},
-            "fast": {"explain": 2, "describe": 2, "what": 1, "who": 1, "simple": 2, 
-                    "summarize": 2}
+            "code": {
+                "code": 2,
+                "implement": 2,
+                "function": 1,
+                "def ": 2,
+                "class ": 2,
+                "bug": 2,
+                "fix": 2,
+                "refactor": 2,
+            },
+            "reasoner": {
+                "debug": 3,
+                "architecture": 3,
+                "plan": 2,
+                "analyze": 2,
+                "design": 2,
+                "strategy": 2,
+                "complex": 2,
+                "optimize": 2,
+            },
+            "fast": {
+                "explain": 2,
+                "describe": 2,
+                "what": 1,
+                "who": 1,
+                "simple": 2,
+                "summarize": 2,
+            },
         }
 
         for category, kw_dict in keywords.items():
@@ -244,7 +279,7 @@ class LLMRouter:
 
 # ====================== Singleton ======================
 
-_router: Optional[LLMRouter] = None
+_router: LLMRouter | None = None
 
 
 def get_llm_router() -> LLMRouter:
@@ -254,4 +289,4 @@ def get_llm_router() -> LLMRouter:
     return _router
 
 
-__all__ = ["LLMRouter", "OllamaClient", "ModelConfig", "get_llm_router"]
+__all__ = ["LLMRouter", "ModelConfig", "OllamaClient", "get_llm_router"]

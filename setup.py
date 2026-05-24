@@ -12,23 +12,23 @@ Sets up the full development environment:
 """
 
 import os
-import sys
-import subprocess
+import platform
 import shutil
 import socket
-import platform
+import subprocess
+import sys
 from pathlib import Path
-from typing import Optional
 
 # ====================== Colors ======================
 
+
 class Colors:
-    GREEN = '\033[92m'
-    YELLOW = '\033[93m'
-    RED = '\033[91m'
-    BLUE = '\033[94m'
-    BOLD = '\033[1m'
-    END = '\033[0m'
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    RED = "\033[91m"
+    BLUE = "\033[94m"
+    BOLD = "\033[1m"
+    END = "\033[0m"
 
 
 def print_step(msg: str):
@@ -49,7 +49,10 @@ def print_error(msg: str):
 
 # ====================== Helpers ======================
 
-def run_command(cmd: list[str], cwd: Optional[Path] = None, check: bool = True) -> subprocess.CompletedProcess:
+
+def run_command(
+    cmd: list[str], cwd: Path | None = None, check: bool = True
+) -> subprocess.CompletedProcess:
     """Run shell command with error handling."""
     try:
         result = subprocess.run(
@@ -58,7 +61,7 @@ def run_command(cmd: list[str], cwd: Optional[Path] = None, check: bool = True) 
             check=check,
             capture_output=True,
             text=True,
-            timeout=120
+            timeout=120,
         )
         return result
     except subprocess.CalledProcessError as e:
@@ -68,7 +71,12 @@ def run_command(cmd: list[str], cwd: Optional[Path] = None, check: bool = True) 
                 print(e.stderr)
             sys.exit(1)
         # Return a failed CompletedProcess for non-check mode
-        return subprocess.CompletedProcess(args=cmd, returncode=e.returncode, stdout=e.stdout or "", stderr=e.stderr or "")
+        return subprocess.CompletedProcess(
+            args=cmd,
+            returncode=e.returncode,
+            stdout=e.stdout or "",
+            stderr=e.stderr or "",
+        )
     except FileNotFoundError:
         print_error(f"Command not found: {cmd[0]}")
         sys.exit(1)
@@ -94,6 +102,7 @@ def check_port(host: str, port: int, name: str) -> bool:
 
 # ====================== Checks ======================
 
+
 def check_python_version() -> bool:
     """Check Python version is 3.10+."""
     version = sys.version_info
@@ -106,33 +115,37 @@ def check_python_version() -> bool:
 
 def check_node() -> bool:
     """Check Node.js and npm availability."""
-    node_path = shutil.which('node')
-    npm_path = shutil.which('npm')
-    
+    node_path = shutil.which("node")
+    npm_path = shutil.which("npm")
+
     if not node_path:
         print_error("Node.js not found. Please install from https://nodejs.org")
         return False
-    
+
     try:
-        result = subprocess.run([node_path, '--version'], capture_output=True, text=True, timeout=5)
+        result = subprocess.run(
+            [node_path, "--version"], capture_output=True, text=True, timeout=5
+        )
         if result.returncode == 0:
             print_success(f"Node.js {result.stdout.strip()}")
     except Exception:
         print_error("Node.js not found")
         return False
-    
+
     if not npm_path:
         print_warning("npm not found - skipping frontend setup")
         return False
-    
+
     try:
-        result = subprocess.run([npm_path, '--version'], capture_output=True, text=True, timeout=5)
+        result = subprocess.run(
+            [npm_path, "--version"], capture_output=True, text=True, timeout=5
+        )
         if result.returncode == 0:
             print_success(f"npm {result.stdout.strip()}")
             return True
     except Exception:
         pass
-    
+
     print_warning("npm not found - skipping frontend setup")
     return False
 
@@ -141,20 +154,20 @@ def check_services(skip_prompts: bool = False) -> bool:
     """Check if LLM backends are running."""
     print_step("Checking LLM backends...")
 
-    ollama = check_port('localhost', 11434, 'Ollama')
-    lmstudio = check_port('localhost', 1234, 'LM Studio')
-    lemonade = check_port('localhost', 8080, 'Lemonade')
+    ollama = check_port("localhost", 11434, "Ollama")
+    lmstudio = check_port("localhost", 1234, "LM Studio")
+    lemonade = check_port("localhost", 8080, "Lemonade")
 
     if not ollama and not lmstudio and not lemonade:
         print_warning("No LLM backend detected!")
-        
+
         if not skip_prompts:
             print(f"""
 {Colors.BOLD}Would you like to install Ollama with qwen3.5:0.8B?{Colors.END}
 This is a lightweight model (~500MB) perfect for getting started.
 """)
             response = input("Install Ollama? [Y/n]: ").strip().lower()
-            if response in ('', 'y', 'yes'):
+            if response in ("", "y", "yes"):
                 install_ollama()
         else:
             print("Skipping Ollama installation (CI mode)")
@@ -165,14 +178,19 @@ This is a lightweight model (~500MB) perfect for getting started.
 
 # ====================== Setup ======================
 
+
 def setup_venv(project_root: Path) -> bool:
     """Create and populate Python virtual environment."""
-    venv_path = project_root / '.venv'
+    venv_path = project_root / ".venv"
     print_step(f"Setting up virtual environment at {venv_path.name}...")
 
     if venv_path.exists():
         # Check if valid
-        pip_path = venv_path / 'Scripts' / 'pip.exe' if os.name == 'nt' else venv_path / 'bin' / 'pip'
+        pip_path = (
+            venv_path / "Scripts" / "pip.exe"
+            if os.name == "nt"
+            else venv_path / "bin" / "pip"
+        )
         if pip_path.exists():
             print_success("Virtual environment already exists")
             return True
@@ -181,19 +199,25 @@ def setup_venv(project_root: Path) -> bool:
         shutil.rmtree(venv_path)
 
     # Create venv
-    run_command([sys.executable, '-m', 'venv', str(venv_path)])
+    run_command([sys.executable, "-m", "venv", str(venv_path)])
 
     # Determine pip
-    pip_path = venv_path / 'Scripts' / 'pip.exe' if os.name == 'nt' else venv_path / 'bin' / 'pip'
+    pip_path = (
+        venv_path / "Scripts" / "pip.exe"
+        if os.name == "nt"
+        else venv_path / "bin" / "pip"
+    )
 
     # Upgrade pip
-    run_command([str(pip_path), 'install', '--upgrade', 'pip'])
+    run_command([str(pip_path), "install", "--upgrade", "pip"])
 
     # Install requirements
-    req_file = project_root / 'requirements.txt'
+    req_file = project_root / "requirements.txt"
     if req_file.exists():
         print_step("Installing Python dependencies...")
-        result = run_command([str(pip_path), 'install', '-r', str(req_file)], check=False)
+        result = run_command(
+            [str(pip_path), "install", "-r", str(req_file)], check=False
+        )
         if result.returncode != 0:
             print_warning("Some packages failed to install (continuing)")
         else:
@@ -206,19 +230,19 @@ def setup_venv(project_root: Path) -> bool:
 
 def setup_frontend(project_root: Path) -> bool:
     """Install frontend dependencies."""
-    ui_path = project_root / 'frontend'
+    ui_path = project_root / "frontend"
     if not ui_path.exists():
-        print_warning(f"Frontend directory not found - skipping")
+        print_warning("Frontend directory not found - skipping")
         return True
 
-    npm_path = shutil.which('npm')
+    npm_path = shutil.which("npm")
     if not npm_path:
         print_warning("npm not found - skipping frontend setup")
         return True
 
     print_step("Installing frontend dependencies...")
-    if not (ui_path / 'node_modules').exists():
-        result = run_command([npm_path, 'install'], cwd=ui_path, check=False)
+    if not (ui_path / "node_modules").exists():
+        result = run_command([npm_path, "install"], cwd=ui_path, check=False)
         if result.returncode != 0:
             print_warning("Failed to install npm packages (continuing)")
         else:
@@ -231,8 +255,8 @@ def setup_frontend(project_root: Path) -> bool:
 
 def setup_env_file(project_root: Path) -> bool:
     """Create .env file from template."""
-    env_file = project_root / '.env'
-    env_example = project_root / '.env.example'
+    env_file = project_root / ".env"
+    env_example = project_root / ".env.example"
 
     if env_file.exists():
         print_success(".env already exists")
@@ -250,6 +274,7 @@ def setup_env_file(project_root: Path) -> bool:
 
 # ====================== Ollama Install ======================
 
+
 def install_ollama() -> bool:
     """Install Ollama and pull qwen3.5:0.8B model."""
     print_step("Installing Ollama...")
@@ -257,13 +282,13 @@ def install_ollama() -> bool:
     system = platform.system()
 
     try:
-        if system == 'Windows':
+        if system == "Windows":
             print("Installing via PowerShell...")
             result = subprocess.run(
-                ['powershell', '-Command', 'irm https://ollama.com/install.ps1 | iex'],
+                ["powershell", "-Command", "irm https://ollama.com/install.ps1 | iex"],
                 capture_output=True,
                 text=True,
-                timeout=120
+                timeout=120,
             )
             if result.returncode != 0:
                 print_warning("PowerShell install failed")
@@ -271,23 +296,23 @@ def install_ollama() -> bool:
                 return False
             print_success("Ollama installed")
 
-        elif system == 'Darwin':
+        elif system == "Darwin":
             print("Installing via curl...")
             subprocess.run(
-                ['curl', '-fsSL', 'https://ollama.com/install.sh', '|', 'sh'],
+                ["curl", "-fsSL", "https://ollama.com/install.sh", "|", "sh"],
                 shell=True,
                 capture_output=True,
-                timeout=120
+                timeout=120,
             )
             print_success("Ollama installed")
 
-        elif system == 'Linux':
+        elif system == "Linux":
             print("Installing via curl...")
             result = subprocess.run(
-                ['curl', '-fsSL', 'https://ollama.com/install.sh', '|', 'sh'],
+                ["curl", "-fsSL", "https://ollama.com/install.sh", "|", "sh"],
                 shell=True,
                 capture_output=True,
-                timeout=120
+                timeout=120,
             )
             if result.returncode != 0:
                 print_warning("Install script failed")
@@ -310,19 +335,18 @@ def install_ollama() -> bool:
     try:
         # Start serve in background
         subprocess.Popen(
-            ['ollama', 'serve'],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
+            ["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
         import time
+
         time.sleep(2)
 
         # Pull model
         result = subprocess.run(
-            ['ollama', 'pull', 'qwen3.5:0.8b'],
+            ["ollama", "pull", "qwen3.5:0.8b"],
             capture_output=True,
             text=True,
-            timeout=600
+            timeout=600,
         )
 
         if result.returncode == 0:
@@ -340,9 +364,10 @@ def install_ollama() -> bool:
 
 # ====================== Main ======================
 
+
 def main():
     """Main setup routine."""
-    skip_prompts = '--yes' in sys.argv or '-y' in sys.argv
+    skip_prompts = "--yes" in sys.argv or "-y" in sys.argv
 
     print(f"""
 {Colors.BOLD}============================================================
@@ -392,5 +417,5 @@ def main():
 """)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

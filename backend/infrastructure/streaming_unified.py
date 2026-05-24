@@ -10,16 +10,16 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import time
 import uuid
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, AsyncIterator, Dict, Optional, Union
+from typing import Any
 
-from fastapi import WebSocket, Request
+from fastapi import Request, WebSocket
 from fastapi.responses import StreamingResponse
 
 logger = logging.getLogger(__name__)
@@ -36,22 +36,23 @@ class StreamStatus(Enum):
 @dataclass(slots=True)
 class StreamEvent:
     """Unified stream event format for both SSE and WebSocket."""
+
     event_type: str  # stream_id, step, token, tool, error, done
     status: StreamStatus = StreamStatus.GENERATING
     stream_id: str = ""
     message_id: str = ""
     content: str = ""
-    step_id: Optional[str] = None
-    title: Optional[str] = None
+    step_id: str | None = None
+    title: str | None = None
     done: bool = False
-    error: Optional[str] = None
-    code: Optional[str] = None
+    error: str | None = None
+    code: str | None = None
     token_count: int = 0
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dict for both SSE and WS transport."""
-        result: Dict[str, Any] = {
+        result: dict[str, Any] = {
             "type": self.event_type,
             "message_id": self.message_id,
             "stream_id": self.stream_id,
@@ -64,7 +65,9 @@ class StreamEvent:
         elif self.event_type == "step":
             result["step_id"] = self.step_id or "step-unknown"
             result["title"] = self.title or "Step"
-            result["status"] = "active" if self.status == StreamStatus.GENERATING else "done"
+            result["status"] = (
+                "active" if self.status == StreamStatus.GENERATING else "done"
+            )
             result["content"] = self.content
 
         elif self.event_type == "token":
@@ -149,7 +152,7 @@ class SSETransport(StreamTransport):
     """SSE transport implementation (writes to queue for StreamingResponse)."""
 
     def __init__(self):
-        self._queue: asyncio.Queue[Optional[str]] = asyncio.Queue(maxsize=100)
+        self._queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=100)
         self._connected = True
 
     async def send(self, event: StreamEvent) -> bool:
@@ -187,8 +190,8 @@ class UnifiedStreamer:
 
     def detect_transport(
         self,
-        request: Optional[Request] = None,
-        websocket: Optional[WebSocket] = None,
+        request: Request | None = None,
+        websocket: WebSocket | None = None,
     ) -> StreamTransport:
         """
         Detect and create appropriate transport based on request.
@@ -210,7 +213,7 @@ class UnifiedStreamer:
         provider: str = "ollama",
         temperature: float = 0.7,
         max_attempts: int = 3,
-        resume_from: Optional[str] = None,
+        resume_from: str | None = None,
     ) -> AsyncIterator[StreamEvent]:
         """
         Stream events through the unified interface.
@@ -333,9 +336,9 @@ class UnifiedStreamer:
 
     def _parse_event(
         self,
-        raw_event: Union[str, Dict],
+        raw_event: str | dict,
         message_id: str,
-    ) -> Optional[StreamEvent]:
+    ) -> StreamEvent | None:
         """Parse raw event from LangGraph into StreamEvent."""
         if isinstance(raw_event, dict):
             # Already formatted
@@ -413,7 +416,7 @@ class UnifiedStreamer:
 
 
 # Singleton instance
-_unified_streamer: Optional[UnifiedStreamer] = None
+_unified_streamer: UnifiedStreamer | None = None
 
 
 def get_unified_streamer() -> UnifiedStreamer:
@@ -430,8 +433,8 @@ async def create_sse_response(
     model: str,
     provider: str,
     temperature: float,
-    session_id: Optional[str] = None,
-    resume_from: Optional[str] = None,
+    session_id: str | None = None,
+    resume_from: str | None = None,
 ) -> StreamingResponse:
     """Create SSE StreamingResponse using unified streamer."""
     session_id = session_id or str(uuid.uuid4())[:8]
@@ -462,11 +465,11 @@ async def create_sse_response(
 
 
 __all__ = [
-    "UnifiedStreamer",
-    "get_unified_streamer",
+    "SSETransport",
     "StreamEvent",
     "StreamTransport",
+    "UnifiedStreamer",
     "WebSocketTransport",
-    "SSETransport",
     "create_sse_response",
+    "get_unified_streamer",
 ]

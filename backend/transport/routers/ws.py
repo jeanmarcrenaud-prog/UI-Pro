@@ -1,15 +1,14 @@
 # views/routers/ws.py - WebSocket endpoint with Unified Streaming Protocol
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from typing import Optional
 import json
-import uuid
 import logging
+import uuid
 
-from models.settings import settings
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
 from backend.infrastructure.streaming_unified import (
-    get_unified_streamer,
     WebSocketTransport,
+    get_unified_streamer,
 )
 
 logger = logging.getLogger(__name__)
@@ -25,6 +24,7 @@ def _get_ws_controller_cached():
     global _ws_controller_cache
     if _ws_controller_cache is None:
         from backend.application.websocket import get_websocket_controller
+
         _ws_controller_cache = get_websocket_controller()
     return _ws_controller_cache
 
@@ -39,7 +39,7 @@ async def websocket_endpoint(ws: WebSocket):
     client_info = f"{ws.client.host}:{ws.client.port}"
     session_id = await ws_controller.handle_connection(ws, client_info)
 
-    current_message_id: Optional[str] = None
+    current_message_id: str | None = None
 
     try:
         while True:
@@ -59,21 +59,29 @@ async def websocket_endpoint(ws: WebSocket):
             # Handle cancel
             if request.get("type") == "cancel":
                 logger.info(f"[ws] Cancel requested for {current_message_id}")
-                await ws.send_text(json.dumps({
-                    "type": "cancelled",
-                    "message_id": current_message_id,
-                    "content": ""
-                }))
+                await ws.send_text(
+                    json.dumps(
+                        {
+                            "type": "cancelled",
+                            "message_id": current_message_id,
+                            "content": "",
+                        }
+                    )
+                )
                 break
 
             # Validate request
             is_valid, error_msg, parsed = await ws_controller.validate_request(request)
             if not is_valid:
-                await ws.send_text(json.dumps({
-                    "type": "error",
-                    "message": error_msg,
-                    "message_id": request.get("message_id", "unknown")
-                }))
+                await ws.send_text(
+                    json.dumps(
+                        {
+                            "type": "error",
+                            "message": error_msg,
+                            "message_id": request.get("message_id", "unknown"),
+                        }
+                    )
+                )
                 continue
 
             task = parsed.get("task") or parsed.get("message") or ""
@@ -85,9 +93,11 @@ async def websocket_endpoint(ws: WebSocket):
 
             # Strip provider prefix from model name (e.g., "ollama-gemma4:e4b" -> "gemma4:e4b")
             if model and provider and model.startswith(f"{provider}-"):
-                model = model[len(provider) + 1:]
+                model = model[len(provider) + 1 :]
 
-            logger.info(f"[ws] Processing: model='{model}', provider='{provider}', task='{task[:50]}...'")
+            logger.info(
+                f"[ws] Processing: model='{model}', provider='{provider}', task='{task[:50]}...'"
+            )
 
             current_message_id = message_id
 

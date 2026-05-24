@@ -4,9 +4,8 @@
 
 import logging
 import os
-from pathlib import Path
-from typing import Optional, List, Dict
 import pickle
+from pathlib import Path
 
 # Suppress warnings
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
@@ -37,32 +36,34 @@ DEFAULT_DOCS_PATH = Path("data/memory_docs.pkl")
 class FAISSAdapter:
     """
     FAISS-based memory adapter.
-    
+
     Features:
     - Vector search with embeddings
     - Persistence to disk
     - Configurable dimension
     """
-    
+
     def __init__(self, persist_path: str = None, dimension: int = 384):
         self.d = dimension
         self.index = None
-        self.documents: List[str] = []
-        
+        self.documents: list[str] = []
+
         # Paths
-        self.persist_path = Path(persist_path or os.getenv("MEMORY_PERSIST_PATH", str(DEFAULT_PERSIST_PATH)))
+        self.persist_path = Path(
+            persist_path or os.getenv("MEMORY_PERSIST_PATH", str(DEFAULT_PERSIST_PATH))
+        )
         self.docs_path = Path(os.getenv("MEMORY_DOCS_PATH", str(DEFAULT_DOCS_PATH)))
-        
+
         # Lazy load model
         self._model = None
-        
+
         self._ensure_data_dir()
         self._load()
-    
+
     def _ensure_data_dir(self):
         """Create data directory if needed"""
         self.persist_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     @property
     def model(self):
         """Lazy load embedding model"""
@@ -73,7 +74,7 @@ class FAISSAdapter:
             if self.index is None:
                 self.index = f.IndexFlatL2(self.d)
         return self._model
-    
+
     def _load(self):
         """Load existing index and documents"""
         if self.persist_path.exists():
@@ -84,7 +85,7 @@ class FAISSAdapter:
             except Exception as e:
                 logger.warning(f"Failed to load FAISS index: {e}")
                 self.index = f.IndexFlatL2(self.d)
-        
+
         if self.docs_path.exists():
             try:
                 with open(self.docs_path, "rb") as f:
@@ -93,7 +94,7 @@ class FAISSAdapter:
             except Exception as e:
                 logger.warning(f"Failed to load documents: {e}")
                 self.documents = []
-    
+
     def save(self):
         """Save index and documents to disk"""
         try:
@@ -102,64 +103,72 @@ class FAISSAdapter:
             f.write_index(self.index, str(self.persist_path))
             with open(self.docs_path, "wb") as f:
                 pickle.dump(self.documents, f)
-            logger.info(f"Saved {self.index.ntotal} vectors and {len(self.documents)} documents")
+            logger.info(
+                f"Saved {self.index.ntotal} vectors and {len(self.documents)} documents"
+            )
         except Exception as e:
             logger.error(f"Failed to save memory: {e}")
-    
+
     def add(self, text: str, auto_save: bool = False):
         """Add text to memory
-        
+
         Args:
             text: Text to add
             auto_save: If True, save immediately. If False (default), batch save every 10 items.
         """
         if not text or not text.strip():
             return
-        
+
         vec = self.model.encode([text])
         vec = vec[0].flatten()
-        
+
         if self.index.ntotal == 0:
             f, _, _ = _lazy_imports()
             self.index = f.IndexFlatL2(vec.shape[0])
             self.d = vec.shape[0]
-        
+
         self.index.add(vec)
         self.documents.append(text)
-        
+
         # Batch save: only save if auto_save=True or every 10 items
         if auto_save or len(self.documents) % 10 == 0:
             self.save()
         else:
-            logger.debug(f"Batch save: skipping, will save at 10 (current: {len(self.documents)})")
-    
-    def search(self, query: str, k: int = 3) -> List[Dict]:
+            logger.debug(
+                f"Batch save: skipping, will save at 10 (current: {len(self.documents)})"
+            )
+
+    def search(self, query: str, k: int = 3) -> list[dict]:
         """Search memory for similar texts"""
         if not query or self.index.ntotal == 0:
             return []
-        
+
         vec = self.model.encode([query])
-        
+
         try:
             f, np, _ = _lazy_imports()
-            D, I = self.index.search(vec.flatten().reshape(1, -1), min(k, self.index.ntotal))
-            
+            D, I = self.index.search(
+                vec.flatten().reshape(1, -1), min(k, self.index.ntotal)
+            )
+
             results = []
             for i in I[0]:
                 if i >= 0 and i < len(self.documents):
-                    results.append({
-                        "text": self.documents[i],
-                        "score": float(np.sqrt(D[0][list(I[0]).index(i)]))
-                    })
+                    results.append(
+                        {
+                            "text": self.documents[i],
+                            "score": float(np.sqrt(D[0][list(I[0]).index(i)])),
+                        }
+                    )
             return results
         except Exception as e:
             logger.error(f"Search error: {e}")
             return []
-    
+
     def count(self) -> int:
         """Get number of stored memories"""
         return self.index.ntotal if self.index else 0
-    
+
     def clear(self):
         """Clear all memories"""
         f, _, _ = _lazy_imports()

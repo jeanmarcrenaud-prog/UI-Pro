@@ -6,16 +6,17 @@ Function: Classifies errors, provides user-friendly messages and recovery sugges
 
 import logging
 import traceback
-from typing import Optional, Dict, Any, List
 from dataclasses import dataclass, field
-from enum import Enum
 from datetime import datetime
+from enum import Enum
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
 class ErrorCategory(Enum):
     """Error classification categories."""
+
     LLM_GENERATION = "llm_generation"
     LLM_TIMEOUT = "llm_timeout"
     NETWORK = "network"
@@ -30,22 +31,24 @@ class ErrorCategory(Enum):
 @dataclass
 class ErrorDetails:
     """Structured error information with user-friendly messages."""
+
     category: ErrorCategory
     message: str
     user_message: str
     recovery_suggestion: str
-    technical_details: Optional[str] = None
-    stack_trace: Optional[str] = None
+    technical_details: str | None = None
+    stack_trace: str | None = None
     timestamp: datetime = field(default_factory=datetime.now)
-    context: Dict[str, Any] = field(default_factory=dict)
+    context: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class ErrorMetrics:
     """Error tracking metrics"""
+
     total_errors: int = 0
-    by_category: Dict[ErrorCategory, int] = field(default_factory=dict)
-    last_error: Optional[ErrorDetails] = None
+    by_category: dict[ErrorCategory, int] = field(default_factory=dict)
+    last_error: ErrorDetails | None = None
     recovery_success_rate: float = 1.0
 
 
@@ -75,17 +78,22 @@ class ErrorHandler:
 
     def __init__(self):
         self.metrics = ErrorMetrics()
-        self._error_history: List[ErrorDetails] = []
+        self._error_history: list[ErrorDetails] = []
         self._max_history = 50
 
-    def classify_error(self, error: Exception, context: Optional[Dict] = None) -> ErrorCategory:
+    def classify_error(
+        self, error: Exception, context: dict | None = None
+    ) -> ErrorCategory:
         """Classify exception into category."""
         error_str = str(error).lower()
 
         if any(kw in error_str for kw in ["timeout", "timed out", "took too long"]):
             return ErrorCategory.LLM_TIMEOUT
 
-        if any(kw in error_str for kw in ["connection", "network", "refused", "unreachable"]):
+        if any(
+            kw in error_str
+            for kw in ["connection", "network", "refused", "unreachable"]
+        ):
             return ErrorCategory.NETWORK
 
         if any(kw in error_str for kw in ["ollama", "model", "generate", "llm"]):
@@ -94,7 +102,10 @@ class ErrorHandler:
         if any(kw in error_str for kw in ["memory", "faiss", "vector"]):
             return ErrorCategory.MEMORY
 
-        if any(kw in error_str for kw in ["syntax", "indent", "nameerror", "attributeerror", "typeerror"]):
+        if any(
+            kw in error_str
+            for kw in ["syntax", "indent", "nameerror", "attributeerror", "typeerror"]
+        ):
             return ErrorCategory.EXECUTION
 
         if any(kw in error_str for kw in ["permission", "forbidden", "access denied"]):
@@ -108,7 +119,7 @@ class ErrorHandler:
     def handle(
         self,
         error: Exception,
-        context: Optional[Dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> ErrorDetails:
         """Handle error and return user-friendly details."""
         category = self.classify_error(error, context)
@@ -122,19 +133,23 @@ class ErrorHandler:
             user_message=user_message,
             recovery_suggestion=recovery,
             technical_details=str(error)[:300],
-            stack_trace=traceback.format_exc()[:800] if logger.isEnabledFor(logging.DEBUG) else None,
-            context=context or {}
+            stack_trace=traceback.format_exc()[:800]
+            if logger.isEnabledFor(logging.DEBUG)
+            else None,
+            context=context or {},
         )
 
         # Update metrics
         self.metrics.total_errors += 1
-        self.metrics.by_category[category] = self.metrics.by_category.get(category, 0) + 1
+        self.metrics.by_category[category] = (
+            self.metrics.by_category.get(category, 0) + 1
+        )
         self.metrics.last_error = details
 
         # Store in history
         self._error_history.append(details)
         if len(self._error_history) > self._max_history:
-            self._error_history = self._error_history[-self._max_history:]
+            self._error_history = self._error_history[-self._max_history :]
 
         logger.error(f"[{category.value}] {error}")
         return details
@@ -151,27 +166,35 @@ class ErrorHandler:
 
     def get_retry_delay(self, attempt: int) -> int:
         """Get exponential backoff delay in seconds"""
-        return min(2 ** attempt, 30)
+        return min(2**attempt, 30)
 
-    def get_metrics(self) -> Dict:
+    def get_metrics(self) -> dict:
         """Get error metrics"""
         return {
             "total_errors": self.metrics.total_errors,
             "by_category": {k.value: v for k, v in self.metrics.by_category.items()},
             "last_error": {
-                "category": self.metrics.last_error.category.value if self.metrics.last_error else None,
-                "message": self.metrics.last_error.user_message if self.metrics.last_error else None,
-                "timestamp": self.metrics.last_error.timestamp.isoformat() if self.metrics.last_error else None
-            } if self.metrics.last_error else None
+                "category": self.metrics.last_error.category.value
+                if self.metrics.last_error
+                else None,
+                "message": self.metrics.last_error.user_message
+                if self.metrics.last_error
+                else None,
+                "timestamp": self.metrics.last_error.timestamp.isoformat()
+                if self.metrics.last_error
+                else None,
+            }
+            if self.metrics.last_error
+            else None,
         }
 
-    def get_recent_errors(self, limit: int = 10) -> List[ErrorDetails]:
+    def get_recent_errors(self, limit: int = 10) -> list[ErrorDetails]:
         return self._error_history[-limit:]
 
 
 # ====================== Singleton ======================
 
-_error_handler: Optional[ErrorHandler] = None
+_error_handler: ErrorHandler | None = None
 
 
 def get_error_handler() -> ErrorHandler:
@@ -181,4 +204,10 @@ def get_error_handler() -> ErrorHandler:
     return _error_handler
 
 
-__all__ = ["ErrorHandler", "ErrorDetails", "ErrorCategory", "ErrorMetrics", "get_error_handler"]
+__all__ = [
+    "ErrorCategory",
+    "ErrorDetails",
+    "ErrorHandler",
+    "ErrorMetrics",
+    "get_error_handler",
+]

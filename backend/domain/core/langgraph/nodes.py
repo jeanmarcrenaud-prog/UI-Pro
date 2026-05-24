@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 # Helpers
 # ========================================
 
+
 def _get_user_message(state: dict[str, Any]) -> str:
     messages = state.get("messages", [])
     return messages[0].get("content", "") if messages else ""
@@ -38,6 +39,7 @@ def _get_llm_router():
     global _llm_router_instance
     if _llm_router_instance is None:
         from backend.infrastructure.llm_router import LLMRouter
+
         _llm_router_instance = LLMRouter()
     return _llm_router_instance
 
@@ -49,6 +51,7 @@ def _emit_step(phase: str, message: str):
         except (UnicodeEncodeError, UnicodeDecodeError):
             message = message.encode("ascii", "replace").decode("ascii")
         from backend.domain.core.events import emit_agent_step
+
         emit_agent_step(phase, message)
     except Exception:
         pass
@@ -58,6 +61,7 @@ def _emit_step(phase: str, message: str):
 # Nodes
 # ========================================
 
+
 async def analyzing_node(state):
     _emit_step("analyzing", "Analyse des exigences...")
 
@@ -65,6 +69,7 @@ async def analyzing_node(state):
     logger.info(f"[analyzing_node] model={user_model}, provider={user_provider}")
 
     from .llm_wrapper import LLMWrapper
+
     llm = LLMWrapper(_get_llm_router(), user_model, user_provider)
     user_message = _get_user_message(state)
 
@@ -77,7 +82,9 @@ async def analyzing_node(state):
 
     logger.info(f"[analyzing_node] Calling LLM with prompt: {prompt[:100]}...")
     full_response = await llm.run_node(prompt, model_type="reasoning")
-    logger.info(f"[analyzing_node] LLM response: {full_response[:200] if full_response else 'EMPTY'}")
+    logger.info(
+        f"[analyzing_node] LLM response: {full_response[:200] if full_response else 'EMPTY'}"
+    )
 
     state["messages"].append({"role": "assistant", "content": full_response})
     return state
@@ -88,6 +95,7 @@ async def planning_node(state):
 
     user_model, user_provider = _get_model_info(state)
     from .llm_wrapper import LLMWrapper
+
     llm = LLMWrapper(_get_llm_router(), user_model, user_provider)
     user_message = _get_user_message(state)
 
@@ -99,7 +107,9 @@ async def planning_node(state):
         "Respond with ONLY the JSON object."
     )
 
-    full_response = await llm.run_node(prompt, model_type="reasoning", strip_markdown=True)
+    full_response = await llm.run_node(
+        prompt, model_type="reasoning", strip_markdown=True
+    )
 
     try:
         plan = json.loads(full_response)
@@ -123,6 +133,7 @@ async def coding_node(state):
 
     user_model, user_provider = _get_model_info(state)
     from .llm_wrapper import LLMWrapper
+
     llm = LLMWrapper(_get_llm_router(), user_model, user_provider)
     user_message = _get_user_message(state)
     plan_clean = _clean_plan(state.get("plan", {}))
@@ -137,6 +148,7 @@ async def coding_node(state):
 
     full_response = await llm.run_node(prompt, model_type="fast", temperature=0.3)
     from .code_extractor import extract_code_dict
+
     state["code"] = extract_code_dict(full_response)
     return state
 
@@ -146,6 +158,7 @@ async def reviewing_node(state):
 
     user_model, user_provider = _get_model_info(state)
     from .llm_wrapper import LLMWrapper
+
     llm = LLMWrapper(_get_llm_router(), user_model, user_provider)
     code = state.get("code", {})
 
@@ -156,7 +169,11 @@ async def reviewing_node(state):
     try:
         review = json.loads(full_response)
     except Exception:
-        review = {"passed": False, "issues": [], "suggestions": ["Could not parse review"]}
+        review = {
+            "passed": False,
+            "issues": [],
+            "suggestions": ["Could not parse review"],
+        }
 
     state["review"] = review
     return state
@@ -166,6 +183,7 @@ async def executing_node(state):
     _emit_step("executing", "Execution dans le sandbox...")
 
     from backend.infrastructure.code_execution import CodeExecutionService
+
     executor = CodeExecutionService()
     files = state.get("code", {}).get("files", {})
 

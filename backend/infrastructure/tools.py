@@ -7,22 +7,23 @@
 #     - Executes with timeout (default 30s)
 #     - Returns structured ToolResult
 
-import logging
-import json
 import asyncio
-import re
-from typing import Optional, Dict, Any, List, Callable
+import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
 # ====================== Data Classes ======================
 
+
 @dataclass
 class ToolParameter:
     """Parameter definition for a tool"""
+
     name: str
     type: str  # "string", "number", "boolean"
     description: str
@@ -34,14 +35,15 @@ class Tool:
     """
     Tool definition similar to OpenAI function calling.
     """
+
     name: str
     description: str
-    parameters: List[ToolParameter]
-    handler: Optional[Callable] = None
+    parameters: list[ToolParameter]
+    handler: Callable | None = None
     timeout_seconds: int = 30
     category: str = "general"
 
-    def to_openai_schema(self) -> Dict:
+    def to_openai_schema(self) -> dict:
         """Convert to OpenAI function calling schema"""
         properties = {}
         required_params = []
@@ -49,7 +51,7 @@ class Tool:
         for param in self.parameters:
             properties[param.name] = {
                 "type": param.type,
-                "description": param.description
+                "description": param.description,
             }
             if param.required:
                 required_params.append(param.name)
@@ -62,12 +64,12 @@ class Tool:
                 "parameters": {
                     "type": "object",
                     "properties": properties,
-                    "required": required_params
-                }
-            }
+                    "required": required_params,
+                },
+            },
         }
 
-    def validate_arguments(self, arguments: Dict) -> tuple[bool, Optional[str]]:
+    def validate_arguments(self, arguments: dict) -> tuple[bool, str | None]:
         """Validate tool arguments."""
         for param in self.parameters:
             value = arguments.get(param.name)
@@ -87,7 +89,7 @@ class Tool:
 
         return True, None
 
-    async def execute(self, arguments: Dict) -> Dict[str, Any]:
+    async def execute(self, arguments: dict) -> dict[str, Any]:
         """Execute tool with arguments and validation"""
         try:
             is_valid, error_msg = self.validate_arguments(arguments)
@@ -99,11 +101,13 @@ class Tool:
 
             try:
                 result = await asyncio.wait_for(
-                    self.handler(arguments),
-                    timeout=self.timeout_seconds
+                    self.handler(arguments), timeout=self.timeout_seconds
                 )
             except asyncio.TimeoutError:
-                return {"status": "error", "error": f"Tool timed out after {self.timeout_seconds}s"}
+                return {
+                    "status": "error",
+                    "error": f"Tool timed out after {self.timeout_seconds}s",
+                }
 
             return {"status": "success", "result": result}
 
@@ -115,15 +119,17 @@ class Tool:
 @dataclass
 class ToolCall:
     """Represents a tool call request"""
+
     id: str
     name: str
-    arguments: Dict[str, Any]
+    arguments: dict[str, Any]
     timestamp: datetime = field(default_factory=datetime.now)
 
 
 # ====================== Built-in Tools ======================
 
-async def tool_calculator(arguments: Dict) -> Any:
+
+async def tool_calculator(arguments: dict) -> Any:
     """Calculator tool - uses safe arithmetic parsing instead of eval()"""
     expression = arguments.get("expression", "")
 
@@ -134,7 +140,7 @@ async def tool_calculator(arguments: Dict) -> Any:
     except ValueError as e:
         return {"error": str(e)}
     except Exception as e:
-        return {"error": f"Calculation error: {str(e)}"}
+        return {"error": f"Calculation error: {e!s}"}
 
 
 def _safe_eval(expr: str) -> float:
@@ -154,18 +160,18 @@ def _safe_eval(expr: str) -> float:
     # Simple recursive descent parser for basic arithmetic
     def parse_add_sub(tokens: list) -> float:
         result = parse_mul_div(tokens)
-        while tokens and tokens[0] in ('+', '-'):
+        while tokens and tokens[0] in ("+", "-"):
             op = tokens.pop(0)
             rhs = parse_mul_div(tokens)
-            result = result + rhs if op == '+' else result - rhs
+            result = result + rhs if op == "+" else result - rhs
         return result
 
     def parse_mul_div(tokens: list) -> float:
         result = parse_unary(tokens)
-        while tokens and tokens[0] in ('*', '/'):
+        while tokens and tokens[0] in ("*", "/"):
             op = tokens.pop(0)
             rhs = parse_unary(tokens)
-            if op == '*':
+            if op == "*":
                 result = result * rhs
             else:
                 if rhs == 0:
@@ -174,7 +180,7 @@ def _safe_eval(expr: str) -> float:
         return result
 
     def parse_unary(tokens: list) -> float:
-        if tokens and tokens[0] == '-':
+        if tokens and tokens[0] == "-":
             tokens.pop(0)
             return -parse_primary(tokens)
         return parse_primary(tokens)
@@ -185,9 +191,9 @@ def _safe_eval(expr: str) -> float:
 
         token = tokens.pop(0)
 
-        if token == '(':
+        if token == "(":
             result = parse_add_sub(tokens)
-            if tokens and tokens[0] == ')':
+            if tokens and tokens[0] == ")":
                 tokens.pop(0)
             return result
 
@@ -201,11 +207,11 @@ def _safe_eval(expr: str) -> float:
     tokens = []
     current = ""
     for char in expr:
-        if char in ' \t':
+        if char in " \t":
             if current:
                 tokens.append(current)
                 current = ""
-        elif char in '+-*/()':
+        elif char in "+-*/()":
             if current:
                 tokens.append(current)
                 current = ""
@@ -221,38 +227,40 @@ def _safe_eval(expr: str) -> float:
     return parse_add_sub(tokens)
 
 
-async def tool_search_memory(arguments: Dict) -> Any:
+async def tool_search_memory(arguments: dict) -> Any:
     """Search memory tool"""
     query = arguments.get("query", "")
     k = arguments.get("k", 3)
 
     try:
         from .memory_service import get_memory_service
+
         memory = get_memory_service()
         results = memory.search(query, k=k)
         return {"query": query, "results": results}
     except Exception as e:
-        return {"error": f"Memory search failed: {str(e)}"}
+        return {"error": f"Memory search failed: {e!s}"}
 
 
-async def tool_get_time(arguments: Dict) -> Any:
+async def tool_get_time(arguments: dict) -> Any:
     """Get current time tool"""
     return {"datetime": datetime.now().isoformat()}
 
 
 # ====================== Tool Manager (Registry + Execution) ======================
 
+
 class ToolManager:
     """
     Centralized tool management with validation and execution.
-    
+
     Combines ToolRegistry and ToolManager - single responsibility.
     """
 
     def __init__(self):
-        self._tools: Dict[str, Tool] = {}
-        self._categories: Dict[str, List[str]] = {}
-        self._execution_log: List[Dict] = []
+        self._tools: dict[str, Tool] = {}
+        self._categories: dict[str, list[str]] = {}
+        self._execution_log: list[dict] = []
         self._max_log_size = 100
 
     # --- Registry Methods ---
@@ -279,44 +287,45 @@ class ToolManager:
             return True
         return False
 
-    def get(self, name: str) -> Optional[Tool]:
+    def get(self, name: str) -> Tool | None:
         """Get a tool by name"""
         return self._tools.get(name)
 
-    def list_tools(self, category: Optional[str] = None) -> List[str]:
+    def list_tools(self, category: str | None = None) -> list[str]:
         """List tools, optionally filtered by category"""
         if category:
             return self._categories.get(category, [])
         return list(self._tools.keys())
 
-    def get_categories(self) -> List[str]:
+    def get_categories(self) -> list[str]:
         """Get all categories"""
         return list(self._categories.keys())
 
-    def get_schemas(self) -> List[Dict]:
+    def get_schemas(self) -> list[dict]:
         """Get schemas for all tools"""
         return [tool.to_openai_schema() for tool in self._tools.values()]
 
     # --- Execution Methods ---
 
     async def execute(
-        self,
-        tool_name: str,
-        arguments: Dict,
-        store_result: bool = False
-    ) -> Dict[str, Any]:
+        self, tool_name: str, arguments: dict, store_result: bool = False
+    ) -> dict[str, Any]:
         """Execute a tool with validation and logging"""
         start_time = datetime.now()
 
         tool = self.get(tool_name)
         if not tool:
-            self._log_execution(tool_name, arguments, None, "error", f"Tool not found: {tool_name}")
+            self._log_execution(
+                tool_name, arguments, None, "error", f"Tool not found: {tool_name}"
+            )
             return {"status": "error", "error": f"Tool not found: {tool_name}"}
 
         # Validate
         is_valid, error_msg = tool.validate_arguments(arguments)
         if not is_valid:
-            self._log_execution(tool_name, arguments, None, "validation_error", error_msg)
+            self._log_execution(
+                tool_name, arguments, None, "validation_error", error_msg
+            )
             return {"status": "error", "error": error_msg}
 
         # Execute
@@ -334,29 +343,31 @@ class ToolManager:
     def _log_execution(
         self,
         tool_name: str,
-        arguments: Dict,
-        result: Optional[Dict],
+        arguments: dict,
+        result: dict | None,
         status: str,
-        error: Optional[str] = None
+        error: str | None = None,
     ) -> None:
         """Log tool execution"""
-        self._execution_log.append({
-            "tool_name": tool_name,
-            "arguments": arguments,
-            "result": result,
-            "status": status,
-            "error": error,
-            "timestamp": datetime.now().isoformat()
-        })
+        self._execution_log.append(
+            {
+                "tool_name": tool_name,
+                "arguments": arguments,
+                "result": result,
+                "status": status,
+                "error": error,
+                "timestamp": datetime.now().isoformat(),
+            }
+        )
 
         if len(self._execution_log) > self._max_log_size:
-            self._execution_log = self._execution_log[-self._max_log_size:]
+            self._execution_log = self._execution_log[-self._max_log_size :]
 
-    def get_execution_log(self, limit: int = 10) -> List[Dict]:
+    def get_execution_log(self, limit: int = 10) -> list[dict]:
         """Get recent execution log"""
         return self._execution_log[-limit:]
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get tool usage statistics"""
         stats = {}
         for entry in self._execution_log:
@@ -372,7 +383,7 @@ class ToolManager:
 
         return stats
 
-    def select_tool(self, task_description: str) -> Optional[str]:
+    def select_tool(self, task_description: str) -> str | None:
         """Intelligent tool selection based on task keywords."""
         task_lower = task_description.lower()
 
@@ -394,7 +405,7 @@ class ToolManager:
 
 # ====================== Singleton ======================
 
-_tool_manager: Optional[ToolManager] = None
+_tool_manager: ToolManager | None = None
 
 
 def get_tool_manager() -> ToolManager:
@@ -404,50 +415,62 @@ def get_tool_manager() -> ToolManager:
         _tool_manager = ToolManager()
 
         # Register built-in tools
-        _tool_manager.register(Tool(
-            name="calculator",
-            description="Evaluate a mathematical expression",
-            parameters=[
-                ToolParameter("expression", "string", "The expression to evaluate", required=True)
-            ],
-            handler=tool_calculator,
-            category="utility",
-            timeout_seconds=10
-        ))
+        _tool_manager.register(
+            Tool(
+                name="calculator",
+                description="Evaluate a mathematical expression",
+                parameters=[
+                    ToolParameter(
+                        "expression",
+                        "string",
+                        "The expression to evaluate",
+                        required=True,
+                    )
+                ],
+                handler=tool_calculator,
+                category="utility",
+                timeout_seconds=10,
+            )
+        )
 
-        _tool_manager.register(Tool(
-            name="search_memory",
-            description="Search the memory/knowledge base",
-            parameters=[
-                ToolParameter("query", "string", "Search query", required=True),
-                ToolParameter("k", "number", "Number of results", required=False)
-            ],
-            handler=tool_search_memory,
-            category="memory",
-            timeout_seconds=30
-        ))
+        _tool_manager.register(
+            Tool(
+                name="search_memory",
+                description="Search the memory/knowledge base",
+                parameters=[
+                    ToolParameter("query", "string", "Search query", required=True),
+                    ToolParameter("k", "number", "Number of results", required=False),
+                ],
+                handler=tool_search_memory,
+                category="memory",
+                timeout_seconds=30,
+            )
+        )
 
-        _tool_manager.register(Tool(
-            name="get_time",
-            description="Get current date and time",
-            parameters=[],
-            handler=tool_get_time,
-            category="utility",
-            timeout_seconds=5
-        ))
+        _tool_manager.register(
+            Tool(
+                name="get_time",
+                description="Get current date and time",
+                parameters=[],
+                handler=tool_get_time,
+                category="utility",
+                timeout_seconds=5,
+            )
+        )
 
     return _tool_manager
 
 
 # ====================== Helper ======================
 
+
 def create_tool(
     name: str,
     description: str,
-    parameters: List[Dict],
+    parameters: list[dict],
     handler: Callable,
     category: str = "general",
-    timeout_seconds: int = 30
+    timeout_seconds: int = 30,
 ) -> Tool:
     """Helper to create a tool from dict parameters"""
     tool_params = [
@@ -455,7 +478,7 @@ def create_tool(
             name=p["name"],
             type=p["type"],
             description=p["description"],
-            required=p.get("required", False)
+            required=p.get("required", False),
         )
         for p in parameters
     ]
@@ -466,15 +489,15 @@ def create_tool(
         parameters=tool_params,
         handler=handler,
         category=category,
-        timeout_seconds=timeout_seconds
+        timeout_seconds=timeout_seconds,
     )
 
 
 __all__ = [
     "Tool",
-    "ToolParameter",
     "ToolCall",
     "ToolManager",
-    "get_tool_manager",
+    "ToolParameter",
     "create_tool",
+    "get_tool_manager",
 ]

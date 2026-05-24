@@ -1,5 +1,11 @@
 # config/ - Configuration
 
-from models.settings import Settings, OLLAMA_URL, MODEL_FAST, MODEL_REASONING, LLM_TIMEOUT
+from models.settings import (
+    LLM_TIMEOUT,
+    MODEL_FAST,
+    MODEL_REASONING,
+    OLLAMA_URL,
+    Settings,
+)
 
-__all__ = ["Settings", "OLLAMA_URL", "MODEL_FAST", "MODEL_REASONING", "LLM_TIMEOUT"]
+__all__ = ["LLM_TIMEOUT", "MODEL_FAST", "MODEL_REASONING", "OLLAMA_URL", "Settings"]

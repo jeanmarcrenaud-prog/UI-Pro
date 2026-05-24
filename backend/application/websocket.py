@@ -10,7 +10,7 @@
 import asyncio
 import json
 import uuid
-from typing import Dict, Any, AsyncIterator, Optional
+from typing import Any
 
 from backend.domain.core.logger import get_logger
 
@@ -19,37 +19,39 @@ logger = get_logger(__name__)
 
 class WebSocketController:
     """Controller for WebSocket streaming - handles all WS logic"""
-    
+
     def __init__(self):
         # sessions: {session_id: {'tasks': []}}
-        self.sessions: Dict[str, dict] = {}
+        self.sessions: dict[str, dict] = {}
         # Store model per client IP (persistent across reconnections)
-        self.client_models: Dict[str, str] = {}
+        self.client_models: dict[str, str] = {}
         # active_requests: {message_id: state}
-        self._active_requests: Dict[str, Dict[str, Any]] = {}
+        self._active_requests: dict[str, dict[str, Any]] = {}
         self._lock = asyncio.Lock()
-    
+
     async def handle_connection(self, ws, client_info: str):
         """Handle new WebSocket connection"""
         session_id = f"{client_info}-{len(self.sessions)}"
-        self.sessions[session_id] = {'tasks': []}
+        self.sessions[session_id] = {"tasks": []}
         logger.info(f"WebSocket connected: {session_id}")
         return session_id
-    
+
     async def handle_disconnect(self, session_id: str):
         """Handle disconnection"""
         if session_id in self.sessions:
             del self.sessions[session_id]
         logger.info(f"WebSocket disconnected: {session_id}")
-    
-    async def parse_message(self, data: str) -> Dict[str, Any]:
+
+    async def parse_message(self, data: str) -> dict[str, Any]:
         """Parse incoming WebSocket message"""
         try:
             return json.loads(data)
         except json.JSONDecodeError:
             return {"message": data}
-    
-    async def validate_request(self, msg: Dict[str, Any]) -> tuple[bool, Optional[str], Optional[Dict[str, Any]]]:
+
+    async def validate_request(
+        self, msg: dict[str, Any]
+    ) -> tuple[bool, str | None, dict[str, Any] | None]:
         """
         Validate incoming request.
         Returns: (is_valid, error_message, parsed_request)
@@ -74,8 +76,10 @@ class WebSocketController:
         }
 
         return True, None, request
-    
-    async def register_request(self, message_id: str, model: str, task: str) -> Dict[str, Any]:
+
+    async def register_request(
+        self, message_id: str, model: str, task: str
+    ) -> dict[str, Any]:
         """Register or resume a request"""
         async with self._lock:
             if message_id not in self._active_requests:
@@ -83,18 +87,20 @@ class WebSocketController:
                     "model": model,
                     "task": task,
                     "chunk_index": 0,
-                    "is_complete": False
+                    "is_complete": False,
                 }
-            
+
             return self._active_requests[message_id]
-    
-    async def update_request_state(self, message_id: str, chunk_index: int, is_complete: bool = False):
+
+    async def update_request_state(
+        self, message_id: str, chunk_index: int, is_complete: bool = False
+    ):
         """Update request state after processing chunk"""
         async with self._lock:
             if message_id in self._active_requests:
                 self._active_requests[message_id]["chunk_index"] = chunk_index
                 self._active_requests[message_id]["is_complete"] = is_complete
-    
+
     async def cancel_request(self, message_id: str) -> bool:
         """Cancel a request"""
         async with self._lock:
@@ -102,17 +108,18 @@ class WebSocketController:
                 del self._active_requests[message_id]
                 return True
             return False
-    
-    async def get_request_state(self, message_id: str) -> Optional[Dict[str, Any]]:
+
+    async def get_request_state(self, message_id: str) -> dict[str, Any] | None:
         """Get request state for resume"""
         async with self._lock:
             return self._active_requests.get(message_id)
-    
+
     async def cleanup_completed(self, max_age_seconds: int = 3600):
         """Remove old completed requests"""
         async with self._lock:
             completed = [
-                msg_id for msg_id, state in self._active_requests.items()
+                msg_id
+                for msg_id, state in self._active_requests.items()
                 if state.get("is_complete", False)
             ]
             for msg_id in completed:
@@ -122,7 +129,7 @@ class WebSocketController:
 
 
 # Singleton instance
-_websocket_controller: Optional[WebSocketController] = None
+_websocket_controller: WebSocketController | None = None
 
 
 def get_websocket_controller() -> WebSocketController:

@@ -8,8 +8,9 @@
 # - Optional code review integration
 
 import logging
-from typing import Dict, Any, Optional
 from dataclasses import dataclass
+from typing import Any
+
 from backend.infrastructure.multi_lang_executor import MultiLangExecutor
 
 logger = logging.getLogger(__name__)
@@ -17,13 +18,16 @@ logger = logging.getLogger(__name__)
 
 # ==================== **1. CONFIG** ====================
 
+
 @dataclass
 class ExecutionConfig:
     """Configuration for code execution"""
+
     code_review_enabled: bool = False
 
 
 # ==================== **2. CODE EXECUTOR CLASS** ====================
+
 
 class CodeExecutor:
     """
@@ -44,11 +48,14 @@ class CodeExecutor:
         if self.config.code_review_enabled:
             try:
                 from backend.domain.core.code_review import CodeReviewer
+
                 self._reviewer = CodeReviewer()
             except ImportError:
                 logger.warning("Code review not available")
 
-    def run(self, code: str, filename: Optional[str] = None, timeout: Optional[int] = None) -> Dict[str, Any]:
+    def run(
+        self, code: str, filename: str | None = None, timeout: int | None = None
+    ) -> dict[str, Any]:
         """
         Execute code in sandbox with optional code review.
 
@@ -74,6 +81,12 @@ class CodeExecutor:
         # Execute code via MultiLangExecutor
         result = self._executor.execute(code, filename=filename, timeout=timeout)
 
+        # Add stdout/stderr aliases for backwards compatibility
+        if "output" in result and "stdout" not in result:
+            result["stdout"] = result["output"]
+        if result.get("error"):
+            result.setdefault("stderr", result["error"])
+
         # Attach review results if available
         if review_result:
             result["review"] = {
@@ -92,6 +105,7 @@ class CodeExecutor:
 
 
 # ==================== **3. BACKWARD COMPATIBILITY** ====================
+
 
 def run():
     """Legacy API"""

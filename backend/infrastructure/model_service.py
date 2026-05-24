@@ -8,13 +8,13 @@
 # This service does NOT duplicate routing logic - it delegates to LLMRouter.
 
 import logging
-import time
 import threading
-from typing import Optional, Dict, Any, List
-from datetime import datetime
-from dataclasses import dataclass, field
+import time
 from collections import deque
+from dataclasses import dataclass, field
+from datetime import datetime
 from statistics import median
+from typing import Any
 
 from models.settings import settings
 
@@ -24,13 +24,14 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ModelPerformance:
     """Runtime performance tracking per model"""
+
     name: str
     total_calls: int = 0
     failed_calls: int = 0
     total_latency_ms: float = 0.0
     latency_history: deque = field(default_factory=lambda: deque(maxlen=200))
-    last_used: Optional[datetime] = None
-    last_failure: Optional[datetime] = None
+    last_used: datetime | None = None
+    last_failure: datetime | None = None
 
     @property
     def success_rate(self) -> float:
@@ -73,7 +74,7 @@ class ModelPerformance:
 class ModelService:
     """
     High-level service coordinating discovery, routing, and runtime metrics.
-    
+
     This is a thin orchestration layer - it delegates to:
     - ModelDiscovery: for available models + capabilities
     - LLMRouter: for intelligent task → model routing
@@ -82,9 +83,9 @@ class ModelService:
 
     def __init__(self):
         # Type hints for lazy-loaded dependencies
-        self._discovery: Optional[Any] = None
-        self._router: Optional[Any] = None
-        self._performance: Dict[str, ModelPerformance] = {}
+        self._discovery: Any | None = None
+        self._router: Any | None = None
+        self._performance: dict[str, ModelPerformance] = {}
         self._lock = threading.RLock()
         self._initialized = False
 
@@ -93,8 +94,8 @@ class ModelService:
         if self._initialized:
             return
 
-        from backend.infrastructure.model_discovery import get_model_discovery
         from backend.infrastructure.llm_router import get_llm_router
+        from backend.infrastructure.model_discovery import get_model_discovery
 
         self._discovery = get_model_discovery()
         self._router = get_llm_router()
@@ -102,16 +103,18 @@ class ModelService:
 
         logger.info("ModelService initialized")
 
-    def discover_models(self) -> List[Any]:
+    def discover_models(self) -> list[Any]:
         """Discover available models from all backends."""
         self._ensure_init()
         assert self._discovery is not None
         return self._discovery.discover_all()
 
-    def route(self, prompt: Optional[str] = None, mode: Optional[str] = None) -> Dict[str, Any]:
+    def route(
+        self, prompt: str | None = None, mode: str | None = None
+    ) -> dict[str, Any]:
         """
         Route prompt to best model using LLMRouter.
-        
+
         Returns:
             Dict with 'model', 'task_type', 'confidence'
         """
@@ -122,23 +125,24 @@ class ModelService:
     def get_client(self, mode: str = "fast") -> Any:
         """
         Get properly configured LLM client for the given mode.
-        
+
         Returns an OllamaClient with correct model, URL, and timeout from settings.
         """
         self._ensure_init()
         from llm.router import LLMRouter
+
         router = LLMRouter()
         return router.get_for_mode(mode)
 
-    def get_client_for_model(self, model: str, provider: Optional[str] = None) -> Any:
+    def get_client_for_model(self, model: str, provider: str | None = None) -> Any:
         """
         Get client for specific model and provider.
-        
+
         Uses explicit provider to determine backend URL.
         Strips provider prefix from model name (e.g., "lmstudio-Qwen3.5 9B" -> "Qwen3.5 9B").
         """
         self._ensure_init()
-        from llm.router import OllamaClient, ModelConfig
+        from llm.router import ModelConfig, OllamaClient
         from models.settings import LLM_TIMEOUT
 
         # Use explicit provider - this takes priority over ModelDiscovery
@@ -149,7 +153,7 @@ class ModelService:
         clean_model = model
         for prefix in ["ollama-", "lmstudio-", "lemonade-", "llamacpp-"]:
             if model.startswith(prefix):
-                clean_model = model[len(prefix):]
+                clean_model = model[len(prefix) :]
                 break
 
         # Determine endpoint based on provider
@@ -169,7 +173,6 @@ class ModelService:
 
     def _get_backend_url(self, backend: str) -> str:
         """Get URL for backend from settings."""
-        from models.settings import settings
         mapping = {
             "ollama": settings.ollama_url,
             "lmstudio": settings.lmstudio_url,
@@ -182,13 +185,13 @@ class ModelService:
         self,
         prompt: str,
         mode: str = "fast",
-        system_prompt: Optional[str] = None,
+        system_prompt: str | None = None,
         temperature: float = 0.7,
-        **kwargs
+        **kwargs,
     ) -> str:
         """
         Main generation entrypoint with smart routing + metrics.
-        
+
         Delegates to LLMRouter for model selection, then calls LLM client.
         """
         self._ensure_init()
@@ -206,7 +209,7 @@ class ModelService:
                 prompt=prompt,
                 system_prompt=system_prompt,
                 temperature=temperature,
-                **kwargs
+                **kwargs,
             )
 
             latency_ms = (time.time() - start) * 1000
@@ -218,7 +221,7 @@ class ModelService:
             latency_ms = (time.time() - start) * 1000
             self._record_performance(model_name, latency_ms, success=False)
             logger.error(f"Generation failed: {e}")
-            return f"[ModelService Error] {str(e)}"
+            return f"[ModelService Error] {e!s}"
 
     def _record_performance(self, model_name: str, latency_ms: float, success: bool):
         with self._lock:
@@ -226,7 +229,7 @@ class ModelService:
                 self._performance[model_name] = ModelPerformance(model_name)
             self._performance[model_name].record(latency_ms, success)
 
-    def get_metrics(self) -> Dict:
+    def get_metrics(self) -> dict:
         """Get service metrics."""
         return {
             "service": "ModelService",
@@ -240,17 +243,17 @@ class ModelService:
                     "last_used": perf.last_used.isoformat() if perf.last_used else None,
                 }
                 for name, perf in self._performance.items()
-            }
+            },
         }
 
-    def get_available_models(self) -> List[Any]:
+    def get_available_models(self) -> list[Any]:
         """Get list of available models."""
         return self.discover_models()
 
 
 # ====================== Singleton ======================
 
-_model_service: Optional[ModelService] = None
+_model_service: ModelService | None = None
 
 
 def get_model_service() -> ModelService:
@@ -260,4 +263,4 @@ def get_model_service() -> ModelService:
     return _model_service
 
 
-__all__ = ["ModelService", "get_model_service", "ModelPerformance"]
+__all__ = ["ModelPerformance", "ModelService", "get_model_service"]

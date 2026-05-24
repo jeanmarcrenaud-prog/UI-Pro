@@ -1,11 +1,9 @@
 # backend/domain/errors.py - Business Exception Hierarchy for UI-Pro
 
-from typing import Optional
-
 
 class DomainError(Exception):
     """Erreur métier de base pour UI-Pro"""
-    
+
     def __init__(self, message: str, code: str = "DOMAIN_ERROR"):
         self.message = message
         self.code = code
@@ -14,12 +12,14 @@ class DomainError(Exception):
 
 class LLMError(DomainError):
     """Erreur lors d'un appel LLM"""
-    
-    def __init__(self, message: str, model: Optional[str] = None, backend: Optional[str] = None):
+
+    def __init__(
+        self, message: str, model: str | None = None, backend: str | None = None
+    ):
         self.model = model
         self.backend = backend
         super().__init__(message, code="LLM_ERROR")
-    
+
     def __str__(self):
         base = super().__str__()
         parts = []
@@ -34,34 +34,34 @@ class LLMError(DomainError):
 
 class LLMBackendError(LLMError):
     """Erreur de backend (connexion, timeout, etc.)"""
-    
-    def __init__(self, message: str, backend: str, model: Optional[str] = None):
+
+    def __init__(self, message: str, backend: str, model: str | None = None):
         super().__init__(message, model=model)
         self.code = "LLM_BACKEND_ERROR"
-    
+
     def __str__(self):
         return f"Backend error: {self.message} (backend: {self.backend})"
 
 
 class LLMTimeoutError(LLMError):
     """Timeout lors de l'appel LLM"""
-    
+
     def __init__(self, message: str, model: str, timeout: int):
         super().__init__(message, model=model)
         self.code = "LLM_TIMEOUT"
         self.timeout = timeout
-    
+
     def __str__(self):
         return f"Timeout after {self.timeout}s: {self.message}"
 
 
 class ToolExecutionError(DomainError):
     """Erreur lors de l'exécution d'un outil"""
-    
-    def __init__(self, message: str, tool_name: Optional[str] = None):
+
+    def __init__(self, message: str, tool_name: str | None = None):
         self.tool_name = tool_name
         super().__init__(message, code="TOOL_ERROR")
-    
+
     def __str__(self):
         base = super().__str__()
         if self.tool_name:
@@ -71,18 +71,18 @@ class ToolExecutionError(DomainError):
 
 class MemoryError(DomainError):
     """Erreur mémoire/FAISS"""
-    
+
     def __init__(self, message: str):
         super().__init__(message, code="MEMORY_ERROR")
 
 
 class TimeoutError(DomainError):
     """Erreur de timeout"""
-    
-    def __init__(self, message: str, timeout_seconds: Optional[int] = None):
+
+    def __init__(self, message: str, timeout_seconds: int | None = None):
         self.timeout_seconds = timeout_seconds
         super().__init__(message, code="TIMEOUT_ERROR")
-    
+
     def __str__(self):
         base = super().__str__()
         if self.timeout_seconds:
@@ -92,18 +92,18 @@ class TimeoutError(DomainError):
 
 class SandboxError(DomainError):
     """Erreur sandbox/exécution"""
-    
+
     def __init__(self, message: str):
         super().__init__(message, code="SANDBOX_ERROR")
 
 
 class ValidationError(DomainError):
     """Erreur de validation d'entrée"""
-    
-    def __init__(self, message: str, field: Optional[str] = None):
+
+    def __init__(self, message: str, field: str | None = None):
         self.field = field
         super().__init__(message, code="INVALID_INPUT")
-    
+
     def __str__(self):
         base = super().__str__()
         if self.field:

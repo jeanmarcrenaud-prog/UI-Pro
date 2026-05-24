@@ -2,8 +2,10 @@
 
 # ==================== WebSocket Events ====================
 
+
 class WSEvent:
     """Types d'événements WebSocket"""
+
     TOKEN = "token"
     STEP = "step"
     TOOL = "tool"
@@ -13,8 +15,10 @@ class WSEvent:
 
 # ==================== Agent Steps ====================
 
+
 class AgentStep:
     """Étapes de l'agent"""
+
     ANALYZING = "analyzing"
     PLANNING = "planning"
     EXECUTING = "executing"
@@ -23,8 +27,10 @@ class AgentStep:
 
 # ==================== Error Codes ====================
 
+
 class ErrorCode:
     """Codes d'erreur métier"""
+
     INVALID_INPUT = "INVALID_INPUT"
     LLM_ERROR = "LLM_ERROR"
     TOOL_ERROR = "TOOL_ERROR"
@@ -35,8 +41,10 @@ class ErrorCode:
 
 # ==================== Config Keys ====================
 
+
 class ConfigKey:
     """Clés de configuration"""
+
     OLLAMA_URL = "ollama_url"
     MODEL_FAST = "model_fast"
     MODEL_REASONING = "model_reasoning"

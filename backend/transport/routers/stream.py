@@ -1,11 +1,9 @@
 # views/routers/stream.py - SSE Streaming Endpoints (Unified Protocol)
 
-from fastapi import APIRouter, Query, Body
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
-from typing import Optional
 import logging
-import uuid
+
+from fastapi import APIRouter, Body, Query
+from pydantic import BaseModel
 
 from models.settings import settings
 
@@ -14,24 +12,24 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["stream"])
 
 # Import unified streaming
-from backend.infrastructure.streaming_unified import create_sse_response
 from backend.domain.core.langgraph.streaming import get_stream_checkpoint
+from backend.infrastructure.streaming_unified import create_sse_response
 
 
 class StreamRequest(BaseModel):
     message: str
-    model: Optional[str] = None
-    provider: Optional[str] = "ollama"
-    temperature: Optional[float] = 0.7
-    session_id: Optional[str] = None
-    resume_from: Optional[str] = None  # stream_id to resume from
+    model: str | None = None
+    provider: str | None = "ollama"
+    temperature: float | None = 0.7
+    session_id: str | None = None
+    resume_from: str | None = None  # stream_id to resume from
 
 
 class ResumeRequest(BaseModel):
     stream_id: str
     message: str
-    model: Optional[str] = None
-    provider: Optional[str] = "ollama"
+    model: str | None = None
+    provider: str | None = "ollama"
 
 
 @router.get("/stream")
@@ -50,7 +48,7 @@ async def stream_endpoint_get(
 
     # Strip provider prefix from model name
     if model and provider and model.startswith(f"{provider}-"):
-        model = model[len(provider) + 1:]
+        model = model[len(provider) + 1 :]
 
     return await create_sse_response(
         message=prompt,
@@ -71,7 +69,7 @@ async def stream_endpoint_post(request: StreamRequest = Body(...)):
 
     # Strip provider prefix from model name
     if model and provider and model.startswith(f"{provider}-"):
-        model = model[len(provider) + 1:]
+        model = model[len(provider) + 1 :]
 
     return await create_sse_response(
         message=request.message,
@@ -108,11 +106,11 @@ async def stream_resume(request: ResumeRequest = Body(...)):
 async def get_checkpoint(stream_id: str):
     """Get checkpoint info for a stream."""
     from backend.domain.core.langgraph.streaming import get_stream_checkpoint
-    
+
     checkpoint = get_stream_checkpoint(stream_id)
     if not checkpoint:
         return {"error": "Stream not found", "stream_id": stream_id}
-    
+
     return {
         "stream_id": stream_id,
         "last_token_index": checkpoint["last_token_index"],

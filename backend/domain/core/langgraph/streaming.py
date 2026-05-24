@@ -4,11 +4,9 @@ Token streaming pipeline for the agent with batching and robust resume.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import uuid
 from datetime import datetime
-from typing import Optional
 
 from .state import AgentState
 
@@ -29,17 +27,20 @@ def _emit_step(phase: str, message: str):
         except (UnicodeEncodeError, UnicodeDecodeError):
             message = message.encode("ascii", "replace").decode("ascii")
         from backend.domain.core.events import emit_agent_step
+
         emit_agent_step(phase, message)
     except Exception:
         pass
 
 
-def get_stream_checkpoint(stream_id: str) -> Optional[dict]:
+def get_stream_checkpoint(stream_id: str) -> dict | None:
     """Get checkpoint data for resuming a stream."""
     return _stream_checkpoints.get(stream_id)
 
 
-def save_stream_checkpoint(stream_id: str, session_id: str, last_token_index: int, state: dict):
+def save_stream_checkpoint(
+    stream_id: str, session_id: str, last_token_index: int, state: dict
+):
     """Save checkpoint for potential resume."""
     _stream_checkpoints[stream_id] = {
         "session_id": session_id,
@@ -56,12 +57,13 @@ async def stream_agent(
     max_attempts: int = 3,
     model: str = "",
     provider: str = "ollama",
-    resume_from: Optional[str] = None,
+    resume_from: str | None = None,
 ):
     """
     Streaming optimisé avec batching et resume.
     """
     from backend.domain.core.langgraph import get_orchestrator
+
     app = await get_orchestrator()
 
     # Generate or resume stream_id
@@ -132,11 +134,15 @@ async def stream_agent(
 
             exec_val = event.get("execution_result")
             if exec_val:
-                success = exec_val.get("success", False) if isinstance(exec_val, dict) else False
+                success = (
+                    exec_val.get("success", False)
+                    if isinstance(exec_val, dict)
+                    else False
+                )
                 yield f"[STEP]executing:Execution {'OK' if success else 'FAILED'}"
 
             # Token streaming from latest assistant message
-            if "messages" in event and event["messages"]:
+            if event.get("messages"):
                 last_msg = event["messages"][-1]
                 if last_msg.get("role") == "assistant":
                     content = last_msg.get("content", "")
@@ -150,7 +156,9 @@ async def stream_agent(
                     if len(content) > last_len:
                         new_text = content[last_len:]
                         if new_text.strip():
-                            logger.info(f"[streaming] Token received: {new_text[:50]}...")
+                            logger.info(
+                                f"[streaming] Token received: {new_text[:50]}..."
+                            )
                             # Add to buffer for batching
                             token_buffer.append(new_text)
                             token_count += len(new_text)
@@ -163,7 +171,9 @@ async def stream_agent(
 
                                 # Save checkpoint periodically
                                 if token_count % 50 == 0:
-                                    save_stream_checkpoint(stream_id, session_id, token_count, dict(event))
+                                    save_stream_checkpoint(
+                                        stream_id, session_id, token_count, dict(event)
+                                    )
 
                         _last_message_length[session_id] = len(content)
 
@@ -187,11 +197,11 @@ async def stream_agent(
     except Exception as e:
         logger.exception("Streaming failed")
         save_stream_checkpoint(stream_id, session_id, token_count, {"error": str(e)})
-        yield f"[ERROR]500:{str(e)}"
+        yield f"[ERROR]500:{e!s}"
         yield "[DONE]"
 
     finally:
         _last_message_length.pop(session_id, None)
 
 
-__all__ = ["stream_agent", "get_stream_checkpoint", "save_stream_checkpoint"]
+__all__ = ["get_stream_checkpoint", "save_stream_checkpoint", "stream_agent"]

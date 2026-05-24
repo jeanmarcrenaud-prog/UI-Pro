@@ -5,20 +5,22 @@ Centralizes all event types and handlers.
 """
 
 import threading
+import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
-import uuid
+from typing import Any
 
-from backend.domain.core.constants import WSEvent, AgentStep
-
+from backend.domain.core.constants import AgentStep, WSEvent
 
 # ==================== Event Classes ====================
+
 
 @dataclass
 class BaseEvent:
     """Base event class with common fields"""
+
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     timestamp: datetime = field(default_factory=datetime.now)
     source: str = "unknown"
@@ -27,14 +29,16 @@ class BaseEvent:
 @dataclass
 class AgentEvent(BaseEvent):
     """Event emitted during agent execution"""
+
     step: str = AgentStep.ANALYZING
     message: str = ""
-    data: Dict[str, Any] = field(default_factory=dict)
+    data: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class TokenEvent(BaseEvent):
     """Token streaming event"""
+
     token: str = ""
     is_final: bool = False
 
@@ -42,24 +46,28 @@ class TokenEvent(BaseEvent):
 @dataclass
 class ToolEvent(BaseEvent):
     """Tool execution event"""
+
     tool_name: str = ""
-    input_data: Dict[str, Any] = field(default_factory=dict)
-    output_data: Optional[Any] = None
+    input_data: dict[str, Any] = field(default_factory=dict)
+    output_data: Any | None = None
     success: bool = True
 
 
 @dataclass
 class ErrorEvent(BaseEvent):
     """Error event"""
+
     error_code: str = ""
     message: str = ""
-    details: Optional[Dict[str, Any]] = None
+    details: dict[str, Any] | None = None
 
 
 # ==================== Event Types Enum ====================
 
+
 class EventType(str, Enum):
     """All event types in the system"""
+
     AGENT = "agent"
     TOKEN = "token"
     TOOL = "tool"
@@ -70,28 +78,29 @@ class EventType(str, Enum):
 
 # ==================== Event Bus (Pub/Sub) ====================
 
+
 class EventBus:
     """Simple pub/sub event bus with thread-safe operations"""
-    
+
     def __init__(self):
-        self._subscribers: Dict[EventType, List[Callable]] = {
+        self._subscribers: dict[EventType, list[Callable]] = {
             event_type: [] for event_type in EventType
         }
         self._lock = threading.Lock()
-    
+
     def subscribe(self, event_type: EventType, handler: Callable) -> str:
         """Subscribe to an event type. Returns subscription ID."""
         sub_id = str(uuid.uuid4())
         with self._lock:
             self._subscribers[event_type].append(handler)
         return sub_id
-    
+
     def unsubscribe(self, event_type: EventType, handler: Callable):
         """Unsubscribe from an event type"""
         with self._lock:
             if handler in self._subscribers[event_type]:
                 self._subscribers[event_type].remove(handler)
-    
+
     def publish(self, event: BaseEvent, event_type: EventType):
         """Publish an event to all subscribers"""
         # Copy handlers under lock to avoid modification during iteration
@@ -102,8 +111,9 @@ class EventBus:
                 handler(event)
             except Exception as e:
                 import logging
+
                 logging.getLogger(__name__).error(f"Handler error: {e}")
-    
+
     def clear(self):
         """Clear all subscribers"""
         with self._lock:
@@ -112,7 +122,7 @@ class EventBus:
 
 
 # Singleton event bus
-_event_bus: Optional[EventBus] = None
+_event_bus: EventBus | None = None
 
 
 def get_event_bus() -> EventBus:
@@ -125,7 +135,8 @@ def get_event_bus() -> EventBus:
 
 # ==================== Event Serializer ====================
 
-def event_to_dict(event: BaseEvent) -> Dict[str, Any]:
+
+def event_to_dict(event: BaseEvent) -> dict[str, Any]:
     """Serialize event to dict for JSON transmission"""
     return {
         "id": event.id,
@@ -159,17 +170,18 @@ def error_event_to_ws(event: ErrorEvent) -> str:
 
 # ==================== Event Router ====================
 
+
 class EventRouter:
     """Routes events to appropriate handlers"""
-    
+
     def __init__(self):
-        self._routes: Dict[str, Callable] = {}
-    
+        self._routes: dict[str, Callable] = {}
+
     def register(self, event_type: str, handler: Callable):
         """Register a handler for an event type"""
         self._routes[event_type] = handler
-    
-    def route(self, event: BaseEvent) -> Optional[str]:
+
+    def route(self, event: BaseEvent) -> str | None:
         """Route an event and return result"""
         handler = self._routes.get(event.__class__.__name__)
         if handler:
@@ -179,13 +191,11 @@ class EventRouter:
 
 # ==================== Quick Event Helpers ====================
 
-def emit_agent_step(step: str, message: str, data: Optional[Dict] = None):
+
+def emit_agent_step(step: str, message: str, data: dict | None = None):
     """Quick helper to emit an agent step event"""
     event = AgentEvent(
-        step=step,
-        message=message,
-        data=data or {},
-        source="orchestrator"
+        step=step, message=message, data=data or {}, source="orchestrator"
     )
     get_event_bus().publish(event, EventType.AGENT)
     return event
@@ -193,35 +203,30 @@ def emit_agent_step(step: str, message: str, data: Optional[Dict] = None):
 
 def emit_token(token: str, is_final: bool = False):
     """Quick helper to emit a token event"""
-    event = TokenEvent(
-        token=token,
-        is_final=is_final,
-        source="llm"
-    )
+    event = TokenEvent(token=token, is_final=is_final, source="llm")
     get_event_bus().publish(event, EventType.TOKEN)
     return event
 
 
-def emit_tool(tool_name: str, input_data: Dict, output_data: Any = None, success: bool = True):
+def emit_tool(
+    tool_name: str, input_data: dict, output_data: Any = None, success: bool = True
+):
     """Quick helper to emit a tool event"""
     event = ToolEvent(
         tool_name=tool_name,
         input_data=input_data,
         output_data=output_data,
         success=success,
-        source="executor"
+        source="executor",
     )
     get_event_bus().publish(event, EventType.TOOL)
     return event
 
 
-def emit_error(error_code: str, message: str, details: Optional[Dict] = None):
+def emit_error(error_code: str, message: str, details: dict | None = None):
     """Quick helper to emit an error event"""
     event = ErrorEvent(
-        error_code=error_code,
-        message=message,
-        details=details,
-        source="system"
+        error_code=error_code, message=message, details=details, source="system"
     )
     get_event_bus().publish(event, EventType.ERROR)
     return event

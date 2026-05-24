@@ -26,6 +26,7 @@ def _get_llm_router():
     global _llm_router
     if _llm_router is None:
         from backend.infrastructure.llm_router import LLMRouter
+
         _llm_router = LLMRouter()
     return _llm_router
 
@@ -33,6 +34,7 @@ def _get_llm_router():
 # ========================================
 # Graph Builder
 # ========================================
+
 
 def build_graph():
     from langgraph.graph import END, START, StateGraph
@@ -113,6 +115,7 @@ async def run_agent(message: str, session_id: str = "default", max_attempts: int
 # Backward Compatibility
 # ========================================
 
+
 class LangGraphOrchestrator:
     async def run(self, message: str, session_id: str, **kwargs):
         return await run_agent(message, session_id)
@@ -124,12 +127,12 @@ def get_langgraph_orchestrator() -> LangGraphOrchestrator:
 
 __all__ = [
     "AgentState",
+    "LangGraphOrchestrator",
     "build_graph",
+    "get_langgraph_orchestrator",
     "get_orchestrator",
     "run_agent",
     "stream_agent",
-    "LangGraphOrchestrator",
-    "get_langgraph_orchestrator",
 ]
 
 
@@ -137,5 +140,6 @@ __all__ = [
 def __getattr__(name):
     if name == "stream_agent":
         from .streaming import stream_agent
+
         return stream_agent
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

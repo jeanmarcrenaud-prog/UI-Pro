@@ -2,44 +2,37 @@
 conftest.py - Pytest configuration and shared fixtures
 """
 
-import pytest
 import os
+import shutil
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch, Mock
-import tempfile
-import shutil
+from unittest.mock import Mock, patch
+
+import pytest
 
 # Import project modules for testing
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Import only what conftest needs
-from llm import call, MODELS
-from models.settings import OLLAMA_URL
-from backend.infrastructure.memory import MemoryManager, add_memory, search_memory
 
 # =========================================
 # FIXTURES
 # =========================================
 
+
 @pytest.fixture
 def mock_ollama_response():
     """Fixture providing a mocked Ollama API response"""
-    return {
-        "response": "Mocked response from Ollama",
-        "model": "qwen-opus"
-    }
+    return {"response": "Mocked response from Ollama", "model": "qwen-opus"}
+
 
 @pytest.fixture
 def mock_subprocess_run():
     """Fixture for mocking subprocess.run"""
-    with patch('subprocess.run') as mock_run:
-        mock_run.return_value = Mock(
-            returncode=0,
-            stdout="Success output",
-            stderr=""
-        )
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = Mock(returncode=0, stdout="Success output", stderr="")
         yield mock_run
+
 
 @pytest.fixture
 def temp_workspace(tmp_path):
@@ -47,10 +40,11 @@ def temp_workspace(tmp_path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     workspace.create("test.py", content="print('test')")
-    
+
     with patch.dict(os.environ, {"WORKSPACE": str(workspace)}):
         yield workspace
     shutil.rmtree(workspace, ignore_errors=True)
+
 
 @pytest.fixture
 def mock_web_search_result():
@@ -60,23 +54,25 @@ def mock_web_search_result():
         {"title": "Python Tutorial", "link": "https://tutorial.python.org/"},
     ]
 
+
 @pytest.fixture
 def mock_faiss_index():
     """Create a mock FAISS index for testing"""
     try:
         import faiss
         import numpy as np
-        
+
         # Create a small FAISS index
         dimension = 384
         index = faiss.IndexFlatL2(dimension)
-        dummy_vectors = np.random.rand(10, dimension).astype('float32')
+        dummy_vectors = np.random.rand(10, dimension).astype("float32")
         index.add(dummy_vectors)
-        
+
         return index, dimension
     except ImportError:
         # Fallback if FAISS not installed
         return None, None
+
 
 @pytest.fixture
 def config_override(monkeypatch):
@@ -91,9 +87,11 @@ def config_override(monkeypatch):
     monkeypatch.delenv("MODEL_FAST", raising=False)
     monkeypatch.delenv("MODEL_REASONING", raising=False)
 
+
 # =========================================
 # AUTOMATIQUE FIXTURES
 # =========================================
+
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_runtest_setup(item):
@@ -103,4 +101,3 @@ def pytest_runtest_setup(item):
         if marker and os.environ.get("LOG_LEVEL") == "DEBUG":
             item.log_start = True
             item.log_debug = True
-

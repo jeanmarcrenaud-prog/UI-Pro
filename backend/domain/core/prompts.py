@@ -6,8 +6,8 @@ Prompt templates centralisés pour l'orchestrator.
 - Registry pour accès facile
 """
 
-from typing import Any
 import logging
+from typing import Any
 
 # ================== SYSTEM INSTRUCTIONS ==================
 
@@ -131,10 +131,11 @@ PROMPTS = {
 
 # ================== UTILITY FUNCTIONS ==================
 
+
 def format_with_fallback(template: str, **kwargs: Any) -> str:
     """
     Format template with missing key handling.
-    
+
     Auto-injects system prompt if not provided.
     """
     # Auto-inject system prompt if not provided
@@ -146,9 +147,9 @@ def format_with_fallback(template: str, **kwargs: Any) -> str:
                 if sys_key:
                     kwargs["system"] = SYSTEMS.get(sys_key, "")
                 break
-    
+
     safe_kwargs = {k: v for k, v in kwargs.items()}
-    
+
     try:
         return template.format(**safe_kwargs)
     except KeyError as e:
@@ -163,7 +164,7 @@ def format_with_fallback(template: str, **kwargs: Any) -> str:
 def get_prompt(name: str, **kwargs: Any) -> str:
     """
     Get and format prompt by name.
-    
+
     Usage:
         get_prompt("planner", task="Build API")
         get_prompt("architect", plan="...")
@@ -172,18 +173,18 @@ def get_prompt(name: str, **kwargs: Any) -> str:
     upper_name = name.upper() if name.islower() else name
     if not upper_name.endswith("_PROMPT"):
         upper_name = upper_name + "_PROMPT"
-    
+
     prompt_tuple = PROMPTS.get(upper_name)
     if not prompt_tuple:
         logging.error(f"Unknown prompt: {name}")
         raise ValueError(f"Unknown prompt template: {name}")
-    
+
     template, sys_key = prompt_tuple
-    
+
     # Auto-inject system
     if "system" not in kwargs and sys_key:
         kwargs["system"] = SYSTEMS.get(sys_key, "")
-    
+
     return format_with_fallback(template, **kwargs)
 
 
@@ -212,7 +213,9 @@ def reviewer_prompt(code: str, **kwargs: Any) -> str:
     return get_prompt("reviewer", **kwargs)
 
 
-def fix_prompt(error: str, current_code: str, attempt: int = 1, max_retry: int = 3, **kwargs: Any) -> str:
+def fix_prompt(
+    error: str, current_code: str, attempt: int = 1, max_retry: int = 3, **kwargs: Any
+) -> str:
     """Convenience wrapper for fix prompt"""
     kwargs["error"] = error
     kwargs["current_code"] = current_code
@@ -225,15 +228,27 @@ def fix_prompt(error: str, current_code: str, attempt: int = 1, max_retry: int =
 
 __all__ = [
     # System instructions
-    "SYSTEM_PLANNER", "SYSTEM_ARCHITECT", "SYSTEM_CODER", 
-    "SYSTEM_REVIEWER", "SYSTEM_FIXER",
+    "SYSTEM_PLANNER",
+    "SYSTEM_ARCHITECT",
+    "SYSTEM_CODER",
+    "SYSTEM_REVIEWER",
+    "SYSTEM_FIXER",
     # Main prompts
-    "PLANNER_PROMPT", "ARCHITECT_PROMPT", "CODER_PROMPT",
-    "REVIEWER_PROMPT", "FIX_PROMPT", "MEMORY_CONTEXT_PROMPT",
+    "PLANNER_PROMPT",
+    "ARCHITECT_PROMPT",
+    "CODER_PROMPT",
+    "REVIEWER_PROMPT",
+    "FIX_PROMPT",
+    "MEMORY_CONTEXT_PROMPT",
     # Utilities
-    "PROMPTS", "SYSTEMS",
-    "format_with_fallback", "get_prompt",
+    "PROMPTS",
+    "SYSTEMS",
+    "format_with_fallback",
+    "get_prompt",
     # Convenient wrappers
-    "planner_prompt", "architect_prompt", "coder_prompt",
-    "reviewer_prompt", "fix_prompt",
+    "planner_prompt",
+    "architect_prompt",
+    "coder_prompt",
+    "reviewer_prompt",
+    "fix_prompt",
 ]

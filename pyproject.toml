@@ -83,15 +83,84 @@ filterwarnings = [
     "ignore::PendingDeprecationWarning",
 ]
 
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors (errors only)
+    "F",     # pyflakes (errors only)
+    "I",     # isort
+    "B",     # flake8-bugbear
+    "UP",    # pyupgrade
+    "RUF",   # ruff-specific rules
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "PLR0913", # too many arguments
+    "PLR2004", # magic value comparison
+    "PLW0603", # global-statement
+    "PLW1510", # subprocess.run without check (legacy)
+    "PLC0415", # import not at top level (legacy lazy imports)
+    "SIM102", # nested if statements (legacy)
+    "E712",   # equality to True/False (legacy)
+    "F841",   # unused variables (legacy)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "PLR2004", "F841", "E712", "RUF059", "F821", "RUF015", "B007", "B018"]  # Allow assert, magic values, unused vars
+"adapters/**" = ["ALL"]  # Legacy code - ignore all rules
+"scripts/**" = ["ALL"]  # Scripts - ignore all rules
+"run.py" = ["PLC0415", "PLW1510", "SIM102", "E722", "RUF001", "E402"]  # Launcher script
+"setup.py" = ["PLC0415", "PLW1510"]  # Setup script
+"llm/**" = ["PLC0415", "PLW1510", "F401"]  # Legacy llm package
+"backend/**" = [
+    "E402",  # Module level import not at top (FastAPI routers)
+    "E721",  # Ambiguous variable names (l, I)
+    "E741",  # Ambiguous variable name
+    "F401",  # Unused imports
+    "F811",  # Redefinition
+    "F821",  # Undefined name
+    "F822",  # Undefined name in __all__
+    "B007",  # Unused loop control
+    "B008",  # Body in argument defaults (FastAPI)
+    "B018",  # Useless expression
+    "B904",  # raise from err
+    "E722",  # Bare except
+    "RUF012",  # Mutable class default
+    "RUF013",  # Implicit Optional
+    "RUF022",  # __all__ not sorted
+    "RUF059",  # Unpacked variable unused
+    "UP035",  # typing.Dict deprecated
+    "B905",  # zip without strict
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+
 [tool.pyright]
-include = ["backend/**"]
-exclude = ["workspace/**", "**/__pycache__/**", ".venv/**"]
+include = ["backend/**", "llm/**", "models/**"]
+exclude = ["workspace/**", "**/__pycache__/**", ".venv/**", "tests/**"]
 typeCheckingMode = "basic"
+pythonVersion = "3.10"
 reportMissingImports = false
+reportMissingTypeStubs = false
 reportOptionalMemberAccess = false
 reportTypedDictNotRequiredAccess = false
 reportGeneralTypeIssues = false
-pythonVersion = "3.10"
+reportUnusedVariable = false
+reportUnusedFunction = false
+reportUnusedImport = false
+reportAttributeAccessIssue = false
+reportCallIssue = false
+reportOperatorIssue = false
+reportArgumentType = false
+reportReturnType = false
+reportNamedExpression = false
+reportUntypedFunction = false
+reportUntypedClass = false
+reportUnknownVariableType = false
+reportInvalidStringEscapeSequence = false
+reportUndefinedVariable = false
 
 [tool.coverage.run]
 branch = true

@@ -1,9 +1,10 @@
 # tests/test_faiss.py - FAISS adapter tests
 
-import pytest
-from pathlib import Path
-import tempfile
 import shutil
+import tempfile
+from pathlib import Path
+
+import pytest
 
 
 @pytest.fixture
@@ -16,15 +17,14 @@ def temp_dir():
 
 class TestFAISSAdapter:
     """Tests for FAISS adapter"""
-    
+
     def test_adapter_init(self, temp_dir):
         """Test adapter initialization"""
         try:
             from adapters.memory.faiss import FAISSAdapter
-            
+
             adapter = FAISSAdapter(
-                persist_path=str(temp_dir / "test.index"),
-                dimension=384
+                persist_path=str(temp_dir / "test.index"), dimension=384
             )
             assert adapter is not None
             # Index may be None until model is loaded
@@ -34,17 +34,16 @@ class TestFAISSAdapter:
         except Exception as e:
             # May fail due to missing model download
             pytest.skip(f"Cannot initialize adapter: {e}")
-    
+
     def test_add_empty_text(self, temp_dir):
         """Test adding empty text does nothing"""
         try:
             from adapters.memory.faiss import FAISSAdapter
-            
+
             adapter = FAISSAdapter(
-                persist_path=str(temp_dir / "test.index"),
-                dimension=384
+                persist_path=str(temp_dir / "test.index"), dimension=384
             )
-            
+
             # Get initial count if index exists
             if adapter.index is not None:
                 initial_count = adapter.index.ntotal
@@ -57,23 +56,22 @@ class TestFAISSAdapter:
             pytest.skip("FAISS not available")
         except Exception as e:
             pytest.skip(f"Test skipped: {e}")
-    
+
     def test_add_and_search(self, temp_dir):
         """Test adding and searching"""
         try:
             from adapters.memory.faiss import FAISSAdapter
-            
+
             adapter = FAISSAdapter(
-                persist_path=str(temp_dir / "test.index"),
-                dimension=384
+                persist_path=str(temp_dir / "test.index"), dimension=384
             )
-            
+
             # Add a document
             try:
                 adapter.add("Hello world test document")
             except Exception as e:
                 pytest.skip(f"Cannot add document: {e}")
-            
+
             # Search should return results
             try:
                 results = adapter.search("hello world", k=1)
@@ -84,22 +82,25 @@ class TestFAISSAdapter:
             pytest.skip("FAISS not available")
         except Exception as e:
             pytest.skip(f"Test skipped: {e}")
-    
+
     def test_search_empty_index(self, temp_dir):
         """Test search on empty index returns empty"""
         try:
             from adapters.memory.faiss import FAISSAdapter
-            
+
             adapter = FAISSAdapter(
-                persist_path=str(temp_dir / "test.index"),
-                dimension=384
+                persist_path=str(temp_dir / "test.index"), dimension=384
             )
-            
+
             # Search on empty index
             try:
                 results = adapter.search("test query", k=3)
                 # Should return empty list or similar
-                assert results is None or results == [] or (isinstance(results, list) and len(results) >= 0)
+                assert (
+                    results is None
+                    or results == []
+                    or (isinstance(results, list) and len(results) >= 0)
+                )
             except AttributeError:
                 # index is None - skip
                 pytest.skip("Index not initialized")
@@ -107,22 +108,21 @@ class TestFAISSAdapter:
             pytest.skip("FAISS not available")
         except Exception as e:
             pytest.skip(f"Test skipped: {e}")
-    
+
     def test_batch_save(self, temp_dir):
         """Test batch save behavior"""
         try:
             from adapters.memory.faiss import FAISSAdapter
-            
+
             adapter = FAISSAdapter(
-                persist_path=str(temp_dir / "test.index"),
-                dimension=384
+                persist_path=str(temp_dir / "test.index"), dimension=384
             )
-            
+
             # Try to add documents without auto-save
             try:
                 for i in range(15):
                     adapter.add(f"test document {i}", auto_save=False)
-                
+
                 # Check if any documents were added
                 if adapter.index is not None:
                     assert adapter.index.ntotal >= 0
@@ -134,18 +134,17 @@ class TestFAISSAdapter:
             pytest.skip("FAISS not available")
         except Exception as e:
             pytest.skip(f"Test skipped: {e}")
-    
+
     def test_dimension_mismatch(self, temp_dir):
         """Test handling of dimension mismatch"""
         try:
             from adapters.memory.faiss import FAISSAdapter
-            
+
             # Initialize with dimension
             adapter = FAISSAdapter(
-                persist_path=str(temp_dir / "test.index"),
-                dimension=384
+                persist_path=str(temp_dir / "test.index"), dimension=384
             )
-            
+
             # Test that adapter was created with correct dimension
             assert adapter.d == 384
         except ImportError:

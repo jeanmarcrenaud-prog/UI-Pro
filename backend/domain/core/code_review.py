@@ -3,13 +3,13 @@ Code Review Module - Static analysis before executing LLM-generated code.
 Supports: Bandit (security) and Pylint (style & bugs).
 """
 
-import subprocess
 import json
 import logging
+import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from dataclasses import dataclass
-from typing import Optional, List, Dict, Any
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +17,9 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ReviewResult:
     """Result of code review"""
+
     success: bool
-    issues: List[Dict[str, Any]]
+    issues: list[dict[str, Any]]
     tool: str
     summary: str
     raw_output: str = ""
@@ -29,9 +30,9 @@ class CodeReviewer:
 
     def __init__(
         self,
-        tools: List[str] | None = None,
-        fail_on: List[str] | None = None,
-        bandit_config: Optional[Path] = None,
+        tools: list[str] | None = None,
+        fail_on: list[str] | None = None,
+        bandit_config: Path | None = None,
     ):
         self.tools = tools or ["bandit"]
         self.fail_on = {level.lower() for level in (fail_on or ["high", "medium"])}
@@ -42,9 +43,11 @@ class CodeReviewer:
         if not code or not code.strip():
             return ReviewResult(success=True, issues=[], tool="", summary="Empty code")
 
-        all_issues: List[Dict[str, Any]] = []
+        all_issues: list[dict[str, Any]] = []
 
-        with NamedTemporaryFile(mode="w", suffix=".py", delete=True, encoding="utf-8") as tmp:
+        with NamedTemporaryFile(
+            mode="w", suffix=".py", delete=True, encoding="utf-8"
+        ) as tmp:
             tmp.write(code)
             tmp.flush()
             filepath = tmp.name
@@ -70,9 +73,9 @@ class CodeReviewer:
             raw_output="",
         )
 
-    def _run_bandit(self, filepath: str) -> List[Dict[str, Any]]:
+    def _run_bandit(self, filepath: str) -> list[dict[str, Any]]:
         """Run Bandit security linter."""
-        issues: List[Dict[str, Any]] = []
+        issues: list[dict[str, Any]] = []
         cmd = ["bandit", "-f", "json", "-r", filepath]
 
         if self.bandit_config and self.bandit_config.exists():
@@ -90,20 +93,26 @@ class CodeReviewer:
                 try:
                     data = json.loads(result.stdout)
                     for finding in data.get("results", []):
-                        issues.append({
-                            "tool": "bandit",
-                            "severity": finding.get("issue_severity", "medium").lower(),
-                            "message": finding.get("issue_text", ""),
-                            "line": finding.get("line_number"),
-                            "code": finding.get("code"),
-                            "test_id": finding.get("test_id"),
-                        })
+                        issues.append(
+                            {
+                                "tool": "bandit",
+                                "severity": finding.get(
+                                    "issue_severity", "medium"
+                                ).lower(),
+                                "message": finding.get("issue_text", ""),
+                                "line": finding.get("line_number"),
+                                "code": finding.get("code"),
+                                "test_id": finding.get("test_id"),
+                            }
+                        )
                 except json.JSONDecodeError:
                     logger.warning("Failed to parse bandit JSON output")
 
             # If bandit failed for other reasons
             if result.returncode not in (0, 1):  # 1 = issues found
-                logger.warning(f"Bandit exited with code {result.returncode}: {result.stderr}")
+                logger.warning(
+                    f"Bandit exited with code {result.returncode}: {result.stderr}"
+                )
 
         except FileNotFoundError:
             logger.warning("bandit not installed. Skipping security scan.")
@@ -114,9 +123,9 @@ class CodeReviewer:
 
         return issues
 
-    def _run_pylint(self, filepath: str) -> List[Dict[str, Any]]:
+    def _run_pylint(self, filepath: str) -> list[dict[str, Any]]:
         """Run Pylint for code quality."""
-        issues: List[Dict[str, Any]] = []
+        issues: list[dict[str, Any]] = []
         try:
             result = subprocess.run(
                 ["pylint", "--output-format=json", filepath],
@@ -136,14 +145,16 @@ class CodeReviewer:
                         elif msg_type in ("warning", "refactor"):
                             severity = "medium"
 
-                        issues.append({
-                            "tool": "pylint",
-                            "severity": severity,
-                            "message": msg.get("message", ""),
-                            "line": msg.get("line"),
-                            "column": msg.get("column"),
-                            "symbol": msg.get("symbol"),
-                        })
+                        issues.append(
+                            {
+                                "tool": "pylint",
+                                "severity": severity,
+                                "message": msg.get("message", ""),
+                                "line": msg.get("line"),
+                                "column": msg.get("column"),
+                                "symbol": msg.get("symbol"),
+                            }
+                        )
                 except json.JSONDecodeError:
                     logger.warning("Failed to parse pylint JSON output")
 
@@ -159,18 +170,20 @@ class CodeReviewer:
 
 # ====================== Singleton ======================
 
-_reviewer: Optional[CodeReviewer] = None
+_reviewer: CodeReviewer | None = None
 
 
 def get_reviewer(
-    tools: List[str] | None = None,
-    fail_on: List[str] | None = None,
-    bandit_config: Optional[Path] = None,
+    tools: list[str] | None = None,
+    fail_on: list[str] | None = None,
+    bandit_config: Path | None = None,
 ) -> CodeReviewer:
     """Get or create the singleton CodeReviewer."""
     global _reviewer
     if _reviewer is None:
-        _reviewer = CodeReviewer(tools=tools, fail_on=fail_on, bandit_config=bandit_config)
+        _reviewer = CodeReviewer(
+            tools=tools, fail_on=fail_on, bandit_config=bandit_config
+        )
     return _reviewer
 
 

@@ -2,11 +2,10 @@
 import asyncio
 import json
 import logging
-from pathlib import Path
 from datetime import datetime
-from typing import Optional, List
+from pathlib import Path
 
-from fastapi import APIRouter, WebSocket, HTTPException
+from fastapi import APIRouter, HTTPException, WebSocket
 from pydantic import BaseModel
 
 router = APIRouter(tags=["logs"], prefix="/api")
@@ -36,7 +35,7 @@ class LogLevelRequest(BaseModel):
 
 class LogLevelResponse(BaseModel):
     current_level: str
-    available_levels: List[str]
+    available_levels: list[str]
     timestamp: str
 
 
@@ -51,7 +50,7 @@ class LogsStatusResponse(BaseModel):
     enabled: bool
     directory: str
     current_level: str
-    files: List[LogFileInfo]
+    files: list[LogFileInfo]
     total_size_mb: float
 
 
@@ -83,28 +82,32 @@ async def get_logs_status():
         current_level = logging.getLevelName(root_logger.level)
 
         # Get log files
-        log_files: List[LogFileInfo] = []
+        log_files: list[LogFileInfo] = []
         total_size = 0
 
         if LOGS_DIR.exists():
-            for log_file in sorted(LOGS_DIR.glob("*.log"), key=lambda x: x.stat().st_mtime, reverse=True):
+            for log_file in sorted(
+                LOGS_DIR.glob("*.log"), key=lambda x: x.stat().st_mtime, reverse=True
+            ):
                 size = log_file.stat().st_size
                 total_size += size
                 modified = datetime.fromtimestamp(log_file.stat().st_mtime).isoformat()
 
-                log_files.append(LogFileInfo(
-                    name=log_file.name,
-                    size_bytes=size,
-                    modified=modified,
-                    level="JSON"  # Our files are JSON formatted
-                ))
+                log_files.append(
+                    LogFileInfo(
+                        name=log_file.name,
+                        size_bytes=size,
+                        modified=modified,
+                        level="JSON",  # Our files are JSON formatted
+                    )
+                )
 
         return LogsStatusResponse(
             enabled=True,
             directory=str(LOGS_DIR.absolute()),
             current_level=current_level,
             files=log_files[:10],  # Last 10 files
-            total_size_mb=round(total_size / (1024 * 1024), 2)
+            total_size_mb=round(total_size / (1024 * 1024), 2),
         )
     except Exception as e:
         logger.error(f"Failed to get logs status: {e}")
@@ -123,7 +126,7 @@ async def get_log_level():
         return LogLevelResponse(
             current_level=level_name,
             available_levels=list(LOG_LEVELS.keys()),
-            timestamp=datetime.now().isoformat()
+            timestamp=datetime.now().isoformat(),
         )
     except Exception as e:
         logger.error(f"[LOGS] Failed to get log level: {e}")
@@ -136,7 +139,7 @@ async def set_log_level(request: LogLevelRequest):
     if request.level.upper() not in LOG_LEVELS:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid log level. Must be one of: {', '.join(LOG_LEVELS.keys())}"
+            detail=f"Invalid log level. Must be one of: {', '.join(LOG_LEVELS.keys())}",
         )
 
     try:
@@ -156,6 +159,7 @@ async def set_log_level(request: LogLevelRequest):
         # Persist to settings
         try:
             from settings import settings
+
             settings.set_log_level(level_str)
             logger.info(f"[LOGS] Persisted log level {level_str} to settings")
         except Exception as import_err:
@@ -165,19 +169,18 @@ async def set_log_level(request: LogLevelRequest):
         return LogLevelResponse(
             current_level=level_str,
             available_levels=list(LOG_LEVELS.keys()),
-            timestamp=datetime.now().isoformat()
+            timestamp=datetime.now().isoformat(),
         )
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[LOGS] Failed to set log level: {type(e).__name__}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to set log level: {str(e)}")
+        logger.error(f"[LOGS] Failed to set log level: {type(e).__name__}: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Failed to set log level: {e!s}")
 
 
 @router.get("/logs/files/{filename}")
 async def get_log_file(filename: str):
     """Download a specific log file"""
-    import os
 
     # Prevent directory traversal
     if ".." in filename or "/" in filename:
@@ -190,7 +193,7 @@ async def get_log_file(filename: str):
     return {
         "filename": filename,
         "size_bytes": file_path.stat().st_size,
-        "content": file_path.read_text()[:10000]  # First 10KB
+        "content": file_path.read_text()[:10000],  # First 10KB
     }
 
 
@@ -199,10 +202,14 @@ async def emit_to_log_subscribers(message: str):
     """Emit a log message to all subscribed WebSocket clients"""
     for log_ws in list(_log_subscriptions):
         try:
-            await log_ws.send_text(json.dumps({
-                "type": "log",
-                "message": message[:100] if message else "",
-                "timestamp": datetime.now().isoformat(),
-            }))
+            await log_ws.send_text(
+                json.dumps(
+                    {
+                        "type": "log",
+                        "message": message[:100] if message else "",
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                )
+            )
         except Exception as e:
             logger.warning(f"Log subscription error: {e}")

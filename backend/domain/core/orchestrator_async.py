@@ -7,15 +7,17 @@ Source of truth pour l'orchestration.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
-from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Literal, Optional, TypedDict
+from typing import Any, Literal, TypedDict
 
 from models.settings import settings
-import asyncio
+
+# Workspace constant for test compatibility
+WORKSPACE = settings.workspace if hasattr(settings, "workspace") else None
 
 logger = logging.getLogger(__name__)
 
@@ -23,32 +25,38 @@ logger = logging.getLogger(__name__)
 # Lazy imports to avoid circular imports
 def _get_state_manager():
     from backend.domain.core.state_manager import StateManager
+
     return StateManager
 
 
 def _get_executor():
     from backend.infrastructure.code_execution import CodeExecutionService
+
     return CodeExecutionService
 
 
 def _get_llm_router():
     from backend.infrastructure.llm_router import get_llm_router
+
     return get_llm_router
 
 
 def _get_tool_registry():
     from backend.infrastructure.tools import ToolManager
+
     return ToolManager
 
 
 def _get_metrics_manager():
     from backend.domain.core.metrics import MetricsManager
+
     return MetricsManager
 
 
 def _emit_agent_step(phase: str, message: str):
     try:
         from backend.domain.core.events import emit_agent_step
+
         emit_agent_step(phase, message)
     except ImportError:
         pass
@@ -57,12 +65,13 @@ def _emit_agent_step(phase: str, message: str):
 # ====================== STATE ======================
 class AgentState(TypedDict, total=False):
     """État persistant du graphe LangGraph"""
+
     messages: list[dict[str, Any]]
-    plan: Optional[dict]
-    code: Optional[dict]
-    review: Optional[dict]
-    execution_result: Optional[dict]
-    error: Optional[str]
+    plan: dict | None
+    code: dict | None
+    review: dict | None
+    execution_result: dict | None
+    error: str | None
     attempt: int
     max_attempts: int
     session_id: str
@@ -76,20 +85,24 @@ class LLMWrapper:
     def __init__(self, router):
         self.router = router
 
-    async def generate(self, prompt: str, model_type: str = "fast", temperature: float = 0.7) -> str:
+    async def generate(
+        self, prompt: str, model_type: str = "fast", temperature: float = 0.7
+    ) -> str:
         """Generate text response."""
         loop = asyncio.get_running_loop()
         return await asyncio.wait_for(
-            loop.run_in_executor(None, lambda: self.router.generate(prompt, model_type)),
-            timeout=float(settings.llm_timeout)
+            loop.run_in_executor(
+                None, lambda: self.router.generate(prompt, model_type)
+            ),
+            timeout=float(settings.llm_timeout),
         )
 
     async def generate_structured(
         self,
         prompt: str,
         model_type: str = "reasoning",
-        output_schema: Optional[dict] = None,
-        temperature: float = 0.3
+        output_schema: dict | None = None,
+        temperature: float = 0.3,
     ) -> dict[str, Any]:
         """Generate structured JSON response."""
         # Add schema hint to prompt if provided
@@ -107,7 +120,11 @@ class LLMWrapper:
             cleaned = response.strip()
             if cleaned.startswith("```"):
                 lines = cleaned.split("\n")
-                json_lines = [l for l in lines if not l.startswith("```") and not l.startswith("json")]
+                json_lines = [
+                    l
+                    for l in lines
+                    if not l.startswith("```") and not l.startswith("json")
+                ]
                 cleaned = "\n".join(json_lines)
                 try:
                     return json.loads(cleaned)
@@ -194,7 +211,7 @@ async def execute_node(state: AgentState, executor) -> AgentState:
         loop = asyncio.get_running_loop()
         result = await asyncio.wait_for(
             loop.run_in_executor(None, lambda: executor.run(files)),
-            timeout=float(settings.executor_timeout)
+            timeout=float(settings.executor_timeout),
         )
         state["execution_result"] = result
     except Exception as e:
@@ -282,17 +299,28 @@ class OrchestratorAsync:
     def _build_graph(self):
         """Build LangGraph workflow (lazy build)"""
         try:
-            from langgraph.graph import StateGraph, END, START
             from langgraph.checkpoint.memory import MemorySaver
+            from langgraph.graph import END, START, StateGraph
 
             workflow = StateGraph(AgentState)
 
             # Add nodes
-            workflow.add_node("analyzing", lambda state: asyncio.run(analyzing_node(state, self.llm)))  # type: ignore[arg-type]
-            workflow.add_node("planning", lambda state: asyncio.run(planning_node(state, self.llm)))  # type: ignore[arg-type]
-            workflow.add_node("coding", lambda state: asyncio.run(coding_node(state, self.llm)))  # type: ignore[arg-type]
-            workflow.add_node("reviewing", lambda state: asyncio.run(review_node(state, self.llm)))  # type: ignore[arg-type]
-            workflow.add_node("executing", lambda state: asyncio.run(execute_node(state, self.executor)))  # type: ignore[arg-type]
+            workflow.add_node(
+                "analyzing", lambda state: asyncio.run(analyzing_node(state, self.llm))
+            )  # type: ignore[arg-type]
+            workflow.add_node(
+                "planning", lambda state: asyncio.run(planning_node(state, self.llm))
+            )  # type: ignore[arg-type]
+            workflow.add_node(
+                "coding", lambda state: asyncio.run(coding_node(state, self.llm))
+            )  # type: ignore[arg-type]
+            workflow.add_node(
+                "reviewing", lambda state: asyncio.run(review_node(state, self.llm))
+            )  # type: ignore[arg-type]
+            workflow.add_node(
+                "executing",
+                lambda state: asyncio.run(execute_node(state, self.executor)),
+            )  # type: ignore[arg-type]
 
             # Main flow
             workflow.add_edge(START, "analyzing")
@@ -303,9 +331,7 @@ class OrchestratorAsync:
 
             # Auto-fix loop
             workflow.add_conditional_edges(
-                "executing",
-                should_fix_code,
-                {"coding": "coding", "end": END}
+                "executing", should_fix_code, {"coding": "coding", "end": END}
             )
 
             checkpointer = MemorySaver()
@@ -322,10 +348,7 @@ class OrchestratorAsync:
         return self._graph
 
     async def run(
-        self,
-        message: str,
-        session_id: str,
-        stream_mode: str = "values"
+        self, message: str, session_id: str, stream_mode: str = "values"
     ) -> dict[str, Any]:
         """
         Execute the orchestrator pipeline.
@@ -358,14 +381,13 @@ class OrchestratorAsync:
 
     async def _run_langgraph(self, message: str, session_id: str) -> dict[str, Any]:
         """Run using LangGraph"""
-        from langgraph.types import StreamMode
 
         initial_state: AgentState = {
             "messages": [{"role": "user", "content": message}],
             "session_id": session_id,
             "attempt": 0,
             "max_attempts": 3,
-            "metadata": {"start_time": datetime.now().isoformat()}
+            "metadata": {"start_time": datetime.now().isoformat()},
         }
 
         _emit_agent_step("orchestrator", f"Session démarrée: {session_id}")
@@ -390,7 +412,7 @@ class OrchestratorAsync:
             "session_id": session_id,
             "attempt": 0,
             "max_attempts": 3,
-            "metadata": {"start_time": datetime.now().isoformat()}
+            "metadata": {"start_time": datetime.now().isoformat()},
         }
 
         _emit_agent_step("orchestrator", f"Session démarrée (fallback): {session_id}")
@@ -403,7 +425,9 @@ class OrchestratorAsync:
         state = await execute_node(state, self.executor)
 
         # Auto-fix loop
-        while should_fix_code(state) == "coding" and state.get("attempt", 0) < state.get("max_attempts", 3):
+        while should_fix_code(state) == "coding" and state.get(
+            "attempt", 0
+        ) < state.get("max_attempts", 3):
             state = await coding_node(state, self.llm)
             state = await review_node(state, self.llm)
             state = await execute_node(state, self.executor)
@@ -415,7 +439,7 @@ class OrchestratorAsync:
 
 
 # ====================== FACTORY ======================
-_orchestrator: Optional[OrchestratorAsync] = None
+_orchestrator: OrchestratorAsync | None = None
 
 
 async def get_orchestrator() -> OrchestratorAsync:
@@ -426,4 +450,4 @@ async def get_orchestrator() -> OrchestratorAsync:
     return _orchestrator
 
 
-__all__ = ["OrchestratorAsync", "AgentState", "get_orchestrator"]
+__all__ = ["AgentState", "OrchestratorAsync", "get_orchestrator"]

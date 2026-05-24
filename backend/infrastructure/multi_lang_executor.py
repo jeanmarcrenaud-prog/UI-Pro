@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from pygments.lexers import guess_lexer, guess_lexer_for_filename
 from pygments.util import ClassNotFound
@@ -58,10 +58,10 @@ class MultiLangExecutor:
         },
     }
 
-    def __init__(self, config: Dict[str, Any] | None = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or {}
 
-    def _detect_language(self, code: str, filename: Optional[str] = None) -> str:
+    def _detect_language(self, code: str, filename: str | None = None) -> str:
         """Détection avancée via Pygments"""
         if not code.strip():
             return "python"
@@ -109,17 +109,19 @@ class MultiLangExecutor:
         # Fallback
         return "python"
 
-    def execute(self, code: str, filename: Optional[str] = None, timeout: Optional[int] = None) -> Dict[str, Any]:
+    def execute(
+        self, code: str, filename: str | None = None, timeout: int | None = None
+    ) -> dict[str, Any]:
         start_time = time.time()
         lang = self._detect_language(code, filename)
-        
-        result: Dict[str, Any] = {
+
+        result: dict[str, Any] = {
             "success": False,
             "language": lang,
             "output": "",
             "error": None,
             "execution_time": 0,
-            "code_hash": hashlib.sha256(code.encode()).hexdigest()[:12]
+            "code_hash": hashlib.sha256(code.encode()).hexdigest()[:12],
         }
 
         config = self.LANG_CONFIG.get(lang, self.LANG_CONFIG["python"])
@@ -145,7 +147,7 @@ class MultiLangExecutor:
 
             try:
                 cmd = config["command"] + [str(script_path)]
-                
+
                 proc = subprocess.run(
                     cmd,
                     cwd=tmpdir,
@@ -156,7 +158,7 @@ class MultiLangExecutor:
 
                 result["success"] = proc.returncode == 0
                 result["output"] = proc.stdout.strip()
-                
+
                 if proc.stderr and proc.stderr.strip():
                     result["error"] = proc.stderr.strip()
 

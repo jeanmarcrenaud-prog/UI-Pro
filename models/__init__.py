@@ -14,10 +14,12 @@ de données de l'application (et NON la logique).
  - Configuration: Settings, settings (NOTE: import depuis .settings)
  - Metrics: Metrics, MetricsManager (NOTE: import depuis backend.domain.core.metrics)
 """
+
 from backend.domain.core.metrics import Metrics, MetricsManager
+
 from .settings import Settings, settings
 
-__all__ = [ 
+__all__ = [
     "Metrics",
     "MetricsManager",
     "Settings",

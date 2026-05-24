@@ -8,14 +8,13 @@ import asyncio
 import contextlib
 import io
 import logging
-import multiprocessing
 import traceback
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 from backend.domain.core.code_review import ReviewResult, review_code
-from backend.infrastructure.secure_executor import SecureCodeExecutor
 from backend.infrastructure.multi_lang_executor import MultiLangExecutor
+from backend.infrastructure.secure_executor import SecureCodeExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +44,7 @@ class ExecutionResult:
     output: str = ""
     error: str = ""
     execution_time_ms: float = 0.0
-    review_result: Optional[ReviewResult] = None
+    review_result: ReviewResult | None = None
     sandbox_type: str = "in-process"  # "in-process" or "docker"
 
 
@@ -68,18 +67,18 @@ class CodeExecutionService:
     def __init__(self, use_docker: bool = False):
         # Secure executor with AST analysis (Python only)
         self._secure_executor = SecureCodeExecutor(
-            timeout=self.TIMEOUT_SECONDS,
-            memory_limit_mb=512
+            timeout=self.TIMEOUT_SECONDS, memory_limit_mb=512
         )
         # Multi-language executor (Python, JS, Bash)
         self._multi_executor = MultiLangExecutor()
         # Docker sandbox (optional)
         self._docker_sandbox = None
         self._use_docker = use_docker
-        
+
         if use_docker:
             try:
                 from backend.infrastructure.docker_sandbox import get_docker_sandbox
+
                 self._docker_sandbox = get_docker_sandbox()
                 logger.info("Docker sandbox enabled for code execution")
             except ImportError as e:
@@ -88,8 +87,8 @@ class CodeExecutionService:
     async def execute(
         self,
         code: str,
-        globals_dict: Optional[Dict[str, Any]] = None,
-        use_docker: Optional[bool] = None,
+        globals_dict: dict[str, Any] | None = None,
+        use_docker: bool | None = None,
     ) -> ExecutionResult:
 
         if not code.strip():
@@ -141,11 +140,8 @@ class CodeExecutionService:
     async def _execute_docker(self, code: str) -> ExecutionResult:
         """Execute code in Docker sandbox."""
         if not self._docker_sandbox:
-            return ExecutionResult(
-                False,
-                error="Docker sandbox not initialized"
-            )
-        
+            return ExecutionResult(False, error="Docker sandbox not initialized")
+
         try:
             result = await self._docker_sandbox.execute(code, "python")
             return ExecutionResult(
@@ -153,20 +149,18 @@ class CodeExecutionService:
                 output=result.output,
                 error=result.error,
                 execution_time_ms=result.execution_time_ms,
-                sandbox_type="docker"
+                sandbox_type="docker",
             )
         except Exception as e:
             logger.exception("Docker execution failed")
             return ExecutionResult(
-                False,
-                error=f"Docker sandbox error: {str(e)}",
-                sandbox_type="docker"
+                False, error=f"Docker sandbox error: {e!s}", sandbox_type="docker"
             )
 
     def _run_sync(
         self,
         code: str,
-        globals_dict: Dict[str, Any],
+        globals_dict: dict[str, Any],
         review: ReviewResult,
     ) -> ExecutionResult:
 
@@ -194,10 +188,12 @@ class CodeExecutionService:
                 review_result=review,
             )
 
-    def run(self, files: Dict[str, Any]) -> ExecutionResult:
+    def run(self, files: dict[str, Any]) -> ExecutionResult:
         """Execute multiple files from a {"files": {"name.py": "content"}} dict."""
         if not isinstance(files, dict):
-            return ExecutionResult(False, error=f"Expected dict, got {type(files).__name__}")
+            return ExecutionResult(
+                False, error=f"Expected dict, got {type(files).__name__}"
+            )
 
         file_dict = files.get("files", files)
 
@@ -213,21 +209,22 @@ class CodeExecutionService:
                 continue
             logger.info(f"Executing file: {filename}")
             result = asyncio.run(self.execute(code))
-            results.append({
-                "filename": filename,
-                "success": result.success,
-                "output": result.output,
-                "error": result.error,
-                "execution_time_ms": result.execution_time_ms,
-            })
+            results.append(
+                {
+                    "filename": filename,
+                    "success": result.success,
+                    "output": result.output,
+                    "error": result.error,
+                    "execution_time_ms": result.execution_time_ms,
+                }
+            )
             if not result.success:
                 all_success = False
             if not result.success:
                 break
 
         combined_output = "\n".join(
-            f"=== {r['filename']} ===\n{r['output'] or r['error']}"
-            for r in results
+            f"=== {r['filename']} ===\n{r['output'] or r['error']}" for r in results
         )
 
         return ExecutionResult(
@@ -240,17 +237,18 @@ class CodeExecutionService:
     async def execute_multi(
         self,
         code: str,
-        filename: Optional[str] = None,
+        filename: str | None = None,
     ) -> ExecutionResult:
         """
         Exécute du code multi-langage (Python, JavaScript, Bash).
         Détection automatique du langage.
         """
         import time
+
         start = time.perf_counter()
-        
+
         result = self._multi_executor.execute(code, filename)
-        
+
         return ExecutionResult(
             success=result["success"],
             output=result["output"],

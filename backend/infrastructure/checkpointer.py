@@ -1,7 +1,8 @@
 # backend/infrastructure/checkpointer.py (new file)
-from langgraph.checkpoint.sqlite import AsyncSqliteSaver
 from pathlib import Path
-from contextlib import asynccontextmanager
+
+from langgraph.checkpoint.sqlite import AsyncSqliteSaver
+
 
 class CheckpointManager:
     def __init__(self, settings):
@@ -11,5 +12,7 @@ class CheckpointManager:
 
     async def get_saver(self):
         if not self.saver:
-            self.saver = AsyncSqliteSaver.from_conn_string(f"sqlite+aiosqlite:///{self.db_path}")
+            self.saver = AsyncSqliteSaver.from_conn_string(
+                f"sqlite+aiosqlite:///{self.db_path}"
+            )
         return self.saver

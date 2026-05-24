@@ -4,12 +4,12 @@ Role: Intelligent routing of tasks to best model based on keywords
 Used by: orchestrator, code_review, streaming service
 """
 
-from dataclasses import dataclass
-from typing import Literal, Optional, Iterator, AsyncGenerator
-import logging
 import asyncio
+import logging
 import queue
 import threading
+from collections.abc import AsyncGenerator, Iterator
+from dataclasses import dataclass
 
 from models.settings import settings
 
@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ModelConfig:
     """LLM Backend Configuration"""
+
     url: str = ""
     model: str = ""
     timeout: int = 120
@@ -28,18 +29,17 @@ class ModelConfig:
 class OllamaClient:
     """Unified client supporting multiple backends (Ollama, LM Studio, etc.)"""
 
-    def __init__(self, config: Optional[ModelConfig] = None):
+    def __init__(self, config: ModelConfig | None = None):
         self.config = config or ModelConfig()
 
     def generate(
         self,
         prompt: str,
-        model: Optional[str] = None,
-        system_prompt: Optional[str] = None,
+        model: str | None = None,
+        system_prompt: str | None = None,
         temperature: float = 0.7,
     ) -> str:
         """Synchronous generation."""
-        import json
         import requests
 
         model = model or self.config.model
@@ -56,7 +56,7 @@ class OllamaClient:
                 "model": model,
                 "messages": messages,
                 "stream": False,
-                "temperature": temperature
+                "temperature": temperature,
             }
         else:
             # Ollama format
@@ -66,7 +66,7 @@ class OllamaClient:
                 "prompt": prompt,
                 "system": system_prompt or "",
                 "stream": False,
-                "options": {"temperature": temperature}
+                "options": {"temperature": temperature},
             }
 
         try:
@@ -76,9 +76,11 @@ class OllamaClient:
 
             # Parse response based on backend format
             if backend in ("lmstudio", "lemonade"):
-                return data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                return (
+                    data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                )
             else:
-                return data.get('response', '')
+                return data.get("response", "")
         except requests.RequestException as e:
             logger.error(f"Request failed: {e}")
             error_msg = str(e).lower()
@@ -93,12 +95,13 @@ class OllamaClient:
     def stream(
         self,
         prompt: str,
-        model: Optional[str] = None,
-        system_prompt: Optional[str] = None,
+        model: str | None = None,
+        system_prompt: str | None = None,
         temperature: float = 0.7,
     ) -> Iterator[str]:
         """Streaming response."""
         import json
+
         import requests
 
         model = model or self.config.model
@@ -115,7 +118,7 @@ class OllamaClient:
                 "model": model,
                 "messages": messages,
                 "stream": True,
-                "temperature": temperature
+                "temperature": temperature,
             }
         else:
             # Ollama format
@@ -125,11 +128,13 @@ class OllamaClient:
                 "prompt": prompt,
                 "system": system_prompt or "",
                 "stream": True,
-                "options": {"temperature": temperature}
+                "options": {"temperature": temperature},
             }
 
         try:
-            with requests.post(url, json=payload, stream=True, timeout=self.config.timeout) as r:
+            with requests.post(
+                url, json=payload, stream=True, timeout=self.config.timeout
+            ) as r:
                 r.raise_for_status()
                 for line in r.iter_lines():
                     if line:
@@ -140,28 +145,44 @@ class OllamaClient:
                         if text.startswith("data: "):
                             text = text[6:]
                         if text == "[DONE]":
-                            logger.debug(f"[stream] received [DONE] marker for {backend}")
+                            logger.debug(
+                                f"[stream] received [DONE] marker for {backend}"
+                            )
                             break
                         try:
                             data = json.loads(text)
                             # Parse based on backend format
                             if backend in ("lmstudio", "lemonade", "llamacpp"):
-                                content = data.get("choices", [{}])[0].get("delta", {}).get("content", "")
-                                finish_reason = data.get("choices", [{}])[0].get("finish_reason")
+                                content = (
+                                    data.get("choices", [{}])[0]
+                                    .get("delta", {})
+                                    .get("content", "")
+                                )
+                                finish_reason = data.get("choices", [{}])[0].get(
+                                    "finish_reason"
+                                )
                                 if finish_reason:
-                                    logger.debug(f"[stream] {backend} finish_reason={finish_reason}")
+                                    logger.debug(
+                                        f"[stream] {backend} finish_reason={finish_reason}"
+                                    )
                             else:
                                 # Ollama format
-                                content = data.get('response', '') or data.get('thinking', '')
+                                content = data.get("response", "") or data.get(
+                                    "thinking", ""
+                                )
                                 finish_reason = data.get("done", False)
                             if content:
                                 yield content
                             if data.get("done", False):
-                                logger.debug(f"[stream] received done=true for {backend}")
+                                logger.debug(
+                                    f"[stream] received done=true for {backend}"
+                                )
                                 break
                             choices = data.get("choices", [])
                             if choices and choices[0].get("finish_reason"):
-                                logger.debug(f"[stream] {backend} finish_reason received, breaking")
+                                logger.debug(
+                                    f"[stream] {backend} finish_reason received, breaking"
+                                )
                                 break
                         except json.JSONDecodeError:
                             logger.warning(f"Failed to parse stream line: {text[:50]}")
@@ -180,8 +201,8 @@ class OllamaClient:
     async def astream(
         self,
         prompt: str,
-        model: Optional[str] = None,
-        system_prompt: Optional[str] = None,
+        model: str | None = None,
+        system_prompt: str | None = None,
         temperature: float = 0.7,
     ) -> AsyncGenerator[str, None]:
         """
@@ -196,15 +217,21 @@ class OllamaClient:
             try:
                 for token in self.stream(prompt, model, system_prompt, temperature):
                     q.put_nowait((False, token))
-                    logger.debug(f"[astream] token sent to queue: {token[:20] if token else '(empty)'}...")
+                    logger.debug(
+                        f"[astream] token sent to queue: {token[:20] if token else '(empty)'}..."
+                    )
             except Exception as e:
-                logger.error(f"[OllamaClient.astream] sync stream failed: {e}", exc_info=True)
+                logger.error(
+                    f"[OllamaClient.astream] sync stream failed: {e}", exc_info=True
+                )
                 q.put_nowait((True, f"[Streaming Error: {e}]"))
             finally:
                 logger.debug("[astream] stream ended, sending sentinel")
                 q.put_nowait((True, None))  # Sentinel: done=True, token=None
 
-        t = threading.Thread(target=_sync_producer, daemon=False)  # Non-daemon to ensure cleanup
+        t = threading.Thread(
+            target=_sync_producer, daemon=False
+        )  # Non-daemon to ensure cleanup
         t.start()
 
         timeout_counter = 0
@@ -212,7 +239,10 @@ class OllamaClient:
         # Use settings for timeout, fallback to 60s
         try:
             from models.settings import settings
-            token_timeout = max(30, settings.llm_timeout // 2)  # Half of LLM timeout, min 30s
+
+            token_timeout = max(
+                30, settings.llm_timeout // 2
+            )  # Half of LLM timeout, min 30s
         except ImportError:
             token_timeout = 60  # Default 60s
 
@@ -221,7 +251,7 @@ class OllamaClient:
                 try:
                     done, token = await asyncio.wait_for(
                         loop.run_in_executor(None, q.get),
-                        timeout=token_timeout  # Configurable timeout per token
+                        timeout=token_timeout,  # Configurable timeout per token
                     )
                     timeout_counter = 0
                     if done and token is None:
@@ -231,7 +261,9 @@ class OllamaClient:
                         yield token
                 except asyncio.TimeoutError:
                     timeout_counter += 1
-                    logger.warning(f"[astream] queue.get timeout, iteration {timeout_counter}")
+                    logger.warning(
+                        f"[astream] queue.get timeout, iteration {timeout_counter}"
+                    )
                     # Allow more retries for slow models (5 instead of 3)
                     if timeout_counter > 5:
                         logger.error("[astream] too many timeouts, breaking stream")
@@ -242,9 +274,11 @@ class OllamaClient:
 
 # ==================== CONFIG ====================
 
+
 @dataclass
 class ModelsConfig:
     """Configuration multi-modèles"""
+
     fast: str = ""
     reasoning: str = ""
     code: str = ""
@@ -255,6 +289,7 @@ class ModelsConfig:
     @classmethod
     def from_settings(cls) -> "ModelsConfig":
         from models.settings import settings
+
         return cls(
             fast=settings.model_fast,
             reasoning=settings.model_reasoning,
@@ -271,10 +306,11 @@ _settings = ModelsConfig.from_settings()
 
 # ==================== ROUTER ====================
 
+
 class LLMRouter:
     """Intelligent model router with weighted scoring."""
 
-    def __init__(self, config: Optional[ModelsConfig] = None):
+    def __init__(self, config: ModelsConfig | None = None):
         self.config = config or _settings
 
     def get_model_for_task(self, task: str) -> str:
@@ -285,12 +321,34 @@ class LLMRouter:
 
         # Weighted keywords
         keywords = {
-            "code": {"code": 2, "implement": 2, "function": 1, "def ": 2, "class ": 2, 
-                     "bug": 2, "fix": 2, "refactor": 2},
-            "reasoner": {"debug": 3, "architecture": 3, "plan": 2, "analyze": 2, 
-                        "design": 2, "strategy": 2, "complex": 2, "optimize": 2},
-            "fast": {"explain": 2, "describe": 2, "what": 1, "who": 1, "simple": 2, 
-                    "summarize": 2}
+            "code": {
+                "code": 2,
+                "implement": 2,
+                "function": 1,
+                "def ": 2,
+                "class ": 2,
+                "bug": 2,
+                "fix": 2,
+                "refactor": 2,
+            },
+            "reasoner": {
+                "debug": 3,
+                "architecture": 3,
+                "plan": 2,
+                "analyze": 2,
+                "design": 2,
+                "strategy": 2,
+                "complex": 2,
+                "optimize": 2,
+            },
+            "fast": {
+                "explain": 2,
+                "describe": 2,
+                "what": 1,
+                "who": 1,
+                "simple": 2,
+                "summarize": 2,
+            },
         }
 
         for category, kw_dict in keywords.items():
@@ -337,7 +395,7 @@ class LLMRouter:
 
 # ====================== Singleton ======================
 
-_router: Optional[LLMRouter] = None
+_router: LLMRouter | None = None
 
 
 def get_llm_router() -> LLMRouter:
@@ -347,4 +405,4 @@ def get_llm_router() -> LLMRouter:
     return _router
 
 
-__all__ = ["LLMRouter", "OllamaClient", "ModelConfig", "get_llm_router"]
+__all__ = ["LLMRouter", "ModelConfig", "OllamaClient", "get_llm_router"]

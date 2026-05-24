@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 from models.settings import settings
 
@@ -17,14 +17,17 @@ class LLMWrapper:
         self.user_model = user_model
         self.user_provider = user_provider
 
-    async def generate(self, prompt: str, model_type: str = "fast", temperature: float = 0.7) -> str:
+    async def generate(
+        self, prompt: str, model_type: str = "fast", temperature: float = 0.7
+    ) -> str:
         """Fallback full generation."""
         loop = asyncio.get_running_loop()
         return await asyncio.wait_for(
             loop.run_in_executor(
                 None,
                 lambda: self.router.generate(
-                    prompt, model_type,
+                    prompt,
+                    model_type,
                     temperature=temperature,
                     model=self.user_model,
                     provider=self.user_provider,
@@ -40,8 +43,11 @@ class LLMWrapper:
         try:
             if hasattr(self.router, "astream"):
                 async for chunk in self.router.astream(
-                    prompt=prompt, model_type=model_type, temperature=temperature,
-                    model=self.user_model, provider=self.user_provider,
+                    prompt=prompt,
+                    model_type=model_type,
+                    temperature=temperature,
+                    model=self.user_model,
+                    provider=self.user_provider,
                 ):
                     if isinstance(chunk, str):
                         yield chunk
@@ -72,7 +78,6 @@ class LLMWrapper:
             full_response += token
 
         if strip_markdown:
-            import re
             cleaned = full_response.strip()
             if cleaned.startswith("```"):
                 lines = cleaned.split("\n")

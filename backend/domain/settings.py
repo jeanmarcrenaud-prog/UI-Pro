@@ -3,14 +3,14 @@ backend/domain/settings.py - Configuration unifiée (Pydantic v2)
 Single Source of Truth: YAML < ENV < Runtime Overrides
 """
 
-import os
 import logging
+import os
+from functools import lru_cache
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Any
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from functools import lru_cache
 
 logger = logging.getLogger(__name__)
 
@@ -28,24 +28,39 @@ class ModelPreset(BaseSettings):
     model_reasoning: str
     model_code: str
     max_context: int = 8192
-    recommended_for: List[str] = Field(default_factory=list)
+    recommended_for: list[str] = Field(default_factory=list)
 
 
-DEFAULT_PRESETS: Dict[str, ModelPreset] = {
+DEFAULT_PRESETS: dict[str, ModelPreset] = {
     "light": ModelPreset(
-        id="light", name="Light", description="Rapide et léger",
-        model_fast="qwen3.5:0.8b", model_reasoning="qwen3.5:0.8b", model_code="qwen3.5:0.8b",
-        max_context=4096, recommended_for=["quick", "simple"]
+        id="light",
+        name="Light",
+        description="Rapide et léger",
+        model_fast="qwen3.5:0.8b",
+        model_reasoning="qwen3.5:0.8b",
+        model_code="qwen3.5:0.8b",
+        max_context=4096,
+        recommended_for=["quick", "simple"],
     ),
     "balanced": ModelPreset(
-        id="balanced", name="Balanced", description="Bon équilibre",
-        model_fast="qwen3.5:9b", model_reasoning="qwen3.5:9b", model_code="qwen3.5:9b",
-        max_context=8192, recommended_for=["general", "coding"]
+        id="balanced",
+        name="Balanced",
+        description="Bon équilibre",
+        model_fast="qwen3.5:9b",
+        model_reasoning="qwen3.5:9b",
+        model_code="qwen3.5:9b",
+        max_context=8192,
+        recommended_for=["general", "coding"],
     ),
     "heavy": ModelPreset(
-        id="heavy", name="Heavy", description="Maximum puissance",
-        model_fast="qwen3.6:latest", model_reasoning="qwen3.6:latest", model_code="qwen3.6:latest",
-        max_context=16384, recommended_for=["complex", "large_codebase"]
+        id="heavy",
+        name="Heavy",
+        description="Maximum puissance",
+        model_fast="qwen3.6:latest",
+        model_reasoning="qwen3.6:latest",
+        model_code="qwen3.6:latest",
+        max_context=16384,
+        recommended_for=["complex", "large_codebase"],
     ),
 }
 
@@ -104,7 +119,7 @@ class Settings(BaseSettings):
 
     api_host: str = "0.0.0.0"
     api_port: int = Field(default=8000, ge=1, le=65535)
-    api_key: Optional[str] = None
+    api_key: str | None = None
 
     dashboard_port: int = Field(default=7860, ge=1, le=65535)
 
@@ -118,24 +133,52 @@ class Settings(BaseSettings):
     checkpoint_max_per_thread: int = Field(default=100, ge=10, le=1000)
     checkpoint_prune_age_days: int = Field(default=30, ge=1, le=365)
     use_postgres_checkpointer: bool = False
-    postgres_db_url: Optional[str] = None
+    postgres_db_url: str | None = None
 
     # State management
     enable_state_compression: bool = True
     max_message_history: int = Field(default=50, ge=10, le=200)
 
     # Backends config
-    backends: Dict[str, Dict[str, Any]] = Field(
-        default_factory=lambda: {
-            "ollama": {"url": "http://localhost:11434", "enabled": True, "models_endpoint": "/api/tags"},
-            "lemonade": {"url": "http://localhost:13305", "enabled": True, "models_endpoint": "/api/v1/models"},
-            "llamacpp": {"url": "http://localhost:8080", "enabled": False, "models_endpoint": "/props"},
-            "lmstudio": {"url": "http://localhost:1234", "enabled": True, "models_endpoint": "/api/v1/models"},
-        }
+    backends_template: dict[str, dict[str, Any]] = Field(
+        default={
+            "ollama": {
+                "url": "http://localhost:11434",
+                "enabled": True,
+                "models_endpoint": "/api/tags",
+            },
+            "lemonade": {
+                "url": "http://localhost:13305",
+                "enabled": True,
+                "models_endpoint": "/api/v1/models",
+            },
+            "llamacpp": {
+                "url": "http://localhost:8080",
+                "enabled": False,
+                "models_endpoint": "/props",
+            },
+            "lmstudio": {
+                "url": "http://localhost:1234",
+                "enabled": True,
+                "models_endpoint": "/api/v1/models",
+            },
+        },
+        exclude=True,
     )
 
+    backends: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
+    def __init__(self, **data: Any) -> None:
+        super().__init__(**data)
+        # Deep copy default backends on each instance to avoid shared mutable state
+        from copy import deepcopy
+
+        self.backends = deepcopy(self.backends_template)
+
     # Runtime only (excluded from init)
-    runtime_overrides: Dict[str, Any] = Field(default_factory=dict, exclude=True, init=False)
+    runtime_overrides: dict[str, Any] = Field(
+        default_factory=dict, exclude=True, init=False
+    )
 
     # ========================
     # Validators
@@ -183,7 +226,7 @@ class Settings(BaseSettings):
         """Get the active model preset."""
         return DEFAULT_PRESETS.get(self.active_preset, DEFAULT_PRESETS["balanced"])
 
-    def get_all_presets(self) -> Dict[str, ModelPreset]:
+    def get_all_presets(self) -> dict[str, ModelPreset]:
         """Get all available presets."""
         return DEFAULT_PRESETS.copy()
 
@@ -196,8 +239,12 @@ class Settings(BaseSettings):
     def set_timeout(self, llm: int, executor: int) -> None:
         self.llm_timeout = max(10, min(1800, llm))
         self.executor_timeout = max(5, min(600, executor))
-        self._save_to_env({"LLM_TIMEOUT": str(self.llm_timeout),
-                           "EXECUTOR_TIMEOUT": str(self.executor_timeout)})
+        self._save_to_env(
+            {
+                "LLM_TIMEOUT": str(self.llm_timeout),
+                "EXECUTOR_TIMEOUT": str(self.executor_timeout),
+            }
+        )
 
     def set_log_level(self, level: str) -> None:
         self.log_level = level.upper()
@@ -223,10 +270,10 @@ class Settings(BaseSettings):
             "postgres_url": self.postgres_db_url,
         }
 
-    def validate(self) -> tuple[bool, List[str]]:
+    def validate_settings(self) -> tuple[bool, list[str]]:
         """Validate configuration."""
         errors = []
-        
+
         if self.api_port <= 0 or self.api_port > 65535:
             errors.append(f"Invalid api_port: {self.api_port}")
         if self.dashboard_port <= 0 or self.dashboard_port > 65535:
@@ -237,20 +284,24 @@ class Settings(BaseSettings):
             errors.append("MODEL_REASONING is required (set via env or preset)")
         if not self.model_code:
             errors.append("MODEL_CODE is required (set via env or preset)")
-        
+
         if not self.workspace.exists():
             try:
                 self.workspace.mkdir(parents=True, exist_ok=True)
             except Exception as e:
                 errors.append(f"Cannot create workspace: {e}")
-        
+
         return len(errors) == 0, errors
 
-    def _save_to_env(self, updates: Dict[str, str]) -> None:
+    def _save_to_env(self, updates: dict[str, str]) -> None:
         """Écriture atomique dans .env"""
         env_path = PROJECT_ROOT / ".env"
         try:
-            lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
+            lines = (
+                env_path.read_text(encoding="utf-8").splitlines()
+                if env_path.exists()
+                else []
+            )
             new_lines = []
             updated = set()
 

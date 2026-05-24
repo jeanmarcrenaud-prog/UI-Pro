@@ -1,11 +1,11 @@
 # api/routers/execute.py - Execute, validate, install-deps endpoints
-from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel
-from typing import Optional, List
 import logging
-import time
 import shlex
+import time
 from pathlib import Path
+
+from fastapi import APIRouter, Request
+from pydantic import BaseModel
 
 from settings import settings
 
@@ -22,6 +22,7 @@ def verify_api_key(request: Request):
         return True
     if request.headers.get(API_KEY_HEADER) != api_key:
         from fastapi import HTTPException
+
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
     return True
 
@@ -31,80 +32,85 @@ class ExecuteRequest(BaseModel):
     code: str
     language: str = "python"
     timeout: int = 30
-    args: Optional[str] = None
-    env: Optional[dict] = None
+    args: str | None = None
+    env: dict | None = None
     run_validation: bool = False
 
 
 class ExecuteResponse(BaseModel):
     result: str
     status: str = "ok"
-    error: Optional[str] = None
+    error: str | None = None
     execution_time_ms: float = 0.0
-    errors: List[str] = []
-    warnings: List[str] = []
+    errors: list[str] = []
+    warnings: list[str] = []
 
 
 @router.post("/execute", response_model=ExecuteResponse)
 async def execute(request: ExecuteRequest):
     """Execute Python code in sandbox"""
-    import tempfile
     start = time.time()
     logger.info(f"[EXECUTE] received code: {request.code[:50]}...")
-    
+
     try:
         if request.language == "python":
             from backend.domain.core.executor import CodeExecutor
+
             executor = CodeExecutor(timeout=request.timeout)
-            
+
             main_file = Path(__file__).parent.parent / "main.py"
             cmd = ["python", str(main_file)]
             if request.args:
                 cmd.extend(shlex.split(request.args))
                 logger.info(f"[EXECUTE] running command: {' '.join(cmd)}")
-            
+
             result = executor.run(
                 code=request.code,
                 args=request.args or "",
             )
-            
+
             logger.info(f"[EXECUTE] result keys: {result.keys()}")
-            logger.info(f"[EXECUTE] stdout: {repr(result.get('stdout', ''))}")
+            logger.info(f"[EXECUTE] stdout: {result.get('stdout', '')!r}")
             logger.info(f"[EXECUTE] success: {result.get('success')}")
-            
+
             # Run validation if requested
             errors = []
             warnings = []
             if request.run_validation:
                 import ast
+
                 try:
                     tree = ast.parse(request.code)
                     for node in ast.walk(tree):
                         if isinstance(node, ast.ExceptHandler) and node.type is None:
-                            warnings.append("Bare 'except:' clause caught. Consider specifying exception types.")
+                            warnings.append(
+                                "Bare 'except:' clause caught. Consider specifying exception types."
+                            )
                         if isinstance(node, ast.Call):
                             if isinstance(node.func, ast.Name):
-                                if node.func.id == 'print':
+                                if node.func.id == "print":
                                     warnings.append("print() statement detected.")
-                                elif node.func.id in ('eval', 'exec'):
-                                    warnings.append(f"Potential security issue: {node.func.id}()")
+                                elif node.func.id in ("eval", "exec"):
+                                    warnings.append(
+                                        f"Potential security issue: {node.func.id}()"
+                                    )
                 except SyntaxError as e:
                     errors.append(f"Syntax error: {e.msg} at line {e.lineno}")
-            
+
             return ExecuteResponse(
                 result=result.get("stdout", ""),
                 status="ok" if result.get("success", True) else "error",
                 error=result.get("stderr") or result.get("error"),
                 execution_time_ms=(time.time() - start) * 1000,
                 errors=errors,
-                warnings=warnings
+                warnings=warnings,
             )
         else:
             return ExecuteResponse(
                 result="",
                 status="error",
                 error=f"Language not supported: {request.language}",
-                execution_time_ms=(time.time() - start) * 1000
+                execution_time_ms=(time.time() - start) * 1000,
             )
     except Exception as e:
         logger.error(f"Execute error: {e}")
@@ -112,7 +118,7 @@ async def execute(request: ExecuteRequest):
             result="",
             status="error",
             error=str(e),
-            execution_time_ms=(time.time() - start) * 1000
+            execution_time_ms=(time.time() - start) * 1000,
         )
 
 
@@ -123,66 +129,68 @@ class ValidateRequest(BaseModel):
 
 
 class ValidateResponse(BaseModel):
-    errors: List[str] = []
-    warnings: List[str] = []
+    errors: list[str] = []
+    warnings: list[str] = []
     status: str = "ok"
-    error: Optional[str] = None
+    error: str | None = None
 
 
 @router.post("/validate", response_model=ValidateResponse)
 async def validate(request: ValidateRequest):
     """Analyze Python code for errors and warnings without execution"""
-    logger.info(f"[VALIDATE] analyzing code...")
-    
+    logger.info("[VALIDATE] analyzing code...")
+
     try:
         if request.language == "python":
             import ast
-            
-            errors: List[str] = []
-            warnings: List[str] = []
-            
+
+            errors: list[str] = []
+            warnings: list[str] = []
+
             try:
                 tree = ast.parse(request.code)
-                
+
                 for node in ast.walk(tree):
                     if isinstance(node, ast.ExceptHandler):
                         if node.type is None:
-                            warnings.append("Bare 'except:' clause caught. Consider specifying exception types.")
-                    
+                            warnings.append(
+                                "Bare 'except:' clause caught. Consider specifying exception types."
+                            )
+
                     if isinstance(node, ast.Call):
-                        if isinstance(node.func, ast.Name) and node.func.id == 'print':
-                            warnings.append("print() statement detected. Consider using a logging module instead.")
-                    
+                        if isinstance(node.func, ast.Name) and node.func.id == "print":
+                            warnings.append(
+                                "print() statement detected. Consider using a logging module instead."
+                            )
+
                     if isinstance(node, ast.Call):
-                        if isinstance(node.func, ast.Name) and node.func.id in ('eval', 'exec'):
-                            warnings.append(f"Potential security issue: {node.func.id}() can be dangerous.")
-                    
+                        if isinstance(node.func, ast.Name) and node.func.id in (
+                            "eval",
+                            "exec",
+                        ):
+                            warnings.append(
+                                f"Potential security issue: {node.func.id}() can be dangerous."
+                            )
+
             except SyntaxError as e:
                 errors.append(f"Syntax error: {e.msg} at line {e.lineno}")
-            
+
             import py_compile
+
             try:
-                py_compile.compile(request.code, '<string>', doraise=True)
+                py_compile.compile(request.code, "<string>", doraise=True)
             except py_compile.PyCompileError as e:
-                errors.append(f"Compilation error: {str(e)}")
-            
-            return ValidateResponse(
-                errors=errors,
-                warnings=warnings,
-                status="ok"
-            )
+                errors.append(f"Compilation error: {e!s}")
+
+            return ValidateResponse(errors=errors, warnings=warnings, status="ok")
         else:
             return ValidateResponse(
-                status="error",
-                error=f"Language not supported: {request.language}"
+                status="error", error=f"Language not supported: {request.language}"
             )
-            
+
     except Exception as e:
         logger.error(f"Validate error: {e}")
-        return ValidateResponse(
-            status="error",
-            error=str(e)
-        )
+        return ValidateResponse(status="error", error=str(e))
 
 
 # ===================== INSTALL DEPENDENCIES =====================
@@ -192,22 +200,22 @@ class InstallDepsRequest(BaseModel):
 
 class InstallDepsResponse(BaseModel):
     status: str = "ok"
-    message: Optional[str] = None
-    installed: Optional[List[str]] = None
-    missing: Optional[List[str]] = None
-    error: Optional[str] = None
+    message: str | None = None
+    installed: list[str] | None = None
+    missing: list[str] | None = None
+    error: str | None = None
 
 
 @router.post("/install-deps", response_model=InstallDepsResponse)
 async def install_deps(request: InstallDepsRequest):
     """Parse imports and auto-install missing packages"""
-    logger.info(f"[INSTALL-DEPS] analyzing code...")
-    
+    logger.info("[INSTALL-DEPS] analyzing code...")
+
     try:
         import ast
         import subprocess
         import sys
-        
+
         # Parse the code to extract imports
         imports = set()
         try:
@@ -215,25 +223,41 @@ async def install_deps(request: InstallDepsRequest):
             for node in ast.walk(tree):
                 if isinstance(node, ast.Import):
                     for alias in node.names:
-                        imports.add(alias.name.split('.')[0])
+                        imports.add(alias.name.split(".")[0])
                 elif isinstance(node, ast.ImportFrom):
                     if node.module:
-                        imports.add(node.module.split('.')[0])
+                        imports.add(node.module.split(".")[0])
         except SyntaxError:
             return InstallDepsResponse(status="error", error="Invalid Python syntax")
-        
+
         # Filter out standard library modules
-        stdlib = {'os', 'sys', 'json', 're', 'math', 'time', 'datetime', 'random', 'collections', 
-                 'itertools', 'functools', 'operator', 'string', 'io', 'logging', 'typing'}
-        external = [imp for imp in imports if imp not in stdlib and not imp.startswith('_')]
-        
+        stdlib = {
+            "os",
+            "sys",
+            "json",
+            "re",
+            "math",
+            "time",
+            "datetime",
+            "random",
+            "collections",
+            "itertools",
+            "functools",
+            "operator",
+            "string",
+            "io",
+            "logging",
+            "typing",
+        }
+        external = [
+            imp for imp in imports if imp not in stdlib and not imp.startswith("_")
+        ]
+
         if not external:
             return InstallDepsResponse(
-                status="ok",
-                message="No external dependencies found",
-                installed=[]
+                status="ok", message="No external dependencies found", installed=[]
             )
-        
+
         # Check which are already installed
         missing = []
         installed = []
@@ -243,14 +267,14 @@ async def install_deps(request: InstallDepsRequest):
                 installed.append(pkg)
             except ImportError:
                 missing.append(pkg)
-        
+
         if not missing:
             return InstallDepsResponse(
                 status="ok",
                 message=f"All dependencies already installed: {', '.join(installed)}",
-                installed=installed
+                installed=installed,
             )
-        
+
         # Install missing packages
         logger.info(f"[INSTALL-DEPS] Installing: {missing}")
         install_results = []
@@ -259,20 +283,20 @@ async def install_deps(request: InstallDepsRequest):
                 subprocess.check_call(
                     [sys.executable, "-m", "pip", "install", pkg, "-q"],
                     stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
+                    stderr=subprocess.DEVNULL,
                 )
                 install_results.append(pkg)
                 logger.info(f"[INSTALL-DEPS] Installed: {pkg}")
             except Exception as e:
                 logger.warning(f"[INSTALL-DEPS] Failed to install {pkg}: {e}")
-        
+
         return InstallDepsResponse(
             status="ok",
             message=f"Installed {len(install_results)} package(s)",
             installed=install_results,
-            missing=[p for p in missing if p not in install_results]
+            missing=[p for p in missing if p not in install_results],
         )
-        
+
     except Exception as e:
         logger.error(f"Install deps error: {e}")
         return InstallDepsResponse(status="error", error=str(e))

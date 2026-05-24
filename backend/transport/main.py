@@ -23,7 +23,7 @@ app = FastAPI(
     title="UI-Pro",
     description="AI Agent Orchestration Platform",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -40,15 +40,18 @@ app.add_middleware(
 
 # Add rate limiting middleware (optional - can be disabled via settings)
 try:
-    from backend.infrastructure.rate_limit import RateLimitMiddleware, RateLimitConfig
     # Only enable in production or when explicitly configured
     import os
+
+    from backend.infrastructure.rate_limit import RateLimitConfig, RateLimitMiddleware
+
     if os.getenv("RATE_LIMIT_ENABLED", "").lower() == "true":
-        app.add_middleware(RateLimitMiddleware, config=RateLimitConfig(
-            requests_per_minute=60,
-            requests_per_hour=1000,
-            burst_size=10
-        ))
+        app.add_middleware(
+            RateLimitMiddleware,
+            config=RateLimitConfig(
+                requests_per_minute=60, requests_per_hour=1000, burst_size=10
+            ),
+        )
         logger.info("Rate limiting enabled")
 except ImportError:
     logger.warning("Rate limiting not available")
@@ -66,4 +69,5 @@ app.include_router(logs.router)
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("api.main:app", host="0.0.0.0", port=8000, reload=True)

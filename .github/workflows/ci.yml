@@ -56,7 +56,7 @@ jobs:
         fail_ci_if_error: false
 
   lint:
-    name: Type checking
+    name: Lint
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
@@ -71,11 +71,11 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install mypy
+        pip install ruff
 
-    - name: Run mypy
+    - name: Run ruff
       run: |
-        mypy .
+        ruff check .
 
   docker:
     name: Build Docker image
@@ -107,23 +107,23 @@ jobs:
       with:
         node-version: "20"
         cache: "npm"
-        cache-dependency-path: ui-pro-ui/package-lock.json
+        cache-dependency-path: frontend/package-lock.json
 
     - name: Install frontend dependencies
-      working-directory: ./ui-pro-ui
+      working-directory: ./frontend
       run: npm ci
 
     - name: Lint frontend
-      working-directory: ./ui-pro-ui
+      working-directory: ./frontend
       run: npm run lint || true
 
     - name: Build frontend
-      working-directory: ./ui-pro-ui
+      working-directory: ./frontend
       run: npm run build
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
         name: nextjs-build
-        path: ui-pro-ui/out
+        path: frontend/out
         retention-days: 7
