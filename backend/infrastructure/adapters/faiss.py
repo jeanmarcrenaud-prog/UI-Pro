@@ -43,16 +43,22 @@ class FAISSAdapter:
     - Configurable dimension
     """
 
-    def __init__(self, persist_path: str = None, dimension: int = 384):
+    def __init__(self, persist_path: str | None = None, dimension: int = 384):
         self.d = dimension
         self.index = None
         self.documents: list[str] = []
 
-        # Paths
+        # Paths — fall back to settings, then compile-time defaults
+        from backend.domain.settings import settings as _settings
+
         self.persist_path = Path(
-            persist_path or os.getenv("MEMORY_PERSIST_PATH", str(DEFAULT_PERSIST_PATH))
+            persist_path
+            or _settings.memory_persist_path
+            or str(DEFAULT_PERSIST_PATH)
         )
-        self.docs_path = Path(os.getenv("MEMORY_DOCS_PATH", str(DEFAULT_DOCS_PATH)))
+        self.docs_path = Path(
+            _settings.memory_docs_path or str(DEFAULT_DOCS_PATH)
+        )
 
         # Lazy load model
         self._model = None

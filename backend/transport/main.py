@@ -39,22 +39,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Add rate limiting middleware (enabled by default, disable via RATE_LIMIT_ENABLED=false)
+# Add rate limiting middleware (controlled via settings.rate_limit_enabled)
 try:
-    import os
-
     from backend.infrastructure.rate_limit import RateLimitConfig, RateLimitMiddleware
 
-    if os.getenv("RATE_LIMIT_ENABLED", "true").lower() != "false":
+    settings = get_settings()
+    if settings.rate_limit_enabled:
         app.add_middleware(
             RateLimitMiddleware,
             config=RateLimitConfig(
-                requests_per_minute=60, requests_per_hour=1000, burst_size=10
+                requests_per_minute=settings.rate_limit_requests_per_minute,
+                requests_per_hour=settings.rate_limit_requests_per_hour,
+                burst_size=settings.rate_limit_burst_size,
             ),
         )
-        logger.info("Rate limiting enabled")
+        logger.info(
+            f"Rate limiting enabled "
+            f"({settings.rate_limit_requests_per_hour}/h, "
+            f"{settings.rate_limit_requests_per_minute}/min, "
+            f"burst={settings.rate_limit_burst_size})"
+        )
     else:
-        logger.info("Rate limiting disabled via RATE_LIMIT_ENABLED=false")
+        logger.info("Rate limiting disabled via settings")
 except ImportError:
     logger.warning("Rate limiting not available")
 
