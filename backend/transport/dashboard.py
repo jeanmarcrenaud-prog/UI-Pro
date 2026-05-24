@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import sys
 import time
 from pathlib import Path
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 import gradio as gr
 
@@ -30,7 +33,7 @@ try:
 
     METRICS_AVAILABLE = True
 except Exception as e:
-    print(f"Metrics import error: {e}")
+    logger.warning("Metrics import error: %s", e)
     METRICS_AVAILABLE = False
     get_dashboard_data: Any = None
 
@@ -40,7 +43,7 @@ try:
 
     MEMORY_AVAILABLE = True
 except Exception as e:
-    print(f"Memory import error: {e}")
+    logger.warning("Memory import error: %s", e)
     MEMORY_AVAILABLE = False
     _MemoryManager: Any = None
 
@@ -60,7 +63,7 @@ def get_orchestrator():
         try:
             _memory_manager = _MemoryManager()
         except Exception as e:
-            print(f"MemoryManager init error: {e}")
+            logger.warning("MemoryManager init error: %s", e)
             _memory_manager = None
     return _orchestrator
 
@@ -458,8 +461,8 @@ def create_dashboard():
 
 
 def run():
-    print("[START] Starting UI-Pro Dashboard on http://localhost:7860")
-    print("📋 Pipeline: Planner → Architect → Coder → Reviewer → Executor (auto-fix)")
+    logger.info("Starting UI-Pro Dashboard on http://localhost:7860")
+    logger.info("Pipeline: Planner -> Architect -> Coder -> Reviewer -> Executor (auto-fix)")
 
     # Get CSS content
     css_file = "assets/styles/dashboard.css"
