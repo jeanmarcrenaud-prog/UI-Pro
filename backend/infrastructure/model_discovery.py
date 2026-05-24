@@ -14,11 +14,11 @@
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from threading import Lock
 from typing import Any
 
 import requests
 
+from backend.infrastructure.cache import TTLCache
 from backend.infrastructure.llm_router import TaskType
 from models.settings import settings
 
@@ -61,10 +61,9 @@ class DiscoveredModel:
 class ModelDiscovery:
     """Discovers and enriches models from multiple local LLM backends."""
 
-    def __init__(self, timeout: float = 4.0):
+    def __init__(self, timeout: float = 4.0, cache_ttl: float = 15.0):
         self.timeout = timeout
-        self._cache: list[DiscoveredModel] = []
-        self._cache_lock = Lock()
+        self._cache = TTLCache(maxsize=1, ttl=cache_ttl)
         self._endpoints: dict[str, dict] | None = None
 
     def _get_endpoints(self) -> dict[str, dict]:
@@ -288,10 +287,16 @@ class ModelDiscovery:
             return {}
 
     def discover_all(self, force_refresh: bool = False) -> list[DiscoveredModel]:
-        """Discover models from all backends in parallel."""
-        with self._cache_lock:
-            if self._cache and not force_refresh:
-                return self._cache.copy()
+        """Discover models from all backends in parallel.
+
+        Results are cached with a TTL (default 15s). Use force_refresh=True
+        to bypass the cache and re-discover immediately.
+        """
+        cache_key = "models"
+        if not force_refresh:
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                return cached  # type: ignore[return-value]
 
         all_models: list[DiscoveredModel] = []
 
@@ -320,13 +325,12 @@ class ModelDiscovery:
                 except Exception as e:
                     logger.debug(f"Discovery failed for {futures[future]}: {e}")
 
-        with self._cache_lock:
-            self._cache = all_models
-
+        self._cache.set(cache_key, all_models)
         return all_models
 
     def refresh(self) -> list[DiscoveredModel]:
-        """Force refresh the cache."""
+        """Force refresh the cache and clear cached results."""
+        self._cache.clear()
         return self.discover_all(force_refresh=True)
 
     # ==================== Convenience Methods ====================
