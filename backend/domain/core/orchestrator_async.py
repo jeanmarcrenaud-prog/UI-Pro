@@ -17,7 +17,7 @@ from typing import Any, Literal, TypedDict
 from models.settings import settings
 
 # Workspace constant for test compatibility
-WORKSPACE = settings.workspace if hasattr(settings, "workspace") else None
+WORKSPACE = settings.workspace_path
 
 logger = logging.getLogger(__name__)
 

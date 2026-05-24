@@ -160,9 +160,14 @@ class LoggerManager:
         if name not in self._loggers:
             logger = logging.getLogger(name)
 
-            # Set log level if environment variable specified
-            env_level = os.environ.get("LOG_LEVEL", "INFO")
-            level = LOG_LEVELS.get(env_level.upper(), logging.INFO)
+            # Set log level from settings (or env var fallback)
+            try:
+                from backend.domain.settings import settings as _s
+
+                level_name = _s.log_level.upper()
+            except Exception:
+                level_name = os.environ.get("LOG_LEVEL", "INFO").upper()
+            level = LOG_LEVELS.get(level_name, logging.INFO)
             logger.setLevel(level)
 
             self._loggers[name] = logger

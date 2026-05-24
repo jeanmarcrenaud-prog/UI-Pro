@@ -100,7 +100,7 @@ class MemoryService(BaseService):
     ):
         super().__init__("MemoryService")
 
-        self.persist_path = persist_path or str(settings.workspace / "memory")
+        self.persist_path = persist_path or str(settings.workspace_path / "memory")
         self.max_tokens = max_tokens
 
         self._lock = threading.RLock()

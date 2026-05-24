@@ -14,7 +14,7 @@ from models.settings import (
 
 # Properties from settings instance
 PROJECT_ROOT = settings.project_root
-WORKSPACE = settings.workspace
+WORKSPACE = str(settings.workspace_path)
 TEMPLATES = settings.templates
 OLLAMA_URL = settings.ollama_url
 LEMONADE_URL = settings.lemonade_url

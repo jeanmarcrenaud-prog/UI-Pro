@@ -84,9 +84,11 @@ class Settings(BaseSettings):
     def project_root(self) -> Path:
         return PROJECT_ROOT
 
+    workspace: str = "workspace"
+
     @property
-    def workspace(self) -> Path:
-        return PROJECT_ROOT / os.getenv("WORKSPACE", "workspace")
+    def workspace_path(self) -> Path:
+        return PROJECT_ROOT / self.workspace
 
     @property
     def data_dir(self) -> Path:
@@ -214,12 +216,12 @@ class Settings(BaseSettings):
         """Applique le preset et les overrides runtime"""
         if self.active_preset in DEFAULT_PRESETS:
             preset = DEFAULT_PRESETS[self.active_preset]
-            # Respecte les variables d'environnement
-            if not os.getenv("MODEL_FAST"):
+            # Respecte les variables d'environnement (déjà chargées dans les champs)
+            if not self.model_fast:
                 self.model_fast = preset.model_fast
-            if not os.getenv("MODEL_REASONING"):
+            if not self.model_reasoning:
                 self.model_reasoning = preset.model_reasoning
-            if not os.getenv("MODEL_CODE"):
+            if not self.model_code:
                 self.model_code = preset.model_code
 
         # Applique overrides runtime (UI)
