@@ -21,10 +21,11 @@ class TestHealthEndpoint:
         assert response.status_code == 200
 
     def test_health_returns_healthy(self, client):
-        """Health check should return 'healthy' status"""
+        """Health check should return valid status"""
         response = client.get("/health")
         data = response.json()
-        assert data.get("status") == "healthy"
+        assert data.get("status") in ("healthy", "degraded"), f"Unexpected status: {data.get('status')}"
+        assert "dependencies" in data, "Missing dependencies field"
 
     def test_health_includes_services(self, client):
         """Health check should include services info"""

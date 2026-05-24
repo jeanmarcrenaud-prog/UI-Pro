@@ -88,16 +88,70 @@ def _get_gpu_info() -> dict[str, Any] | None:
 @router.get("/health")
 async def health_check():
     """Health check for orchestration tools (Docker, Kubernetes, etc.)"""
+    # Check dependencies
+    deps = _check_dependencies()
+
+    overall = "healthy" if all(d["ok"] for d in deps.values()) else "degraded"
+
     return {
-        "status": "healthy",
+        "status": overall,
         "timestamp": time.time(),
         "version": getattr(settings, "version", "1.0.0"),
+        "dependencies": deps,
         "services": {
             "api": "ok",
             "llm": _check_ollama(),
         },
         "system": _get_system_info(),
     }
+
+
+def _check_dependencies() -> dict[str, dict]:
+    """Check all backend dependencies and return structured status."""
+    deps: dict[str, dict] = {}
+
+    # FAISS / Vector memory
+    try:
+        from backend.infrastructure.memory import MemoryManager
+
+        mem = MemoryManager()
+        stats = mem.get_stats() if hasattr(mem, "get_stats") else {}
+        deps["memory"] = {
+            "ok": True,
+            "status": "available",
+            "vectors": stats.get("total_vectors", stats.get("count", "unknown")),
+        }
+    except Exception as e:
+        deps["memory"] = {"ok": False, "status": "unavailable", "error": str(e)}
+
+    # Docker sandbox
+    try:
+        from backend.infrastructure.docker_sandbox import get_docker_sandbox
+
+        sb = get_docker_sandbox()
+        docker_status = sb.health_check()
+        deps["docker"] = {
+            "ok": docker_status.get("available", False),
+            "status": "available" if docker_status.get("available") else "unavailable",
+            "image": getattr(sb, "image", "ui-pro-sandbox:latest"),
+        }
+    except Exception as e:
+        deps["docker"] = {"ok": False, "status": "unavailable", "error": str(e)}
+
+    # Code executor
+    try:
+        from backend.infrastructure.code_execution import CodeExecutionService
+
+        svc = CodeExecutionService()
+        deps["executor"] = {
+            "ok": True,
+            "status": "available",
+            "timeout": svc.TIMEOUT_SECONDS,
+        }
+    except Exception as e:
+        deps["executor"] = {"ok": False, "status": "unavailable", "error": str(e)}
+
+    return deps
 
 
 @router.get("/status")
@@ -149,7 +203,7 @@ async def get_timeouts():
 async def set_timeouts(body: TimeoutRequest):
     """Update timeout settings and persist to .env"""
     try:
-        settings.set_timout(body.llm_timeout, body.executor_timeout)
+        settings.set_timeout(body.llm_timeout, body.executor_timeout)
         return {
             "status": "ok",
             "llm_timeout": settings.llm_timeout,
