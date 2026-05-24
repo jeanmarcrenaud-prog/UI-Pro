@@ -92,7 +92,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Model discovery init failed: {e}")
 
-    # Initialize NVML for GPU monitoring
+    # Initialize GPU monitoring
     try:
         import pynvml
 
@@ -100,6 +100,18 @@ async def lifespan(app: FastAPI):
         logger.info("NVML initialized for GPU monitoring")
     except Exception:
         logger.info("GPU monitoring not available")
+
+    # Prune old checkpoints
+    try:
+        from backend.infrastructure.checkpointer import CheckpointManager
+        from models.settings import settings
+
+        checkpointer = CheckpointManager(settings)
+        deleted = await checkpointer.cleanup_old_checkpoints()
+        if deleted:
+            logger.info(f"Pruned {deleted} old checkpoints on startup")
+    except Exception as e:
+        logger.debug(f"Checkpoint cleanup on startup skipped: {e}")
 
     yield
 
@@ -314,7 +326,7 @@ async def chat_endpoint(request: ChatRequest):
             f"[CHAT] Request: message={request.message[:50]}... model={request.model}"
         )
 
-        from backend.infrastructure.streaming import stream_chat
+        from backend.infrastructure.streaming_unified import stream_chat
 
         full_response = ""
         chunk_count = 0

@@ -124,11 +124,16 @@ class StreamTransport(ABC):
 
 
 class WebSocketTransport(StreamTransport):
-    """WebSocket transport implementation."""
+    """WebSocket transport implementation.
+
+    Backpressure is provided by asyncio event loop — send_text() naturally
+    blocks when the kernel TCP buffer is full on a slow connection.
+    """
 
     def __init__(self, websocket: WebSocket):
         self._ws = websocket
         self._connected = True
+        self._max_buffer = 64  # max queued sends before backpressure
 
     async def send(self, event: StreamEvent) -> bool:
         try:
@@ -149,10 +154,14 @@ class WebSocketTransport(StreamTransport):
 
 
 class SSETransport(StreamTransport):
-    """SSE transport implementation (writes to queue for StreamingResponse)."""
+    """SSE transport implementation (writes to queue for StreamingResponse).
 
-    def __init__(self):
-        self._queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=100)
+    Backpressure is enforced by a bounded asyncio.Queue — when the queue
+    reaches maxsize, the producer blocks, preventing unbounded memory growth.
+    """
+
+    def __init__(self, max_buffer: int = 64):
+        self._queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=max_buffer)
         self._connected = True
 
     async def send(self, event: StreamEvent) -> bool:
@@ -435,11 +444,12 @@ async def create_sse_response(
     temperature: float,
     session_id: str | None = None,
     resume_from: str | None = None,
+    max_buffer: int = 64,
 ) -> StreamingResponse:
     """Create SSE StreamingResponse using unified streamer."""
     session_id = session_id or str(uuid.uuid4())[:8]
     streamer = get_unified_streamer()
-    transport = SSETransport()
+    transport = SSETransport(max_buffer=max_buffer)
 
     async def sse_generator():
         async for event in streamer.stream(
@@ -464,12 +474,97 @@ async def create_sse_response(
     )
 
 
+# ====================== Legacy Compat ======================
+
+
+@dataclass(slots=True)
+class StreamChunk:
+    """Backward-compatible StreamChunk for legacy stream_chat consumers.
+
+    Deprecated: Use StreamEvent directly in new code.
+    """
+
+    text: str
+    status: StreamStatus
+    stream_id: str
+    chunk_index: int
+    tokens_generated: int = 0
+    latency_ms: float = 0.0
+    error: str | None = None
+
+
+async def stream_chat(
+    prompt: str,
+    model: str = "",
+    provider: str = "ollama",
+    timeout: int | None = None,
+) -> AsyncIterator[StreamChunk]:
+    """Legacy API compatibility method — now backed by UnifiedStreamer.
+
+    Wraps UnifiedStreamer.stream() and yields backward-compatible StreamChunk
+    objects with .text, .status, etc.
+
+    Deprecated: Use UnifiedStreamer.stream() directly for new code.
+    """
+    streamer = get_unified_streamer()
+    transport = SSETransport()
+    session_id = str(uuid.uuid4())[:8]
+    index = 0
+    token_count = 0
+
+    try:
+        async for event in streamer.stream(
+            transport=transport,
+            message=prompt,
+            session_id=session_id,
+            model=model,
+            provider=provider,
+        ):
+            if event.event_type == "token":
+                token_count += 1
+                yield StreamChunk(
+                    text=event.content,
+                    status=StreamStatus.GENERATING,
+                    stream_id=event.stream_id or "legacy",
+                    chunk_index=index,
+                    tokens_generated=token_count,
+                )
+                index += 1
+            elif event.event_type == "done":
+                yield StreamChunk(
+                    text="",
+                    status=StreamStatus.COMPLETED,
+                    stream_id=event.stream_id or "legacy",
+                    chunk_index=index,
+                    tokens_generated=token_count,
+                )
+            elif event.event_type == "error":
+                yield StreamChunk(
+                    text=event.content,
+                    status=StreamStatus.ERROR,
+                    stream_id=event.stream_id or "legacy",
+                    chunk_index=index,
+                    error=event.error,
+                )
+    except asyncio.CancelledError:
+        yield StreamChunk(
+            text="",
+            status=StreamStatus.CANCELLED,
+            stream_id="legacy",
+            chunk_index=index,
+            error="Stream cancelled",
+        )
+
+
 __all__ = [
     "SSETransport",
+    "StreamChunk",
     "StreamEvent",
+    "StreamStatus",
     "StreamTransport",
     "UnifiedStreamer",
     "WebSocketTransport",
     "create_sse_response",
     "get_unified_streamer",
+    "stream_chat",
 ]
