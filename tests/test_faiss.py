@@ -21,7 +21,7 @@ class TestFAISSAdapter:
     def test_adapter_init(self, temp_dir):
         """Test adapter initialization"""
         try:
-            from adapters.memory.faiss import FAISSAdapter
+            from backend.infrastructure.adapters.faiss import FAISSAdapter
 
             adapter = FAISSAdapter(
                 persist_path=str(temp_dir / "test.index"), dimension=384
@@ -38,7 +38,7 @@ class TestFAISSAdapter:
     def test_add_empty_text(self, temp_dir):
         """Test adding empty text does nothing"""
         try:
-            from adapters.memory.faiss import FAISSAdapter
+            from backend.infrastructure.adapters.faiss import FAISSAdapter
 
             adapter = FAISSAdapter(
                 persist_path=str(temp_dir / "test.index"), dimension=384
@@ -60,7 +60,7 @@ class TestFAISSAdapter:
     def test_add_and_search(self, temp_dir):
         """Test adding and searching"""
         try:
-            from adapters.memory.faiss import FAISSAdapter
+            from backend.infrastructure.adapters.faiss import FAISSAdapter
 
             adapter = FAISSAdapter(
                 persist_path=str(temp_dir / "test.index"), dimension=384
@@ -86,7 +86,7 @@ class TestFAISSAdapter:
     def test_search_empty_index(self, temp_dir):
         """Test search on empty index returns empty"""
         try:
-            from adapters.memory.faiss import FAISSAdapter
+            from backend.infrastructure.adapters.faiss import FAISSAdapter
 
             adapter = FAISSAdapter(
                 persist_path=str(temp_dir / "test.index"), dimension=384
@@ -112,7 +112,7 @@ class TestFAISSAdapter:
     def test_batch_save(self, temp_dir):
         """Test batch save behavior"""
         try:
-            from adapters.memory.faiss import FAISSAdapter
+            from backend.infrastructure.adapters.faiss import FAISSAdapter
 
             adapter = FAISSAdapter(
                 persist_path=str(temp_dir / "test.index"), dimension=384
@@ -138,7 +138,7 @@ class TestFAISSAdapter:
     def test_dimension_mismatch(self, temp_dir):
         """Test handling of dimension mismatch"""
         try:
-            from adapters.memory.faiss import FAISSAdapter
+            from backend.infrastructure.adapters.faiss import FAISSAdapter
 
             # Initialize with dimension
             adapter = FAISSAdapter(
