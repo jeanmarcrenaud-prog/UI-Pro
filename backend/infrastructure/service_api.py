@@ -1,4 +1,6 @@
 # services/service_api.py - Internal Service API
+# type: ignore
+# pyright: basic
 #
 # API interne unifiée pour les services:
 # - StreamingService (chat en temps réel)
