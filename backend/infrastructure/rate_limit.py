@@ -5,7 +5,7 @@ Rate limiting and API authentication middleware.
 import hashlib
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from fastapi import HTTPException, Request
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -20,6 +20,16 @@ class RateLimitConfig:
     requests_per_minute: int = 60
     requests_per_hour: int = 1000
     burst_size: int = 10
+
+
+@dataclass
+class RateLimitResult:
+    """Result of a rate limit check."""
+
+    allowed: bool = True
+    remaining_minute: int = 60
+    remaining_hour: int = 1000
+    remaining_burst: int = 10
 
 
 class RateLimiter:
@@ -77,33 +87,56 @@ class RateLimiter:
 
         return bucket
 
-    def check(self, request: Request) -> bool:
-        """Check if request is allowed. Returns True if allowed."""
+    def check(self, request: Request) -> RateLimitResult:
+        """Check if request is allowed. Returns RateLimitResult with remaining counts."""
         client_id = self._get_client_id(request)
         bucket = self._get_bucket(client_id)
-        now = time.time()
+
+        remaining_min = self.config.requests_per_minute - bucket["minute_count"]
+        remaining_hr = self.config.requests_per_hour - bucket["hour_count"]
+        remaining_burst = max(0, int(bucket["tokens"]))
 
         # Check minute limit
         if bucket["minute_count"] >= self.config.requests_per_minute:
             logger.warning(f"Rate limit exceeded (minute): {client_id}")
-            return False
+            return RateLimitResult(
+                allowed=False,
+                remaining_minute=0,
+                remaining_hour=remaining_hr,
+                remaining_burst=remaining_burst,
+            )
 
         # Check hour limit
         if bucket["hour_count"] >= self.config.requests_per_hour:
             logger.warning(f"Rate limit exceeded (hour): {client_id}")
-            return False
+            return RateLimitResult(
+                allowed=False,
+                remaining_minute=remaining_min,
+                remaining_hour=0,
+                remaining_burst=remaining_burst,
+            )
 
         # Check tokens
         if bucket["tokens"] < 1:
             logger.warning(f"Rate limit exceeded (burst): {client_id}")
-            return False
+            return RateLimitResult(
+                allowed=False,
+                remaining_minute=remaining_min,
+                remaining_hour=remaining_hr,
+                remaining_burst=0,
+            )
 
         # Consume resources
         bucket["tokens"] -= 1
         bucket["minute_count"] += 1
         bucket["hour_count"] += 1
 
-        return True
+        return RateLimitResult(
+            allowed=True,
+            remaining_minute=remaining_min - 1 if remaining_min > 0 else 0,
+            remaining_hour=remaining_hr - 1 if remaining_hr > 0 else 0,
+            remaining_burst=max(0, int(bucket["tokens"])),
+        )
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -118,16 +151,25 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if request.url.path in ["/health", "/docs", "/openapi.json", "/ws"]:
             return await call_next(request)
 
-        if not self.limiter.check(request):
+        result = self.limiter.check(request)
+
+        if not result.allowed:
             raise HTTPException(
-                status_code=429, detail="Rate limit exceeded. Please try again later."
+                status_code=429,
+                detail="Rate limit exceeded. Please try again later.",
+                headers={
+                    "X-RateLimit-Limit": str(self.limiter.config.requests_per_minute),
+                    "X-RateLimit-Remaining": "0",
+                    "Retry-After": "60",
+                },
             )
 
         response = await call_next(request)
 
-        # Add rate limit headers
-        response.headers["X-RateLimit-Limit"] = "60"
-        response.headers["X-RateLimit-Remaining"] = "59"
+        # Add rate limit headers with actual remaining values
+        response.headers["X-RateLimit-Limit"] = str(self.limiter.config.requests_per_minute)
+        response.headers["X-RateLimit-Remaining"] = str(result.remaining_minute)
+        response.headers["X-RateLimit-Hour-Remaining"] = str(result.remaining_hour)
 
         return response
 

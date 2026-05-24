@@ -51,19 +51,6 @@ class ExecutionResult:
 class CodeExecutionService:
     TIMEOUT_SECONDS = 5
 
-    BLOCKED_PATTERNS = {
-        "os.system",
-        "subprocess",
-        "socket",
-        "open(",
-        "eval(",
-        "exec(",
-        "__import__",
-        "shutil",
-        "pathlib",
-        "sys.exit",
-    }
-
     def __init__(self, use_docker: bool = False):
         # Secure executor with AST analysis (Python only)
         self._secure_executor = SecureCodeExecutor(
@@ -99,14 +86,13 @@ class CodeExecutionService:
         if use_docker and self._docker_sandbox:
             return await self._execute_docker(code)
 
-        lowered = code.replace(" ", "")
-
-        for pattern in self.BLOCKED_PATTERNS:
-            if pattern.replace(" ", "") in lowered:
-                return ExecutionResult(
-                    False,
-                    error=f"blocked dangerous pattern: {pattern}",
-                )
+        # Static analysis via AST (catches dangerous imports, exec/eval, open())
+        ast_safe, ast_msg = self._secure_executor._check_dangerous_code(code)
+        if not ast_safe:
+            return ExecutionResult(
+                False,
+                error=f"Code rejected: {ast_msg}",
+            )
 
         review = review_code(code)
 
@@ -163,7 +149,15 @@ class CodeExecutionService:
         globals_dict: dict[str, Any],
         review: ReviewResult,
     ) -> ExecutionResult:
+        """
+        Execute code in a restricted in-process sandbox.
 
+        SECURITY NOTES:
+        - Uses a restricted SAFE_BUILTINS dict (no __import__, open, eval, exec)
+        - Empty locals dict prevents variable leakage
+        - AST analysis already validated no dangerous patterns
+        - For stronger isolation, use the Docker sandbox or SecureCodeExecutor subprocess
+        """
         stdout = io.StringIO()
 
         safe_globals = {

@@ -123,6 +123,16 @@ class Settings(BaseSettings):
 
     dashboard_port: int = Field(default=7860, ge=1, le=65535)
 
+    # CORS
+    cors_origins: list[str] = Field(
+        default=[
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:8080",
+        ],
+        description="Allowed CORS origins for production",
+    )
+
     memory_enabled: bool = True
     memory_limit_mb: int = Field(default=512, ge=100, le=4096)
 
