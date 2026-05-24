@@ -1,13 +1,11 @@
-# llm/__init__.py - LLM Package Entry Point
-#
-# Role: Public API for LLM agents
-# Exports: OllamaClient, ModelConfig, LLMRouter from router
-import sys
-from pathlib import Path
+"""
+llm/__init__.py - Legacy LLM Package
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+⚠️  This package has moved to backend/infrastructure/legacy_llm_router.py.
+    This is a backward-compatibility shim.
+"""
 
-from llm.router import LLMRouter, ModelConfig, OllamaClient
+from backend.infrastructure.legacy_llm_router import LLMRouter, ModelConfig, OllamaClient
 from models.settings import settings
 
 # Convenience: get default client instance
@@ -30,3 +28,12 @@ def call(model: str, prompt: str) -> str:
 
 # Alias for settings
 MODELS = {"fast": settings.model_fast, "reasoning": settings.model_reasoning}
+
+__all__ = [
+    "LLMRouter",
+    "MODELS",
+    "ModelConfig",
+    "OllamaClient",
+    "call",
+    "get_client",
+]

@@ -13,7 +13,7 @@ from pathlib import Path
 # Import under test
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from llm import MODELS, OllamaClient, call, get_client
-from llm.router import ModelConfig
+from backend.infrastructure.legacy_llm_router import ModelConfig
 
 
 class TestOllamaClient:

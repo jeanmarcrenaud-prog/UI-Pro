@@ -229,7 +229,7 @@ class LLMRouter:
                     actual_model = actual_model[len(prefix) :]
                     break
 
-        from llm.router import ModelConfig, OllamaClient
+        from backend.infrastructure.legacy_llm_router import ModelConfig, OllamaClient
 
         # Determine base URL based on provider
         if provider == "ollama" or not provider:
@@ -291,7 +291,7 @@ class LLMRouter:
                     break
 
         try:
-            from llm.router import ModelConfig, OllamaClient
+            from backend.infrastructure.legacy_llm_router import ModelConfig, OllamaClient
 
             # Determine base URL based on provider
             if provider == "ollama" or not provider:

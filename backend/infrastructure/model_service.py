@@ -129,7 +129,7 @@ class ModelService:
         Returns an OllamaClient with correct model, URL, and timeout from settings.
         """
         self._ensure_init()
-        from llm.router import LLMRouter
+        from backend.infrastructure.legacy_llm_router import LLMRouter
 
         router = LLMRouter()
         return router.get_for_mode(mode)
@@ -142,7 +142,7 @@ class ModelService:
         Strips provider prefix from model name (e.g., "lmstudio-Qwen3.5 9B" -> "Qwen3.5 9B").
         """
         self._ensure_init()
-        from llm.router import ModelConfig, OllamaClient
+        from backend.infrastructure.legacy_llm_router import ModelConfig, OllamaClient
         from models.settings import LLM_TIMEOUT
 
         # Use explicit provider - this takes priority over ModelDiscovery

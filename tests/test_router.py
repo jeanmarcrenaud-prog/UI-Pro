@@ -29,7 +29,7 @@ class TestLLMRouter:
     @pytest.fixture
     def router(self, mock_config):
         """Create router with mock config"""
-        from llm.router import LLMRouter
+        from backend.infrastructure.legacy_llm_router import LLMRouter
 
         return LLMRouter(config=mock_config)
 
@@ -103,7 +103,7 @@ class TestModelSelection:
 
     def test_explicit_mode_mapping(self, config_override):
         """Test explicit mode parameter"""
-        from llm.router import ModelsConfig
+        from backend.infrastructure.legacy_llm_router import ModelsConfig
 
         # Create config with explicit values (not relying on env vars at init time)
         config = ModelsConfig(
@@ -121,7 +121,7 @@ class TestModelSelection:
 
     def test_single_backend_config(self):
         """Test single backend configuration"""
-        from llm.router import ModelsConfig
+        from backend.infrastructure.legacy_llm_router import ModelsConfig
 
         config = ModelsConfig(
             fast="qwen3.5:9b", reasoning="qwen3.6:latest", code="qwen3.5:9b"
