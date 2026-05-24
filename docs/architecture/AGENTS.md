@@ -66,8 +66,13 @@ backend/
 ```
 ui-pro/                    # Racine projet
 ├── backend/               # SOURCE DE VÉRITÉ (uniquement)
-├── llm/                   # LLM clients (module séparé)
-├── models/                # Types + Config (re-exports settings)
+│   ├── domain/            # Business logic + settings
+│   ├── infrastructure/    # Services: LLM, streaming, cache, checkpointer, adapters
+│   ├── application/       # Application layer: launcher, WebSocket
+│   └── transport/         # API: FastAPI, Gradio, routers
+├── llm/                   # ⚠️ Legacy shim (moved to backend/infrastructure/)
+├── adapters/              # ⚠️ Legacy shim (moved to backend/infrastructure/adapters/)
+├── models/                # Types + Config (re-exports backend/)
 ├── tests/                 # Tests pytest
 ├── scripts/               # Scripts utilitaires
 ├── frontend/             # Frontend Next.js

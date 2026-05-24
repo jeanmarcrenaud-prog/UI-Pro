@@ -157,7 +157,8 @@ ui-pro/                    # Project root
 ├── backend/                  # SOURCE OF TRUTH
 │   ├── domain/
 │   │   ├── settings.py      # Unified config (pydantic-settings)
-│   │   └── core/           # Business logic
+│   │   │   └── cache.py     # Generic TTL cache utility
+│   │   └── core/            # Business logic
 │   │       ├── langgraph_orchestrator.py  # Agent pipeline
 │   │       ├── orchestrator_async.py      # Async orchestrator
 │   │       ├── code_review.py            # Static analysis
@@ -165,11 +166,16 @@ ui-pro/                    # Project root
 │   │       └── langgraph/               # LangGraph nodes
 │   ├── infrastructure/       # Services
 │   │   ├── llm_router.py    # LLM routing + streaming
+│   │   ├── legacy_llm_router.py  # Legacy Ollama client
 │   │   ├── model_discovery.py  # Model discovery + presets
-│   │   ├── streaming.py     # Legacy streaming
 │   │   ├── streaming_unified.py  # Unified SSE/WS protocol
+│   │   ├── streaming.py     # ⚠️ Deprecated shim
 │   │   ├── code_execution.py # Sandbox execution
-│   │   └── memory.py        # FAISS vector store
+│   │   ├── memory.py        # FAISS vector store
+│   │   ├── cache.py         # TTL cache utility
+│   │   ├── checkpointer.py  # LangGraph checkpoint mgmt
+│   │   └── adapters/        # External integrations
+│   │       └── faiss.py     # FAISS memory adapter
 │   └── transport/           # API layer
 │       ├── views_api.py     # FastAPI app
 │       └── routers/        # API endpoints
@@ -180,6 +186,12 @@ ui-pro/                    # Project root
 │
 ├── models/                   # Data models (re-exports backend/)
 │   └── settings.py
+│
+├── llm/                      # ⚠️ Legacy shim (moved to backend/)
+│   └── router.py
+│
+├── adapters/                 # ⚠️ Legacy shim (moved to backend/)
+│   └── memory/faiss.py
 │
 └── frontend/                # Next.js frontend
     ├── components/
