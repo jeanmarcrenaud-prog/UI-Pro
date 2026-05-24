@@ -82,13 +82,13 @@ class EventType(str, Enum):
 class EventBus:
     """Simple pub/sub event bus with thread-safe operations"""
 
-    def __init__(self):
-        self._subscribers: dict[EventType, list[Callable]] = {
+    def __init__(self) -> None:
+        self._subscribers: dict[EventType, list[Callable[[BaseEvent], Any]]] = {
             event_type: [] for event_type in EventType
         }
         self._lock = threading.Lock()
 
-    def subscribe(self, event_type: EventType, handler: Callable) -> str:
+    def subscribe(self, event_type: EventType, handler: Callable[[BaseEvent], Any]) -> str:
         """Subscribe to an event type. Returns subscription ID."""
         sub_id = str(uuid.uuid4())
         with self._lock:
@@ -174,10 +174,10 @@ def error_event_to_ws(event: ErrorEvent) -> str:
 class EventRouter:
     """Routes events to appropriate handlers"""
 
-    def __init__(self):
-        self._routes: dict[str, Callable] = {}
+    def __init__(self) -> None:
+        self._routes: dict[str, Callable[[BaseEvent], str | None]] = {}
 
-    def register(self, event_type: str, handler: Callable):
+    def register(self, event_type: str, handler: Callable[[BaseEvent], str | None]) -> None:
         """Register a handler for an event type"""
         self._routes[event_type] = handler
 

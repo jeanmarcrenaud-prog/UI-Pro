@@ -137,7 +137,7 @@ def check_backends() -> dict:
         all_models = discovery.discover_all()
 
         # Group by backend
-        by_backend = {}
+        by_backend: dict[str, list[str]] = {}
         for model in all_models:
             if model.backend not in by_backend:
                 by_backend[model.backend] = []
@@ -320,6 +320,7 @@ def check_prerequisites() -> dict:
         import shutil
 
         node_path = shutil.which("node")
+        assert node_path is not None  # guarded by check_node_available()
         result = subprocess.run(
             [node_path, "--version"], capture_output=True, timeout=5
         )
@@ -333,6 +334,7 @@ def check_prerequisites() -> dict:
         import shutil
 
         npm_path = shutil.which("npm")
+        assert npm_path is not None  # guarded by check_npm_available()
         result = subprocess.run([npm_path, "--version"], capture_output=True, timeout=5)
         print_success(f"npm {result.stdout.decode().strip()}")
         results["npm"] = True

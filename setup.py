@@ -299,7 +299,7 @@ def install_ollama() -> bool:
         elif system == "Darwin":
             print("Installing via curl...")
             subprocess.run(
-                ["curl", "-fsSL", "https://ollama.com/install.sh", "|", "sh"],
+                "curl -fsSL https://ollama.com/install.sh | sh",
                 shell=True,
                 capture_output=True,
                 timeout=120,
@@ -309,9 +309,10 @@ def install_ollama() -> bool:
         elif system == "Linux":
             print("Installing via curl...")
             result = subprocess.run(
-                ["curl", "-fsSL", "https://ollama.com/install.sh", "|", "sh"],
+                "curl -fsSL https://ollama.com/install.sh | sh",
                 shell=True,
                 capture_output=True,
+                text=True,
                 timeout=120,
             )
             if result.returncode != 0:
