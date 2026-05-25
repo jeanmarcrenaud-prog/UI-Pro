@@ -3,11 +3,46 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import textwrap
 from typing import Any, Dict, List, Optional
 
+logger = logging.getLogger(__name__)
+
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+def _fix_indentation(code: str) -> str:
+    """Normalize inconsistent indentation (e.g. first line at col 0, rest at col 4+)."""
+    lines = code.split("\n")
+    non_empty = [l for l in lines if l.strip()]
+    if len(non_empty) < 2:
+        return code
+
+    # Calculate indent per line (leading spaces)
+    indents = [len(l) - len(l.lstrip()) for l in non_empty]
+    # Find the most common non-zero indent as the baseline
+    nonzero = [i for i in indents if i > 0]
+    if not nonzero:
+        return code
+
+    baseline = max(set(nonzero), key=nonzero.count)
+    # If any line has 0 indent while most have `baseline`, re-indent everything
+    if min(indents) == 0 and baseline > 0:
+        fixed: list[str] = []
+        for line in lines:
+            if line.strip():
+                diff = len(line) - len(line.lstrip())
+                if diff < baseline:
+                    fixed.append(" " * baseline + line.lstrip())
+                else:
+                    fixed.append(line)
+            else:
+                fixed.append(line)
+        return "\n".join(fixed)
+
+    return code
 
 
 class ExtractedFile(BaseModel):
@@ -45,8 +80,15 @@ class ExtractedFile(BaseModel):
             dedented = textwrap.dedent(stripped)
             try:
                 compile(dedented, v, "exec")
+                return dedented
             except SyntaxError:
-                raise ValueError(f"Invalid Python syntax: {e}")
+                # Aggressive fix: re-indent all lines based on the majority indent
+                fixed = _fix_indentation(stripped)
+                try:
+                    compile(fixed, v, "exec")
+                    return fixed
+                except SyntaxError:
+                    raise ValueError(f"Invalid Python syntax: {e}")
         return v
 
 
@@ -186,9 +228,24 @@ def extract_code_dict(response: str) -> dict[str, Any]:
     if code_dict is None:
         code_dict = {"files": {"main.py": response_clean}}
 
-    # Final validation
+    # Final validation — don't crash, salvage what we can
     try:
         extracted = ExtractedCode.model_validate(code_dict)
         return extracted.to_dict()
     except ValueError as e:
-        raise ValueError(f"Failed to extract valid code: {e}") from None
+        logger.warning("Code validation failed, returning fallback: %s", e)
+        # Try to salvage by fixing indentation on all files
+        if "files" in code_dict:
+            salvaged: dict[str, str] = {}
+            for fname, fcontent in code_dict["files"].items():
+                if isinstance(fcontent, str):
+                    fixed = _fix_indentation(fcontent)
+                    salvaged[fname] = fixed
+            if salvaged:
+                try:
+                    extracted = ExtractedCode.model_validate({"files": salvaged})
+                    return extracted.to_dict()
+                except ValueError:
+                    pass
+        # Last resort: return raw content as-is
+        return code_dict

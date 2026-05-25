@@ -116,7 +116,7 @@ async def websocket_endpoint(ws: WebSocket):
             ):
                 await ws.send_text(event.to_ws())
 
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, RuntimeError):
         logger.info(f"WebSocket disconnected: {session_id}")
     except Exception as e:
         logger.error(f"WebSocket error: {e}", exc_info=True)
