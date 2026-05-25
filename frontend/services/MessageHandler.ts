@@ -41,7 +41,7 @@ export class MessageHandler {
       if (stepId && typeof stepId === 'string') {
         // Log full step content to Debug Panel (stats message, step detail, etc.)
         debugLogger.logStep(title, content || `Status: ${status}`, { duration: 0 })
-        this.onStep(stepId, status)
+        this.onStep(stepId, status, content)
       }
       return
     }
