@@ -1,8 +1,8 @@
 """
 backend/infrastructure/streaming.py - Streaming Service (LangGraph Version)
 
-⚠️  DEPRECATED — All functionality migrated to streaming_unified.py.
-    Import from `backend.infrastructure.streaming_unified` instead.
+⚠️  DEPRECATED — All functionality migrated to backend.infrastructure.streaming/ package.
+    Import from `backend.infrastructure.streaming` instead.
     This shim will be removed in a future version.
 """
 
@@ -12,14 +12,14 @@ import warnings
 
 warnings.warn(
     "backend.infrastructure.streaming is deprecated. "
-    "Use backend.infrastructure.streaming_unified instead.",
+    "Use backend.infrastructure.streaming (package) instead.",
     DeprecationWarning,
     stacklevel=2,
 )
 
 from fastapi.responses import StreamingResponse  # noqa: F401
 
-from backend.infrastructure.streaming_unified import (
+from backend.infrastructure.streaming import (
     SSETransport,
     StreamChunk,
     StreamEvent,
