@@ -1,9 +1,17 @@
 """
-llm/__init__.py - Legacy LLM Package
+⚠️ DEPRECATED — llm package is moving to backend/infrastructure/.
 
-⚠️  This package has moved to backend/infrastructure/legacy_llm_router.py.
-    This is a backward-compatibility shim.
+Import from backend.infrastructure.legacy_llm_router instead.
+This shim will be deleted in a future version.
 """
+
+import warnings
+
+warnings.warn(
+    "llm package is deprecated. Use backend.infrastructure.legacy_llm_router instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 from backend.infrastructure.legacy_llm_router import LLMRouter, ModelConfig, OllamaClient
 from models.settings import settings

@@ -1,10 +1,17 @@
 """
-adapters/memory/faiss.py - FAISS Vector Store (Legacy re-export)
+⚠️ DEPRECATED — adapters/memory/faiss.py is removed.
 
-NOTE: This module re-exports FAISSAdapter from the canonical location at
-backend/infrastructure/adapters/faiss.py to maintain backward compatibility.
-New code should import directly from backend.infrastructure.adapters.faiss.
+All functionality moved to backend/infrastructure/adapters/faiss.py.
+Import directly from there. This shim will be deleted in a future version.
 """
+
+import warnings
+
+warnings.warn(
+    "adapters.memory.faiss is deprecated. Use backend.infrastructure.adapters.faiss instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 from backend.infrastructure.adapters.faiss import FAISSAdapter  # noqa: F401
 

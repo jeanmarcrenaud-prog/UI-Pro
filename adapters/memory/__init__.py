@@ -1,5 +1,18 @@
-# adapters/memory/ - Memory Adapter
+"""
+⚠️ DEPRECATED — adapters.memory is removed.
 
-from .faiss import FAISSAdapter
+All functionality moved to backend/infrastructure/adapters/.
+Import directly from there. This shim will be deleted in a future version.
+"""
+
+import warnings
+
+warnings.warn(
+    "adapters.memory is deprecated. Use backend.infrastructure.adapters instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
+from backend.infrastructure.adapters.faiss import FAISSAdapter  # noqa: F401
 
 __all__ = ["FAISSAdapter"]
