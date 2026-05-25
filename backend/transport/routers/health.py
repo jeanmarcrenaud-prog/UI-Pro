@@ -16,15 +16,24 @@ def _get_setting(attr: str, default: Any = None) -> Any:
     return getattr(settings, attr, default) or default
 
 
-def _check_ollama() -> str:
-    """Check if Ollama is available."""
-    import requests
+def _check_backends() -> dict[str, dict]:
+    """Check all configured LLM backends in parallel using the health module."""
+    from backend.infrastructure.llm.health import check_backends_parallel, aggregate_health
 
-    try:
-        resp = requests.get(f"{settings.ollama_url}/api/tags", timeout=2)
-        return "ok" if resp.ok else "unavailable"
-    except Exception:
-        return "unavailable"
+    # Build health check endpoints from settings
+    endpoints = {}
+    for name, cfg in settings.backends.items():
+        if cfg.get("enabled", False):
+            url = cfg.get("url", "")
+            endpoint_path = cfg.get("models_endpoint", "")
+            if url and endpoint_path:
+                endpoints[name] = f"{url.rstrip('/')}{endpoint_path}"
+
+    if not endpoints:
+        return {}
+
+    results = check_backends_parallel(endpoints, timeout=3.0)
+    return results
 
 
 def _get_system_info() -> dict[str, Any]:
@@ -91,7 +100,15 @@ async def health_check():
     # Check dependencies
     deps = _check_dependencies()
 
+    # Check backends in parallel
+    backend_health = _check_backends()
+    from backend.infrastructure.llm.health import aggregate_health
+    health_summary = aggregate_health(backend_health)
+
     overall = "healthy" if all(d["ok"] for d in deps.values()) else "degraded"
+    # Degrade overall if no backends are ok
+    if health_summary["ok_count"] == 0 and backend_health:
+        overall = "degraded"
 
     return {
         "status": overall,
@@ -100,7 +117,9 @@ async def health_check():
         "dependencies": deps,
         "services": {
             "api": "ok",
-            "llm": _check_ollama(),
+            "backends": backend_health,
+            "llm": health_summary["status"],
+            "backends_summary": health_summary,
         },
         "system": _get_system_info(),
     }
@@ -174,6 +193,24 @@ async def get_models():
         "models": discovery.get_models_summary(),
         "loaded_count": sum(1 for m in discovery.discover_all() if m.is_loaded),
     }
+
+
+@router.post("/api/settings/auto-select-preset")
+async def auto_select_preset():
+    """Auto-select the best preset based on available models."""
+    try:
+        preset_id = settings.auto_select_preset()
+        return {
+            "status": "ok",
+            "preset": preset_id,
+            "models": {
+                "fast": settings.model_fast,
+                "reasoning": settings.model_reasoning,
+                "code": settings.model_code,
+            },
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @router.get("/api/settings/default-model")

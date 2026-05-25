@@ -252,6 +252,19 @@ class Settings(BaseSettings):
         """Get all available presets."""
         return DEFAULT_PRESETS.copy()
 
+    def auto_select_preset(self) -> str:
+        """Auto-select the best preset based on available models and backends."""
+        try:
+            from backend.infrastructure.model_discovery import auto_select_best_preset
+
+            best = auto_select_best_preset()
+            self.active_preset = best
+            logger.info("Auto-selected preset: %s (based on available models)", best)
+            return best
+        except Exception as e:
+            logger.warning("Auto-select preset failed: %s — keeping '%s'", e, self.active_preset)
+            return self.active_preset
+
     def set_preset(self, preset_id: str) -> None:
         if preset_id not in DEFAULT_PRESETS:
             raise ValueError(f"Preset invalide: {preset_id}")

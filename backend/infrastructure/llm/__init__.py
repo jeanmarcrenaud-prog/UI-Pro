@@ -10,6 +10,7 @@ Structure:
   lemonade.py   — Lemonade client (with /v1/completions fallback)
   llamacpp.py   — llama.cpp client
   health.py     — Health check utilities
+  fallback.py   — Auto-fallback between backends
 """
 
 from backend.infrastructure.llm.base import LLMBackend
@@ -26,6 +27,11 @@ from backend.infrastructure.llm.factory import (
     list_available_backends,
     register_backend,
 )
+from backend.infrastructure.llm.fallback import (
+    astream_with_fallback,
+    generate_with_fallback,
+    stream_with_fallback,
+)
 
 __all__ = [
     "LLMAuthenticationError",
@@ -35,7 +41,10 @@ __all__ = [
     "LLMModelNotFoundError",
     "LLMStreamError",
     "LLMTimeoutError",
+    "astream_with_fallback",
+    "generate_with_fallback",
     "get_backend",
     "list_available_backends",
     "register_backend",
+    "stream_with_fallback",
 ]
