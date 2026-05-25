@@ -176,10 +176,21 @@ def _check_dependencies() -> dict[str, dict]:
 @router.get("/status")
 async def status():
     """Current configuration status"""
+    from backend.infrastructure.llm import list_available_backends
+
     return {
+        "active_preset": _get_setting("active_preset", "balanced"),
         "model_fast": _get_setting("model_fast", "N/A"),
         "model_reasoning": _get_setting("model_reasoning", "N/A"),
-        "ollama_url": _get_setting("ollama_url", "http://localhost:11434"),
+        "model_code": _get_setting("model_code", "N/A"),
+        "registered_backends": list_available_backends(),
+        "backends": {
+            name: {
+                "enabled": cfg.get("enabled", False),
+                "url": cfg.get("url", ""),
+            }
+            for name, cfg in settings.backends.items()
+        },
     }
 
 
