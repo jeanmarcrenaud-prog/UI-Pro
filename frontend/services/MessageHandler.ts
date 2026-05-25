@@ -32,13 +32,15 @@ export class MessageHandler {
       return
     }
 
-    // Handle agent step
+    // Handle agent step (including generation stats from LLM)
     if (type === WS_EVENTS.STEP) {
       const stepId = data.step_id
       const status = data.step_status || data.status || 'active'
       const title = data.title || stepId
+      const content = data.content || ''
       if (stepId && typeof stepId === 'string') {
-        debugLogger.logStep(title, `Status: ${status}`, { duration: 0 })
+        // Log full step content to Debug Panel (stats message, step detail, etc.)
+        debugLogger.logStep(title, content || `Status: ${status}`, { duration: 0 })
         this.onStep(stepId, status)
       }
       return
