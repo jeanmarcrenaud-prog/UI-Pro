@@ -82,7 +82,7 @@ class TestLLMRouter:
 
     def test_stream_raises_on_error(self, router):
         """Test that stream method handles errors gracefully"""
-        with patch("llm.router.OllamaClient") as mock_client:
+        with patch("backend.infrastructure.legacy_llm_router.OllamaClient") as mock_client:
             mock_instance = MagicMock()
             mock_instance.stream.side_effect = Exception("Connection failed")
             mock_client.return_value = mock_instance
