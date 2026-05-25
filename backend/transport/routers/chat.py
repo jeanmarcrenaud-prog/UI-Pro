@@ -45,7 +45,7 @@ async def chat(request: ChatRequest):
             f"[CHAT] Request: message={request.message[:50]}... model={request.model} provider={request.provider}"
         )
 
-        from backend.infrastructure.streaming_unified import stream_chat
+        from backend.infrastructure.streaming import stream_chat
 
         # Collect full response from streaming (async)
         chunks = []
@@ -76,7 +76,7 @@ async def stream(request: ChatRequest):
                 f"[STREAM] Starting stream: message={request.message[:50]}... model={request.model}"
             )
 
-            from backend.infrastructure.streaming_unified import stream_chat
+            from backend.infrastructure.streaming import stream_chat
 
             chunk_count = 0
             async for chunk in stream_chat(

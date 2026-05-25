@@ -7,13 +7,25 @@ Tests for:
 - MODELS settings
 """
 
-import sys
-from pathlib import Path
+from backend.infrastructure.legacy_llm_router import ModelConfig, OllamaClient
+from models.settings import settings
 
-# Import under test
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from llm import MODELS, OllamaClient, call, get_client
-from backend.infrastructure.legacy_llm_router import ModelConfig
+# Replicate legacy convenience aliases (previously from llm/ shim)
+MODELS = {"fast": settings.model_fast, "reasoning": settings.model_reasoning}
+_client = None
+
+
+def get_client() -> OllamaClient:
+    """Get default OllamaClient singleton."""
+    global _client
+    if _client is None:
+        _client = OllamaClient()
+    return _client
+
+
+def call(model: str, prompt: str) -> str:
+    """Call model with prompt."""
+    return get_client().generate(prompt, model=model)
 
 
 class TestOllamaClient:

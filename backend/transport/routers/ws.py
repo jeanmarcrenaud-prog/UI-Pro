@@ -6,7 +6,7 @@ import uuid
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from backend.infrastructure.streaming_unified import (
+from backend.infrastructure.streaming import (
     WebSocketTransport,
     get_unified_streamer,
 )

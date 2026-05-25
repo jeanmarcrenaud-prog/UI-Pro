@@ -326,7 +326,7 @@ async def chat_endpoint(request: ChatRequest):
             f"[CHAT] Request: message={request.message[:50]}... model={request.model}"
         )
 
-        from backend.infrastructure.streaming_unified import stream_chat
+        from backend.infrastructure.streaming import stream_chat
 
         full_response = ""
         chunk_count = 0

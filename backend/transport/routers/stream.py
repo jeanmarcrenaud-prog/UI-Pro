@@ -13,7 +13,7 @@ router = APIRouter(tags=["stream"])
 
 # Import unified streaming
 from backend.domain.core.langgraph.streaming import get_stream_checkpoint
-from backend.infrastructure.streaming_unified import create_sse_response
+from backend.infrastructure.streaming import create_sse_response
 
 
 class StreamRequest(BaseModel):
