@@ -12,7 +12,7 @@ import json
 import logging
 import time
 from datetime import datetime
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal
 
 from models.settings import settings
 
@@ -23,12 +23,6 @@ logger = logging.getLogger(__name__)
 
 
 # Lazy imports to avoid circular imports
-def _get_state_manager():
-    from backend.domain.core.state_manager import StateManager
-
-    return StateManager
-
-
 def _get_executor():
     from backend.infrastructure.code_execution import CodeExecutionService
 
@@ -63,20 +57,7 @@ def _emit_agent_step(phase: str, message: str):
 
 
 # ====================== STATE ======================
-class AgentState(TypedDict, total=False):
-    """État persistant du graphe LangGraph"""
-
-    messages: list[dict[str, Any]]
-    plan: dict | None
-    code: dict | None
-    review: dict | None
-    execution_result: dict | None
-    error: str | None
-    attempt: int
-    max_attempts: int
-    session_id: str
-    metadata: dict[str, Any]
-
+from backend.domain.core.langgraph.state import AgentState
 
 # ====================== LLM WRAPPER ======================
 class LLMWrapper:
@@ -200,7 +181,7 @@ async def review_node(state: AgentState, llm: LLMWrapper) -> AgentState:
     return state
 
 
-async def execute_node(state: AgentState, executor) -> AgentState:
+async def execute_node(state: AgentState, executor: Any) -> AgentState:
     """Node: Execute code in sandbox"""
     _emit_agent_step("executing", "Exécution dans le sandbox...")
 
@@ -248,13 +229,11 @@ class OrchestratorAsync:
         self,
         llm_router=None,
         executor=None,
-        state_manager=None,
         tool_registry=None,
         metrics=None,
     ):
         self._llm_router = llm_router
         self._executor = executor
-        self._state_manager = state_manager
         self._tool_registry = tool_registry
         self._metrics = metrics
         self._llm = None
@@ -271,12 +250,6 @@ class OrchestratorAsync:
         if self._executor is None:
             self._executor = _get_executor()()
         return self._executor
-
-    @property
-    def state_manager(self):
-        if self._state_manager is None:
-            self._state_manager = _get_state_manager()()
-        return self._state_manager
 
     @property
     def tool_registry(self):

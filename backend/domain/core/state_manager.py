@@ -1,16 +1,23 @@
-# **State Manager** - Global State Management
-#
-# * State object
-# * Full trace
-# * Debug possible
-# * Crash recovery
+"""
+⚠️ DEPRECATED — Use backend.domain.core.langgraph.state (AgentState) instead.
+
+State and StateManager were part of an earlier sequential orchestrator.
+They are kept only for backward-compat tests. New code must use AgentState.
+"""
 
 import json
 import logging
 import uuid
+import warnings
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
+
+warnings.warn(
+    "state_manager is deprecated. Use backend.domain.core.langgraph.state instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 logger = logging.getLogger(__name__)
 
