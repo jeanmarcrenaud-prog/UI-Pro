@@ -10,6 +10,8 @@ from typing import Any, Literal
 
 from models.settings import settings
 
+from .state import AgentState, CodeData, PlanData, ReviewData
+
 logger = logging.getLogger(__name__)
 
 
@@ -18,17 +20,20 @@ logger = logging.getLogger(__name__)
 # ========================================
 
 
-def _get_user_message(state: dict[str, Any]) -> str:
+def _get_user_message(state: AgentState) -> str:
     messages = state.get("messages", [])
-    return messages[0].get("content", "") if messages else ""
+    msg = messages[0] if messages else None
+    return msg.get("content", "") if msg else ""
 
 
-def _get_model_info(state: dict[str, Any]) -> tuple[str, str]:
+def _get_model_info(state: AgentState) -> tuple[str, str]:
     metadata = state.get("metadata", {})
-    return metadata.get("model", ""), metadata.get("provider", "ollama")
+    return (metadata or {}).get("model", ""), (metadata or {}).get("provider", "ollama")
 
 
-def _clean_plan(plan: dict[str, Any]) -> dict[str, Any]:
+def _clean_plan(plan: PlanData | None) -> dict[str, object]:
+    if plan is None:
+        return {}
     return {k: v for k, v in plan.items() if k not in ("raw", "thinking", "analysis")}
 
 
@@ -62,7 +67,7 @@ def _emit_step(phase: str, message: str):
 # ========================================
 
 
-async def analyzing_node(state):
+async def analyzing_node(state: AgentState) -> AgentState:
     _emit_step("analyzing", "Analyse des exigences...")
 
     user_model, user_provider = _get_model_info(state)
@@ -90,7 +95,7 @@ async def analyzing_node(state):
     return state
 
 
-async def planning_node(state):
+async def planning_node(state: AgentState) -> AgentState:
     _emit_step("planning", "Creation du plan d'implementation...")
 
     user_model, user_provider = _get_model_info(state)
@@ -112,7 +117,7 @@ async def planning_node(state):
     )
 
     try:
-        plan = json.loads(full_response)
+        plan: PlanData = json.loads(full_response)
     except json.JSONDecodeError:
         json_match = re.search(r"\{[\s\S]*\}", full_response)
         if json_match:
@@ -128,7 +133,7 @@ async def planning_node(state):
     return state
 
 
-async def coding_node(state):
+async def coding_node(state: AgentState) -> AgentState:
     _emit_step("coding", "Generation du code...")
 
     user_model, user_provider = _get_model_info(state)
@@ -153,7 +158,7 @@ async def coding_node(state):
     return state
 
 
-async def reviewing_node(state):
+async def reviewing_node(state: AgentState) -> AgentState:
     _emit_step("reviewing", "Code Review & Security Check...")
 
     user_model, user_provider = _get_model_info(state)
@@ -167,9 +172,9 @@ async def reviewing_node(state):
     full_response = await llm.run_node(prompt, model_type="reasoning")
 
     try:
-        review = json.loads(full_response)
+        review: ReviewData = json.loads(full_response)
     except Exception:
-        review = {
+        review: ReviewData = {
             "passed": False,
             "issues": [],
             "suggestions": ["Could not parse review"],
@@ -179,7 +184,7 @@ async def reviewing_node(state):
     return state
 
 
-async def executing_node(state):
+async def executing_node(state: AgentState) -> AgentState:
     _emit_step("executing", "Execution dans le sandbox...")
 
     from backend.infrastructure.code_execution import CodeExecutionService
@@ -204,7 +209,7 @@ async def executing_node(state):
     return state
 
 
-def should_continue(state) -> Literal["review", "end"]:
+def should_continue(state: AgentState) -> Literal["review", "end"]:
     review = state.get("review")
     attempt = state.get("attempt", 0)
     max_attempts = state.get("max_attempts", 3)
