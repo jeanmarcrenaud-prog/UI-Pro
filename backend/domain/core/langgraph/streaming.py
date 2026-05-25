@@ -4,9 +4,13 @@ Token streaming pipeline for the agent with batching and robust resume.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from datetime import datetime
+from typing import Any
+
+from backend.domain.core.events import EventType, get_event_bus
 
 from .state import AgentState
 
@@ -112,6 +116,19 @@ async def stream_agent(
         yield "[STEP]orchestrator:Starting agent pipeline"
         logger.info("[streaming] Starting astream...")
 
+        # Subscribe to event bus for generation stats emitted by LLMWrapper
+        stats_queue: asyncio.Queue[str] = asyncio.Queue()
+
+        def _on_agent_event(event: Any) -> None:
+            try:
+                if hasattr(event, "step") and event.step == "generation_stats":
+                    stats_queue.put_nowait(event.message)
+            except Exception:
+                pass
+
+        bus = get_event_bus()
+        bus.subscribe(EventType.AGENT, _on_agent_event)
+
         # Use astream with stream_mode="values" for state snapshots
         async for event in app.astream(
             initial_state,
@@ -177,6 +194,14 @@ async def stream_agent(
 
                         _last_message_length[session_id] = len(content)
 
+            # Drain generation stats from event bus (emitted by LLMWrapper during node execution)
+            try:
+                while True:
+                    stats_msg = stats_queue.get_nowait()
+                    yield f"[STEP]generation_stats:{stats_msg}"
+            except asyncio.QueueEmpty:
+                pass
+
             # Tool events
             exec_result = event.get("execution_result")
             if exec_result and isinstance(exec_result, dict):
@@ -202,6 +227,10 @@ async def stream_agent(
 
     finally:
         _last_message_length.pop(session_id, None)
+        try:
+            bus.unsubscribe(EventType.AGENT, _on_agent_event)
+        except Exception:
+            pass
 
 
 __all__ = ["get_stream_checkpoint", "save_stream_checkpoint", "stream_agent"]
