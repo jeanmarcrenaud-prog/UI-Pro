@@ -34,10 +34,18 @@ class DockerSandbox:
         image: str = DOCKER_IMAGE,
         timeout_seconds: int = 30,
         memory_limit_mb: int = 512,
+        use_gvisor: bool = False,
+        pids_limit: int = 80,
+        cpu_shares: int = 512,
+        network_enabled: bool = False,
     ):
         self.image = image
         self.timeout_seconds = timeout_seconds
         self.memory_limit_mb = memory_limit_mb
+        self.use_gvisor = use_gvisor
+        self.pids_limit = pids_limit
+        self.cpu_shares = cpu_shares
+        self.network_enabled = network_enabled
         self._container_running = False
 
     def _is_docker_available(self) -> bool:
@@ -83,19 +91,21 @@ class DockerSandbox:
         input_data = json.dumps({"code": code, "language": language})
 
         try:
-            # Run container
+            # Build docker run args dynamically
+            docker_args = [
+                "docker", "run", "--rm",
+                "--memory", f"{self.memory_limit_mb}m",
+                "--cpu-shares", str(self.cpu_shares),
+                "--pids-limit", str(self.pids_limit),
+            ]
+            if not self.network_enabled:
+                docker_args.extend(["--network", "none"])
+            if self.use_gvisor:
+                docker_args.extend(["--runtime", "runsc"])
+            docker_args.extend(["-i", self.image])
+
             result = await asyncio.create_subprocess_exec(
-                "docker",
-                "run",
-                "--rm",
-                "--memory",
-                f"{self.memory_limit_mb}m",
-                "--cpus",
-                "1.0",
-                "--network",
-                "none",  # No network access
-                "-i",  # Interactive (stdin)
-                self.image,
+                *docker_args,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -177,11 +187,16 @@ class DockerSandbox:
 _docker_sandbox: DockerSandbox | None = None
 
 
-def get_docker_sandbox() -> DockerSandbox:
-    """Get the singleton Docker sandbox instance."""
+def get_docker_sandbox(**kwargs: Any) -> DockerSandbox:
+    """Get the singleton Docker sandbox instance.
+
+    Args:
+        **kwargs: Override DockerSandbox defaults (image, timeout_seconds,
+                  memory_limit_mb, use_gvisor, pids_limit, cpu_shares, network_enabled)
+    """
     global _docker_sandbox
     if _docker_sandbox is None:
-        _docker_sandbox = DockerSandbox()
+        _docker_sandbox = DockerSandbox(**kwargs)
     return _docker_sandbox
 
 
