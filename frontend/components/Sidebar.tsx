@@ -4,13 +4,15 @@
 
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useUIStore } from '@/lib/stores/uiStore'
 import { useChatStore } from '@/lib/stores/chatStore'
 import { useI18n } from '@/lib/i18n'
 import { modelDiscovery } from '@/services/modelDiscovery'
 import { events } from '@/lib/events'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
+import { ModelSelectDropdown } from './sidebar/ModelSelectDropdown'
+import { SidebarChatItem } from './sidebar/SidebarChatItem'
 
 /**
  * Sidebar Component
@@ -22,12 +24,6 @@ import { motion, AnimatePresence } from 'framer-motion'
  * @param onNewChat - Optional callback to create new chat
  */
 
-interface Tab {
-  id: string
-  label: string
-  icon: string
-}
-
 type TabType = 'chat' | 'history' | 'settings'
 
 interface SidebarProps {
@@ -37,202 +33,13 @@ interface SidebarProps {
 }
 
 import type { Translations } from '@/lib/i18n'
+import type { ModelInfo } from './sidebar/ModelSelectDropdown'
 
 const getNavigationTabs = (t: Translations) => [
   { id: 'chat', label: t.sidebar.chat, icon: '💬' },
   { id: 'history', label: t.sidebar.history, icon: '📜' },
   { id: 'settings', label: t.sidebar.settings, icon: '⚙️' },
 ] as const
-
-// Component: LoadingIndicator
-// Displays loading state for model discovery
-function LoadingIndicator() {
-  const { t } = useI18n()
-  return (
-    <div
-      className="
-        w-full 
-        bg-slate-800/80 
-        border border-slate-700/60 
-        text-slate-400 
-        text-xs 
-        rounded-xl 
-        px-3 py-2.5 
-        flex items-center 
-        justify-between
-        gap-1.5
-      "
-      role="status"
-      aria-live="polite"
-    >
-      <motion.span
-        animate={{ rotate: 360 }}
-        transition={{
-          repeat: Infinity,
-          duration: 1,
-          ease: 'linear'
-        }}
-        className="w-3 h-3 border border-slate-400 border-t-transparent rounded-full"
-      />
-      <span className="flex items-center gap-1.5">
-        {t.sidebar.discoverModels}
-        <motion.span
-          animate={{ opacity: [0.3, 1, 0.3] }}
-          transition={{
-            repeat: Infinity,
-            duration: 1.4,
-            repeatDelay: 0.2
-          }}
-          className="text-slate-600 text-[10px]"
-        >
-          ↻
-        </motion.span>
-      </span>
-    </div>
-  )
-}
-
-// Component: ModelSelectDropdown
-// Dropdown component for model selection
-import type { ModelInfo } from '@/lib/stores/uiStore'
-
-function ModelSelectDropdown({
-  isLoading,
-  availableModels,
-  selectedModel,
-  onModelChange
-}: {
-  isLoading: boolean
-  availableModels: ModelInfo[]
-  selectedModel: string
-  onModelChange: (model: string) => void
-}) {
-  return (
-    <div className="relative">
-      <AnimatePresence>
-        {isLoading ? (
-          <LoadingIndicator />
-        ) : (
-          <select
-            value={selectedModel}
-            onChange={(e) => onModelChange(e.target.value)}
-            className="
-              appearance-none 
-              w-full 
-              bg-slate-800/80 
-              border border-slate-700/60 
-              text-slate-200 
-              text-xs 
-              rounded-xl 
-              px-3 py-2.5 
-              focus:outline-none 
-              focus:border-violet-500/60 
-              focus:ring-2 
-              focus:ring-violet-500/20 
-              transition-all duration-200
-              pr-16
-            "
-            aria-label="Select language model"
-            aria-describedby="model-help"
-          >
-            {availableModels.length === 0 ? (
-              <option value="" disabled>
-                t.sidebar.noModelsFound
-              </option>
-            ) : (
-              availableModels.map((model) => {
-                // Build display string with metadata
-                const parts = [model.name]
-                if (model.sizeGb) parts.push(`${model.sizeGb}GB`)
-                if (model.speedTier && model.speedTier !== 'fast') parts.push(model.speedTier)
-                parts.push(model.provider)
-                
-                return (
-                  <option
-                    key={`${model.provider}-${model.id}`}
-                    value={model.id}
-                  >
-                    {parts.join(' • ')}
-                  </option>
-                )
-              })
-            )}
-          </select>
-        )}
-      </AnimatePresence>
-
-      {/* Help text */}
-      <span
-        id="model-help"
-        className="
-          absolute 
-          right-3 
-          top-1/2 
-          -translate-y-1/2 
-          text-xs 
-          text-slate-500 
-          pointer-events-none
-        "
-      >
-        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-      </span>
-    </div>
-  )
-}
-
-// Component: ChatHistoryItem
-// Renders a single chat history entry
-function ChatHistoryItem({
-  chat,
-  onClick
-}: {
-  chat: any
-  onClick: () => void
-}) {
-  const updatedAt = new Date(chat.updatedAt)
-  const dateStr = updatedAt.toLocaleDateString()
-  const timeStr = updatedAt.toLocaleTimeString([], { 
-    hour: '2-digit', 
-    minute: '2-digit' 
-  })
-
-  return (
-    <button
-      onClick={onClick}
-      className="
-        w-full 
-        text-left 
-        px-3 
-        py-2.5 
-        rounded-xl 
-        text-sm 
-        text-slate-400 
-        hover:bg-slate-800/50 
-        hover:text-slate-200 
-        transition-all duration-150 
-        group
-        truncate
-      "
-    >
-      <div
-        className="
-          truncate 
-          font-medium 
-          group-hover:text-slate-200
-          transition-colors duration-150
-        "
-        title={chat.title}
-      >
-        {chat.title}
-      </div>
-      <div className="text-[10px] text-slate-600 mt-0.5">
-        {dateStr} • {timeStr}
-      </div>
-    </button>
-  )
-}
 
 export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
   const {
@@ -241,7 +48,7 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
     setSelectedModel
   } = useUIStore()
 
-  const { history, loadChat, deleteChat } = useChatStore()
+  const { history, loadChat } = useChatStore()
   const { t } = useI18n()
 
   const [isLoadingModels, setIsLoadingModels] = useState(true)
@@ -511,7 +318,7 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
           history
             .slice(0, 10)
             .map((chat) => (
-              <ChatHistoryItem
+              <SidebarChatItem
                 key={chat.id}
                 chat={chat}
                 onClick={() => {
