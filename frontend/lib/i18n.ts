@@ -11,8 +11,10 @@ export interface Translations {
   steps: {
     analyzing: string
     planning: string
+    coding: string
     executing: string
     reviewing: string
+    fixing: string
     complete: string
     initializing: string
     processing: string
@@ -122,8 +124,10 @@ const en: Translations = {
   steps: {
     analyzing: 'Analyzing request...',
     planning: 'Planning solution...',
+    coding: 'Generating code...',
     executing: 'Executing code...',
     reviewing: 'Reviewing results...',
+    fixing: 'Auto-fixing...',
     complete: 'Complete',
     initializing: 'Initializing...',
     processing: 'Processing step...',
@@ -198,8 +202,10 @@ const fr: Translations = {
   steps: {
     analyzing: 'Analyse en cours...',
     planning: 'Planification en cours...',
+    coding: 'Génération du code...',
     executing: 'Exécution en cours...',
     reviewing: 'Vérification en cours...',
+    fixing: 'Correction auto...',
     complete: 'Terminé',
     initializing: 'Initialisation...',
     processing: 'Traitement...',
@@ -315,7 +321,9 @@ export const defaultLocale: Locale = 'en'
 export const STEP_STATUS_LABELS: Record<string, keyof Translations['steps']> = {
   'step-analyzing': 'analyzing',
   'step-planning': 'planning',
+  'step-coding': 'coding',
   'step-executing': 'executing',
   'step-reviewing': 'reviewing',
+  'step-fixing': 'fixing',
   'step-complete': 'complete',
 }

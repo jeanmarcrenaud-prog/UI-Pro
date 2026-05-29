@@ -11,7 +11,7 @@ interface AgentStore {
   currentStep: number
   currentStepId?: string
   addStep: (step: AgentStep) => void
-  updateStep: (id: string, status: AgentStepStatus) => void
+  updateStep: (id: string, status: AgentStepStatus, detail?: string) => void
   setStep: (step: AgentStep, index: number) => void
   setSteps: (steps: AgentStep[]) => void
   reset: () => void
@@ -29,7 +29,7 @@ export const useAgentStore = create<AgentStore>((set, _get) => ({
       steps: [...state.steps, step],
     })),
 
-  updateStep: (id, status) =>
+  updateStep: (id, status, detail) =>
     set((state) => {
       const stepIdx = state.steps.findIndex(s => s.id === id)
       const currentStep = state.steps[stepIdx]
@@ -42,7 +42,7 @@ export const useAgentStore = create<AgentStore>((set, _get) => ({
       // If step doesn't exist, add it
       if (stepIdx === -1) {
         return {
-          steps: [...state.steps, { id, title: id.replace('step-', '').replace('-', ' '), status }],
+          steps: [...state.steps, { id, title: id.replace('step-', '').replace('-', ' '), status, detail }],
           currentStepId: id,
           currentStep: state.steps.length
         }
@@ -50,7 +50,7 @@ export const useAgentStore = create<AgentStore>((set, _get) => ({
       
       return {
         steps: state.steps.map((s) =>
-          s.id === id ? { ...s, status } : s
+          s.id === id ? { ...s, status, detail: detail ?? s.detail } : s
         ),
         currentStepId: id,
         currentStep: stepIdx

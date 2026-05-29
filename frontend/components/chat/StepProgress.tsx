@@ -35,9 +35,9 @@ const StepRow = memo(({
         opacity: isDone || isActive ? 1 : 0.75,
       }}
       transition={{ duration: 0.25, ease: 'easeOut' }}
-      className="flex items-center gap-2 text-xs"
+      className="flex items-start gap-2 text-xs"
     >
-      <div className="w-4 flex justify-center shrink-0">
+      <div className="w-4 flex justify-center shrink-0 mt-0.5">
         {isDone ? (
           <motion.span
             initial={{ scale: 0.6 }}
@@ -58,15 +58,26 @@ const StepRow = memo(({
         )}
       </div>
 
-      <motion.span
-        animate={{
-          color: isActive ? '#c4b5fd' : isDone ? '#94a3b8' : '#64748b',
-          textDecoration: isDone ? 'line-through' : 'none',
-        }}
-        className="flex-1 truncate"
-      >
-        {step.title}
-      </motion.span>
+      <div className="flex-1 min-w-0">
+        <motion.span
+          animate={{
+            color: isActive ? '#c4b5fd' : isDone ? '#94a3b8' : '#64748b',
+            textDecoration: isDone ? 'line-through' : 'none',
+          }}
+          className="block truncate"
+        >
+          {step.title}
+        </motion.span>
+        {step.detail && (
+          <motion.span
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            className="block text-[10px] text-slate-500 mt-0.5 truncate"
+          >
+            {isActive && '▸ '}{step.detail}
+          </motion.span>
+        )}
+      </div>
     </motion.div>
   );
 });
@@ -214,13 +225,21 @@ export function StepProgress({
         </div>
 
         {/* Current Step Status - more prominent */}
-        <div className="text-sm text-white bg-violet-500/10 border border-violet-500/20 rounded-lg px-3 py-2 line-clamp-2">
-          <motion.span
-            animate={isStreaming ? { opacity: [1, 0.7, 1] } : {}}
-            transition={{ repeat: Infinity, duration: 1.5 }}
-          >
-            {getStatusLabel}
-          </motion.span>
+        <div className="text-sm text-white bg-violet-500/10 border border-violet-500/20 rounded-lg px-3 py-2">
+          <div className="flex items-center gap-2">
+            <motion.span
+              animate={isStreaming ? { opacity: [1, 0.7, 1] } : {}}
+              transition={{ repeat: Infinity, duration: 1.5 }}
+              className="flex-1 truncate"
+            >
+              {getStatusLabel}
+            </motion.span>
+            {activeStep?.detail && (
+              <span className="text-[10px] font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 shrink-0">
+                {activeStep.detail}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Step List */}

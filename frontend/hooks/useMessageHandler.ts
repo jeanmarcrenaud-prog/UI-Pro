@@ -68,7 +68,7 @@ export const useMessageHandler = ({
     if (normalized.type === 'step' && normalized.stepId) {
       const stepName = normalized.stepId.replace('step-', '').replace('-', ' ')
       addLog(`[STEP] ${stepName}: ${normalized.content || normalized.status}`)
-      updateStep(normalized.stepId, normalized.status === 'done' ? 'done' : 'active')
+      updateStep(normalized.stepId, normalized.status === 'done' ? 'done' : 'active', normalized.content)
       return
     }
 
@@ -166,18 +166,18 @@ export const useMessageHandler = ({
   ])
 
   // Handler pour les événements globaux agentStep
-  const handleAgentStep = useCallback((data: { stepId: string; status: string }) => {
+  const handleAgentStep = useCallback((data: { stepId: string; status: string; content?: string }) => {
     if (!isStreamActiveRef.current) return
 
     // Quand un nouveau step devient actif, marquer le précédent comme done
     if (data.status === 'active') {
       const currentIdx = STEP_ORDER.indexOf(data.stepId as typeof STEP_ORDER[number])
       if (currentIdx > 0) {
-        updateStep(STEP_ORDER[currentIdx - 1], 'done')
+        updateStep(STEP_ORDER[currentIdx - 1], 'done', data.content)
       }
     }
 
-    updateStep(data.stepId, data.status === 'done' ? 'done' : 'active')
+    updateStep(data.stepId, data.status === 'done' ? 'done' : 'active', data.content)
   }, [updateStep, isStreamActiveRef])
 
   // Configuration des listeners

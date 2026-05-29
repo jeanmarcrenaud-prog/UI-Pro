@@ -23,7 +23,7 @@ interface EventMap {
   status: { status: 'idle' | 'connecting' | 'streaming' | 'error' | 'reconnecting' | 'retrying' }
   
   // Agent events
-  agentStep: { stepId: string; status: 'pending' | 'active' | 'done' }
+  agentStep: { stepId: string; status: 'pending' | 'active' | 'done'; content?: string }
   agentPlan: { steps: string[] }
   
   // Tool events

@@ -16,7 +16,7 @@ export function useModelDescription(selectedModel: string | null) {
     try {
       // Try GitHub API first with timeout
       const githubController = new AbortController()
-      const githubTimeout = setTimeout(() => githubController.abort(), 3000)
+      const githubTimeout = setTimeout(() => githubController.abort(), 5000)
       const githubRes = await fetch(
         `https://api.github.com/search/repositories?q=${encodeURIComponent(selectedModel)}+in:name&per_page=1`,
         { signal: githubController.signal, headers: { Accept: 'application/vnd.github.v3+json' } }
@@ -36,7 +36,7 @@ export function useModelDescription(selectedModel: string | null) {
 
       // Try Ollama API as fallback with timeout
       const ollamaController = new AbortController()
-      const ollamaTimeout = setTimeout(() => ollamaController.abort(), 3000)
+      const ollamaTimeout = setTimeout(() => ollamaController.abort(), 10000)
       const ollamaRes = await fetch(`${LLM_CONFIG.ollamaUrl}/api/tags`, {
         signal: ollamaController.signal
       })
@@ -53,7 +53,11 @@ export function useModelDescription(selectedModel: string | null) {
       }
       setDescription('Large language model from Ollama')
     } catch (err) {
-      console.warn('Failed to fetch model description:', err)
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        console.warn('Model description fetch timed out - Ollama or GitHub API slow to respond')
+      } else {
+        console.warn('Failed to fetch model description:', err)
+      }
       setDescription('Large language model')
     } finally {
       setIsLoading(false)
