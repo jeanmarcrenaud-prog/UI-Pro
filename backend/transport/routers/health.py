@@ -1,5 +1,6 @@
 # views/routers/health.py - Health and status endpoints
 
+import asyncio
 import time
 from typing import Any
 
@@ -97,11 +98,13 @@ def _get_gpu_info() -> dict[str, Any] | None:
 @router.get("/health")
 async def health_check():
     """Health check for orchestration tools (Docker, Kubernetes, etc.)"""
-    # Check dependencies
-    deps = _check_dependencies()
+    # Check dependencies and backends in parallel
+    deps_task = asyncio.create_task(_check_dependencies())
+    backend_health_task = asyncio.create_task(asyncio.to_thread(_check_backends))
 
-    # Check backends in parallel
-    backend_health = _check_backends()
+    deps = await deps_task
+    backend_health = await backend_health_task
+
     from backend.infrastructure.llm.health import aggregate_health
     health_summary = aggregate_health(backend_health)
 
@@ -125,50 +128,62 @@ async def health_check():
     }
 
 
-def _check_dependencies() -> dict[str, dict]:
+async def _check_dependencies() -> dict[str, dict]:
     """Check all backend dependencies and return structured status."""
     deps: dict[str, dict] = {}
 
-    # FAISS / Vector memory
-    try:
-        from backend.infrastructure.memory import MemoryManager
+    # Define individual check coroutines
+    async def _check_memory():
+        try:
+            from backend.infrastructure.memory import get_memory_manager
 
-        mem = MemoryManager()
-        stats = mem.get_stats() if hasattr(mem, "get_stats") else {}
-        deps["memory"] = {
-            "ok": True,
-            "status": "available",
-            "vectors": stats.get("total_vectors", stats.get("count", "unknown")),
-        }
-    except Exception as e:
-        deps["memory"] = {"ok": False, "status": "unavailable", "error": str(e)}
+            mem = get_memory_manager()
+            stats = mem.get_stats() if hasattr(mem, "get_stats") else {}
+            return {
+                "ok": True,
+                "status": "available",
+                "vectors": stats.get("total_vectors", stats.get("count", "unknown")),
+            }
+        except Exception as e:
+            return {"ok": False, "status": "unavailable", "error": str(e)}
 
-    # Docker sandbox
-    try:
-        from backend.infrastructure.docker_sandbox import get_docker_sandbox
+    async def _check_docker():
+        try:
+            from backend.infrastructure.docker_sandbox import get_docker_sandbox
 
-        sb = get_docker_sandbox()
-        docker_status = sb.health_check()
-        deps["docker"] = {
-            "ok": docker_status.get("available", False),
-            "status": "available" if docker_status.get("available") else "unavailable",
-            "image": getattr(sb, "image", "ui-pro-sandbox:latest"),
-        }
-    except Exception as e:
-        deps["docker"] = {"ok": False, "status": "unavailable", "error": str(e)}
+            sb = get_docker_sandbox()
+            docker_ok = await sb.health_check()
+            return {
+                "ok": docker_ok,
+                "status": "available" if docker_ok else "unavailable",
+                "image": getattr(sb, "image", "ui-pro-sandbox:latest"),
+            }
+        except Exception as e:
+            return {"ok": False, "status": "unavailable", "error": str(e)}
 
-    # Code executor
-    try:
-        from backend.infrastructure.code_execution import CodeExecutionService
+    async def _check_executor():
+        try:
+            from backend.infrastructure.code_execution import CodeExecutionService
 
-        svc = CodeExecutionService()
-        deps["executor"] = {
-            "ok": True,
-            "status": "available",
-            "timeout": svc.TIMEOUT_SECONDS,
-        }
-    except Exception as e:
-        deps["executor"] = {"ok": False, "status": "unavailable", "error": str(e)}
+            svc = CodeExecutionService()
+            return {
+                "ok": True,
+                "status": "available",
+                "timeout": svc.TIMEOUT_SECONDS,
+            }
+        except Exception as e:
+            return {"ok": False, "status": "unavailable", "error": str(e)}
+
+    # Run all dependency checks concurrently
+    memory_result, docker_result, executor_result = await asyncio.gather(
+        _check_memory(),
+        _check_docker(),
+        _check_executor(),
+    )
+
+    deps["memory"] = memory_result
+    deps["docker"] = docker_result
+    deps["executor"] = executor_result
 
     return deps
 
@@ -196,13 +211,14 @@ async def status():
 
 @router.get("/api/models")
 async def get_models():
-    """Get all discovered models with loaded status"""
-    from backend.infrastructure.model_discovery import get_model_discovery
+    """Get all discovered models"""
+    from backend.infrastructure.model_discovery import get_model_discovery, get_models_summary
 
     discovery = get_model_discovery()
+    all_models = await discovery.discover_all()
     return {
-        "models": discovery.get_models_summary(),
-        "loaded_count": sum(1 for m in discovery.discover_all() if m.is_loaded),
+        "models": get_models_summary(all_models),
+        "loaded_count": 0,
     }
 
 

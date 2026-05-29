@@ -1,85 +1,67 @@
 """
-test_llm.py - Unit tests for LLM module
+test_llm.py - Unit tests for LLM module (new backend system)
 
 Tests for:
-- OllamaClient instantiation
-- Model configuration
-- MODELS settings
+- get_backend factory
+- ModelConfig usage
+- Backend instantiation
+- Model settings
 """
 
-from backend.infrastructure.legacy_llm_router import ModelConfig, OllamaClient
 from models.settings import settings
 
-# Replicate legacy convenience aliases (previously from llm/ shim)
+from backend.infrastructure.llm.models import ModelConfig
+from backend.infrastructure.llm.factory import get_backend, list_available_backends
+
+# Convenience aliases
 MODELS = {"fast": settings.model_fast, "reasoning": settings.model_reasoning}
-_client = None
 
 
-def get_client() -> OllamaClient:
-    """Get default OllamaClient singleton."""
-    global _client
-    if _client is None:
-        _client = OllamaClient()
-    return _client
+def test_list_backends():
+    """Test available backends are registered."""
+    backends = list_available_backends()
+    assert "ollama" in backends
 
 
-def call(model: str, prompt: str) -> str:
-    """Call model with prompt."""
-    return get_client().generate(prompt, model=model)
+class TestModelConfig:
+    """Test ModelConfig dataclass."""
 
+    def test_defaults(self):
+        config = ModelConfig()
+        assert config.backend == "ollama"
 
-class TestOllamaClient:
-    """Test OllamaClient class"""
-
-    def test_client_instantiation(self):
-        """Test client can be instantiated"""
-        client = OllamaClient()
-        assert client is not None
-
-    def test_client_with_config(self):
-        """Test client with custom config"""
+    def test_custom_config(self):
         config = ModelConfig(
             url="http://localhost:11434", model="qwen-opus", timeout=30
         )
-        client = OllamaClient(config)
-        assert client.config.model == "qwen-opus"
+        assert config.model == "qwen-opus"
+        assert config.timeout == 30
 
 
-class TestCall:
-    """Test call() wrapper function"""
+class TestGetBackend:
+    """Test get_backend factory."""
 
-    def test_call_is_function(self):
-        """Test call() is a function"""
-        assert callable(call)
+    def test_get_ollama(self):
+        backend = get_backend("ollama")
+        assert backend.backend_name == "ollama"
 
-    def test_call_accepts_params(self):
-        """Test call() accepts model and prompt"""
-        # Just verify the function signature - don't call with no Ollama running
-        import inspect
+    def test_get_unknown_raises(self):
+        from backend.infrastructure.llm.errors import LLMBackendError
 
-        sig = inspect.signature(call)
-        assert "model" in sig.parameters
-        assert "prompt" in sig.parameters
-
-
-class TestGetClient:
-    """Test get_client() singleton"""
-
-    def test_get_client_returns_client(self):
-        """Test get_client returns OllamaClient"""
-        client = get_client()
-        assert isinstance(client, OllamaClient)
+        try:
+            get_backend("nonexistent")
+            assert False, "Should have raised"
+        except LLMBackendError:
+            pass
 
 
 class TestModels:
     """Test MODELS configuration"""
 
     def test_models_defined(self):
-        """Test MODELS has fast and reasoning keys"""
         assert "fast" in MODELS
         assert "reasoning" in MODELS
 
     def test_models_are_strings(self):
-        """Test model names are strings"""
         assert isinstance(MODELS["fast"], str)
         assert isinstance(MODELS["reasoning"], str)

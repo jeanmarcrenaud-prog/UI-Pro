@@ -87,7 +87,7 @@ async def lifespan(app: FastAPI):
     try:
         from backend.infrastructure.model_discovery import get_model_discovery
 
-        get_model_discovery().discover_all()
+        await get_model_discovery().discover_all()
         logger.info("Model discovery initialized")
     except Exception as e:
         logger.warning(f"Model discovery init failed: {e}")
