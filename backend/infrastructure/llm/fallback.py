@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncGenerator, Iterator
 
-from backend.infrastructure.legacy_llm_router import ModelConfig
+from backend.infrastructure.llm.models import ModelConfig
 from backend.infrastructure.llm.base import LLMBackend
 from backend.infrastructure.llm.errors import LLMConnectionError, LLMTimeoutError
 from backend.infrastructure.llm.factory import get_backend, list_available_backends
@@ -79,21 +79,16 @@ def generate_with_fallback(
     from models.settings import settings
 
     provider = provider or getattr(settings, "active_provider", None) or "ollama"
-    model = model or settings.model_fast
-
-    config = ModelConfig(
-        url="",
-        model=model,
-        timeout=settings.llm_timeout,
-        backend=provider,
-    )
+    model_name = model or settings.model_fast
 
     errors: list[str] = []
     order = _fallback_order(provider) if fallback else [provider]
 
     for backend_name in order:
         try:
-            backend = get_backend(backend_name, config)
+            # Let factory build URL from settings for each backend
+            backend = get_backend(backend_name)
+            backend.config.model = model_name
             return backend.generate(
                 prompt, system_prompt=system_prompt, temperature=temperature
             )
@@ -130,21 +125,16 @@ def stream_with_fallback(
     from models.settings import settings
 
     provider = provider or getattr(settings, "active_provider", None) or "ollama"
-    model = model or settings.model_fast
-
-    config = ModelConfig(
-        url="",
-        model=model,
-        timeout=settings.llm_timeout,
-        backend=provider,
-    )
+    model_name = model or settings.model_fast
 
     errors: list[str] = []
     order = _fallback_order(provider) if fallback else [provider]
 
     for backend_name in order:
         try:
-            backend = get_backend(backend_name, config)
+            # Let factory build URL from settings for each backend
+            backend = get_backend(backend_name)
+            backend.config.model = model_name
             yield from backend.stream(
                 prompt, system_prompt=system_prompt, temperature=temperature
             )
@@ -178,21 +168,16 @@ async def astream_with_fallback(
     from models.settings import settings
 
     provider = provider or getattr(settings, "active_provider", None) or "ollama"
-    model = model or settings.model_fast
-
-    config = ModelConfig(
-        url="",
-        model=model,
-        timeout=settings.llm_timeout,
-        backend=provider,
-    )
+    model_name = model or settings.model_fast
 
     errors: list[str] = []
     order = _fallback_order(provider) if fallback else [provider]
 
     for backend_name in order:
         try:
-            backend = get_backend(backend_name, config)
+            # Let factory build URL from settings for each backend
+            backend = get_backend(backend_name)
+            backend.config.model = model_name
             async for token in backend.astream(
                 prompt, system_prompt=system_prompt, temperature=temperature
             ):

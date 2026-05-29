@@ -190,6 +190,12 @@ class Settings(BaseSettings):
 
     backends: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
+    # LangSmith Tracing
+    langsmith_tracing: bool = False
+    langsmith_api_key: str = ""
+    langsmith_project: str = "ui-pro"
+    langsmith_endpoint: str = "https://api.smith.langchain.com"
+
     def __init__(self, **data: Any) -> None:
         super().__init__(**data)
         # Deep copy default backends on each instance to avoid shared mutable state
@@ -254,16 +260,8 @@ class Settings(BaseSettings):
 
     def auto_select_preset(self) -> str:
         """Auto-select the best preset based on available models and backends."""
-        try:
-            from backend.infrastructure.model_discovery import auto_select_best_preset
-
-            best = auto_select_best_preset()
-            self.active_preset = best
-            logger.info("Auto-selected preset: %s (based on available models)", best)
-            return best
-        except Exception as e:
-            logger.warning("Auto-select preset failed: %s — keeping '%s'", e, self.active_preset)
-            return self.active_preset
+        # Fallback: keep current preset (async model discovery removed preset logic)
+        return self.active_preset
 
     def set_preset(self, preset_id: str) -> None:
         if preset_id not in DEFAULT_PRESETS:

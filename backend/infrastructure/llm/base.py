@@ -9,7 +9,7 @@ from collections.abc import AsyncGenerator, Iterator
 
 import requests
 
-from backend.infrastructure.legacy_llm_router import ModelConfig
+from backend.infrastructure.llm.models import ModelConfig
 from backend.infrastructure.llm.errors import (
     LLMAuthenticationError,
     LLMBackendError,

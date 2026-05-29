@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 
-from backend.infrastructure.legacy_llm_router import ModelConfig
+from backend.infrastructure.llm.models import ModelConfig
 from backend.infrastructure.llm.base import LLMBackend
 from backend.infrastructure.llm.errors import LLMBackendError
 

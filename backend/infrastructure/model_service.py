@@ -103,11 +103,11 @@ class ModelService:
 
         logger.info("ModelService initialized")
 
-    def discover_models(self) -> list[Any]:
+    async def discover_models(self) -> list[Any]:
         """Discover available models from all backends."""
         self._ensure_init()
         assert self._discovery is not None
-        return self._discovery.discover_all()
+        return await self._discovery.discover_all()
 
     def route(
         self, prompt: str | None = None, mode: str | None = None
@@ -124,31 +124,27 @@ class ModelService:
 
     def get_client(self, mode: str = "fast") -> Any:
         """
-        Get properly configured LLM client for the given mode.
-
-        Returns an OllamaClient with correct model, URL, and timeout from settings.
+        Get properly configured LLM backend for the given mode.
         """
         self._ensure_init()
-        from backend.infrastructure.legacy_llm_router import LLMRouter
+        from backend.infrastructure.llm.factory import get_backend
 
-        router = LLMRouter()
-        return router.get_for_mode(mode)
+        return get_backend("ollama")
 
     def get_client_for_model(self, model: str, provider: str | None = None) -> Any:
         """
-        Get client for specific model and provider.
+        Get backend for specific model and provider.
 
-        Uses explicit provider to determine backend URL.
         Strips provider prefix from model name (e.g., "lmstudio-Qwen3.5 9B" -> "Qwen3.5 9B").
         """
         self._ensure_init()
-        from backend.infrastructure.legacy_llm_router import ModelConfig, OllamaClient
+        from backend.infrastructure.llm.models import ModelConfig
+        from backend.infrastructure.llm.factory import get_backend
 
-        # Use explicit provider - this takes priority over ModelDiscovery
         provider = (provider or "ollama").lower()
         backend_url = self._get_backend_url(provider)
 
-        # Strip provider prefix from model name (e.g., "lmstudio-Qwen3.5 9B" -> "Qwen3.5 9B")
+        # Strip provider prefix from model name
         clean_model = model
         for prefix in ["ollama-", "lmstudio-", "lemonade-", "llamacpp-"]:
             if model.startswith(prefix):
@@ -156,10 +152,7 @@ class ModelService:
                 break
 
         # Determine endpoint based on provider
-        if provider == "lmstudio" or provider == "lemonade":
-            endpoint = "/v1/chat/completions"
-        else:
-            endpoint = "/api/generate"
+        endpoint = "/v1/chat/completions" if provider in ("lmstudio", "lemonade") else "/api/generate"
 
         config = ModelConfig(
             url=f"{backend_url.rstrip('/')}{endpoint}",
@@ -168,7 +161,7 @@ class ModelService:
             backend=provider,
         )
 
-        return OllamaClient(config)
+        return get_backend(provider, config)
 
     def _get_backend_url(self, backend: str) -> str:
         """Get URL for backend from settings."""
@@ -191,7 +184,7 @@ class ModelService:
         """
         Main generation entrypoint with smart routing + metrics.
 
-        Delegates to LLMRouter for model selection, then calls LLM client.
+        Delegates to LLMRouter for model selection, then calls LLM backend.
         """
         self._ensure_init()
         assert self._router is not None
@@ -199,12 +192,13 @@ class ModelService:
         model_name = "unknown"
 
         try:
-            # Use router to get properly configured client
-            # get_for_mode returns OllamaClient with correct config
-            client = self._router.get_for_mode(mode)
-            model_name = client.config.model
+            routing = self._router.route(prompt=prompt, mode=mode)
+            model_name = routing["model"]
 
-            response = client.generate(
+            from backend.infrastructure.llm.factory import get_backend
+
+            backend = get_backend("ollama")
+            response = backend.generate(
                 prompt=prompt,
                 system_prompt=system_prompt,
                 temperature=temperature,

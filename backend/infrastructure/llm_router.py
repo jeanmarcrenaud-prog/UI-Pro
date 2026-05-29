@@ -10,7 +10,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from models.settings import OLLAMA_URL, settings
+from models.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -229,37 +229,12 @@ class LLMRouter:
                     actual_model = actual_model[len(prefix) :]
                     break
 
-        from backend.infrastructure.legacy_llm_router import ModelConfig, OllamaClient
+        from backend.infrastructure.llm.factory import get_backend
 
-        # Determine base URL based on provider
-        if provider == "ollama" or not provider:
-            ollama_base = getattr(settings, "ollama_url", OLLAMA_URL).rstrip("/")
-            endpoint = "/api/generate"
-        elif provider == "lmstudio":
-            ollama_base = getattr(
-                settings, "lmstudio_url", "http://localhost:1234"
-            ).rstrip("/")
-            endpoint = "/v1/chat/completions"
-        elif provider == "lemonade":
-            ollama_base = getattr(
-                settings, "lemonade_url", "http://localhost:13305"
-            ).rstrip("/")
-            endpoint = "/v1/chat/completions"
-        else:
-            ollama_base = getattr(settings, "ollama_url", OLLAMA_URL).rstrip("/")
-            endpoint = "/api/generate"
-
-        if not ollama_base.startswith("http"):
-            ollama_base = "http://localhost:11434"
-
-        config = ModelConfig(
-            url=f"{ollama_base}{endpoint}",
-            model=actual_model,
-            timeout=settings.llm_timeout,
-            backend=provider,
-        )
-        client = OllamaClient(config)
-        return client.generate(prompt, temperature=temperature)
+        # Let factory build the URL from settings, then override the model
+        backend = get_backend(provider or "ollama")
+        backend.config.model = actual_model
+        return backend.generate(prompt, temperature=temperature)
 
     async def astream(
         self,
@@ -269,9 +244,9 @@ class LLMRouter:
         model: str = "",
         provider: str = "ollama",
         **kwargs,
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[str | dict, None]:
         """
-        Robust async token streaming.
+        Robust async token streaming (yields str tokens, then optional final stats dict).
         """
         # Use user-selected model if provided, otherwise use routing
         if model:
@@ -291,72 +266,20 @@ class LLMRouter:
                     break
 
         try:
-            from backend.infrastructure.legacy_llm_router import ModelConfig, OllamaClient
+            from backend.infrastructure.llm.factory import get_backend
 
-            # Determine base URL based on provider
-            if provider == "ollama" or not provider:
-                ollama_base = getattr(settings, "ollama_url", OLLAMA_URL).rstrip("/")
-                endpoint = "/api/generate"
-            elif provider == "lmstudio":
-                ollama_base = getattr(
-                    settings, "lmstudio_url", "http://localhost:1234"
-                ).rstrip("/")
-                endpoint = "/v1/chat/completions"
-            elif provider == "lemonade":
-                ollama_base = getattr(
-                    settings, "lemonade_url", "http://localhost:13305"
-                ).rstrip("/")
-                endpoint = "/v1/chat/completions"
-            else:
-                ollama_base = getattr(settings, "ollama_url", OLLAMA_URL).rstrip("/")
-                endpoint = "/api/generate"
+            # Let factory build URL from settings, then override the model
+            backend = get_backend(provider or "ollama")
+            backend.config.model = actual_model
 
-            if not ollama_base.startswith("http"):
-                ollama_base = "http://localhost:11434"
-
-            config = ModelConfig(
-                url=f"{ollama_base}{endpoint}",
-                model=actual_model,
-                timeout=settings.llm_timeout,
-                backend=provider,
-            )
-            client = OllamaClient(config)
-
-            # Prefer async streaming if available
-            if hasattr(client, "astream"):
-                async for chunk in client.astream(prompt, temperature=temperature):  # type: ignore[attr-defined]
-                    if isinstance(chunk, str):
-                        yield chunk
-                    elif hasattr(chunk, "content"):
-                        yield chunk.content
-                    elif isinstance(chunk, dict) and "response" in chunk:
-                        yield chunk["response"]
-
-            else:
-                # Reliable fallback: run sync stream in executor
-                loop = asyncio.get_running_loop()
-
-                def sync_stream():
-                    try:
-                        return client.stream(prompt, temperature=temperature)
-                    except Exception as e:
-                        logger.warning(f"Sync stream failed: {e}")
-                        return [self.generate(prompt, model_type, temperature)]
-
-                stream_iter = await loop.run_in_executor(None, sync_stream)
-
-                for chunk in stream_iter:
-                    if isinstance(chunk, str):
-                        yield chunk
-                    elif hasattr(chunk, "get") and chunk.get("response"):
-                        yield chunk.get("response")
-                    elif isinstance(chunk, dict):
-                        yield chunk.get("response", str(chunk))
-                    await asyncio.sleep(0)  # Allow event loop breathing
+            # Use the backend's astream directly
+            async for chunk in backend.astream(prompt, temperature=temperature):
+                if chunk:
+                    yield chunk
 
         except Exception as e:
             logger.error(f"astream failed for {model}: {e}", exc_info=True)
-            # Ultimate fallback
+            # Ultimate fallback: chunk the generate output
             full_response = self.generate(
                 prompt, model_type, temperature, model=model, provider=provider
             )
