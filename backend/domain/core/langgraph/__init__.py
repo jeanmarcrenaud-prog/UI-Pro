@@ -48,6 +48,11 @@ def build_graph():
         should_continue,
     )
 
+    # Initialise LangSmith tracing (reads settings)
+    from backend.infrastructure.tracing import setup_langsmith_tracing
+
+    setup_langsmith_tracing()
+
     workflow = StateGraph(AgentState)
 
     workflow.add_node("analyze", analyzing_node)
@@ -65,7 +70,7 @@ def build_graph():
     workflow.add_conditional_edges(
         "execute",
         should_continue,
-        {"review": "review", "end": END},
+        {"fix_code": "code", "end": END},
     )
 
     checkpointer = _get_checkpointer()

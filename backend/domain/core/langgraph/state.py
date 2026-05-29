@@ -68,6 +68,7 @@ class AgentState(TypedDict, total=False):
     """
 
     messages: list[Message]
+    task_type: str | None  # Classification result from analyzing_node
     plan: PlanData | None
     code: CodeData | None
     review: ReviewData | None

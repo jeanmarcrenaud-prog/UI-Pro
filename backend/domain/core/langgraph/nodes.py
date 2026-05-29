@@ -51,10 +51,6 @@ def _get_llm_router():
 
 def _emit_step(phase: str, message: str):
     try:
-        try:
-            message.encode("cp1252").decode("cp1252")
-        except (UnicodeEncodeError, UnicodeDecodeError):
-            message = message.encode("ascii", "replace").decode("ascii")
         from backend.domain.core.events import emit_agent_step
 
         emit_agent_step(phase, message)
@@ -78,6 +74,7 @@ async def analyzing_node(state: AgentState) -> AgentState:
     llm = LLMWrapper(_get_llm_router(), user_model, user_provider)
     user_message = _get_user_message(state)
 
+    _emit_step("analyzing", "Classification de la tâche...")
     prompt = (
         f"User request: {user_message}\n\n"
         "Classify the task type and respond with ONLY valid JSON:\n"
@@ -91,6 +88,8 @@ async def analyzing_node(state: AgentState) -> AgentState:
         f"[analyzing_node] LLM response: {full_response[:200] if full_response else 'EMPTY'}"
     )
 
+    _emit_step("analyzing", f"Tâche classifiée: {full_response[:80]}...")
+    state["task_type"] = full_response
     state["messages"].append({"role": "assistant", "content": full_response})
     return state
 
@@ -104,6 +103,7 @@ async def planning_node(state: AgentState) -> AgentState:
     llm = LLMWrapper(_get_llm_router(), user_model, user_provider)
     user_message = _get_user_message(state)
 
+    _emit_step("planning", "Consultation du LLM pour le plan...")
     prompt = (
         f"User request: {user_message}\n\n"
         "Create a detailed implementation plan as VALID JSON ONLY. "
@@ -116,6 +116,7 @@ async def planning_node(state: AgentState) -> AgentState:
         prompt, model_type="reasoning", strip_markdown=True
     )
 
+    _emit_step("planning", "Parsing et validation du plan...")
     try:
         plan: PlanData = json.loads(full_response)
     except json.JSONDecodeError:
@@ -129,6 +130,8 @@ async def planning_node(state: AgentState) -> AgentState:
             plan = {"raw": full_response, "steps": [], "files": {}}
 
     state["plan"] = _clean_plan(plan)
+    steps_count = len(state.get("plan", {}).get("steps", []))
+    _emit_step("planning", f"Plan créé avec {steps_count} étapes")
     state["messages"].append({"role": "assistant", "content": str(state["plan"])})
     return state
 
@@ -143,6 +146,7 @@ async def coding_node(state: AgentState) -> AgentState:
     user_message = _get_user_message(state)
     plan_clean = _clean_plan(state.get("plan", {}))
 
+    _emit_step("coding", "Génération du code par LLM...")
     prompt = (
         f"User request: {user_message}\n\n"
         f"Implementation plan: {json.dumps(plan_clean, ensure_ascii=False)}\n\n"
@@ -152,14 +156,18 @@ async def coding_node(state: AgentState) -> AgentState:
     )
 
     full_response = await llm.run_node(prompt, model_type="fast", temperature=0.3)
+
+    _emit_step("coding", "Extraction et validation du code...")
     from .code_extractor import extract_code_dict
 
     state["code"] = extract_code_dict(full_response)
+    files_count = len(state["code"].get("files", {}))
+    _emit_step("coding", f"Code généré: {files_count} fichiers")
     return state
 
 
 async def reviewing_node(state: AgentState) -> AgentState:
-    _emit_step("reviewing", "Code Review & Security Check...")
+    _emit_step("reviewing", "Analyse statique du code...")
 
     user_model, user_provider = _get_model_info(state)
     from .llm_wrapper import LLMWrapper
@@ -167,6 +175,7 @@ async def reviewing_node(state: AgentState) -> AgentState:
     llm = LLMWrapper(_get_llm_router(), user_model, user_provider)
     code = state.get("code", {})
 
+    _emit_step("reviewing", "Vérification de la qualité du code...")
     prompt = f"Analyse ce code de façon critique et retourne un JSON:\n{json.dumps(code, ensure_ascii=False)}"
 
     full_response = await llm.run_node(prompt, model_type="reasoning")
@@ -181,46 +190,81 @@ async def reviewing_node(state: AgentState) -> AgentState:
         }
 
     state["review"] = review
+    if review.get("passed"):
+        _emit_step("reviewing", "✅ Review OK - code valide")
+    else:
+        issues_count = len(review.get("issues", []))
+        _emit_step("reviewing", f"⚠️ {issues_count} problème(s) détecté(s)")
     return state
 
 
 async def executing_node(state: AgentState) -> AgentState:
-    _emit_step("executing", "Execution dans le sandbox...")
+    _emit_step("executing", "Préparation du sandbox...")
 
     from backend.infrastructure.code_execution import CodeExecutionService
 
     executor = CodeExecutionService()
     files = state.get("code", {}).get("files", {})
 
+    _emit_step("executing", f"Exécution de {len(files)} fichier(s) dans le sandbox...")
     try:
-        loop = asyncio.get_running_loop()
         result = await asyncio.wait_for(
-            loop.run_in_executor(None, lambda: executor.run(files)),
+            executor.run_files_async(files),
             timeout=float(settings.executor_timeout),
         )
-        state["execution_result"] = result
+        # Stocker en dict (pas dataclass) pour compatibilité TypedDict
+        state["execution_result"] = {
+            "success": result.success,
+            "error": result.error,
+            "output": result.output,
+        }
         state["error"] = None
+        if result.success:
+            _emit_step("executing", "✅ Exécution réussie")
+        else:
+            _emit_step("executing", f"❌ Échec: {result.error[:80] if result.error else 'unknown'}")
     except Exception as e:
         state["error"] = str(e)
         state["execution_result"] = {"success": False, "error": str(e)}
+        _emit_step("executing", f"❌ Exception: {str(e)[:80]}")
         logger.exception("Execution failed")
 
     state["attempt"] = state.get("attempt", 0) + 1
     return state
 
 
-def should_continue(state: AgentState) -> Literal["review", "end"]:
+def should_continue(state: AgentState) -> Literal["fix_code", "end"]:
     review = state.get("review")
+    execution_result = state.get("execution_result")
     attempt = state.get("attempt", 0)
     max_attempts = state.get("max_attempts", 3)
 
+    # Priorité 1: échec d'exécution + tentatives épuisées → STOP
+    if execution_result is not None:
+        result_dict: dict = execution_result  # type: ignore[assignment]
+        if not result_dict.get("success", False) and attempt >= max_attempts:
+            error_msg = result_dict.get("error", "unknown error")
+            _emit_step("execution_failed", f"❌ Execution failed (max {max_attempts} tentatives): {error_msg[:80]}")
+            return "end"
+
+    # Priorité 2: échec d'exécution + tentatives restantes → auto-fix
+    if execution_result is not None:
+        result_dict: dict = execution_result  # type: ignore[assignment]
+        if not result_dict.get("success", False):
+            error_msg = result_dict.get("error", "unknown error")
+            _emit_step("fixing", f"Auto-fix execution ({attempt + 1}/{max_attempts}): {error_msg[:60]}")
+            return "fix_code"
+
+    # Priorité 3: review passée + execution OK → STOP (succès)
     if review and review.get("passed", False):
         _emit_step("review_passed", "[OK] Code review passed")
         return "end"
 
+    # Priorité 4: max attempts atteint → STOP
     if attempt >= max_attempts:
         _emit_step("max_attempts_reached", f"Max attempts ({max_attempts}) reached")
         return "end"
 
+    # Sinon: auto-fix → retour au coding
     _emit_step("fixing", f"Auto-fix attempt {attempt + 1}/{max_attempts}")
-    return "review"
+    return "fix_code"

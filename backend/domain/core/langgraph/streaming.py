@@ -116,41 +116,67 @@ async def stream_agent(
         yield "[STEP]orchestrator:Starting agent pipeline"
         logger.info("[streaming] Starting astream...")
 
-        # Subscribe to event bus for generation stats emitted by LLMWrapper
-        stats_queue: asyncio.Queue[str] = asyncio.Queue()
+        # Subscribe to event bus for step events emitted by nodes.py (_emit_step)
+        # and generation stats emitted by LLMWrapper
+        step_queue: asyncio.Queue[str] = asyncio.Queue()
 
         def _on_agent_event(event: Any) -> None:
             try:
-                if hasattr(event, "step") and event.step == "generation_stats":
-                    stats_queue.put_nowait(event.message)
+                if hasattr(event, "step") and hasattr(event, "message"):
+                    step_queue.put_nowait(f"{event.step}:{event.message}")
             except Exception:
                 pass
 
         bus = get_event_bus()
         bus.subscribe(EventType.AGENT, _on_agent_event)
 
-        # Use astream with stream_mode="values" for state snapshots
+        # Track state fields already emitted (each only ONCE, not every snapshot)
+        _state_emitted: set[str] = set()
+
         async for event in app.astream(
             initial_state,
             config={"configurable": {"thread_id": session_id}},
             stream_mode="values",
         ):
-            # Step events from full state snapshots
+            # Drain detailed sub-step events from nodes.py
+            # (emitted during node execution via _emit_step → event bus)
+            _step_dedup = set()
+            try:
+                while True:
+                    step_msg = step_queue.get_nowait()
+                    if step_msg not in _step_dedup:
+                        _step_dedup.add(step_msg)
+                        yield f"[STEP]{step_msg}"
+            except asyncio.QueueEmpty:
+                pass
+
+            # State-based steps: emit each field ONLY ONCE (first time it appears)
+            analyzing_val = event.get("task_type")
+            if analyzing_val and "task_type" not in _state_emitted:
+                _state_emitted.add("task_type")
+                yield f"[STEP]analyzing:Classification: {analyzing_val[:80]}"
+
             plan_val = event.get("plan")
-            if plan_val:
-                yield "[STEP]planning:Plan created"
+            if plan_val and "plan" not in _state_emitted:
+                _state_emitted.add("plan")
+                steps_count = len(plan_val.get("steps", []))
+                yield f"[STEP]planning:Plan created ({steps_count} étapes)"
 
             code_val = event.get("code")
-            if code_val:
-                yield "[STEP]coding:Code generation completed"
+            if code_val and "code" not in _state_emitted:
+                _state_emitted.add("code")
+                files = code_val.get("files", {})
+                yield f"[STEP]coding:Code generation completed ({len(files)} fichiers)"
 
             review_val = event.get("review")
-            if review_val:
+            if review_val and "review" not in _state_emitted:
+                _state_emitted.add("review")
                 status = "PASSED" if review_val.get("passed") else "Needs improvement"
                 yield f"[STEP]reviewing:Review - {status}"
 
             exec_val = event.get("execution_result")
-            if exec_val:
+            if exec_val and "execution_result" not in _state_emitted:
+                _state_emitted.add("execution_result")
                 success = (
                     exec_val.get("success", False)
                     if isinstance(exec_val, dict)
@@ -193,14 +219,6 @@ async def stream_agent(
                                     )
 
                         _last_message_length[session_id] = len(content)
-
-            # Drain generation stats from event bus (emitted by LLMWrapper during node execution)
-            try:
-                while True:
-                    stats_msg = stats_queue.get_nowait()
-                    yield f"[STEP]generation_stats:{stats_msg}"
-            except asyncio.QueueEmpty:
-                pass
 
             # Tool events
             exec_result = event.get("execution_result")

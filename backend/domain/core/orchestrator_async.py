@@ -189,14 +189,19 @@ async def execute_node(state: AgentState, executor: Any) -> AgentState:
     files = code.get("files", {})
 
     try:
-        loop = asyncio.get_running_loop()
         result = await asyncio.wait_for(
-            loop.run_in_executor(None, lambda: executor.run(files)),
+            executor.run_files_async(files),
             timeout=float(settings.executor_timeout),
         )
-        state["execution_result"] = result
+        # Stocker en dict (pas dataclass) pour compatibilité TypedDict
+        state["execution_result"] = {
+            "success": result.success,
+            "error": result.error,
+            "output": result.output,
+        }
     except Exception as e:
         state["error"] = str(e)
+        state["execution_result"] = {"success": False, "error": str(e)}
         logger.error("Execution failed", exc_info=True)
 
     state["attempt"] += 1
@@ -205,16 +210,36 @@ async def execute_node(state: AgentState, executor: Any) -> AgentState:
 
 # ====================== CONDITIONAL EDGES ======================
 def should_fix_code(state: AgentState) -> Literal["coding", "end"]:
-    """Determine if we should retry the code → review cycle"""
+    """Determine if we should retry the code → review → execute cycle"""
     review = state.get("review")
+    execution_result = state.get("execution_result")
+    attempt = state.get("attempt", 0)
+    max_attempts = state.get("max_attempts", 3)
+
+    # Priorité 1: échec d'exécution + tentatives épuisées → STOP
+    if execution_result is not None:
+        if not execution_result.get("success", False) and attempt >= max_attempts:
+            error_msg = execution_result.get("error", "unknown error")
+            _emit_agent_step("execution_failed", f"Execution failed (max {max_attempts} tentatives): {error_msg[:80]}")
+            return "end"
+
+    # Priorité 2: échec d'exécution + tentatives restantes → auto-fix
+    if execution_result is not None:
+        if not execution_result.get("success", False):
+            error_msg = execution_result.get("error", "unknown error")
+            _emit_agent_step("fixing", f"Auto-fix execution ({attempt + 1}/{max_attempts}): {error_msg[:60]}")
+            return "coding"
+
+    # Priorité 3: review passée + execution OK → STOP
     if review and review.get("passed", False):
         return "end"
-    if state.get("attempt", 0) >= state.get("max_attempts", 3):
+
+    # Priorité 4: max attempts atteint → STOP
+    if attempt >= max_attempts:
         return "end"
 
-    attempt = state.get("attempt", 0) + 1
-    max_attempts = state.get("max_attempts", 3)
-    _emit_agent_step("fixing", f"Auto-fix tentative {attempt}/{max_attempts}")
+    next_attempt = attempt + 1
+    _emit_agent_step("fixing", f"Auto-fix tentative {next_attempt}/{max_attempts}")
     return "coding"
 
 
@@ -278,22 +303,11 @@ class OrchestratorAsync:
             workflow = StateGraph(AgentState)
 
             # Add nodes
-            workflow.add_node(
-                "analyzing", lambda state: asyncio.run(analyzing_node(state, self.llm))
-            )  # type: ignore[arg-type]
-            workflow.add_node(
-                "planning", lambda state: asyncio.run(planning_node(state, self.llm))
-            )  # type: ignore[arg-type]
-            workflow.add_node(
-                "coding", lambda state: asyncio.run(coding_node(state, self.llm))
-            )  # type: ignore[arg-type]
-            workflow.add_node(
-                "reviewing", lambda state: asyncio.run(review_node(state, self.llm))
-            )  # type: ignore[arg-type]
-            workflow.add_node(
-                "executing",
-                lambda state: asyncio.run(execute_node(state, self.executor)),
-            )  # type: ignore[arg-type]
+            workflow.add_node("analyzing", lambda s: asyncio.run(analyzing_node(s, self.llm)))  # type: ignore[arg-type]
+            workflow.add_node("planning", lambda s: asyncio.run(planning_node(s, self.llm)))  # type: ignore[arg-type]
+            workflow.add_node("coding", lambda s: asyncio.run(coding_node(s, self.llm)))  # type: ignore[arg-type]
+            workflow.add_node("reviewing", lambda s: asyncio.run(review_node(s, self.llm)))  # type: ignore[arg-type]
+            workflow.add_node("executing", lambda s: asyncio.run(execute_node(s, self.executor)))  # type: ignore[arg-type]
 
             # Main flow
             workflow.add_edge(START, "analyzing")
