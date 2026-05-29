@@ -104,10 +104,21 @@ class LLMWrapper:
         temperature: float = 0.3,
         strip_markdown: bool = False,
     ) -> str:
-        """Helper: collect full response from streaming."""
-        full_response = ""
-        async for token in self.stream_generate(prompt, model_type, temperature):
-            full_response += token
+        """Helper: collect full response from streaming with timeout."""
+        timeout = float(settings.llm_timeout)
+
+        async def _collect() -> str:
+            result = ""
+            async for token in self.stream_generate(prompt, model_type, temperature):
+                result += token
+            return result
+
+        try:
+            full_response = await asyncio.wait_for(_collect(), timeout=timeout)
+        except asyncio.TimeoutError:
+            msg = f"LLM call timed out after {timeout}s (model_type={model_type})"
+            logger.error(msg)
+            raise TimeoutError(msg) from None
 
         if strip_markdown:
             cleaned = full_response.strip()
