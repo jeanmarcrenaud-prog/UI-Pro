@@ -53,12 +53,39 @@
 - **i18n Support** — English + French
 - **Settings Dashboard** — live backend metrics, model selection, timeout config
 
-### Agent Pipeline
-1. **Analyzing** — classifies task and selects strategy
-2. **Planning** — creates implementation roadmap
-3. **Coding** — generates code via LLM with token streaming
-4. **Reviewing** — static analysis and security check
-5. **Executing** — runs generated code in sandbox with retry loop
+### Agent Pipeline (7-step)
+
+The orchestrator runs a LangGraph pipeline with 5 main nodes + an auto-fix loop:
+
+```
+┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
+│  1. Analyze  │ → │  2. Plan  │ → │  3. Code  │ → │ 4. Review │ → │ 5. Execute │
+└──────────┘    └──────────┘    └──────────┘    └──────────┘    └─────┬────┘
+                                                                       │
+                                                          ┌────────────▼────────────┐
+                                                          │  6. should_fix_code ?    │
+                                                          │  (conditional edge)      │
+                                                          └────────────┬────────────┘
+                                                               pass ▼         ▼ fail
+                                                               ┌───┐    ┌──────────┐
+                                                               │END│    │7. Re-code │
+                                                               └───┘    └─────┬────┘
+                                                                         (loop to 3)
+```
+
+| Step | Node | Rôle |
+|------|------|------|
+| **1** | `analyzing_node` | Classifie la tâche (code/reasoning/general) et sélectionne la stratégie LLM |
+| **2** | `planning_node` | Crée un plan d'implémentation structuré (fichiers, étapes, approche) |
+| **3** | `coding_node` | Génère le code Python via LLM avec extraction et validation Pydantic |
+| **4** | `reviewing_node` | Revue de code automatique + vérification de sécurité statique |
+| **5** | `executing_node` | Exécute le code dans le sandbox Docker isolé (timeout configurable) |
+| **6** | `should_fix_code` | **Edge conditionnel** : si la review échoue et `attempt < max_attempts` → retour étape 3 |
+| **7** | Re-code + Re-execute | Itération de correction automatique (jusqu'à `max_attempts=3` tentatives) |
+
+- **Fichier source** : `backend/domain/core/orchestrator_async.py` (orchestrateur) + `backend/domain/core/langgraph/nodes.py` (nœuds)
+- **Sources d'état** : `backend/domain/core/langgraph/state.py` (modèles `AgentState`, `PlanData`, `CodeData`, etc.)
+- **Checkpointing** : SQLite via `AsyncSqliteSaver` — reprise de session après redémarrage
 
 ## 🛠️ Tech Stack
 
