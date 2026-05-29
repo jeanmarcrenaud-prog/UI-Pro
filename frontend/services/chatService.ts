@@ -93,15 +93,12 @@ class ChatService {
     }
     this.manuallyClosed = false
 
-    // Try WebSocket first
-    try {
-      await this.wsManager.connect(
-        (data) => this.messageHandler.process(data, this.activeRequest),
-        () => this.handleClose()
-      )
+    // Try WebSocket first with retries
+    const connected = await this.connectWithRetry()
+    if (connected) {
       this.sendPayload()
-    } catch (error) {
-      console.warn('[chatService] WS failed, trying fallback...', error)
+    } else {
+      console.warn('[chatService] WS failed after retries, trying fallback...')
       await this.tryFallback()
     }
   }
@@ -143,6 +140,31 @@ class ChatService {
       provider: this.activeRequest.provider,
       last_chunk_index: this.activeRequest.lastChunkIndex,
     })
+  }
+
+  // =====================
+  // INTERNAL - Connection Retry
+  // =====================
+
+  private async connectWithRetry(maxRetries = 3, baseDelay = 1000): Promise<boolean> {
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        await this.wsManager.connect(
+          (data) => this.messageHandler.process(data, this.activeRequest),
+          () => this.handleClose()
+        )
+        return true
+      } catch (err) {
+        if (i < maxRetries - 1) {
+          const delay = baseDelay * Math.pow(1.5, i)
+          console.warn(`[chatService] WS connect attempt ${i + 1} failed, retrying in ${delay}ms...`, err)
+          await new Promise(r => setTimeout(r, delay))
+        } else {
+          console.warn(`[chatService] WS connect attempt ${i + 1} failed, no more retries`, err)
+        }
+      }
+    }
+    return false
   }
 
   // =====================

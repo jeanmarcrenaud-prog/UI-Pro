@@ -1,7 +1,12 @@
 /** @type {import('next').NextConfig} */
+const path = require('path')
+
 const nextConfig = {
   reactStrictMode: true,
   allowedDevOrigins: ['192.168.0.113'],
+  turbopack: {
+    root: path.resolve(__dirname, '.'),
+  },
   async rewrites() {
     return [
       {

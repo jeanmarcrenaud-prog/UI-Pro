@@ -24,7 +24,7 @@ export const CONNECTION_TIMEOUT = 8000 // 8s
 
 export const REQUEST_TIMEOUT = 30000 // 30s max wait for concurrent requests
 
-export const DEFAULT_MODEL = 'qwen3.6:latest'
+export const DEFAULT_MODEL = 'qwen3.5:9b'
 export const DEFAULT_PROVIDER = 'ollama'
 
 export const MAX_HANDLERS = 10

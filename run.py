@@ -37,6 +37,7 @@ if sys.platform == "win32":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
+import asyncio
 import argparse
 
 
@@ -90,6 +91,63 @@ def check_port(port: int) -> bool:
         return False
 
 
+def wait_for_port(port: int, host: str = "localhost", timeout: int = 30, interval: float = 0.5) -> bool:
+    """Wait for a port to be ready, including HTTP health check.
+
+    Two-phase approach:
+    Phase 1 — Quick socket poll until TCP port is open (server listening).
+    Phase 2 — Try /health with a generous timeout — first request may be
+              slow due to lazy initialization (vector memory, backends).
+
+    Returns True if ready within timeout, False otherwise.
+    """
+    import urllib.error
+    import urllib.request
+
+    start = time.time()
+
+    # Phase 1: Wait for TCP port to open
+    port_open = False
+    while time.time() - start < timeout:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(2)
+                s.connect((host, port))
+            port_open = True
+            break
+        except (TimeoutError, ConnectionRefusedError, OSError):
+            time.sleep(interval)
+
+    if not port_open:
+        return False
+
+    # Phase 2: Port is open — wait for a successful HTTP response.
+    # First request may be slow (lazy init, model discovery, etc.).
+    # Use a generous timeout for the first attempt, then shorter ones.
+    http_deadline = start + timeout
+    attempt = 0
+
+    while time.time() < http_deadline:
+        attempt += 1
+        remaining = max(http_deadline - time.time(), 1)
+
+        # First attempt gets extra time (15s), subsequent get remaining
+        read_timeout = min(15 if attempt == 1 else remaining, 15)
+
+        try:
+            req = urllib.request.Request(f"http://{host}:{port}/health", method="GET")
+            resp = urllib.request.urlopen(req, timeout=read_timeout)
+            if resp.status == 200:
+                return True
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError):
+            pass
+
+        if time.time() < http_deadline:
+            time.sleep(interval)
+
+    return False
+
+
 def check_npm_available() -> bool:
     """Check if npm is available."""
     import shutil
@@ -133,8 +191,11 @@ def check_backends() -> dict:
     try:
         from backend.infrastructure.model_discovery import ModelDiscovery
 
-        discovery = ModelDiscovery(timeout=2.0)
-        all_models = discovery.discover_all()
+        async def _discover():
+            discovery = ModelDiscovery(timeout=2.0)
+            return await discovery.discover_all()
+
+        all_models = asyncio.run(_discover())
 
         # Group by backend
         by_backend: dict[str, list[str]] = {}
@@ -451,6 +512,17 @@ def start_all(auto_open: bool = True):
     """Lance tous les services."""
     print_header("Lancement de tous les services")
 
+    # LangSmith Tracing
+    try:
+        from backend.infrastructure.tracing import setup_langsmith_tracing
+
+        if setup_langsmith_tracing():
+            print_success("LangSmith tracing activé")
+        else:
+            print_info("LangSmith tracing désactivé")
+    except Exception as e:
+        print_warning(f"LangSmith init failed: {e}")
+
     # Check all LLM backends
     backends = check_backends()
     if backends["status"] == "running":
@@ -461,17 +533,25 @@ def start_all(auto_open: bool = True):
             "Aucun backend LLM détecté - Lancez Ollama/LM Studio/Lemonade si nécessaire"
         )
 
-    # Start FastAPI in a thread
+    # Start FastAPI in a non-daemon thread so the process stays alive
     print_info("Démarrage FastAPI...")
-    api_thread = threading.Thread(target=start_api, daemon=True)
+    api_thread = threading.Thread(target=start_api, daemon=False)
     api_thread.start()
-    time.sleep(2)
+
+    # Wait for FastAPI to be ready (with health check)
+    print_info("Attente du backend FastAPI...")
+    if not wait_for_port(8000, timeout=30):
+        print_error("FastAPI n'a pas démarré dans les 30s - abandon")
+        return
+    print_success("FastAPI prêt")
 
     # Start Next.js UI
     print_info("Démarrage Next.js UI...")
     ui_thread = threading.Thread(target=start_ui, daemon=True)
     ui_thread.start()
-    time.sleep(2)
+
+    # Give UI a moment to announce
+    time.sleep(1)
 
     # Summary
     print_header("Services démarrés")
@@ -483,6 +563,18 @@ def start_all(auto_open: bool = True):
         print("\nOuvrir http://localhost:3000 dans le navigateur...")
         time.sleep(1)
         webbrowser.open("http://localhost:3000")
+
+    # Keep the main thread alive — join on FastAPI thread.
+    # When user presses Ctrl+C, api_thread (blocked on subprocess.run)
+    # will get interrupted and the KeyboardInterrupt propagates here.
+    print(
+        f"\n{Colors.BOLD}{Colors.CYAN}Appuyez sur Ctrl+C pour arrêter tous les services{Colors.RESET}"
+    )
+    while api_thread.is_alive():
+        try:
+            api_thread.join(timeout=1)
+        except KeyboardInterrupt:
+            break
 
 
 def run_tests():

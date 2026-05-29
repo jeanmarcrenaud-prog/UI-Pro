@@ -17,12 +17,10 @@ export class WebSocketManager {
     if (this.isConnected) return
 
     return new Promise((resolve, reject) => {
-      // Construct WebSocket URL from current window location
-      // If on http://localhost:3000, connect to ws://localhost:8000
-      // If on https://example.com, connect to wss://example.com:8000
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const host = window.location.hostname || 'localhost'
-      const wsUrl = `${protocol}//${host}:8000/ws`
+      // Use relative URL so WebSocket goes through Next.js proxy
+      // Browser resolves /ws relative to current origin (e.g. ws://localhost:3000/ws)
+      // Next.js rewrites /ws/:path* to http://localhost:8000/ws/:path*
+      const wsUrl = '/ws'
 
       console.log('[WebSocketManager] Connecting to:', wsUrl)
       this.ws = new WebSocket(wsUrl)
