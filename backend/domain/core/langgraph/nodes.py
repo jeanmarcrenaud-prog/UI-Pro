@@ -105,15 +105,21 @@ async def planning_node(state: AgentState) -> AgentState:
 
     _emit_step("planning", "Consultation du LLM pour le plan...")
     prompt = (
-        f"User request: {user_message}\n\n"
-        "Create a detailed implementation plan. Respond with ONLY this JSON structure — no markdown, no explanation, no code blocks:\n"
-        '{"steps": [{"description": "what to do", "file": "path/to/file.py", "approach": "how to do it"}], "files": {"filename.py": "brief description of this file"}}\n\n'
-        "Example:\n"
-        '{"steps": [{"description": "Create a function to fetch data", "file": "main.py", "approach": "Use requests library and handle errors"}], "files": {"main.py": "Entry point with fetch logic", "utils.py": "Helper functions"}}\n\n'
-        "Rules:\n"
-        "- steps must be a list (can be empty if no steps needed)\n"
-        "- files must be a dict with .py filenames as keys\n"
-        "- ONLY valid JSON — no markdown fences, no surrounding text"
+        f"Demande utilisateur : {user_message}\n\n"
+        "Crée un plan d'implémentation détaillé. Réponds UNIQUEMENT avec cette structure JSON — "
+        "pas de markdown, pas de blocs de code, pas d'explication :\n\n"
+        "{\n"
+        '  "steps": [\n'
+        '    {"description": "description de l étape", "file": "main.py", "approach": "comment faire"}\n'
+        "  ],\n"
+        '  "files": {"main.py": "description du fichier"}\n'
+        "}\n\n"
+        'Exemple complet : {"steps": [{"description": "Créer une fonction fetch", "file": "main.py", "approach": "Utiliser requests"}], "files": {"main.py": "Point d entrée"}}\n\n'
+        "Règles :\n"
+        "- steps est une liste d'étapes (peut être vide)\n"
+        "- files est un dictionnaire clé=valeur avec des noms de fichiers en .py\n"
+        "- UNIQUEMENT du JSON valide — ni ```json, ni ```, ni texte autour\n"
+        "- Commence directement par { et finis directement par }"
     )
 
     full_response = await llm.run_node(
@@ -239,16 +245,18 @@ async def reviewing_node(state: AgentState) -> AgentState:
 
     _emit_step("reviewing", "Vérification de la qualité du code...")
     prompt = (
-        "Analyse ce code de façon critique et retourne UNIQUEMENT ce JSON exact — "
-        "pas de markdown, pas d'explication, pas de blocs de code :\n\n"
-        '{"passed": true, "issues": ["description du problème"], "suggestions": ["conseil d\'amélioration"]}\n\n'
+        "Tu es un relecteur de code. Analyse le code ci-dessous et retourne UNIQUEMENT ce JSON — "
+        "pas de markdown, pas d'explication :\n\n"
+        '{"passed": true, "issues": [], "suggestions": []}\n\n'
         "Code à analyser :\n"
         f"{json.dumps(code, ensure_ascii=False)}\n\n"
         "Règles :\n"
-        "- passed=true si le code est correct et exécutable, false sinon\n"
-        "- issues : liste des problèmes concrets (vide si passed=true)\n"
-        "- suggestions : conseils d'amélioration (peut être vide)\n"
-        "- ONLY valid JSON — aucune autre texte"
+        "- passed=true SI le code est syntaxiquement correct ET fait ce qui est attendu\n"
+        "- passed=false UNIQUEMENT s'il y a une vraie erreur (import manquant, variable indéfinie, boucle infinie)\n"
+        "- Ne mets pas passed=false pour des problèmes de style ou d'optimisation\n"
+        "- Issues : liste vide si passed=true, sinon décris l'erreur concrète\n"
+        "- Suggestions : peut être vide\n"
+        "- Ne commence pas par ```json — réponds DIRECTEMENT par le JSON brut"
     )
 
     full_response = await llm.run_node(prompt, model_type="reasoning")
@@ -318,7 +326,14 @@ def should_continue(state: AgentState) -> Literal["fix_code", "end"]:
     attempt = state.get("attempt", 0)
     max_attempts = state.get("max_attempts", 3)
 
-    # Priorité 1: échec d'exécution + tentatives épuisées → STOP
+    # Priorité 1: exécution réussie → STOP (le code marche, inutile de boucler)
+    if execution_result is not None:
+        result_dict: dict = execution_result  # type: ignore[assignment]
+        if result_dict.get("success", False):
+            _emit_step("execution_success", "[OK] Execution succeeded")
+            return "end"
+
+    # Priorité 2: échec d'exécution + tentatives épuisées → STOP
     if execution_result is not None:
         result_dict: dict = execution_result  # type: ignore[assignment]
         if not result_dict.get("success", False) and attempt >= max_attempts:
@@ -326,18 +341,13 @@ def should_continue(state: AgentState) -> Literal["fix_code", "end"]:
             _emit_step("execution_failed", f"❌ Execution failed (max {max_attempts} tentatives): {error_msg[:80]}")
             return "end"
 
-    # Priorité 2: échec d'exécution + tentatives restantes → auto-fix
+    # Priorité 3: échec d'exécution + tentatives restantes → auto-fix
     if execution_result is not None:
         result_dict: dict = execution_result  # type: ignore[assignment]
         if not result_dict.get("success", False):
             error_msg = result_dict.get("error", "unknown error")
             _emit_step("fixing", f"Auto-fix execution ({attempt + 1}/{max_attempts}): {error_msg[:60]}")
             return "fix_code"
-
-    # Priorité 3: review passée + execution OK → STOP (succès)
-    if review and review.get("passed", False):
-        _emit_step("review_passed", "[OK] Code review passed")
-        return "end"
 
     # Priorité 4: max attempts atteint → STOP
     if attempt >= max_attempts:
