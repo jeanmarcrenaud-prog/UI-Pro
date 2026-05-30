@@ -118,7 +118,7 @@ class OllamaBackend(LLMBackend):
             yield stats
 
     def list_models(self) -> list[dict]:
-        """List models via /api/tags."""
+        """List models via /api/tags with rich metadata."""
         url = f"{self._base_url()}/api/tags"
         resp = self._request("GET", url).json()
         return [
@@ -126,6 +126,9 @@ class OllamaBackend(LLMBackend):
                 "name": m["name"],
                 "size": m.get("size"),
                 "family": m.get("details", {}).get("family"),
+                "parameter_size": m.get("details", {}).get("parameter_size"),
+                "quantization_level": m.get("details", {}).get("quantization_level"),
+                "modified_at": m.get("modified_at"),
             }
             for m in resp.get("models", [])
         ]
