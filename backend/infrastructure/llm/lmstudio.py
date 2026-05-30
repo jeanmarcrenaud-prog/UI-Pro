@@ -26,7 +26,7 @@ class LMStudioBackend(OpenAICompatMixin, LLMBackend):
             items = data.get("data", [])
             return [{"name": m.get("id", "")} for m in items if m.get("id")]
         except Exception as e:
-            logger.warning("LM Studio model listing failed: %s", e)
+            logger.debug("LM Studio model listing failed: %s", e)
             return []
 
     def health_check(self) -> dict:

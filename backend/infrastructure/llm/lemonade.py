@@ -92,7 +92,7 @@ class LemonadeBackend(OpenAICompatMixin, LLMBackend):
             resp = self._request("GET", url).json()
             return [{"name": m.get("id", "")} for m in resp.get("data", [])]
         except Exception as e:
-            logger.warning("Lemonade model listing failed: %s", e)
+            logger.debug("Lemonade model listing failed: %s", e)
             return []
 
     def health_check(self) -> dict:

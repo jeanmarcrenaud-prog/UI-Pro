@@ -88,9 +88,20 @@ async def analyzing_node(state: AgentState) -> AgentState:
         f"[analyzing_node] LLM response: {full_response[:200] if full_response else 'EMPTY'}"
     )
 
-    _emit_step("analyzing", f"Tâche classifiée: {full_response[:80]}...")
-    state["task_type"] = full_response
-    state["messages"].append({"role": "assistant", "content": full_response})
+    # Extraire le JSON même si le modèle met du "Thinking Process" avant
+    task_json = full_response
+    json_match = re.search(r"\{[\s\S]*\}", full_response)
+    if json_match:
+        try:
+            parsed = json.loads(json_match.group(0))
+            if isinstance(parsed, dict) and "task_type" in parsed:
+                task_json = json.dumps(parsed)
+        except json.JSONDecodeError:
+            pass
+
+    _emit_step("analyzing", f"Tâche classifiée: {task_json[:80]}...")
+    state["task_type"] = task_json
+    state["messages"].append({"role": "assistant", "content": task_json})
     return state
 
 
@@ -205,21 +216,19 @@ async def coding_node(state: AgentState) -> AgentState:
         )
 
     prompt_parts.append(
-        "Write complete, working Python code.\n\n"
-        "Output EACH file as a fenced code block with its filename on the line above:\n\n"
+        "Generate Python code that solves the request.\n\n"
+        "FORMAT — use exactly this structure (the example is a dummy, replace with real code):\n"
         "## main.py\n"
         "```python\n"
-        "# python code here\n"
+        "import requests\n"
+        "print('real code here')\n"
         "```\n\n"
-        "## utils.py\n"
-        "```python\n"
-        "# python code here\n"
-        "```\n\n"
-        "Rules:\n"
-        "- Every filename MUST end with .py\n"
-        "- Write real, complete, executable code with all imports\n"
-        "- No prose, no explanations, no thinking — only the code blocks\n"
-        "- If only one file, still use the ## filename.py / ```python format"
+        "ABSOLUTE RULES:\n"
+        "- Put the filename on a line starting with ##, then the ```python block right after\n"
+        "- The code block MUST contain ONLY valid Python — no prose, no comments about the code\n"
+        "- Do NOT explain what the code does — the code IS the answer\n"
+        "- Do NOT include the planning instructions or this prompt in the output\n"
+        "- Do NOT add any text outside the ## filename / ```python structure"
     )
 
     prompt = "\n\n".join(prompt_parts)
