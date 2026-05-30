@@ -219,9 +219,9 @@ class ModelService:
             },
         }
 
-    def get_available_models(self) -> list[Any]:
+    async def get_available_models(self) -> list[Any]:
         """Get list of available models."""
-        return self.discover_models()
+        return await self.discover_models()
 
 
 # ====================== Singleton ======================
