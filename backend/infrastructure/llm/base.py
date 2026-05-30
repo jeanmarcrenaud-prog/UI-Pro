@@ -7,6 +7,7 @@ import time
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator, Iterator
 
+import httpx
 import requests
 
 from backend.infrastructure.llm.models import ModelConfig
@@ -55,6 +56,15 @@ class LLMBackend(ABC):
               model (str), error (str | None).
         """
 
+    @abstractmethod
+    def list_models(self) -> list[dict]:
+        """List available models on this backend.
+
+        Returns a list of dicts, each at minimum containing:
+            {"name": "<model-id-or-name>", ...}
+        Additional keys (size, family, capabilities) are backend-specific.
+        """
+
     # ── Shared helpers ────────────────────────────────────────
 
     def _request(self, method: str, endpoint: str, **kwargs: object) -> requests.Response:
@@ -97,6 +107,55 @@ class LLMBackend(ABC):
             ms = round((time.monotonic() - start) * 1000, 1)
             return {"status": "ok", "latency_ms": ms, "error": None}
         except requests.RequestException as e:
+            ms = round((time.monotonic() - start) * 1000, 1)
+            return {"status": "error", "latency_ms": ms, "error": str(e)}
+
+    # ── Async helpers (httpx) ──────────────────────────────
+
+    async def _arequest(
+        self, method: str, endpoint: str, **kwargs: object
+    ) -> httpx.Response:
+        """Async HTTP request with error translation to custom hierarchy."""
+        try:
+            async with httpx.AsyncClient(timeout=self.config.timeout) as client:
+                resp = await client.request(method, endpoint, **kwargs)  # type: ignore[arg-type]
+                resp.raise_for_status()
+                return resp
+        except httpx.ConnectError as e:
+            raise LLMConnectionError(
+                f"Cannot connect to {self.backend_name} at {endpoint}: {e}"
+            ) from e
+        except httpx.TimeoutException as e:
+            raise LLMTimeoutError(
+                f"{self.backend_name} timed out after {self.config.timeout}s: {e}"
+            ) from e
+        except httpx.HTTPStatusError as e:
+            status = e.response.status_code if e.response is not None else 0
+            if status == 404:
+                raise LLMModelNotFoundError(
+                    f"Model '{self.config.model}' not found on {self.backend_name}"
+                ) from e
+            if status in (401, 403):
+                raise LLMAuthenticationError(
+                    f"Authentication failed for {self.backend_name}"
+                ) from e
+            raise LLMBackendError(f"HTTP {status} from {self.backend_name}: {e}") from e
+        except httpx.RequestError as e:
+            raise LLMBackendError(f"{self.backend_name} request failed: {e}") from e
+
+    @staticmethod
+    async def _ameasure(method: str, url: str, **kwargs: object) -> dict:
+        """Async quick health check: GET endpoint, return status + latency."""
+        start = time.monotonic()
+        try:
+            async with httpx.AsyncClient(
+                timeout=kwargs.pop("timeout", 5.0)  # type: ignore[arg-type]
+            ) as client:
+                resp = await client.request(method, url, **kwargs)  # type: ignore[arg-type]
+                resp.raise_for_status()
+            ms = round((time.monotonic() - start) * 1000, 1)
+            return {"status": "ok", "latency_ms": ms, "error": None}
+        except httpx.RequestError as e:
             ms = round((time.monotonic() - start) * 1000, 1)
             return {"status": "error", "latency_ms": ms, "error": str(e)}
 

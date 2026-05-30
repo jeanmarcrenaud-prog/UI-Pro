@@ -10,10 +10,9 @@ from __future__ import annotations
 
 import json
 import logging
-import threading
 from collections.abc import AsyncGenerator, Iterator
-from typing import Any
 
+import httpx
 import requests
 
 from backend.infrastructure.llm.base import LLMBackend
@@ -96,31 +95,49 @@ class OpenAICompatMixin:
                     continue
 
     async def astream(self, prompt: str, **kwargs: object) -> AsyncGenerator[str, None]:
-        loop = __import__("asyncio", fromlist=[""]).get_running_loop()
-        q: Any = __import__("queue", fromlist=[""]).Queue()
-        sentinel = None
+        """Async streaming — native httpx, no thread pool."""
+        url = f"{self._base_url()}/v1/chat/completions"
+        payload: dict = {
+            "model": self.config.model,
+            "messages": self._messages(prompt, **kwargs),
+            "stream": True,
+            "temperature": kwargs.get("temperature", 0.7),
+        }
         backend: LLMBackend = self  # type: ignore[assignment]
 
-        def _produce() -> None:
-            try:
-                for token in self.stream(prompt, **kwargs):  # type: ignore[attr-defined]
-                    q.put(("token", token))
-            except Exception as e:
-                logger.error("%s async stream failed: %s", backend.backend_name, e)
-                q.put(("error", str(e)))
-            finally:
-                q.put(("done", sentinel))
-
-        thread = threading.Thread(target=_produce, daemon=True)
-        thread.start()
-
-        while True:
-            kind, value = await loop.run_in_executor(None, q.get)
-            if kind == "done":
-                break
-            if kind == "error":
-                raise LLMStreamError(value)
-            yield str(value)
+        try:
+            async with httpx.AsyncClient(timeout=backend.config.timeout) as client:
+                async with client.stream("POST", url, json=payload) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        text = backend._parse_sse_line(line.encode())
+                        if text is None:
+                            continue
+                        try:
+                            data = json.loads(text)
+                            choices = data.get("choices", [])
+                            if not choices:
+                                continue
+                            delta = choices[0].get("delta", {})
+                            content = delta.get("content", "")
+                            finish_reason = choices[0].get("finish_reason")
+                            if content:
+                                yield content
+                            if finish_reason:
+                                return
+                        except json.JSONDecodeError:
+                            logger.warning(
+                                "%s parse error: %s",
+                                backend.backend_name,
+                                text[:60],
+                            )
+                            continue
+        except httpx.TimeoutException as e:
+            logger.error("%s async stream timed out: %s", backend.backend_name, e)
+            raise
+        except httpx.RequestError as e:
+            logger.error("%s async stream failed: %s", backend.backend_name, e)
+            raise
 
 
 __all__ = ["OpenAICompatMixin"]

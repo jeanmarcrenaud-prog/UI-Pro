@@ -16,8 +16,6 @@ from datetime import datetime
 from statistics import median
 from typing import Any
 
-from models.settings import settings
-
 logger = logging.getLogger(__name__)
 
 
@@ -135,14 +133,13 @@ class ModelService:
         """
         Get backend for specific model and provider.
 
-        Strips provider prefix from model name (e.g., "lmstudio-Qwen3.5 9B" -> "Qwen3.5 9B").
+        Strips provider prefix from model name (e.g., "lmstudio-Qwen3.5 9B" -> "Qwen3.5 9B"),
+        then delegates to factory.get_backend() for URL/endpoint construction.
         """
         self._ensure_init()
-        from backend.infrastructure.llm.models import ModelConfig
         from backend.infrastructure.llm.factory import get_backend
 
         provider = (provider or "ollama").lower()
-        backend_url = self._get_backend_url(provider)
 
         # Strip provider prefix from model name
         clean_model = model
@@ -151,27 +148,10 @@ class ModelService:
                 clean_model = model[len(prefix) :]
                 break
 
-        # Determine endpoint based on provider
-        endpoint = "/v1/chat/completions" if provider in ("lmstudio", "lemonade") else "/api/generate"
-
-        config = ModelConfig(
-            url=f"{backend_url.rstrip('/')}{endpoint}",
-            model=clean_model,
-            timeout=settings.llm_timeout,
-            backend=provider,
-        )
-
-        return get_backend(provider, config)
-
-    def _get_backend_url(self, backend: str) -> str:
-        """Get URL for backend from settings."""
-        mapping = {
-            "ollama": settings.ollama_url,
-            "lmstudio": settings.lmstudio_url,
-            "lemonade": settings.lemonade_url,
-            "llamacpp": settings.llamacpp_url,
-        }
-        return mapping.get(backend.lower(), settings.ollama_url)
+        # Let factory build URL/endpoint from settings, then override model
+        backend = get_backend(provider)
+        backend.config.model = clean_model
+        return backend
 
     def generate(
         self,

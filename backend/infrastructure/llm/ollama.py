@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import json
 import logging
-import threading
 from collections.abc import AsyncGenerator, Iterator
 from typing import Any
 
+import httpx
 import requests
 
 from backend.infrastructure.llm.base import LLMBackend
-from backend.infrastructure.llm.errors import LLMStreamError
+from backend.infrastructure.llm.errors import LLMConnectionError, LLMStreamError, LLMTimeoutError
 
 logger = logging.getLogger(__name__)
 
@@ -83,31 +83,52 @@ class OllamaBackend(LLMBackend):
             yield stats
 
     async def astream(self, prompt: str, **kwargs: object) -> AsyncGenerator[str | dict, None]:
-        """Async wrapper via thread pool — queues sync stream."""
-        loop = __import__("asyncio", fromlist=[""]).get_running_loop()
-        q: Any = __import__("queue", fromlist=[""]).Queue()
-        sentinel = None
+        """Async streaming — native httpx, no thread pool."""
+        url = f"{self._base_url()}/api/generate"
+        payload = self._payload(prompt, stream=True, **kwargs)
+        last_data: dict[str, Any] = {}
 
-        def _produce() -> None:
-            try:
-                for item in self.stream(prompt, **kwargs):
-                    q.put(("token", item))
-            except Exception as e:
-                logger.error("Ollama async stream failed: %s", e)
-                q.put(("error", str(e)))
-            finally:
-                q.put(("done", sentinel))
+        try:
+            async with httpx.AsyncClient(timeout=self.config.timeout) as client:
+                async with client.stream("POST", url, json=payload) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        text = self._parse_sse_line(line.encode())
+                        if text is None:
+                            break
+                        try:
+                            data = json.loads(text)
+                            last_data = data
+                            token = data.get("response", "") or data.get("thinking", "")
+                            if token:
+                                yield token
+                            if data.get("done", False):
+                                break
+                        except json.JSONDecodeError as e:
+                            raise LLMStreamError(f"Ollama parse error: {text[:50]}") from e
+        except httpx.TimeoutException as e:
+            raise LLMTimeoutError(f"Ollama timed out after {self.config.timeout}s: {e}") from e
+        except httpx.RequestError as e:
+            raise LLMConnectionError(f"Ollama connection failed: {e}") from e
 
-        thread = threading.Thread(target=_produce, daemon=True)
-        thread.start()
+        # Extract and yield stats from the final "done" line
+        stats = {k: last_data.get(k) for k in _OLLAMA_STAT_FIELDS if k in last_data}
+        if stats:
+            self.last_stats = stats
+            yield stats
 
-        while True:
-            kind, value = await loop.run_in_executor(None, q.get)
-            if kind == "done":
-                break
-            if kind == "error":
-                raise LLMStreamError(value)
-            yield value  # str or dict
+    def list_models(self) -> list[dict]:
+        """List models via /api/tags."""
+        url = f"{self._base_url()}/api/tags"
+        resp = self._request("GET", url).json()
+        return [
+            {
+                "name": m["name"],
+                "size": m.get("size"),
+                "family": m.get("details", {}).get("family"),
+            }
+            for m in resp.get("models", [])
+        ]
 
     def health_check(self) -> dict:
         url = f"{self._base_url()}/api/tags"

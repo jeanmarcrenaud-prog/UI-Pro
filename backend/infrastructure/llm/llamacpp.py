@@ -19,6 +19,16 @@ class LlamaCppBackend(OpenAICompatMixin, LLMBackend):
 
     backend_name = "llamacpp"
 
+    def list_models(self) -> list[dict]:
+        """List models via /v1/models."""
+        try:
+            url = f"{self._base_url()}/v1/models"
+            resp = self._request("GET", url).json()
+            return [{"name": m.get("id", "")} for m in resp.get("data", [])]
+        except Exception as e:
+            logger.warning("llama.cpp model listing failed: %s", e)
+            return []
+
     def health_check(self) -> dict:
         url = f"{self._base_url()}/health"
         result = self._measure("GET", url, timeout=min(self.config.timeout, 5))

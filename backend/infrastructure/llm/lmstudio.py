@@ -18,13 +18,13 @@ class LMStudioBackend(OpenAICompatMixin, LLMBackend):
 
     backend_name = "lmstudio"
 
-    def list_models(self) -> list[str]:
+    def list_models(self) -> list[dict]:
         """Get available models from LM Studio."""
         try:
             resp = self._request("GET", f"{self._base_url()}/api/v1/models")
             data = resp.json()
             items = data.get("data", [])
-            return [m.get("id", "") for m in items if m.get("id")]
+            return [{"name": m.get("id", "")} for m in items if m.get("id")]
         except Exception as e:
             logger.warning("LM Studio model listing failed: %s", e)
             return []
@@ -35,7 +35,7 @@ class LMStudioBackend(OpenAICompatMixin, LLMBackend):
         result["model"] = self.config.model
         if result["status"] == "ok":
             models = self.list_models()
-            result["available_models"] = models[:5]
+            result["available_models"] = [m["name"] for m in models[:5]]
         return result
 
 

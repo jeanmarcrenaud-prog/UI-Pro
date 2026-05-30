@@ -50,10 +50,15 @@ def get_backend(provider: str, config: ModelConfig | None = None) -> LLMBackend:
         }
         base_url = url_map.get(provider, settings.ollama_url)
         endpoint = "/api/generate" if provider == "ollama" else "/v1/chat/completions"
+
+        # Per-provider timeout (fallback to global llm_timeout)
+        backend_cfg = settings.backends.get(provider, {})
+        timeout = backend_cfg.get("timeout", settings.llm_timeout)
+
         config = ModelConfig(
             url=f"{base_url.rstrip('/')}{endpoint}",
             model=settings.model_fast,
-            timeout=settings.llm_timeout,
+            timeout=timeout,
             backend=provider,
         )
 

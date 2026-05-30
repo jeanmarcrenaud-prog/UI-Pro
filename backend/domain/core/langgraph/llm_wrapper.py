@@ -44,53 +44,46 @@ class LLMWrapper:
         tracker = LLMProgressTracker(backend=self.user_provider)
 
         try:
-            if hasattr(self.router, "astream"):
-                async for chunk in self.router.astream(
-                    prompt=prompt,
-                    model_type=model_type,
-                    temperature=temperature,
-                    model=self.user_model,
-                    provider=self.user_provider,
-                ):
-                    # Mise à jour du tracker
-                    speed = tracker.on_token(chunk)
+            async for chunk in self.router.astream(
+                prompt=prompt,
+                model_type=model_type,
+                temperature=temperature,
+                model=self.user_model,
+                provider=self.user_provider,
+            ):
+                # Mise à jour du tracker
+                speed = tracker.on_token(chunk)
 
-                    if speed is not None:
+                if speed is not None:
+                    try:
+                        from backend.domain.core.events import emit_agent_step
+
+                        emit_agent_step(
+                            "progress",
+                            f"[{self.user_provider.upper()}] {speed:.1f} tok/s",
+                        )
+                    except Exception:
+                        pass
+
+                # Yield seulement le contenu (pas les stats)
+                if isinstance(chunk, dict):
+                    if chunk.get("done") or chunk.get("usage"):
+                        # Stats finales
                         try:
                             from backend.domain.core.events import emit_agent_step
 
                             emit_agent_step(
-                                "progress",
-                                f"[{self.user_provider.upper()}] {speed:.1f} tok/s",
+                                "generation_stats",
+                                tracker.get_summary(),
+                                data=tracker.stats,
                             )
                         except Exception:
                             pass
-
-                    # Yield seulement le contenu (pas les stats)
-                    if isinstance(chunk, dict):
-                        if chunk.get("done") or chunk.get("usage"):
-                            # Stats finales
-                            try:
-                                from backend.domain.core.events import emit_agent_step
-
-                                emit_agent_step(
-                                    "generation_stats",
-                                    tracker.get_summary(),
-                                    data=tracker.stats,
-                                )
-                            except Exception:
-                                pass
-                            continue  # Ne pas envoyer les stats comme token
-                        if "content" in chunk:
-                            yield chunk["content"]
-                    else:
-                        yield str(chunk)
-            else:
-                # Fallback
-                full = await self.generate(prompt, model_type, temperature)
-                for i in range(0, len(full), 8):
-                    yield full[i : i + 8]
-                    await asyncio.sleep(0.015)
+                        continue  # Ne pas envoyer les stats comme token
+                    if "content" in chunk:
+                        yield chunk["content"]
+                else:
+                    yield str(chunk)
 
         except Exception as e:
             logger.error(f"Streaming error ({self.user_provider}): {e}")
