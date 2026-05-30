@@ -106,10 +106,14 @@ async def planning_node(state: AgentState) -> AgentState:
     _emit_step("planning", "Consultation du LLM pour le plan...")
     prompt = (
         f"User request: {user_message}\n\n"
-        "Create a detailed implementation plan as VALID JSON ONLY. "
-        "No markdown, no code blocks, no explanations - ONLY raw JSON.\n"
-        '{"steps": [{"description": "...", "file": "...", "approach": "..."}], "files": {"filename.py": "brief description"}}\n'
-        "Respond with ONLY the JSON object."
+        "Create a detailed implementation plan. Respond with ONLY this JSON structure — no markdown, no explanation, no code blocks:\n"
+        '{"steps": [{"description": "what to do", "file": "path/to/file.py", "approach": "how to do it"}], "files": {"filename.py": "brief description of this file"}}\n\n'
+        "Example:\n"
+        '{"steps": [{"description": "Create a function to fetch data", "file": "main.py", "approach": "Use requests library and handle errors"}], "files": {"main.py": "Entry point with fetch logic", "utils.py": "Helper functions"}}\n\n'
+        "Rules:\n"
+        "- steps must be a list (can be empty if no steps needed)\n"
+        "- files must be a dict with .py filenames as keys\n"
+        "- ONLY valid JSON — no markdown fences, no surrounding text"
     )
 
     full_response = await llm.run_node(
@@ -117,17 +121,51 @@ async def planning_node(state: AgentState) -> AgentState:
     )
 
     _emit_step("planning", "Parsing et validation du plan...")
-    try:
-        plan: PlanData = json.loads(full_response)
-    except json.JSONDecodeError:
-        json_match = re.search(r"\{[\s\S]*\}", full_response)
-        if json_match:
+
+    def _parse_plan(text: str) -> PlanData:
+        """Multi-strategy JSON extraction for plan."""
+        # Strategy 1: direct parse
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+
+        # Strategy 2: extract ```json block
+        json_block = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", text)
+        if json_block:
             try:
-                plan = json.loads(json_match.group(0))
-            except Exception:
-                plan = {"raw": full_response, "steps": [], "files": {}}
-        else:
-            plan = {"raw": full_response, "steps": [], "files": {}}
+                return json.loads(json_block.group(1))
+            except json.JSONDecodeError:
+                pass
+
+        # Strategy 3: first top-level {…} object
+        brace_match = re.search(r"\{[\s\S]*\}", text)
+        if brace_match:
+            try:
+                return json.loads(brace_match.group(0))
+            except json.JSONDecodeError:
+                pass
+
+        # Strategy 4: repair common LLM mistakes (trailing comma, single quotes)
+        import ast
+
+        cleaned = text.strip()
+        # Replace single quotes with double (except inside strings)
+        cleaned = re.sub(r"(?<!\\)'", '"', cleaned)
+        # Remove trailing commas before ]
+        cleaned = re.sub(r",\s*]", "]", cleaned)
+        # Remove trailing commas before }
+        cleaned = re.sub(r",\s*}", "}", cleaned)
+        try:
+            return json.loads(cleaned)
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+        # Fallback
+        logger.warning("Could not parse plan from LLM response, using empty plan")
+        return {"raw": text[:500], "steps": [], "files": {}}
+
+    plan = _parse_plan(full_response)
 
     state["plan"] = _clean_plan(plan)
     steps_count = len(state.get("plan", {}).get("steps", []))
@@ -145,11 +183,22 @@ async def coding_node(state: AgentState) -> AgentState:
     llm = LLMWrapper(_get_llm_router(), user_model, user_provider)
     user_message = _get_user_message(state)
     plan_clean = _clean_plan(state.get("plan", {}))
+    attempt = state.get("attempt", 0)
+    previous_error = state.get("error") or (state.get("execution_result") or {}).get("error")
 
-    _emit_step("coding", "Génération du code par LLM...")
-    prompt = (
-        f"User request: {user_message}\n\n"
-        f"Implementation plan: {json.dumps(plan_clean, ensure_ascii=False)}\n\n"
+    prompt_parts = [f"User request: {user_message}"]
+
+    if plan_clean:
+        prompt_parts.append(f"Implementation plan: {json.dumps(plan_clean, ensure_ascii=False)}")
+
+    if attempt > 0 and previous_error:
+        prompt_parts.append(
+            f"PREVIOUS EXECUTION FAILED (attempt {attempt}/{state.get('max_attempts', 3)}):\n"
+            f"Error: {previous_error[:500]}\n\n"
+            "Fix the code to resolve this error. Do NOT repeat the same mistake."
+        )
+
+    prompt_parts.append(
         "Write complete, working Python code.\n\n"
         "Output EACH file as a fenced code block with its filename on the line above:\n\n"
         "## main.py\n"
@@ -167,6 +216,7 @@ async def coding_node(state: AgentState) -> AgentState:
         "- If only one file, still use the ## filename.py / ```python format"
     )
 
+    prompt = "\n\n".join(prompt_parts)
     full_response = await llm.run_node(prompt, model_type="fast", temperature=0.3)
 
     _emit_step("coding", "Extraction et validation du code...")
@@ -188,18 +238,35 @@ async def reviewing_node(state: AgentState) -> AgentState:
     code = state.get("code", {})
 
     _emit_step("reviewing", "Vérification de la qualité du code...")
-    prompt = f"Analyse ce code de façon critique et retourne un JSON:\n{json.dumps(code, ensure_ascii=False)}"
+    prompt = (
+        "Analyse ce code de façon critique et retourne UNIQUEMENT ce JSON exact — "
+        "pas de markdown, pas d'explication, pas de blocs de code :\n\n"
+        '{"passed": true, "issues": ["description du problème"], "suggestions": ["conseil d\'amélioration"]}\n\n'
+        "Code à analyser :\n"
+        f"{json.dumps(code, ensure_ascii=False)}\n\n"
+        "Règles :\n"
+        "- passed=true si le code est correct et exécutable, false sinon\n"
+        "- issues : liste des problèmes concrets (vide si passed=true)\n"
+        "- suggestions : conseils d'amélioration (peut être vide)\n"
+        "- ONLY valid JSON — aucune autre texte"
+    )
 
     full_response = await llm.run_node(prompt, model_type="reasoning")
 
     try:
         review: ReviewData = json.loads(full_response)
+    except json.JSONDecodeError:
+        # Fallback: extraire bloc JSON
+        json_block = re.search(r"\{[\s\S]*\}", full_response)
+        if json_block:
+            try:
+                review = json.loads(json_block.group(0))
+            except Exception:
+                review = {"passed": False, "issues": ["Parse error"], "suggestions": ["Could not parse review response"]}
+        else:
+            review = {"passed": False, "issues": ["Parse error"], "suggestions": ["Could not parse review response"]}
     except Exception:
-        review: ReviewData = {
-            "passed": False,
-            "issues": [],
-            "suggestions": ["Could not parse review"],
-        }
+        review = {"passed": False, "issues": ["Parse error"], "suggestions": ["Could not parse review response"]}
 
     state["review"] = review
     if review.get("passed"):
