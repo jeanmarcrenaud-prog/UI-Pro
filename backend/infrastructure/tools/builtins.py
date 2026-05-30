@@ -106,21 +106,6 @@ def _safe_eval(expr: str) -> float:
     return parse_add_sub(tokens)
 
 
-async def tool_search_memory(arguments: dict) -> Any:
-    """Search memory tool"""
-    query = arguments.get("query", "")
-    k = arguments.get("k", 3)
-
-    try:
-        from ..memory_service import get_memory_service
-
-        memory = get_memory_service()
-        results = memory.search(query, k=k)
-        return {"query": query, "results": results}
-    except Exception as e:
-        return {"error": f"Memory search failed: {e!s}"}
-
-
 async def tool_get_time(arguments: dict) -> Any:
     """Get current time tool"""
     return {"datetime": datetime.now().isoformat()}

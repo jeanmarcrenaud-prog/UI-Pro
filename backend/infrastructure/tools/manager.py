@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any
 
 from .models import Tool, ToolParameter
-from .builtins import tool_calculator, tool_get_time, tool_search_memory
+from .builtins import tool_calculator, tool_get_time
 
 logger = logging.getLogger(__name__)
 
@@ -152,8 +152,6 @@ class ToolManager:
         keyword_tools = {
             "calculate": "calculator",
             "math": "calculator",
-            "remember": "search_memory",
-            "search": "search_memory",
             "time": "get_time",
             "clock": "get_time",
         }
@@ -192,20 +190,6 @@ def get_tool_manager() -> ToolManager:
                 handler=tool_calculator,
                 category="utility",
                 timeout_seconds=10,
-            )
-        )
-
-        _tool_manager.register(
-            Tool(
-                name="search_memory",
-                description="Search the memory/knowledge base",
-                parameters=[
-                    ToolParameter("query", "string", "Search query", required=True),
-                    ToolParameter("k", "number", "Number of results", required=False),
-                ],
-                handler=tool_search_memory,
-                category="memory",
-                timeout_seconds=30,
             )
         )
 
