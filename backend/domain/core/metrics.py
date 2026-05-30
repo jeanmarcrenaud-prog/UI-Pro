@@ -5,7 +5,7 @@ Metrics Module - Track execution statistics and persist to disk.
 import json
 import logging
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -216,13 +216,4 @@ def get_metrics() -> Metrics:
     return get_metrics_manager().get_metrics()
 
 
-def get_dashboard_data() -> dict:
-    """Get data formatted for dashboard display"""
-    mgr = get_metrics_manager()
-    metrics = mgr.get_metrics()
 
-    return {
-        "metrics": asdict(metrics),
-        "success_rate": mgr.get_success_rate(),
-        "recent": mgr.get_recent_records(limit=10),
-    }
