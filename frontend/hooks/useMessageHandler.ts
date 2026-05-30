@@ -7,6 +7,7 @@ import { useEffect, useCallback, useRef } from 'react'
 import { chatService } from '@/services/chatService'
 import { events } from '@/lib/events'
 import { normalizeMessage } from '@/lib/messageAdapter'
+import { debugLogger } from '@/lib/debug/logger'
 import type { AgentStep } from '@/lib/types'
 
 interface UseMessageHandlerProps {
@@ -68,6 +69,7 @@ export const useMessageHandler = ({
     if (normalized.type === 'step' && normalized.stepId) {
       const stepName = normalized.stepId.replace('step-', '').replace('-', ' ')
       addLog(`[STEP] ${stepName}: ${normalized.content || normalized.status}`)
+      debugLogger.log('step', normalized.content || normalized.status, { step: stepName })
       updateStep(normalized.stepId, normalized.status === 'done' ? 'done' : 'active', normalized.content)
       return
     }
@@ -75,6 +77,7 @@ export const useMessageHandler = ({
     // === TOKEN STREAMING ===
     if (normalized.type === 'token' && normalized.content) {
       contentRef.current += normalized.content
+      debugLogger.logToken(normalized.content)
 
       // Use real token count if provided, otherwise estimate
       if (normalized.tokenCount !== undefined) {
