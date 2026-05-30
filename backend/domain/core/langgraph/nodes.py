@@ -150,9 +150,21 @@ async def coding_node(state: AgentState) -> AgentState:
     prompt = (
         f"User request: {user_message}\n\n"
         f"Implementation plan: {json.dumps(plan_clean, ensure_ascii=False)}\n\n"
-        "IMPORTANT: Return ONLY valid JSON. No markdown, no explanations.\n"
-        '{"files": {"filename.py": "python code - NO comments, NO docstrings, ONLY executable code"}}\n'
-        "Write complete, working Python code. No prose, no comments, no markdown."
+        "Write complete, working Python code.\n\n"
+        "Output EACH file as a fenced code block with its filename on the line above:\n\n"
+        "## main.py\n"
+        "```python\n"
+        "# python code here\n"
+        "```\n\n"
+        "## utils.py\n"
+        "```python\n"
+        "# python code here\n"
+        "```\n\n"
+        "Rules:\n"
+        "- Every filename MUST end with .py\n"
+        "- Write real, complete, executable code with all imports\n"
+        "- No prose, no explanations, no thinking — only the code blocks\n"
+        "- If only one file, still use the ## filename.py / ```python format"
     )
 
     full_response = await llm.run_node(prompt, model_type="fast", temperature=0.3)

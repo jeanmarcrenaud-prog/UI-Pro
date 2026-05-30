@@ -124,16 +124,61 @@ def extract_code_dict(response: str) -> dict[str, Any]:
     return _finalize(code_dict)
 
 
+def _extract_filename_from_header(text: str, block_start: int) -> str | None:
+    """Look for '## filename.py' header on the line before a ```python block.
+
+    Searches backward from block_start for a '## name.py' pattern
+    on the nearest non-empty line.
+    """
+    before = text[:block_start].rstrip()
+    lines = before.split("\n")
+    for line in reversed(lines):
+        line = line.strip()
+        if not line:
+            continue
+        m = re.match(r"^##\s+([\w./-]+\.py)\s*$", line)
+        if m:
+            return m.group(1)
+        # Also accept '# filename: file.py'
+        m = re.match(r"^#\s*filename:\s*([\w./-]+\.py)\s*$", line)
+        if m:
+            return m.group(1)
+        break  # stop at first non-empty line before block
+    return None
+
+
 def _strategy_python_blocks(text: str) -> dict[str, Any] | None:
-    """Strategy 1: Extract ```python code blocks."""
-    py_blocks = re.findall(r"```python\s*([\s\S]*?)```", text)
-    if not py_blocks:
+    """Strategy 1: Extract ```python code blocks with filenames."""
+    # Find all ```python blocks with their positions
+    blocks: list[tuple[int, str]] = []
+    for m in re.finditer(r"```python\s*([\s\S]*?)```", text):
+        blocks.append((m.start(), m.group(1)))
+
+    if not blocks:
         return None
+
     files: dict[str, str] = {}
-    for i, block in enumerate(py_blocks):
-        block = block.strip()
+    seen_names: dict[str, int] = {}
+
+    for block_start, block_content in blocks:
+        block = block_content.strip()
         if not block:
             continue
+
+        # Try to extract filename from header before the block
+        fname = _extract_filename_from_header(text, block_start)
+        if not fname:
+            fname = f"file_{len(files) + 1}.py"
+
+        # Deduplicate filenames
+        if fname in seen_names:
+            seen_names[fname] += 1
+            base, ext = fname.rsplit(".", 1)
+            fname = f"{base}_{seen_names[fname]}.{ext}"
+        else:
+            seen_names[fname] = 1
+
+        # Normalize indentation
         lines = block.expandtabs(4).split("\n")
         non_empty = [l for l in lines if l.strip()]
         if not non_empty:
@@ -146,18 +191,21 @@ def _strategy_python_blocks(text: str) -> dict[str, Any] | None:
             else:
                 fixed_lines.append("")
         normalized = "\n".join(fixed_lines).strip()
+
         try:
-            validated = ExtractedFile(name=f"file_{i + 1}.py", content=normalized)
+            validated = ExtractedFile(name=fname, content=normalized)
             normalized = validated.content
         except ValueError:
             fixed = fix_indentation(normalized)
             try:
-                validated = ExtractedFile(name=f"file_{i + 1}.py", content=fixed)
+                validated = ExtractedFile(name=fname, content=fixed)
                 normalized = validated.content
             except ValueError:
                 normalized = textwrap.dedent(normalized).strip()
+
         if normalized.strip():
-            files[f"file_{i + 1}.py"] = normalized + "\n"
+            files[fname] = normalized + "\n"
+
     if not files:
         return None
     logger.info("Strategy 1 (```python blocks): %d files extracted", len(files))
