@@ -185,12 +185,21 @@ class ModelDiscovery:
                 continue
             all_models.extend(result)
 
-        # Compléter avec l'état VRAM (Ollama uniquement)
+        # Compléter avec l'état VRAM (Ollama)
         loaded_map = await self._get_loaded_ollama_models()
         for model in all_models:
             if model.backend == "ollama" and model.name in loaded_map:
                 model.is_loaded = True
                 model.size_vram_gb = loaded_map[model.name]
+
+        # Compléter avec l'état VRAM (Lemonade) par sonde légère
+        lemonade_models = [m.name for m in all_models if m.backend == "lemonade"]
+        if lemonade_models:
+            loaded_lemonade = await self._get_loaded_lemonade_models(lemonade_models)
+            for model in all_models:
+                if model.backend == "lemonade" and model.name in loaded_lemonade:
+                    model.is_loaded = True
+                    model.size_vram_gb = loaded_lemonade[model.name]
 
         all_models.sort(key=lambda m: (m.backend, m.name))
         self._cache.set("all", all_models)
@@ -273,6 +282,62 @@ class ModelDiscovery:
             }
         except Exception as e:
             logger.debug("Ollama loaded models check failed: %s", e)
+            return {}
+
+    async def _get_loaded_lemonade_models(
+        self, model_names: list[str]
+    ) -> dict[str, float | None]:
+        """Détermine les modèles Lemonade chargés en VRAM par sonde légère.
+
+        Envoie une requête minimaliste (max_tokens=1) à chaque modèle
+        en parallèle. Si le modèle répond sous 3s, il est considéré chargé.
+        """
+        if not model_names:
+            return {}
+
+        try:
+            import asyncio
+            import httpx
+            from models.settings import settings
+
+            base_url = settings.lemonade_url.rstrip("/")
+            chat_url = f"{base_url}/v1/chat/completions"
+
+            async def _probe(name: str) -> tuple[str, float | None] | None:
+                try:
+                    start = time.monotonic()
+                    async with httpx.AsyncClient(timeout=3.0) as client:
+                        resp = await client.post(
+                            chat_url,
+                            json={
+                                "model": name,
+                                "messages": [{"role": "user", "content": "hi"}],
+                                "max_tokens": 1,
+                                "stream": False,
+                            },
+                        )
+                        elapsed = time.monotonic() - start
+                        if resp.status_code == 200:
+                            return (name, round(elapsed, 2))
+                        return None
+                except Exception:
+                    return None
+
+            results = await asyncio.gather(*[_probe(n) for n in model_names])
+            loaded = {}
+            for r in results:
+                if r is not None:
+                    loaded[r[0]] = r[1]
+            if loaded:
+                logger.info(
+                    "Lemonade loaded models (%d/%d): %s",
+                    len(loaded),
+                    len(model_names),
+                    list(loaded.keys()),
+                )
+            return loaded
+        except Exception as e:
+            logger.debug("Lemonade loaded models check failed: %s", e)
             return {}
 
     # ── Health ──────────────────────────────────────────────────

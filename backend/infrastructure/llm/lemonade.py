@@ -86,11 +86,21 @@ class LemonadeBackend(OpenAICompatMixin, LLMBackend):
                         continue
 
     def list_models(self) -> list[dict]:
-        """List models via /v1/models."""
+        """List models via /v1/models, returns all available fields."""
         try:
             url = f"{self._base_url()}/v1/models"
             resp = self._request("GET", url).json()
-            return [{"name": m.get("id", "")} for m in resp.get("data", [])]
+            return [
+                {
+                    "name": m.get("id", ""),
+                    "size": m.get("size"),
+                    "parameter_size": m.get("parameter_size") or m.get("details", {}).get("parameter_size"),
+                    "quantization_level": m.get("quantization_level") or m.get("details", {}).get("quantization_level"),
+                    "family": m.get("family") or m.get("details", {}).get("family"),
+                }
+                for m in resp.get("data", [])
+                if m.get("id")
+            ]
         except Exception as e:
             logger.debug("Lemonade model listing failed: %s", e)
             return []
