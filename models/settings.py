@@ -1,8 +1,20 @@
 """
-models/settings.py - Settings exports
+models/settings.py - Settings exports (DEPRECATED shim)
 
 Imports from the unified pydantic-settings based configuration.
+
+.. deprecated::
+    Import directly from ``backend.domain.settings`` instead. This module
+    is kept for backward compatibility and will be removed in a future release.
 """
+
+import warnings as _warnings
+
+_warnings.warn(
+    "models.settings is deprecated, import from backend.domain.settings instead",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 from backend.domain.settings import (
     DEFAULT_PRESETS,
