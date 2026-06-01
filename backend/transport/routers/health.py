@@ -4,7 +4,7 @@ import asyncio
 import time
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
 from pydantic import BaseModel
 
 from models.settings import settings
@@ -97,7 +97,20 @@ def _get_gpu_info() -> dict[str, Any] | None:
 
 @router.get("/health")
 async def health_check():
-    """Health check for orchestration tools (Docker, Kubernetes, etc.)"""
+    """Fast liveness probe for orchestration tools (Docker, Kubernetes, load balancers).
+
+    Returns within ~50ms. For deep diagnostics, call /health/deep.
+    """
+    return {
+        "status": "ok",
+        "timestamp": time.time(),
+        "version": getattr(settings, "version", "1.0.0"),
+    }
+
+
+@router.get("/health/deep")
+async def health_check_deep():
+    """Deep health check: dependencies + backends + GPU. May take up to 4s."""
     # Check dependencies and backends in parallel
     deps_task = asyncio.create_task(_check_dependencies())
     backend_health_task = asyncio.create_task(asyncio.to_thread(_check_backends))
@@ -218,15 +231,17 @@ async def status():
 
 
 @router.get("/api/models")
-async def get_models():
+async def get_models(response: Response):
     """Get all discovered models"""
+    response.headers["Cache-Control"] = "public, max-age=15"
     from backend.infrastructure.model_discovery import get_model_discovery, get_models_summary
 
     discovery = get_model_discovery()
     all_models = await discovery.discover_all()
+    model_summaries = get_models_summary(all_models)
     return {
-        "models": get_models_summary(all_models),
-        "loaded_count": 0,
+        "models": model_summaries,
+        "loaded_count": sum(1 for m in model_summaries if m.get("is_loaded")),
     }
 
 
@@ -344,9 +359,9 @@ async def update_settings(body: FullSettingsRequest):
         if body.log_level is not None:
             updates["log_level"] = body.log_level
 
-        # Apply updates
+        # Apply updates via set_runtime_override so singletons get invalidated
         for key, value in updates.items():
-            setattr(settings, key, value)
+            settings.set_runtime_override(key, value)
 
         return {"status": "ok", "updated": list(updates.keys())}
     except Exception as e:

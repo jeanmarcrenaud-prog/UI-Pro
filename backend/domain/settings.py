@@ -207,6 +207,12 @@ class Settings(BaseSettings):
 
         self.backends = deepcopy(self.backends_template)
 
+        if self.llm_timeout < 60:
+            logger.warning(
+                f"llm_timeout={self.llm_timeout}s is too short for larger models, "
+                f"recommended >= 120s. Adjust .env or use Settings UI."
+            )
+
     # Runtime only (excluded from init)
     runtime_overrides: dict[str, Any] = Field(
         default_factory=dict, exclude=True, init=False
@@ -291,6 +297,16 @@ class Settings(BaseSettings):
         self.runtime_overrides[key] = value
         if hasattr(self, key):
             setattr(self, key, value)
+        self._invalidate_provider_singletons()
+
+    def _invalidate_provider_singletons(self) -> None:
+        """Reset cached router so runtime changes (model, URL, provider) take effect."""
+        try:
+            import backend.domain.core.langgraph.nodes as _nodes
+
+            _nodes._llm_router_instance = None
+        except Exception:
+            pass
 
     def clear_runtime_override(self, key: str) -> None:
         self.runtime_overrides.pop(key, None)
