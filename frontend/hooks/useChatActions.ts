@@ -37,8 +37,12 @@ export const useChatActions = () => {
   const safetyTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const getCurrentModelInfo = useCallback(() => {
+    // Strip any provider prefix from persisted selectedModel for lookup
+    // (handles migration from old prefixed ID format)
+    const strippedSelected = selectedModel.replace(/^(ollama|lmstudio|lemonade|llamacpp)-/, '')
+
     const modelInfo = availableModels.find(m =>
-      m.name === selectedModel || m.id === selectedModel
+      m.name === strippedSelected || m.id === strippedSelected || m.id === selectedModel
     )
 
     const provider = modelInfo?.provider || 'ollama'
@@ -47,7 +51,7 @@ export const useChatActions = () => {
       : 'qwen3.6:latest'
 
     return {
-      model: modelInfo?.id || selectedModel || fallbackModel,
+      model: modelInfo?.id || strippedSelected || fallbackModel,
       provider,
     }
   }, [selectedModel, availableModels])

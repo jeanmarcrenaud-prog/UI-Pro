@@ -113,6 +113,16 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.debug(f"Checkpoint cleanup on startup skipped: {e}")
 
+    # Pre-initialize memory manager (FAISS + sentence_transformers are heavy)
+    # to avoid paying the import cost on the first health check request
+    try:
+        from backend.infrastructure.memory import get_memory_manager
+
+        mem = get_memory_manager()
+        logger.info(f"Memory manager initialized ({mem._vector_index.ntotal} vectors)")
+    except Exception as e:
+        logger.warning(f"Memory manager init failed: {e}")
+
     yield
 
     # Shutdown

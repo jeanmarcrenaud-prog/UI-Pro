@@ -104,7 +104,7 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
     const handleModelsDiscovered = (data: { models: Array<Record<string, unknown>> }) => {
       if (data.models && data.models.length > 0) {
         setAvailableModels(data.models.map(m => ({ 
-          id: `${m.provider}-${m.name}` as string,
+          id: m.name as string,
           name: m.name as string, 
           provider: m.provider as 'ollama' | 'lmstudio' | 'lemonade',
           parameterSize: m.parameterSize as string | undefined,
