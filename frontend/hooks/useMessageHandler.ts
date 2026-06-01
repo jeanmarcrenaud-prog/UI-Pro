@@ -28,7 +28,7 @@ interface UseMessageHandlerProps {
   initialSteps: AgentStep[]
 }
 
-const STEP_ORDER = ['step-analyzing', 'step-planning', 'step-executing', 'step-reviewing'] as const
+const STEP_ORDER = ['step-analyzing', 'step-planning', 'step-coding', 'step-reviewing', 'step-executing'] as const
 
 export const useMessageHandler = ({
   assistantMessageIdRef,
@@ -173,10 +173,11 @@ export const useMessageHandler = ({
     if (!isStreamActiveRef.current) return
 
     // Quand un nouveau step devient actif, marquer le précédent comme done
+    // NOTE: ne PAS passer data.content ici — ça écraserait le detail du step précédent
     if (data.status === 'active') {
       const currentIdx = STEP_ORDER.indexOf(data.stepId as typeof STEP_ORDER[number])
       if (currentIdx > 0) {
-        updateStep(STEP_ORDER[currentIdx - 1], 'done', data.content)
+        updateStep(STEP_ORDER[currentIdx - 1], 'done')
       }
     }
 

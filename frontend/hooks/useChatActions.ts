@@ -59,8 +59,9 @@ export const useChatActions = () => {
   const initialSteps: AgentStep[] = [
     { id: 'step-analyzing', title: 'Analyzing request', status: 'pending' },
     { id: 'step-planning', title: 'Planning solution', status: 'pending' },
+    { id: 'step-coding', title: 'Generating code', status: 'pending' },
+    { id: 'step-reviewing', title: 'Reviewing code', status: 'pending' },
     { id: 'step-executing', title: 'Executing', status: 'pending' },
-    { id: 'step-reviewing', title: 'Reviewing', status: 'pending' },
   ]
 
   const initializeNewGeneration = useCallback(async (

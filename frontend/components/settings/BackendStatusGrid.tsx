@@ -50,7 +50,7 @@ export function BackendStatusGrid({ className = '' }: BackendStatusGridProps) {
         {backendInfo.map((backend) => (
           <div 
             key={backend.name} 
-            className={`bg-[#0f172a] rounded-xl p-4 border transition-all duration-200 hover:shadow-[0_0_20px_rgba(168,85,247,0.1)] ${
+            className={`glass-panel rounded-xl p-4 transition-all duration-200 hover:shadow-[0_0_20px_rgba(168,85,247,0.1)] ${
               backend.status === 'active' 
                 ? 'border-emerald-500/30 hover:border-emerald-400/50' 
                 : backend.status === 'error'

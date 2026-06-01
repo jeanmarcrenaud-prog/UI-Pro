@@ -8,7 +8,7 @@ export function ModelCountCard() {
   const modelCount = models.length
 
   return (
-    <section className="bg-[#0f172a] rounded-xl p-4 border border-slate-700/50">
+    <section className="glass-panel rounded-xl p-4">
       <h3 className="text-[11px] uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
         📊 Modèles
       </h3>

@@ -13,6 +13,94 @@ from .repair import fix_indentation, fix_syntax_errors
 
 logger = logging.getLogger(__name__)
 
+# Language → file extension mapping for generic code blocks (Strategy 6)
+LANG_EXTENSIONS: dict[str, str] = {
+    "powershell": ".ps1",
+    "ps1": ".ps1",
+    "posh": ".ps1",
+    "bash": ".sh",
+    "sh": ".sh",
+    "shell": ".sh",
+    "zsh": ".sh",
+    "javascript": ".js",
+    "js": ".js",
+    "node": ".js",
+    "typescript": ".ts",
+    "ts": ".ts",
+    "jsx": ".jsx",
+    "tsx": ".tsx",
+    "html": ".html",
+    "htm": ".html",
+    "css": ".css",
+    "scss": ".scss",
+    "less": ".less",
+    "yaml": ".yaml",
+    "yml": ".yaml",
+    "toml": ".toml",
+    "ini": ".ini",
+    "cfg": ".ini",
+    "conf": ".conf",
+    "dockerfile": "Dockerfile",
+    "docker": "Dockerfile",
+    "sql": ".sql",
+    "rust": ".rs",
+    "rs": ".rs",
+    "go": ".go",
+    "golang": ".go",
+    "java": ".java",
+    "c": ".c",
+    "cpp": ".cpp",
+    "c++": ".cpp",
+    "cxx": ".cpp",
+    "h": ".h",
+    "hpp": ".hpp",
+    "ruby": ".rb",
+    "rb": ".rb",
+    "php": ".php",
+    "swift": ".swift",
+    "kotlin": ".kt",
+    "kt": ".kt",
+    "scala": ".scala",
+    "r": ".r",
+    "R": ".r",
+    "lua": ".lua",
+    "pl": ".pl",
+    "pm": ".pm",
+    "perl": ".pl",
+    "cs": ".cs",
+    "csharp": ".cs",
+    "fs": ".fs",
+    "fsharp": ".fs",
+    "zig": ".zig",
+    "nim": ".nim",
+    "elixir": ".ex",
+    "ex": ".ex",
+    "exs": ".exs",
+    "erlang": ".erl",
+    "erl": ".erl",
+    "haskell": ".hs",
+    "hs": ".hs",
+    "clojure": ".clj",
+    "clj": ".clj",
+    "cljs": ".cljs",
+    "makefile": "Makefile",
+    "make": "Makefile",
+    "batch": ".bat",
+    "bat": ".bat",
+    "cmd": ".cmd",
+    "diff": ".diff",
+    "patch": ".patch",
+    "xml": ".xml",
+    "svg": ".svg",
+    "text": ".txt",
+    "plain": ".txt",
+    "markdown": ".md",
+    "md": ".md",
+    "env": ".env",
+    "json": ".json",
+    "jsonc": ".jsonc",
+}
+
 # Préambules LLM fréquents à ignorer
 _LLM_PREAMBLE_PATTERNS = re.compile(
     r"^(#|//|-\s*)?(Thinking|Analyzing|Reasoning|Here'?s|Here is|Let me|I'?ll|The (solution|code|approach|best)|Code[:\s]|Voici|Je vais|Analyse)",
@@ -73,14 +161,15 @@ def extract_code_dict(response: str) -> dict[str, Any]:
 
     Strategies:
     1. Extract ```python code blocks
-    2. Extract ```json blocks (common LLM format)
-    3. Direct JSON parse of cleaned response
-    4. Find JSON object with "files" key (stack-based brace matching)
-    5. Direct Python code detection
-    6. Fallback: return raw response as main.py
+    2. Extract generic ```<language> blocks (powershell, bash, js, etc.)
+    3. Extract ```json blocks (common LLM format)
+    4. Direct JSON parse of cleaned response
+    5. Find JSON object with "files" key (stack-based brace matching)
+    6. Direct Python code detection
+    7. Fallback: return raw response as main.py
 
     Returns:
-        dict with "files" key mapping filenames to Python code strings
+        dict with "files" key mapping filenames to code strings
     """
     raw = response.strip()
     response_clean = _strip_llm_preamble(raw)
@@ -93,42 +182,46 @@ def extract_code_dict(response: str) -> dict[str, Any]:
     if code_dict is None:
         code_dict = _strategy_python_blocks(response_clean)
 
+    # Strategy 2: Extract generic ```<language> blocks (powershell, bash, etc.)
+    if code_dict is None:
+        code_dict = _strategy_generic_blocks(response_clean)
+
     response_clean = re.sub(
         r"^```(?:json|python)?\s*", "", response_clean, flags=re.MULTILINE
     )
     response_clean = re.sub(r"\s*```$", "", response_clean)
     response_clean = response_clean.strip()
 
-    # Strategy 2: Extract ```json blocks
+    # Strategy 3: Extract ```json blocks
     if code_dict is None:
         code_dict = _strategy_json_blocks(response_clean)
 
-    # Strategy 3: Direct JSON parse
+    # Strategy 4: Direct JSON parse
     if code_dict is None:
         code_dict = _strategy_direct_json(response_clean)
 
-    # Strategy 4: Brace-matched JSON with "files" key
+    # Strategy 5: Brace-matched JSON with "files" key
     if code_dict is None:
         code_dict = _strategy_brace_json(response_clean)
 
-    # Strategy 5: Direct Python code detection
+    # Strategy 6: Direct Python code detection
     if code_dict is None:
         code_dict = _strategy_pure_python(response_clean)
 
-    # Fallback
+    # Fallback (Strategy 7)
     if code_dict is None:
         code_dict = {"files": {"main.py": response_clean}}
-        logger.info("Fallback: raw response as main.py (%d chars)", len(response_clean))
+        logger.info("Fallback (strategy 7): raw response as main.py (%d chars)", len(response_clean))
 
     # Final validation — salvage chain
     return _finalize(code_dict)
 
 
 def _extract_filename_from_header(text: str, block_start: int) -> str | None:
-    """Look for '## filename.py' header on the line before a ```python block.
+    """Look for '## filename.ext' header on the line before a code block.
 
-    Searches backward from block_start for a '## name.py' pattern
-    on the nearest non-empty line.
+    Searches backward from block_start for a '## name.ext' pattern
+    on the nearest non-empty line. Accepts any extension.
     """
     before = text[:block_start].rstrip()
     lines = before.split("\n")
@@ -136,11 +229,15 @@ def _extract_filename_from_header(text: str, block_start: int) -> str | None:
         line = line.strip()
         if not line:
             continue
-        m = re.match(r"^##\s+([\w./-]+\.py)\s*$", line)
+        m = re.match(r"^##\s+([\w./-]+\.[\w]+)\s*$", line)
         if m:
             return m.group(1)
-        # Also accept '# filename: file.py'
-        m = re.match(r"^#\s*filename:\s*([\w./-]+\.py)\s*$", line)
+        # Also accept '# filename: file.ext'
+        m = re.match(r"^#\s*filename:\s*([\w./-]+\.[\w]+)\s*$", line)
+        if m:
+            return m.group(1)
+        # Also accept '// filename.ext' (JS/TS comment style)
+        m = re.match(r"^//\s+([\w./-]+\.[\w]+)\s*$", line)
         if m:
             return m.group(1)
         break  # stop at first non-empty line before block
@@ -212,15 +309,88 @@ def _strategy_python_blocks(text: str) -> dict[str, Any] | None:
     return {"files": files}
 
 
+def _strategy_generic_blocks(text: str) -> dict[str, Any] | None:
+    """Strategy 2: Extract generic ```<language> code blocks (non-Python, non-JSON).
+
+    Maps language identifiers (powershell, bash, js, etc.) to file extensions.
+    Looks for ## filename.ext headers before the block.
+    """
+    blocks: list[tuple[int, str, str]] = []
+    for m in re.finditer(r"```(\w+)\s*\n([\s\S]*?)```", text):
+        lang = m.group(1).lower()
+        # Skip python and json — handled by strategies 1 & 3
+        if lang in ("python", "py", "json"):
+            continue
+        blocks.append((m.start(), lang, m.group(2)))
+
+    if not blocks:
+        return None
+
+    files: dict[str, str] = {}
+    seen_names: dict[str, int] = {}
+
+    for block_start, lang, block_content in blocks:
+        block = block_content.strip()
+        if not block:
+            continue
+
+        # Try filename from header before block
+        fname = _extract_filename_from_header(text, block_start)
+        if not fname:
+            ext = LANG_EXTENSIONS.get(lang, f".{lang}")
+            fname = f"script{ext}"
+
+        # Deduplicate filenames
+        if fname in seen_names:
+            seen_names[fname] += 1
+            dot_idx = fname.rfind(".")
+            if dot_idx != -1:
+                fname = f"{fname[:dot_idx]}_{seen_names[fname]}{fname[dot_idx:]}"
+            else:
+                fname = f"{fname}_{seen_names[fname]}"
+        else:
+            seen_names[fname] = 1
+
+        # Normalize indentation (strip common leading whitespace)
+        lines = block.expandtabs(4).split("\n")
+        non_empty = [l for l in lines if l.strip()]
+        if not non_empty:
+            continue
+        min_indent = min(len(l) - len(l.lstrip()) for l in non_empty)
+        fixed_lines: list[str] = []
+        for line in lines:
+            if line.strip():
+                fixed_lines.append(line[min_indent:])
+            else:
+                fixed_lines.append("")
+        normalized = "\n".join(fixed_lines).strip()
+
+        # Validate with ExtractedFile (skips Python compile for non-.py files)
+        try:
+            validated = ExtractedFile(name=fname, content=normalized)
+            normalized = validated.content
+        except ValueError:
+            # If validation fails, include but warn
+            logger.warning("Generic block '%s' failed validation: keeping raw", fname)
+
+        if normalized.strip():
+            files[fname] = normalized + "\n"
+
+    if not files:
+        return None
+    logger.info("Strategy 2 (generic code blocks): %d file(s) extracted", len(files))
+    return {"files": files}
+
+
 def _strategy_json_blocks(text: str) -> dict[str, Any] | None:
-    """Strategy 2: Extract ```json blocks."""
+    """Strategy 3: Extract ```json blocks."""
     json_blocks = re.findall(r"```json\s*([\s\S]*?)```", text)
     for block in json_blocks:
         try:
             candidate = json.loads(block.strip())
             if isinstance(candidate, dict) and "files" in candidate:
                 extracted = ExtractedCode.model_validate(candidate)
-                logger.info("Strategy 2 (```json blocks): %d files extracted", len(candidate["files"]))
+                logger.info("Strategy 3 (```json blocks): %d files extracted", len(candidate["files"]))
                 return extracted.to_dict()
         except (json.JSONDecodeError, ValueError, TypeError, KeyError):
             continue
@@ -228,12 +398,12 @@ def _strategy_json_blocks(text: str) -> dict[str, Any] | None:
 
 
 def _strategy_direct_json(text: str) -> dict[str, Any] | None:
-    """Strategy 3: Direct JSON parse of the whole response."""
+    """Strategy 4: Direct JSON parse of the whole response."""
     try:
         candidate = json.loads(text)
         if isinstance(candidate, dict) and "files" in candidate:
             extracted = ExtractedCode.model_validate(candidate)
-            logger.info("Strategy 3 (direct JSON): %d files extracted", len(candidate["files"]))
+            logger.info("Strategy 4 (direct JSON): %d files extracted", len(candidate["files"]))
             return extracted.to_dict()
     except (json.JSONDecodeError, ValueError, TypeError, KeyError):
         pass
@@ -241,7 +411,7 @@ def _strategy_direct_json(text: str) -> dict[str, Any] | None:
 
 
 def _strategy_brace_json(text: str) -> dict[str, Any] | None:
-    """Strategy 4: Find JSON object with 'files' key via brace counter."""
+    """Strategy 5: Find JSON object with 'files' key via brace counter."""
     json_objects = _find_json_objects(text)
     for obj_str in json_objects:
         try:
@@ -264,7 +434,7 @@ def _strategy_brace_json(text: str) -> dict[str, Any] | None:
                     except ValueError:
                         pass
             if valid_files:
-                logger.info("Strategy 4 (brace-matched JSON): %d files extracted", len(valid_files))
+                logger.info("Strategy 5 (brace-matched JSON): %d files extracted", len(valid_files))
                 return {"files": valid_files}
         except (json.JSONDecodeError, TypeError, KeyError):
             continue
@@ -272,10 +442,10 @@ def _strategy_brace_json(text: str) -> dict[str, Any] | None:
 
 
 def _strategy_pure_python(text: str) -> dict[str, Any] | None:
-    """Strategy 5: Detect and return pure Python code."""
+    """Strategy 6: Detect and return pure Python code."""
     py_start = re.match(r"^\s*(?:def\s+\w+|class\s+\w+|import\s+|from\s+)", text)
     if py_start:
-        logger.info("Strategy 5 (pure Python detected): main.py")
+        logger.info("Strategy 6 (pure Python detected): main.py")
         return {"files": {"main.py": text}}
     return None
 

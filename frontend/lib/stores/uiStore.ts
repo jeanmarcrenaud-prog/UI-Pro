@@ -34,16 +34,46 @@ interface UIState {
   // Model
   selectedModel: string
   setSelectedModel: (model: string) => void
-  availableModels: { id: string; name: string; provider: string; isLoaded?: boolean; sizeVramGb?: number }[]
-  setAvailableModels: (models: { id: string; name: string; provider: string; isLoaded?: boolean; sizeVramGb?: number }[]) => void
+  availableModels: {
+    id: string
+    name: string
+    provider: string
+    isLoaded?: boolean
+    sizeVramGb?: number
+    sizeGb?: number
+    parameterSize?: string
+    quantization?: string
+    speedTier?: 'very_fast' | 'fast' | 'medium' | 'slow'
+    maxContext?: number
+    capabilities?: string[]
+    isCoder?: boolean
+    isReasoning?: boolean
+    isVision?: boolean
+  }[]
+  setAvailableModels: (models: {
+    id: string
+    name: string
+    provider: string
+    isLoaded?: boolean
+    sizeVramGb?: number
+    sizeGb?: number
+    parameterSize?: string
+    quantization?: string
+    speedTier?: 'very_fast' | 'fast' | 'medium' | 'slow'
+    maxContext?: number
+    capabilities?: string[]
+    isCoder?: boolean
+    isReasoning?: boolean
+    isVision?: boolean
+  }[]) => void
 
   // Locale
   locale: 'en' | 'fr'
   setLocale: (locale: 'en' | 'fr') => void
 
   // Theme
-  theme: 'dark' | 'light'
-  setTheme: (theme: 'dark' | 'light') => void
+  theme: 'dark' | 'light' | 'purple-rain'
+  setTheme: (theme: 'dark' | 'light' | 'purple-rain') => void
   toggleTheme: () => void
 
   // Focus mode
@@ -86,8 +116,15 @@ export const useUIStore = create<UIState>()(
       setLocale: (locale) => set({ locale }),
 
       theme: 'dark',
-      setTheme: (theme) => set({ theme }),
-      toggleTheme: () => set((state) => ({ theme: state.theme === 'dark' ? 'light' : 'dark' })),
+      setTheme: (theme) => {
+        set({ theme })
+        document.documentElement.className = theme
+      },
+      toggleTheme: () => set((state) => {
+        const next = state.theme === 'dark' ? 'light' : state.theme === 'light' ? 'purple-rain' : 'dark'
+        document.documentElement.className = next
+        return { theme: next }
+      }),
 
       focusMode: false,
       toggleFocusMode: () => set((state) => ({ focusMode: !state.focusMode })),

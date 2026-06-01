@@ -1,8 +1,6 @@
 # api/routers/execute.py - Execute, validate, install-deps endpoints
 import logging
-import shlex
 import time
-from pathlib import Path
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
@@ -56,17 +54,11 @@ async def execute(request: ExecuteRequest):
         if request.language == "python":
             from backend.domain.core.executor import CodeExecutor
 
-            executor = CodeExecutor(timeout=request.timeout)
-
-            main_file = Path(__file__).parent.parent / "main.py"
-            cmd = ["python", str(main_file)]
-            if request.args:
-                cmd.extend(shlex.split(request.args))
-                logger.info(f"[EXECUTE] running command: {' '.join(cmd)}")
+            executor = CodeExecutor()
 
             result = executor.run(
                 code=request.code,
-                args=request.args or "",
+                timeout=request.timeout,
             )
 
             logger.info(f"[EXECUTE] result keys: {result.keys()}")
@@ -175,12 +167,10 @@ async def validate(request: ValidateRequest):
             except SyntaxError as e:
                 errors.append(f"Syntax error: {e.msg} at line {e.lineno}")
 
-            import py_compile
-
             try:
-                py_compile.compile(request.code, "<string>", doraise=True)
-            except py_compile.PyCompileError as e:
-                errors.append(f"Compilation error: {e!s}")
+                compile(request.code, '<string>', 'exec')
+            except SyntaxError as e:
+                errors.append(f"Compilation error: {e.msg} at line {e.lineno}")
 
             return ValidateResponse(errors=errors, warnings=warnings, status="ok")
         else:

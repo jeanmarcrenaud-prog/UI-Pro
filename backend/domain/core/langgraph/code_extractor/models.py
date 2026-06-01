@@ -13,6 +13,52 @@ logger = logging.getLogger(__name__)
 # Taille maximale d'un fichier extrait (500KB)
 MAX_FILE_SIZE = 500_000
 
+# Extensions for which we attempt Python compile() validation
+_PYTHON_EXTENSIONS = {".py", ".pyw"}
+
+# Allowed file extensions for extracted code blocks
+_VALID_EXTENSIONS = _PYTHON_EXTENSIONS | {
+    ".ps1", ".psm1", ".psd1",        # PowerShell
+    ".sh", ".bash", ".zsh",          # Shell
+    ".bat", ".cmd",                  # Batch
+    ".js", ".mjs", ".cjs",           # JavaScript
+    ".ts", ".mts", ".cts",           # TypeScript
+    ".jsx", ".tsx",                  # JSX/TSX
+    ".html", ".htm",                 # HTML
+    ".css", ".scss", ".less",        # Styles
+    ".json", ".jsonc",               # JSON
+    ".yaml", ".yml",                 # YAML
+    ".toml",                         # TOML
+    ".ini", ".cfg", ".conf",         # Config
+    ".xml", ".svg",                  # XML
+    ".sql",                          # SQL
+    ".md", ".mdx",                   # Markdown
+    ".env",                          # Env
+    ".dockerfile", "Dockerfile",     # Docker
+    ".rs",                           # Rust
+    ".go",                           # Go
+    ".java",                         # Java
+    ".c", ".cpp", ".cxx", ".h", ".hpp",  # C/C++
+    ".rb",                           # Ruby
+    ".php",                          # PHP
+    ".swift",                        # Swift
+    ".kt", ".kts",                   # Kotlin
+    ".scala",                        # Scala
+    ".r", ".R",                      # R
+    ".lua",                          # Lua
+    ".pl", ".pm",                    # Perl
+    ".cs",                           # C#
+    ".fs",                           # F#
+    ".zig",                          # Zig
+    ".nim",                          # Nim
+    ".ex", ".exs",                   # Elixir
+    ".erl", ".hrl",                  # Erlang
+    ".hs", ".lhs",                   # Haskell
+    ".clj", ".cljs", ".edn",        # Clojure
+    ".txt",                          # Plain text
+    "Makefile", "makefile",          # Make
+}
+
 # Patterns dangereux à logger (sécurité au niveau extraction)
 DANGEROUS_PATTERNS: list[str] = [
     "os.system",
@@ -40,42 +86,56 @@ def log_dangerous_patterns(code: str, context: str = "") -> list[str]:
 class ExtractedFile(BaseModel):
     """Validated file content with name and syntax check."""
 
-    name: str = Field(..., description="File name with .py extension")
-    content: str = Field(..., description="Python file content")
+    name: str = Field(..., description="File name with extension")
+    content: str = Field(..., description="File content")
 
     @field_validator("name")
     @classmethod
     def validate_name(cls, v: str) -> str:
-        """Ensure filename ends with .py and is safe."""
-        if not v.endswith(".py"):
-            raise ValueError(f"Filename must end with .py, got: {v}")
+        """Ensure filename has a supported extension and safe characters."""
         safe_chars = set(
             "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/_-."
         )
         if not all(c in safe_chars for c in v):
             raise ValueError(f"Filename contains invalid characters: {v}")
+
+        has_valid_ext = any(v.endswith(ext) for ext in _VALID_EXTENSIONS)
+        if not has_valid_ext:
+            raise ValueError(
+                f"Unsupported file extension in '{v}'. "
+                f"Allowed: {', '.join(sorted(_VALID_EXTENSIONS))}"
+            )
         return v
 
-    @field_validator("content")
-    @classmethod
-    def validate_content(cls, v: str) -> str:
-        """Ensure content is valid Python or empty."""
+    @model_validator(mode="after")
+    def validate_content(self) -> ExtractedFile:
+        """Validate content — Python files get compiled, others pass through."""
+        v = self.content
         if len(v) > MAX_FILE_SIZE:
-            raise ValueError(f"Code too large ({len(v)} bytes > {MAX_FILE_SIZE} limit)")
+            raise ValueError(
+                f"Content too large ({len(v)} bytes > {MAX_FILE_SIZE} limit)"
+            )
         stripped = v.strip()
         if not stripped:
-            return v
-        # Soft security check (warning only — runtime isolation handles blocking)
-        log_dangerous_patterns(stripped, context="validate_content")
-        # Try to compile the content
+            return self
+
+        # Soft security check (warning only)
+        log_dangerous_patterns(stripped, context=self.name)
+
+        # Skip Python compilation for non-Python files
+        if not any(self.name.endswith(ext) for ext in _PYTHON_EXTENSIONS):
+            return self
+
+        # Try to compile as Python
         try:
-            compile(stripped, v, "exec")
+            compile(stripped, self.name, "exec")
         except SyntaxError as e:
             # Try with dedented content
             dedented = textwrap.dedent(stripped)
             try:
-                compile(dedented, v, "exec")
-                return dedented
+                compile(dedented, self.name, "exec")
+                self.content = dedented
+                return self
             except SyntaxError:
                 from .repair import fix_indentation as _fix_indent
                 from .repair import fix_syntax_errors as _fix_syntax
@@ -83,22 +143,24 @@ class ExtractedFile(BaseModel):
                 # Aggressive fix: re-indent all lines based on the majority indent
                 fixed = _fix_indent(stripped)
                 try:
-                    compile(fixed, v, "exec")
-                    return fixed
+                    compile(fixed, self.name, "exec")
+                    self.content = fixed
+                    return self
                 except SyntaxError:
                     # Try basic syntax repair (balance parens/brackets)
                     repaired = _fix_syntax(fixed)
                     try:
-                        compile(repaired, v, "exec")
-                        return repaired
+                        compile(repaired, self.name, "exec")
+                        self.content = repaired
+                        return self
                     except SyntaxError:
                         logger.warning(
                             "Syntax error in generated code: %s at line %s",
                             e.msg,
                             e.lineno,
                         )
-                        raise ValueError(f"Invalid Python syntax: {e}")
-        return v
+                        raise ValueError(f"Invalid Python syntax in '{self.name}': {e}")
+        return self
 
 
 class ExtractedCode(BaseModel):

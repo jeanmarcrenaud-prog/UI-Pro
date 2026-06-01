@@ -7,6 +7,19 @@ import type { AgentStep } from '@/lib/types';
 import { STEP_STATUS_LABELS, useI18n } from '@/lib/i18n';
 import { useChatStore } from '@/lib/stores/chatStore';
 
+/** Canonical pipeline order — used for both filtering and ordering in the UI.
+ *  Only these 5 steps are shown; all other events (orchestrator, fixing, completed, etc.)
+ *  are either injected as badges on the relevant pipeline step or filtered out entirely. */
+const PIPELINE_STEP_IDS = [
+  'step-analyzing',
+  'step-planning',
+  'step-coding',
+  'step-reviewing',
+  'step-executing',
+] as const;
+
+const PIPELINE_SET = new Set(PIPELINE_STEP_IDS);
+
 interface StepProgressProps {
   steps: AgentStep[];
   locale?: 'en' | 'fr';
@@ -14,15 +27,49 @@ interface StepProgressProps {
   showStepList?: boolean;
 }
 
+type BadgeVariant = 'info' | 'warning' | 'error';
+
+interface StepBadge {
+  label: string;
+  variant: BadgeVariant;
+}
+
+/** Collect contextual badges from non-pipeline steps (fixing, execution_failed, etc.) */
+function collectExtraBadges(steps: AgentStep[]): Map<string, StepBadge[]> {
+  const badges = new Map<string, StepBadge[]>();
+  for (const s of steps) {
+    if (PIPELINE_SET.has(s.id)) continue;
+    if (!s.detail) continue;
+
+    if (s.id === 'step-fixing' || s.id === 'step-execution_failed') {
+      const target = 'step-coding';
+      if (!badges.has(target)) badges.set(target, []);
+      badges.get(target)!.push({
+        label: s.detail,
+        variant: s.id === 'step-execution_failed' ? 'error' : 'warning',
+      });
+    }
+  }
+  return badges;
+}
+
+const BADGE_STYLES: Record<BadgeVariant, string> = {
+  info: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20',
+  warning: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
+  error: 'text-red-400 bg-red-500/10 border-red-500/20',
+};
+
 // Memoized individual step row for better list performance
-const StepRow = memo(({ 
-  step, 
-  index, 
-  activeIndex 
-}: { 
-  step: AgentStep; 
-  index: number; 
+const StepRow = memo(({
+  step,
+  index,
+  activeIndex,
+  badges,
+}: {
+  step: AgentStep;
+  index: number;
   activeIndex: number;
+  badges: StepBadge[];
 }) => {
   const isActive = index === activeIndex;
   const isDone = step.status === 'done';
@@ -68,15 +115,25 @@ const StepRow = memo(({
         >
           {step.title}
         </motion.span>
-        {step.detail && (
-          <motion.span
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            className="block text-[10px] text-slate-500 mt-0.5 truncate"
-          >
-            {isActive && '▸ '}{step.detail}
-          </motion.span>
-        )}
+        <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+          {step.detail && (
+            <motion.span
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              className="text-[10px] text-slate-500 truncate"
+            >
+              {isActive && '▸ '}{step.detail}
+            </motion.span>
+          )}
+          {badges.map((badge, i) => (
+            <span
+              key={i}
+              className={`text-[10px] px-1.5 py-0.5 rounded-full border font-medium truncate max-w-[200px] ${BADGE_STYLES[badge.variant]}`}
+            >
+              {badge.label}
+            </span>
+          ))}
+        </div>
       </div>
     </motion.div>
   );
@@ -95,8 +152,21 @@ export function StepProgress({
   // Better store subscription - use selector directly
   const isStreaming = useChatStore((state) => state.isLoading === true);
 
+  // Filter to known pipeline steps only, sorted by canonical pipeline order.
+  // This makes the display immune to initialSteps ordering issues.
+  const pipelineSteps = useMemo(() => {
+    const byId = new Map<string, AgentStep>();
+    for (const s of steps) {
+      if (PIPELINE_SET.has(s.id)) byId.set(s.id, s);
+    }
+    return PIPELINE_STEP_IDS.map((id) => byId.get(id)).filter(Boolean) as AgentStep[];
+  }, [steps]);
+
+  // Collect contextual badges from non-pipeline steps
+  const extraBadges = useMemo(() => collectExtraBadges(steps), [steps]);
+
   // Early return for no steps
-  if (steps.length === 0) {
+  if (pipelineSteps.length === 0) {
     return (
       <div className="flex gap-3 items-center">
         <div className="w-10 h-10 rounded-full bg-gradient-to-br from-violet-600 to-fuchsia-600 flex items-center justify-center text-sm shrink-0 shadow-lg shadow-violet-500/30">
@@ -122,34 +192,34 @@ export function StepProgress({
   }
 
   const doneCount = useMemo(
-    () => steps.filter((s) => s.status === 'done').length,
-    [steps]
+    () => pipelineSteps.filter((s) => s.status === 'done').length,
+    [pipelineSteps]
   );
 
   const activeIndex = useMemo(() => {
-    const active = steps.findIndex((s) => s.status === 'active');
-    return active !== -1 ? active : Math.min(Math.max(currentStep, 0), steps.length - 1);
-  }, [steps, currentStep]);
+    const active = pipelineSteps.findIndex((s) => s.status === 'active');
+    return active !== -1 ? active : Math.min(Math.max(currentStep, 0), pipelineSteps.length - 1);
+  }, [pipelineSteps, currentStep]);
 
-  const isComplete = doneCount === steps.length;
+  const isComplete = doneCount === pipelineSteps.length;
 
   // Progress calculation with streaming boost
   const progressPercentage = useMemo(() => {
     if (isComplete) return 100;
 
-    const baseProgress = Math.round(((doneCount + 0.5) / steps.length) * 100);
-    const streamingBoost = isStreaming ? [25, 25, 25, 12][doneCount] ?? 15 : 0;
+    const baseProgress = Math.round(((doneCount + 0.5) / pipelineSteps.length) * 100);
+    const streamingBoost = isStreaming ? [25, 25, 25, 12, 12][doneCount] ?? 15 : 0;
 
     return Math.min(99, baseProgress + streamingBoost);
-  }, [doneCount, steps.length, isStreaming]);
+  }, [doneCount, pipelineSteps.length, isStreaming]);
 
-  const activeStep = steps[activeIndex];
+  const activeStep = pipelineSteps[activeIndex];
 
   const getStatusLabel = useMemo(() => {
     if (!activeStep) return t.steps?.processing ?? 'Processing...';
 
     const key = STEP_STATUS_LABELS[activeStep.id];
-    return key && t.steps?.[key as keyof typeof t.steps] 
+    return key && t.steps?.[key as keyof typeof t.steps]
       ? (t.steps[key as keyof typeof t.steps] as string)
       : activeStep.title || (t.steps?.processing ?? 'In progress...');
   }, [activeStep, t.steps]);
@@ -205,7 +275,7 @@ export function StepProgress({
               />
               <span className="text-violet-300 font-medium">Thinking Process</span>
               <span className="text-slate-500">•</span>
-              <span className="text-slate-400">Step {activeIndex + 1} of {steps.length}</span>
+              <span className="text-slate-400">Step {activeIndex + 1} of {pipelineSteps.length}</span>
             </div>
           </div>
 
@@ -250,12 +320,13 @@ export function StepProgress({
             </div>
             <div className="space-y-2.5">
               <AnimatePresence initial={false}>
-                {steps.map((step, index) => (
+                {pipelineSteps.map((step, index) => (
                   <StepRow
                     key={step.id ?? `step-${index}`}
                     step={step}
                     index={index}
                     activeIndex={activeIndex}
+                    badges={extraBadges.get(step.id) ?? []}
                   />
                 ))}
               </AnimatePresence>

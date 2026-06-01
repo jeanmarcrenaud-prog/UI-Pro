@@ -9,7 +9,7 @@ export function TimeoutSettings() {
   const { llmTimeout, executorTimeout, setLlmTimeout, setExecutorTimeout, isSaving, message, saveTimeouts } = useTimeouts()
 
   return (
-    <section className="bg-[#0f172a] rounded-xl p-4 border border-slate-700/50 hover:border-violet-500/30 transition-all duration-200 hover:shadow-[0_0_20px_rgba(168,85,247,0.1)]">
+    <section className="glass-panel rounded-xl p-4 hover:border-violet-500/30 transition-all duration-200 hover:shadow-[0_0_20px_rgba(168,85,247,0.1)]">
       <h3 className="text-[11px] uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
         ⏱️ {t.settings.timeouts}
       </h3>

@@ -26,7 +26,7 @@ export function ModelSelector({ className = '' }: ModelSelectorProps) {
   const { description, isLoading: isLoadingDescription } = useModelDescription(selectedModel)
 
   return (
-    <section className={`bg-[#0f172a] rounded-xl p-4 border border-slate-700/50 hover:border-violet-500/30 transition-all duration-200 ${className}`}>
+    <section className={`glass-panel rounded-xl p-4 transition-all duration-200 hover:border-[var(--accent)]/30 ${className}`}>
       <h3 className="text-[11px] uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
         🤖 {t.settings.modelsSection}
       </h3>
@@ -50,23 +50,19 @@ export function ModelSelector({ className = '' }: ModelSelectorProps) {
             <option value="">Aucun modèle disponible</option>
           ) : (
             filteredModels.map((model) => {
-              const parts = [model.name]
+              const prefix = model.isLoaded ? '\u25CF ' : '\u25CB '
+              const parts = [prefix + model.name]
               if (model.sizeGb) parts.push(`${model.sizeGb}GB`)
               if (model.speedTier && model.speedTier !== 'fast') parts.push(model.speedTier)
-              parts.push(model.provider)
-
-              // Add loaded status indicator
               if (model.isLoaded) {
-                if (model.sizeVramGb) {
-                  parts.push(`[📍 ${model.sizeVramGb}GB VRAM]`)
-                } else {
-                  parts.push('[📍 Loaded]')
-                }
+                const vram = model.sizeVramGb ? `${model.sizeVramGb}GB VRAM` : 'in VRAM'
+                parts.push(vram)
               }
+              parts.push(model.provider)
 
               return (
                 <option key={`${model.provider}-${model.id}`} value={model.id}>
-                  {parts.join(' • ')}
+                  {parts.join(' \u2022 ')}
                 </option>
               )
             })
@@ -123,6 +119,13 @@ export function ModelSelector({ className = '' }: ModelSelectorProps) {
                     'bg-orange-600/20 text-orange-300'
                   }`}>
                     {selectedModelInfo.speedTier}
+                  </span>
+                )}
+                {/* Loaded in VRAM badge */}
+                {selectedModelInfo.isLoaded && (
+                  <span className="px-2 py-0.5 bg-emerald-600/20 text-emerald-300 text-[10px] rounded inline-flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_4px_rgba(52,211,153,0.5)]" />
+                    {selectedModelInfo.sizeVramGb ? `${selectedModelInfo.sizeVramGb}GB VRAM` : 'in VRAM'}
                   </span>
                 )}
               </div>

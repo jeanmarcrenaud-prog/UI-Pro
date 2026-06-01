@@ -2,6 +2,77 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Theme CSS Variables ── */
+:root,
+.dark {
+  --bg-primary: #020617;
+  --bg-secondary: #0f172a;
+  --bg-tertiary: rgba(2, 6, 23, 0.85);
+  --surface-primary: #0f172a;
+  --surface-secondary: #1e293b;
+  --surface-elevated: #1e293b;
+  --border-subtle: #1e293b;
+  --border-default: #334155;
+  --text-primary: #f1f5f9;
+  --text-secondary: #e2e8f0;
+  --text-muted: #94a3b8;
+  --accent: #8b5cf6;
+  --accent-hover: #7c3aed;
+  --accent-soft: #8b5cf633;
+  --glass-bg: rgba(15, 23, 42, 0.75);
+  --glass-border: rgba(51, 65, 85, 0.6);
+  --shadow-sm: 0 2px 8px rgba(0,0,0,0.4);
+  --shadow-md: 0 6px 20px rgba(0,0,0,0.5);
+  --shadow-lg: 0 12px 40px rgba(0,0,0,0.6);
+  --shadow-xl: 0 20px 60px rgba(0,0,0,0.7);
+}
+
+.light {
+  --bg-primary: #f1f5f9;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: rgba(255,255,255,0.85);
+  --surface-primary: #ffffff;
+  --surface-secondary: #e2e8f0;
+  --surface-elevated: #f8fafc;
+  --border-subtle: #e2e8f0;
+  --border-default: #cbd5e1;
+  --text-primary: #0f172a;
+  --text-secondary: #1e293b;
+  --text-muted: #94a3b8;
+  --accent: #7c3aed;
+  --accent-hover: #6d28d9;
+  --accent-soft: #7c3aed22;
+  --glass-bg: rgba(255, 255, 255, 0.65);
+  --glass-border: rgba(203, 213, 225, 0.7);
+  --shadow-sm: 0 2px 8px rgba(0,0,0,0.06);
+  --shadow-md: 0 6px 20px rgba(0,0,0,0.08);
+  --shadow-lg: 0 12px 40px rgba(0,0,0,0.1);
+  --shadow-xl: 0 20px 60px rgba(0,0,0,0.12);
+}
+
+.purple-rain {
+  --bg-primary: #0a0015;
+  --bg-secondary: #1a0a2e;
+  --bg-tertiary: rgba(10, 0, 21, 0.88);
+  --surface-primary: #1a0a2e;
+  --surface-secondary: #2d1b4e;
+  --surface-elevated: #2d1b4e;
+  --border-subtle: #3d2266;
+  --border-default: #5b3a8a;
+  --text-primary: #f3e8ff;
+  --text-secondary: #e9d5ff;
+  --text-muted: #a78bfa;
+  --accent: #c084fc;
+  --accent-hover: #a855f7;
+  --accent-soft: #c084fc33;
+  --glass-bg: rgba(26, 10, 46, 0.75);
+  --glass-border: rgba(91, 58, 138, 0.55);
+  --shadow-sm: 0 2px 8px rgba(168,85,247,0.08);
+  --shadow-md: 0 6px 20px rgba(168,85,247,0.12);
+  --shadow-lg: 0 12px 40px rgba(168,85,247,0.18);
+  --shadow-xl: 0 20px 60px rgba(168,85,247,0.22);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -12,25 +83,63 @@ html, body {
   padding: 0;
 }
 
-body {
-  @apply bg-black text-white;
-}
-
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-slate-900;
+  background: var(--bg-secondary);
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-slate-700 rounded-full;
+  background: var(--surface-secondary);
+  border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
   @apply bg-slate-600;
+}
+
+/* Theme-aware utility classes */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-md);
+}
+
+.glass-panel-strong {
+  background: var(--surface-primary);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-lg);
+}
+
+.theme-transition {
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Card with elevated shadow for visual hierarchy */
+.card {
+  background: var(--surface-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 1rem;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+/* Subtle depth separators */
+.divider-depth {
+  height: 1px;
+  background: linear-gradient(to right, transparent, var(--border-subtle), transparent);
 }
 
 /* Focus styles */

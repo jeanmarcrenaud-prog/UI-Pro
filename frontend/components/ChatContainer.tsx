@@ -131,7 +131,7 @@ export function ChatContainer({
   return (
     <div className="flex flex-col h-full">
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto px-4 py-6 space-y-6 scrollbar-thin scrollbar-thumb-slate-700">
+      <div className="flex-1 overflow-y-auto px-6 py-8 space-y-6 scrollbar-thin scrollbar-thumb-slate-700">
         <AnimatePresence mode="wait">
           {isEmpty ? (
             <ExamplesList
@@ -190,7 +190,7 @@ export function ChatContainer({
       </div>
 
       {/* Input Area */}
-      <div className="sticky bottom-0 bg-gradient-to-t from-slate-950 via-slate-950 to-transparent pt-4 pb-6 px-4 border-t border-slate-800">
+      <div className="sticky bottom-0 bg-gradient-to-t from-[var(--bg-primary)] via-[var(--bg-primary)] to-transparent pt-6 pb-8 px-6 border-t border-[var(--border-subtle)]">
         <div className="max-w-4xl mx-auto">
           <div className="relative bg-slate-900 rounded-3xl border border-slate-700 focus-within:border-violet-500 transition-colors">
             <textarea

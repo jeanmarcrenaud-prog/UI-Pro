@@ -227,8 +227,13 @@ export function HistoryView({ onSelectChat, onClose }: HistoryViewProps) {
   
   const dateGroups: DateGroup[] = ['today', 'yesterday', 'this_week', 'older']
 
-  return (
-    <div className="h-full flex flex-col overflow-hidden">
+return (
+<motion.div
+  initial={{ opacity: 0, y: 8 }}
+  animate={{ opacity: 1, y: 0 }}
+  transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
+  className="h-full flex flex-col overflow-hidden"
+>
       {/* Filters & Controls */}
       <div className="p-4 border-b border-slate-800">
         <HistoryFilters
@@ -313,6 +318,6 @@ export function HistoryView({ onSelectChat, onClose }: HistoryViewProps) {
           </div>
         )}
       </div>
-    </div>
+    </motion.div>
   )
 }

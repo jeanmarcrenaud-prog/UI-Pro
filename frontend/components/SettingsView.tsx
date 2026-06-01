@@ -11,6 +11,7 @@ import { LogLevelSettings } from './settings/LogLevelSettings'
 import { ModelCountCard } from './settings/ModelCountCard'
 import { ModelSelector } from './settings/ModelSelector'
 import { BackendStatusGrid } from './settings/BackendStatusGrid'
+import { ThemeSelector } from './settings/ThemeSelector'
 import { SystemStats } from './SystemStats'
 
 export function SettingsView() {
@@ -20,24 +21,27 @@ export function SettingsView() {
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35 }}
-      className="flex-1 p-4 sm:p-6 overflow-y-auto"
+      transition={{ duration: 0.35, ease: [0.23, 1, 0.32, 1] }}
+      className="flex-1 p-6 sm:p-8 overflow-y-auto"
     >
       {/* Header - Compact */}
-      <div className="mb-6">
-        <h2 className="text-xl font-semibold text-white tracking-tight">
+      <div className="mb-8">
+        <h2 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight">
           {t.settings.title}
         </h2>
-        <p className="text-sm text-slate-400 mt-1">
+        <p className="text-sm text-[var(--text-muted)] mt-1.5">
           {t.settings.subtitle}
         </p>
       </div>
 
       {/* Dashboard Grid - 3 columns on large screens */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 theme-transition">
         
         {/* Language - Compact Card */}
         <LanguageSelector />
+
+        {/* Theme - Compact Card */}
+        <ThemeSelector />
 
         {/* About - Compact Card */}
         <AboutCard />

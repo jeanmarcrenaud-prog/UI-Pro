@@ -6,6 +6,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { DebugPanel } from '@/components/DebugPanel'
+import { ThemeProvider } from '@/components/ThemeProvider'
 
 export const metadata: Metadata = {
   title: 'UI-Pro - AI Agent Orchestration',
@@ -18,10 +19,12 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="fr" className="dark">
-      <body className="antialiased bg-black text-white">
+    <html lang="fr" suppressHydrationWarning>
+      <body className="antialiased bg-[var(--bg-primary)] text-[var(--text-primary)] transition-colors duration-200">
         <ErrorBoundary>
-          {children}
+          <ThemeProvider>
+            {children}
+          </ThemeProvider>
         </ErrorBoundary>
         <DebugPanel />
       </body>

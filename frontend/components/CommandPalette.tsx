@@ -7,7 +7,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useUIStore } from '@/lib/stores/uiStore'
 import { useChatStore } from '@/lib/stores/chatStore'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, Command, Hash, Settings, Plus, Moon, Sun, FileText, X } from 'lucide-react'
+import { Search, Command, Hash, Settings, Plus, Moon, Sun, Sparkles, FileText, X } from 'lucide-react'
 
 interface CommandItem {
   id: string
@@ -26,7 +26,7 @@ interface CommandPaletteProps {
 export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
-  const { setTheme, theme, toggleFocusMode } = useUIStore()
+  const { setTheme, theme, toggleFocusMode, setActiveTab } = useUIStore()
   const { clearMessages, startNewChat } = useChatStore()
 
   // Define commands
@@ -57,7 +57,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
         id: 'go-chat',
         label: 'Go to Chat',
         icon: <FileText className="w-4 h-4" />,
-        action: () => { onClose() },
+        action: () => { setActiveTab('chat'); onClose() },
         category: 'navigation' as const,
         shortcut: 'Alt+1',
       },
@@ -65,7 +65,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
         id: 'go-history',
         label: 'Go to History',
         icon: <Hash className="w-4 h-4" />,
-        action: () => { onClose() },
+        action: () => { setActiveTab('history'); onClose() },
         category: 'navigation' as const,
         shortcut: 'Alt+2',
       },
@@ -73,7 +73,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
         id: 'go-settings',
         label: 'Go to Settings',
         icon: <Settings className="w-4 h-4" />,
-        action: () => { onClose() },
+        action: () => { setActiveTab('settings'); onClose() },
         category: 'navigation' as const,
         shortcut: 'Alt+3',
       },
@@ -81,9 +81,13 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
       // Settings
       {
         id: 'toggle-theme',
-        label: theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode',
-        icon: theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />,
-        action: () => { setTheme(theme === 'dark' ? 'light' : 'dark'); onClose() },
+        label: theme === 'dark' ? 'Switch to Light Mode' : theme === 'light' ? 'Switch to Purple Rain' : 'Switch to Dark Mode',
+        icon: theme === 'dark' ? <Sun className="w-4 h-4" /> : theme === 'light' ? <Sparkles className="w-4 h-4" /> : <Moon className="w-4 h-4" />,
+        action: () => {
+          const next = theme === 'dark' ? 'light' : theme === 'light' ? 'purple-rain' : 'dark'
+          setTheme(next as 'dark' | 'light' | 'purple-rain')
+          onClose()
+        },
         category: 'settings' as const,
         shortcut: `${cmd}+Shift+D`,
       },
