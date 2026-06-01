@@ -78,6 +78,19 @@ logger = setup_logging()
 # ==================== LIFESPAN ====================
 
 
+def _init_memory_background():
+    """Initialize memory manager in background thread (FAISS is slow to load)."""
+    import logging
+    try:
+        from backend.infrastructure.memory import get_memory_manager
+        mem = get_memory_manager()
+        logging.getLogger("api").info(
+            f"Memory manager initialized ({mem._vector_index.ntotal} vectors)"
+        )
+    except Exception as e:
+        logging.getLogger("api").warning(f"Memory manager init failed: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan - startup/shutdown."""
@@ -113,15 +126,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.debug(f"Checkpoint cleanup on startup skipped: {e}")
 
-    # Pre-initialize memory manager (FAISS + sentence_transformers are heavy)
-    # to avoid paying the import cost on the first health check request
-    try:
-        from backend.infrastructure.memory import get_memory_manager
+    # Pre-initialize memory manager in background thread (FAISS + sentence_transformers
+    # are heavy native libs that take ~30-50s to load). Don't await it so the server
+    # starts listening immediately — the health endpoint will naturally wait for it.
+    import asyncio
 
-        mem = get_memory_manager()
-        logger.info(f"Memory manager initialized ({mem._vector_index.ntotal} vectors)")
-    except Exception as e:
-        logger.warning(f"Memory manager init failed: {e}")
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, _init_memory_background)
 
     yield
 

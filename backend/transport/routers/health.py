@@ -137,7 +137,15 @@ async def _check_dependencies() -> dict[str, dict]:
         try:
             from backend.infrastructure.memory import get_memory_manager
 
-            mem = get_memory_manager()
+            # Don't block indefinitely if memory is still initializing
+            # (FAISS can take ~50s to load in background thread)
+            try:
+                mem = await asyncio.wait_for(
+                    asyncio.to_thread(get_memory_manager), timeout=5.0
+                )
+            except asyncio.TimeoutError:
+                return {"ok": True, "status": "initializing", "vectors": 0}
+
             stats = mem.get_stats() if hasattr(mem, "get_stats") else {}
             return {
                 "ok": True,

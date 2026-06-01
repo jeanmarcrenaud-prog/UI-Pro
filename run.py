@@ -539,8 +539,10 @@ def start_all(auto_open: bool = True):
     api_thread.start()
 
     # Wait for FastAPI to be ready (with health check)
-    print_info("Attente du backend FastAPI...")
-    if not wait_for_port(8000, timeout=30):
+    # Timeout generous car FAISS + sentence_transformers peuvent prendre
+    # ~50s à charger en mémoire (même en arrière-plan).
+    print_info("Attente du backend FastAPI (jusqu'à 120s)...")
+    if not wait_for_port(8000, timeout=120):
         print_error("FastAPI n'a pas démarré dans les 30s - abandon")
         return
     print_success("FastAPI prêt")
