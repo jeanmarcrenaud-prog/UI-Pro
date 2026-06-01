@@ -36,9 +36,9 @@ import type { Translations } from '@/lib/i18n'
 import type { ModelInfo } from './sidebar/ModelSelectDropdown'
 
 const getNavigationTabs = (t: Translations) => [
-  { id: 'chat', label: t.sidebar.chat, icon: '💬' },
-  { id: 'history', label: t.sidebar.history, icon: '📜' },
-  { id: 'settings', label: t.sidebar.settings, icon: '⚙️' },
+  { id: 'chat', label: t.sidebar.chat, icon: '💬', shortcut: 'Alt+1' },
+  { id: 'history', label: t.sidebar.history, icon: '📜', shortcut: 'Alt+2' },
+  { id: 'settings', label: t.sidebar.settings, icon: '⚙️', shortcut: 'Alt+3' },
 ] as const
 
 export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
@@ -78,6 +78,8 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
             isReasoning: m.isReasoning,
             isVision: m.isVision,
             capabilities: m.capabilities,
+            isLoaded: m.isLoaded,
+            sizeVramGb: m.sizeVramGb,
           }))
           setAvailableModels(mappedModels)
         }
@@ -116,50 +118,44 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
           isReasoning: m.isReasoning as boolean | undefined,
           isVision: m.isVision as boolean | undefined,
           capabilities: m.capabilities as string[] | undefined,
+          isLoaded: m.isLoaded as boolean | undefined,
+          sizeVramGb: m.sizeVramGb as number | undefined,
         })))
       }
     }
     events.on('modelsDiscovered', handleModelsDiscovered)
 
-    // Poll for model updates every 30s
-    const pollInterval = setInterval(async () => {
-      try {
-        setIsRefreshing(true)
-        await modelDiscovery.discover()
-      } catch (error) {
-        console.error('Failed to poll models:', error)
-      } finally {
-        setIsRefreshing(false)
-      }
-    }, 30000)
+    // Use the unified polling service to avoid duplicate timers
+    modelDiscovery.startPolling(120_000)
 
     return () => {
       isMounted = false
       clearTimeout(fallbackTimeout)
-      clearInterval(pollInterval)
       modelDiscovery.stopPolling()
       events.off('modelsDiscovered', handleModelsDiscovered)
     }
   }, [setAvailableModels])
 
   return (
-    <aside
+    <motion.aside
+      layout
       className="
         w-64 
-        bg-slate-900/50 
-        border-r 
-        border-slate-800/60 
+        glass-panel
+        border-r-0
         flex 
         flex-col
+        relative
+        z-10
       "
       aria-label="Main navigation sidebar"
     >
       {/* Logo Header */}
-      <div className="p-4 border-b border-slate-800/60">
+      <div className="p-5 border-b border-[var(--border-subtle)]">
         <div className="flex items-center gap-3">
           <div
             className="
-              w-10 h-10 
+              w-11 h-11 
               rounded-xl 
               bg-gradient-to-br 
               from-violet-600 
@@ -169,23 +165,23 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
               text-white 
               font-bold 
               text-lg 
-              shadow-lg
+              shadow-[var(--shadow-md)]
             "
             aria-hidden="true"
           >
             U
           </div>
           <div>
-            <h3 className="text-white font-semibold text-sm">
+            <h3 className="text-[var(--text-primary)] font-semibold text-sm">
               UI-Pro
             </h3>
-            <p className="text-slate-500 text-xs">AI Agent System</p>
+            <p className="text-[var(--text-muted)] text-xs">AI Agent System</p>
           </div>
         </div>
       </div>
 
       {/* New Chat Button */}
-      <div className="p-3 border-b border-slate-800/60">
+      <div className="p-4 border-b border-[var(--border-subtle)]">
         <button
           onClick={onNewChat}
           className="
@@ -197,14 +193,15 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
             hover:to-fuchsia-700 
             text-white 
             rounded-xl 
-            px-4 py-3 
+            px-5 py-3.5 
             text-sm 
             font-medium 
             transition-all duration-200 
             flex items-center 
             justify-center 
             gap-2 
-            shadow-lg hover:shadow-violet-500/25
+            shadow-[var(--shadow-md)] hover:shadow-[var(--shadow-lg)]
+            hover:shadow-violet-500/20
             focus:outline-none focus:ring-2 focus:ring-violet-500/50
           "
           aria-label="Create new chat"
@@ -215,7 +212,7 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
       </div>
 
       {/* Model Selector */}
-      <div className="px-3 pb-3 space-y-2">
+      <div className="px-4 pb-4 space-y-2">
         <ModelSelectDropdown
           isLoading={isLoadingModels || isRefreshing}
           availableModels={availableModels}
@@ -231,13 +228,14 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
           }}
           className="
             text-xs 
-            text-slate-500 
-            hover:text-slate-400 
+            text-[var(--text-muted)] 
+            hover:text-[var(--text-secondary)] 
             flex items-center 
             gap-1.5 
-            py-2 
+            py-2.5 
+            px-2
             rounded-lg 
-            hover:bg-slate-800 
+            hover:bg-[var(--surface-secondary)] 
             transition-colors duration-150
           "
           aria-label="Refresh model list"
@@ -248,25 +246,28 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
       </div>
 
       {/* Navigation Tabs */}
-      <nav className="px-2 space-y-1" aria-label="Main navigation">
+      <nav className="px-3 space-y-1.5 mt-1" aria-label="Main navigation">
         {getNavigationTabs(t).map((tab) => (
           <button
             key={tab.id}
             onClick={() => onTabChange(tab.id)}
+            title={`${tab.label} (${tab.shortcut})`}
             className={`
               w-full 
               text-left 
-              px-3 
-              py-2.5 
+              px-4 
+              py-3 
               rounded-xl 
               text-sm 
               transition-all duration-200 
               flex items-center 
               gap-3
+              group
+              relative
               ${
                 activeTab === tab.id
-                  ? 'bg-slate-800/80 text-white shadow-sm'
-                  : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200'
+                  ? 'bg-[var(--surface-secondary)]/80 text-[var(--text-primary)] shadow-[var(--shadow-sm)]'
+                  : 'text-[var(--text-muted)] hover:bg-[var(--surface-secondary)]/50 hover:text-[var(--text-secondary)]'
               }
             `}
             role="tab"
@@ -289,12 +290,14 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
               {tab.label}
             </span>
 
+            {/* Shortcut badge */}
+            <span className="ml-auto text-[10px] text-[var(--text-muted)]/60 font-mono">{tab.shortcut}</span>
+
             {/* Active indicator bar */}
             {activeTab === tab.id && (
               <motion.span
                 layoutId="active-indicator"
-                className="absolute left-0 w-1 h-8 bg-violet-500 rounded-r-full"
-                style={{ top: 4 }}
+                className="absolute left-0 w-1 h-8 bg-[var(--accent)] rounded-r-full"
                 initial={false}
               />
             )}
@@ -303,14 +306,14 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
       </nav>
 
       {/* Chat History */}
-      <div className="flex-1 overflow-y-auto mt-2 px-2">
-        <div className="px-3 py-2 text-xs text-slate-500 font-medium border-b border-slate-800/60">
+      <div className="flex-1 overflow-y-auto mt-3 px-3">
+        <div className="px-3 py-2.5 text-xs text-[var(--text-muted)] font-medium border-b border-[var(--border-subtle)]">
           {t.sidebar.recentChats}
         </div>
 
         {/* Empty state */}
         {history.length === 0 ? (
-          <div className="px-3 py-4 text-xs text-slate-600 text-center italic">
+          <div className="px-3 py-6 text-xs text-[var(--text-muted)]/60 text-center italic">
             {t.sidebar.noChatsYet}
           </div>
         ) : (
@@ -331,15 +334,27 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
       </div>
 
       {/* Footer */}
-      <div className="p-3 border-t border-slate-800/60 text-xs text-slate-500 bg-slate-900/30">
-        <div className="flex items-center justify-between mb-1">
+      <div className="p-4 border-t border-[var(--border-subtle)] text-xs text-[var(--text-muted)] bg-[var(--bg-tertiary)]">
+        <div className="flex items-center justify-between mb-2">
           <span>UI-Pro</span>
-          <span className="text-violet-400 font-mono">v1.0</span>
+          <span className="text-[var(--accent)] font-mono font-medium">v1.0</span>
         </div>
-        <div className="text-slate-600">
-          {availableModels.length} model{availableModels.length !== 1 ? 's' : ''} • {t.sidebar.ollama} 🦙
+        <div className="flex items-center gap-2 text-[var(--text-muted)]/75">
+          <span>{availableModels.length} model{availableModels.length !== 1 ? 's' : ''}</span>
+          {(() => {
+            const loaded = availableModels.filter(m => m.isLoaded).length
+            if (loaded > 0) {
+              return (
+                <span className="flex items-center gap-1.5 text-emerald-400 text-[10px] font-medium">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.5)]" />
+                  {loaded} in VRAM
+                </span>
+              )
+            }
+            return null
+          })()}
         </div>
       </div>
-    </aside>
+    </motion.aside>
   )
 }
