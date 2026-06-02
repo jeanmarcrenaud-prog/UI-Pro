@@ -6,6 +6,40 @@ import { Check, Copy, Download, Play, Loader2 } from 'lucide-react'
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism'
 
+// PrismLight is the lightweight bundle: highlighting only works for languages
+// we explicitly register here. Without these calls, every block renders as
+// plain text (the user's "coloration syntaxique" issue).
+import bash from 'react-syntax-highlighter/dist/cjs/languages/prism/bash'
+import cpp from 'react-syntax-highlighter/dist/cjs/languages/prism/cpp'
+import css from 'react-syntax-highlighter/dist/cjs/languages/prism/css'
+import java from 'react-syntax-highlighter/dist/cjs/languages/prism/java'
+import javascript from 'react-syntax-highlighter/dist/cjs/languages/prism/javascript'
+import json from 'react-syntax-highlighter/dist/cjs/languages/prism/json'
+import markdown from 'react-syntax-highlighter/dist/cjs/languages/prism/markdown'
+import markup from 'react-syntax-highlighter/dist/cjs/languages/prism/markup'
+import python from 'react-syntax-highlighter/dist/cjs/languages/prism/python'
+import sql from 'react-syntax-highlighter/dist/cjs/languages/prism/sql'
+import tsx from 'react-syntax-highlighter/dist/cjs/languages/prism/tsx'
+import typescript from 'react-syntax-highlighter/dist/cjs/languages/prism/typescript'
+import yaml from 'react-syntax-highlighter/dist/cjs/languages/prism/yaml'
+
+SyntaxHighlighter.registerLanguage('bash', bash)
+SyntaxHighlighter.registerLanguage('cpp', cpp)
+SyntaxHighlighter.registerLanguage('css', css)
+SyntaxHighlighter.registerLanguage('html', markup)
+SyntaxHighlighter.registerLanguage('java', java)
+SyntaxHighlighter.registerLanguage('javascript', javascript)
+SyntaxHighlighter.registerLanguage('json', json)
+SyntaxHighlighter.registerLanguage('markdown', markdown)
+SyntaxHighlighter.registerLanguage('markup', markup)
+SyntaxHighlighter.registerLanguage('python', python)
+SyntaxHighlighter.registerLanguage('sql', sql)
+SyntaxHighlighter.registerLanguage('tsx', tsx)
+SyntaxHighlighter.registerLanguage('typescript', typescript)
+SyntaxHighlighter.registerLanguage('yaml', yaml)
+// jsx uses the same grammar as tsx in Prism
+SyntaxHighlighter.registerLanguage('jsx', tsx)
+
 import { downloadCode } from '@/lib/download'
 import { useI18n } from '@/lib/i18n'
 import { CodeMinimap } from './CodeMinimap'
