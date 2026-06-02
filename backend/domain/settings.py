@@ -114,7 +114,7 @@ class Settings(BaseSettings):
     model_reasoning: str = ""
     model_code: str = ""
 
-    llm_timeout: int = Field(default=300, ge=10, le=1800)
+    llm_timeout: int = Field(default=600, ge=10, le=1800)
     executor_timeout: int = Field(default=60, ge=5, le=600)
 
     log_level: str = Field(default="INFO")
@@ -207,7 +207,7 @@ class Settings(BaseSettings):
 
         self.backends = deepcopy(self.backends_template)
 
-        if self.llm_timeout < 60:
+        if self.llm_timeout < 120:
             logger.warning(
                 f"llm_timeout={self.llm_timeout}s is too short for larger models, "
                 f"recommended >= 120s. Adjust .env or use Settings UI."

@@ -158,7 +158,10 @@ class ModelDiscovery:
 
     def __init__(self, timeout: float = 3.0):
         self.timeout = timeout
-        self._cache = TTLCache(ttl=15.0)
+        # TTL=60s so Sidebar polling (120s) hits the cache; in-place VRAM
+        # mutation in _schedule_vram_refresh keeps the "is_loaded" state fresh
+        # without invalidating the model list.
+        self._cache = TTLCache(ttl=60.0)
 
     # ── Public API ──────────────────────────────────────────────
 
