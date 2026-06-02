@@ -83,9 +83,11 @@ async def analyzing_node(state: AgentState) -> AgentState:
     )
 
     logger.info(f"[analyzing_node] Calling LLM with prompt: {prompt[:100]}...")
-    # Use the fast model for classification: reasoning models emit chain-of-thought
-    # as stream tokens, which would leak into the chat as visible "thinking" text.
-    full_response = await llm.run_node(prompt, model_type="fast")
+    # Use the sync, non-streaming path: classification is an internal state, not
+    # a user-visible response. Streaming would forward the model's chain-of-thought
+    # ("We need to output JSON...") to the WebSocket as visible "thinking" text.
+    # The JSON extraction below already handles any preamble in the response.
+    full_response = await llm.generate(prompt, model_type="fast")
     logger.info(
         f"[analyzing_node] LLM response: {full_response[:200] if full_response else 'EMPTY'}"
     )
