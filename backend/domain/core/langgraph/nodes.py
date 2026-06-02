@@ -83,7 +83,9 @@ async def analyzing_node(state: AgentState) -> AgentState:
     )
 
     logger.info(f"[analyzing_node] Calling LLM with prompt: {prompt[:100]}...")
-    full_response = await llm.run_node(prompt, model_type="reasoning")
+    # Use the fast model for classification: reasoning models emit chain-of-thought
+    # as stream tokens, which would leak into the chat as visible "thinking" text.
+    full_response = await llm.run_node(prompt, model_type="fast")
     logger.info(
         f"[analyzing_node] LLM response: {full_response[:200] if full_response else 'EMPTY'}"
     )
