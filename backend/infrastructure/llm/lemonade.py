@@ -89,27 +89,42 @@ class LemonadeBackend(OpenAICompatMixin, LLMBackend):
     async def astream(
         self, prompt: str, **kwargs: object
     ) -> AsyncGenerator[str, None]:
-        """Async stream with fallback to /v1/completions on chat stream failure.
+        """Async stream with retry + /v1/completions fallback.
 
-        Lemonade sometimes closes the chat-completions SSE stream mid-response
-        (e.g. for non-chat models, or when VRAM is insufficient and the
-        model crashes). Mirror the sync stream() behavior with an async
-        fallback to /v1/completions when the chat path raises.
+        Lemonade's chat-completions SSE stream sometimes closes the
+        connection mid-response ('peer closed connection without sending
+        complete message body'). This happens intermittently for
+        multimodal models like Gemma-4 or when VRAM is tight and the
+        model crashes. The sync stream() already falls back to
+        /v1/completions — mirror that here, plus add a single retry on
+        the chat path before falling back.
         """
-        try:
-            async for token in super().astream(prompt, **kwargs):
-                yield token
-            return
-        except (httpx.RemoteProtocolError, httpx.RequestError) as e:
-            logger.info(
-                "Lemonade chat astream failed (%s) — falling back to /v1/completions",
-                e.__class__.__name__,
-            )
-        except Exception as e:
-            logger.warning(
-                "Lemonade chat astream unexpected error (%s) — falling back to /v1/completions",
-                e,
-            )
+        last_exc: Exception | None = None
+        for attempt in range(2):
+            try:
+                async for token in super().astream(prompt, **kwargs):
+                    yield token
+                return
+            except (httpx.RemoteProtocolError, httpx.RequestError) as e:
+                last_exc = e
+                if attempt == 0:
+                    logger.info(
+                        "Lemonade chat astream dropped stream (attempt %d, %s) — retrying once",
+                        attempt + 1,
+                        e.__class__.__name__,
+                    )
+                    continue
+                logger.info(
+                    "Lemonade chat astream failed twice (%s) — falling back to /v1/completions",
+                    e.__class__.__name__,
+                )
+            except Exception as e:
+                last_exc = e
+                logger.warning(
+                    "Lemonade chat astream unexpected error (%s) — falling back to /v1/completions",
+                    e,
+                )
+                break
 
         url = f"{self._base_url()}/v1/completions"
         payload: dict = {

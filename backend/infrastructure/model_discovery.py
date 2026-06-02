@@ -167,10 +167,20 @@ class ModelDiscovery:
 
         Les résultats sont mis en cache (TTL 15s par défaut).
         Utiliser force_refresh=True pour contourner le cache.
+
+        L'état VRAM (is_loaded, size_vram_gb) est enrichi en arrière-plan
+        via un cache séparé rafraîchi en parallèle — la réponse HTTP ne
+        reste pas bloquée sur les sondes Lemonade qui peuvent prendre
+        plusieurs secondes.
         """
         if not force_refresh:
             cached = self._cache.get("all")
             if cached is not None:
+                # Si un rafraîchissement VRAM est terminé, on met à jour
+                # les entrées du cache en place.
+                vram_cache = self._cache.get("vram")
+                if vram_cache:
+                    self._apply_vram_state(cached, vram_cache)
                 return cached
 
         backends = list_available_backends()
@@ -185,25 +195,74 @@ class ModelDiscovery:
                 continue
             all_models.extend(result)
 
-        # Compléter avec l'état VRAM (Ollama)
-        loaded_map = await self._get_loaded_ollama_models()
-        for model in all_models:
-            if model.backend == "ollama" and model.name in loaded_map:
-                model.is_loaded = True
-                model.size_vram_gb = loaded_map[model.name]
-
-        # Compléter avec l'état VRAM (Lemonade) par sonde légère
-        lemonade_models = [m.name for m in all_models if m.backend == "lemonade"]
-        if lemonade_models:
-            loaded_lemonade = await self._get_loaded_lemonade_models(lemonade_models)
-            for model in all_models:
-                if model.backend == "lemonade" and model.name in loaded_lemonade:
-                    model.is_loaded = True
-                    model.size_vram_gb = loaded_lemonade[model.name]
+        # Lancer la sonde VRAM en arrière-plan sans bloquer la réponse.
+        # La première réponse est livrée immédiatement ; les polls suivants
+        # (TTL 15s) verront le cache VRAM rempli.
+        self._schedule_vram_refresh(all_models)
 
         all_models.sort(key=lambda m: (m.backend, m.name))
         self._cache.set("all", all_models)
         return all_models
+
+    def _schedule_vram_refresh(self, all_models: list[DiscoveredModel]) -> None:
+        """Lance la détection VRAM en arrière-plan et met à jour le cache.
+
+        Les sondes peuvent être lentes (3s chacune, parallélisées) ; on
+        évite de bloquer la réponse HTTP initiale du /api/models.
+        """
+        async def _runner() -> None:
+            try:
+                vram = await self._collect_vram_state(all_models)
+                # Mettre à jour le cache principal (référence) si présent
+                cached = self._cache.get("all")
+                if cached is not None:
+                    self._apply_vram_state(cached, vram)
+                # Stocker l'état VRAM pour les lectures suivantes
+                self._cache.set("vram", vram)
+            except Exception as e:
+                logger.debug("Background VRAM refresh failed: %s", e)
+
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(_runner())
+            else:
+                loop.run_until_complete(_runner())
+        except RuntimeError:
+            # Pas de boucle (contexte synchrone) — lancer en thread
+            import threading
+            def _thread_runner() -> None:
+                asyncio.run(_runner())
+            threading.Thread(target=_thread_runner, daemon=True).start()
+
+    def _apply_vram_state(
+        self,
+        models: list[DiscoveredModel],
+        vram: dict[tuple[str, str], float | None],
+    ) -> None:
+        """Applique l'état VRAM chargé sur la liste (en place)."""
+        for m in models:
+            key = (m.backend, m.name)
+            if key in vram:
+                m.is_loaded = True
+                m.size_vram_gb = vram[key]
+
+    async def _collect_vram_state(
+        self, all_models: list[DiscoveredModel]
+    ) -> dict[tuple[str, str], float | None]:
+        """Collecte l'état VRAM (Ollama + Lemonade) en parallèle."""
+        ollama_map, lemonade_map = await asyncio.gather(
+            self._get_loaded_ollama_models(),
+            self._get_loaded_lemonade_models(
+                [m.name for m in all_models if m.backend == "lemonade"]
+            ),
+        )
+        vram: dict[tuple[str, str], float | None] = {}
+        for name, size in ollama_map.items():
+            vram[("ollama", name)] = size
+        for name, size in lemonade_map.items():
+            vram[("lemonade", name)] = size
+        return vram
 
     async def get_models_by_backend(self, backend: str) -> list[DiscoveredModel]:
         """Récupère les modèles d'un backend spécifique."""
