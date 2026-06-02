@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Iterator
+from collections.abc import AsyncGenerator, Iterator
 
+import httpx
 import requests
 
 from backend.infrastructure.llm._openai_mixin import OpenAICompatMixin
@@ -83,6 +84,72 @@ class LemonadeBackend(OpenAICompatMixin, LLMBackend):
                             return
                     except json.JSONDecodeError:
                         logger.warning("Lemonade fallback parse error: %s", text[:60])
+                        continue
+
+    async def astream(
+        self, prompt: str, **kwargs: object
+    ) -> AsyncGenerator[str, None]:
+        """Async stream with fallback to /v1/completions on chat stream failure.
+
+        Lemonade sometimes closes the chat-completions SSE stream mid-response
+        (e.g. for non-chat models, or when VRAM is insufficient and the
+        model crashes). Mirror the sync stream() behavior with an async
+        fallback to /v1/completions when the chat path raises.
+        """
+        try:
+            async for token in super().astream(prompt, **kwargs):
+                yield token
+            return
+        except (httpx.RemoteProtocolError, httpx.RequestError) as e:
+            logger.info(
+                "Lemonade chat astream failed (%s) — falling back to /v1/completions",
+                e.__class__.__name__,
+            )
+        except Exception as e:
+            logger.warning(
+                "Lemonade chat astream unexpected error (%s) — falling back to /v1/completions",
+                e,
+            )
+
+        url = f"{self._base_url()}/v1/completions"
+        payload: dict = {
+            "model": self.config.model,
+            "prompt": prompt,
+            "stream": True,
+            "temperature": kwargs.get("temperature", 0.7),
+        }
+
+        async with httpx.AsyncClient(timeout=self.config.timeout) as client:
+            async with client.stream("POST", url, json=payload) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    text = self._parse_sse_line(line.encode())
+                    if text is None:
+                        continue
+                    try:
+                        data = json.loads(text)
+                        choices = data.get("choices", [])
+                        content = ""
+                        if choices:
+                            content = choices[0].get(
+                                "text",
+                                choices[0].get("delta", {}).get("content", ""),
+                            )
+                        else:
+                            content = data.get("text", "")
+                        if content:
+                            yield content
+                        finish = (
+                            choices[0].get("finish_reason")
+                            if choices
+                            else data.get("finish_reason")
+                        )
+                        if finish:
+                            return
+                    except json.JSONDecodeError:
+                        logger.warning(
+                            "Lemonade async fallback parse error: %s", text[:60]
+                        )
                         continue
 
     def list_models(self) -> list[dict]:
