@@ -137,7 +137,7 @@ export function DebugPanel() {
               </TabsList>
 
               {/* STEPS TAB */}
-              <TabsContent value="steps" className="flex-1 m-0 overflow-hidden">
+              <TabsContent value="steps" className="flex-1 m-0 min-h-0 overflow-hidden">
                 <div className="h-full overflow-y-auto p-5 space-y-3" ref={scrollStepsRef}>
                   {/* Pipeline steps (canonical 5) */}
                   {pipelineSteps.length > 0 && (
@@ -233,7 +233,7 @@ export function DebugPanel() {
               </TabsContent>
 
               {/* RESPONSE TAB */}
-              <TabsContent value="response" className="flex-1 m-0 overflow-hidden">
+              <TabsContent value="response" className="flex-1 m-0 min-h-0 overflow-hidden">
                 <div className="h-full flex flex-col">
                   <div className="px-5 py-3 border-b border-slate-700 flex items-center gap-3 text-xs text-[var(--text-muted)]">
                     <Code className="w-3.5 h-3.5" />
@@ -261,7 +261,7 @@ export function DebugPanel() {
               </TabsContent>
 
               {/* STREAM TAB */}
-              <TabsContent value="stream" className="flex-1 m-0 overflow-hidden">
+              <TabsContent value="stream" className="flex-1 m-0 min-h-0 overflow-hidden">
                 <div className="h-full overflow-y-auto p-5 font-mono text-sm text-[var(--text-muted)]" ref={scrollStreamRef}>
                   <div className="space-y-0.5">
                   {filteredLogs.filter(l => l.type === 'token').map((log, i) => (
@@ -272,21 +272,25 @@ export function DebugPanel() {
               </TabsContent>
 
               {/* ERRORS TAB */}
-              <TabsContent value="errors" className="flex-1 m-0 p-4 overflow-auto">
-                {filteredLogs.filter(l => l.type === 'error').length === 0 ? (
-                  <p className="text-center text-slate-500 py-12">Aucune erreur détectée</p>
-                ) : (
-                  filteredLogs.filter(l => l.type === 'error').map((log, i) => (
-                    <div key={i} className="bg-red-950 border border-red-800 rounded-xl p-4 mb-3">
-                      <p className="text-red-400">{log.content}</p>
-                    </div>
-                  ))
-                )}
+              <TabsContent value="errors" className="flex-1 m-0 min-h-0 overflow-hidden">
+                <div className="h-full overflow-auto p-4">
+                  {filteredLogs.filter(l => l.type === 'error').length === 0 ? (
+                    <p className="text-center text-slate-500 py-12">Aucune erreur détectée</p>
+                  ) : (
+                    filteredLogs.filter(l => l.type === 'error').map((log, i) => (
+                      <div key={i} className="bg-red-950 border border-red-800 rounded-xl p-4 mb-3">
+                        <p className="text-red-400">{log.content}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
               </TabsContent>
 
               {/* RAW TAB */}
-              <TabsContent value="raw" className="flex-1 m-0 p-4 overflow-auto text-xs font-mono text-slate-500">
-                <pre>{JSON.stringify(debugLogs, null, 2)}</pre>
+              <TabsContent value="raw" className="flex-1 m-0 min-h-0 overflow-hidden">
+                <div className="h-full overflow-auto p-4 text-xs font-mono text-slate-500">
+                  <pre>{JSON.stringify(debugLogs, null, 2)}</pre>
+                </div>
               </TabsContent>
             </Tabs>
           </motion.div>
