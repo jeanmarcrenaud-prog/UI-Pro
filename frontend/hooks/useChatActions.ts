@@ -45,14 +45,21 @@ export const useChatActions = () => {
       m.name === strippedSelected || m.id === strippedSelected || m.id === selectedModel
     )
 
-    const provider = modelInfo?.provider || 'ollama'
-    const fallbackModel = provider === 'lmstudio'
-      ? 'qwen/qwen3.5-9b'
-      : 'qwen3.6:latest'
+    if (!modelInfo) {
+      // No matching model in discovered list - likely a race between UI load
+      // and user click. Return a marker the caller can detect.
+      return {
+        model: strippedSelected,
+        provider: '',
+        error: availableModels.length === 0
+          ? 'Loading models - please wait'
+          : `Model "${strippedSelected}" not found. Please pick a model from the list.`,
+      }
+    }
 
     return {
-      model: modelInfo?.id || strippedSelected || fallbackModel,
-      provider,
+      model: modelInfo.id,
+      provider: modelInfo.provider,
     }
   }, [selectedModel, availableModels])
 
@@ -107,7 +114,12 @@ export const useChatActions = () => {
     cancel() // Nettoyage préalable
 
     // Capturer le modèle IMMÉDIATEMENT pour éviter race condition
-    const { model, provider } = getCurrentModelInfo()
+    const modelInfo = getCurrentModelInfo()
+    if (modelInfo.error || !modelInfo.provider) {
+      setError(modelInfo.error || 'No model selected')
+      return
+    }
+    const { model, provider } = modelInfo
 
     isSendingRef.current = true
     isStreamActiveRef.current = true
@@ -142,7 +154,12 @@ export const useChatActions = () => {
     const content = messages[userIndex].content
 
     // Capture model immediately to avoid race condition
-    const { model, provider } = getCurrentModelInfo()
+    const modelInfo = getCurrentModelInfo()
+    if (modelInfo.error || !modelInfo.provider) {
+      setError(modelInfo.error || 'No model selected')
+      return
+    }
+    const { model, provider } = modelInfo
 
     // Supprimer les messages suivants
     messages.slice(userIndex + 1).forEach(m => removeMessage(m.id))
