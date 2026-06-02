@@ -39,10 +39,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Add rate limiting middleware (controlled via settings.rate_limit_enabled)
+# Add rate limiting middleware (controlled via settings.rate_limit_enabled).
+# The rate_limit module is an optional dependency. We only catch ImportError
+# on THAT specific import — other code (settings, middleware instantiation)
+# must fail loud so we don't silently disable rate limiting on a real bug.
 try:
-    from backend.infrastructure.rate_limit import RateLimitConfig, RateLimitMiddleware
+    from backend.infrastructure.rate_limit import (
+        RateLimitConfig,
+        RateLimitMiddleware,
+    )
+    _rate_limit_available = True
+except ImportError as e:
+    logger.warning(f"Rate limiting not available: {e}")
+    _rate_limit_available = False
 
+if _rate_limit_available:
     settings = get_settings()
     if settings.rate_limit_enabled:
         app.add_middleware(
@@ -61,8 +72,6 @@ try:
         )
     else:
         logger.info("Rate limiting disabled via settings")
-except ImportError:
-    logger.warning("Rate limiting not available")
 
 
 # Include routers
