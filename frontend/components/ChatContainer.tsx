@@ -16,43 +16,154 @@ import { useI18n } from '@/lib/i18n'
 const DEFAULT_EXAMPLES = [
   {
     icon: '🐍',
-    text: 'Create a Python script',
-    prompt: 'Write a Python script that fetches weather data from Open-Meteo API and displays it with a nice formatted output',
+    text: 'Python weather script',
+    prompt: `Write a Python 3.10+ script that fetches current weather for Paris (48.85, 2.35) from the Open-Meteo API.
+
+Requirements:
+- Use only stdlib (urllib.request, json) — no requests/httpx
+- 10s timeout on the HTTP request
+- Catch and report network errors, HTTP errors, and JSON parse errors with distinct messages
+- Output a formatted table to stdout: city, temperature (°C), wind speed (km/h), humidity (%)
+- Include type hints and a if __name__ == "__main__" guard`,
   },
   {
     icon: '📊',
-    text: 'Analyze code for bugs',
-    prompt: 'Write a Python function to calculate fibonacci numbers and analyze it for performance issues and bugs',
+    text: 'Analyze code for issues',
+    prompt: `Analyze the following Python function for performance and correctness.
+
+For each issue you find, output:
+1. Line number and a one-line description
+2. Impact (time complexity, correctness, etc.)
+3. Concrete fix (code)
+
+Focus on: time complexity, edge cases (n=0, n=1, negative input), memoization opportunities, recursion depth limits, integer overflow, off-by-one errors.
+
+{code}`,
   },
   {
     icon: '🔧',
-    text: 'REST API with FastAPI',
-    prompt: 'Write a FastAPI application with CRUD endpoints for a todo list, including models, routes, and error handling',
+    text: 'FastAPI CRUD app',
+    prompt: `Build a complete FastAPI CRUD application for a todo list (single file, runnable).
+
+Pydantic v2 models:
+- Todo: id (UUID4), title (str, min 1, max 200), done (bool, default false), created_at (datetime)
+- TodoCreate: title only
+- TodoUpdate: all fields optional
+
+Endpoints (use proper status codes: 200, 201, 204, 404):
+- GET /todos?done=&skip=&limit=
+- POST /todos → 201
+- GET /todos/{id} → 200 or 404
+- PATCH /todos/{id} → 200 or 404
+- DELETE /todos/{id} → 204
+
+Storage: in-memory dict keyed by UUID (no database).
+Also: CORS for http://localhost:3000, automatic /docs, /health returning {"status": "ok"}.`,
   },
   {
     icon: '🎨',
-    text: 'React component',
-    prompt: 'Write a React TypeScript component for a todo list with add, delete, and toggle completion features',
+    text: 'React TypeScript component',
+    prompt: `Write a TodoList React TypeScript component.
+
+Props: { initialItems?: Todo[]; onCountChange?: (count: number) => void }
+Types: Todo = { id: string; title: string; done: boolean }
+
+State: items (Todo[]), inputValue (string)
+Persistence: localStorage under key "todos" (load on mount, save on change)
+
+Features:
+- Add on Enter key
+- Delete with inline confirmation (click again within 2s to confirm)
+- Toggle done via checkbox
+- Empty state: "No items yet" message
+
+Style: Tailwind CSS, dark theme (slate-800/900 base, violet-500 accent).
+Accessibility: aria-labels, keyboard navigation, focus visible.`,
   },
   {
     icon: '🧪',
-    text: 'Unit tests',
-    prompt: 'Write pytest unit tests for a Python function that validates email addresses, including edge cases',
+    text: 'Pytest unit tests',
+    prompt: `Write pytest unit tests for an email validation function.
+
+Test categories (use @pytest.mark.parametrize):
+- Valid: standard, plus-addressing, subdomains, international
+- Invalid format: missing @, missing local part, missing domain, spaces, multiple @
+- Edge cases: empty string, single char, very long (255+), unicode, IDN
+- Performance: 10,000 validations complete in under 100ms
+
+Conventions:
+- One test function per behavior
+- Fixtures for shared setup (valid email generator, etc.)
+- Assert specific exception types and messages
+- Use tmp_path for any filesystem side effects
+
+Aim for 80%+ line coverage of the function under test.
+
+{code}`,
   },
   {
     icon: '🌐',
-    text: 'JavaScript utility',
-    prompt: 'Write a JavaScript utility function to debounce API calls with cancellation support',
+    text: 'TypeScript debounce',
+    prompt: `Write a TypeScript debounce utility with cancellation.
+
+Signature:
+  debounce<T extends (...args: any[]) => void>(
+    fn: T,
+    delay: number
+  ): T & { cancel: () => void; flush: () => void }
+
+Behavior:
+- Calls fn after \`delay\` ms of inactivity; subsequent calls reset the timer
+- cancel(): clears the pending timer, no further call
+- flush(): invokes fn immediately with the latest args, clears the timer
+- Preserves \`this\` binding (call/apply through to fn)
+- Public API must be type-safe (no \`any\` in exported types)
+
+Include JSDoc for each method and one usage example.`,
   },
   {
     icon: '📦',
-    text: 'Package structure',
-    prompt: 'Write a Python package with __init__.py, main modules, and setup.py for distribution',
+    text: 'Modern Python package',
+    prompt: `Create a modern Python package layout for "mytool" (use src/ layout, PEP 621).
+
+Files to create:
+- pyproject.toml (setuptools backend, no setup.py)
+- README.md (one-paragraph description + usage)
+- src/mytool/__init__.py
+- src/mytool/py.typed (empty marker file)
+- src/mytool/core.py (one example function: greet(name: str) -> str)
+- tests/test_core.py (one test for greet)
+- .gitignore (Python + build artifacts)
+
+pyproject.toml must declare:
+- [project]: name, version="0.1.0", description, readme, requires-python=">=3.10", license, authors
+- [project.optional-dependencies]: dev = ["pytest", "ruff"]
+- [build-system]: requires=["setuptools>=68"], build-backend="setuptools.build_meta"
+- [tool.setuptools.packages.find]: where = ["src"]
+- [tool.pytest.ini_options]: testpaths = ["tests"]
+- [tool.ruff]: line-length = 100, target-version = "py310"`,
   },
   {
     icon: '🔒',
-    text: 'Auth middleware',
-    prompt: 'Write a FastAPI dependency for JWT authentication with token validation and error handling',
+    text: 'FastAPI JWT auth',
+    prompt: `Write a FastAPI JWT authentication module.
+
+Dependencies: PyJWT (lighter than python-jose for HS256, no crypto extras)
+
+Components:
+1. create_access_token(data: dict, expires_delta: timedelta) -> str
+   - HS256, includes iat, exp, sub claims
+   - Secret from settings.secret_key
+2. get_current_user(authorization: str = Header()) -> User
+   - Reads "Authorization: Bearer <token>"
+   - Validates signature + expiration
+   - Returns User with id (from sub), scopes (from "scopes" claim)
+   - Errors: 401 with WWW-Authenticate: Bearer header for missing/invalid/expired
+3. POST /login (form: username, password) -> {access_token, token_type}
+   - Demo credentials check (dict), don't use a real DB
+   - Returns 401 on bad credentials
+
+Include all imports and the User model.`,
   },
 ]
 
