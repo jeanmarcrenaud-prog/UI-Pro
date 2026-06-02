@@ -180,7 +180,88 @@ const en: Translations = {
   codeBlock: { copy: 'Copy', copied: 'Copied', save: 'Save', run: 'Run', running: 'Running...', installing: 'Installing...', dependencies: 'Deps' },
   messageBubble: { regenerate: 'Regenerate', continue: 'Continue', copy: 'Copy', copied: 'Copied' },
   history: { title: 'History', empty: 'No conversations yet', confirmDelete: 'Confirm?' },
-  suggestions: { title: 'Suggestions', improve: 'Improve script', logging: 'Add logging', api: 'Convert to API', tests: 'Add tests', types: 'Add types', improvePrompt: 'Improve this script:\n{code}\n\nImprove with better performance and best practices.', loggingPrompt: 'Add logging and error handling:\n{code}\n\nAdd proper logging and exception handling.', apiPrompt: 'Convert to FastAPI:\n{code}\n\nConvert this to a FastAPI endpoint with proper routing.', testsPrompt: 'Add unit tests:\n{code}\n\nWrite pytest unit tests for this code.', typesPrompt: 'Add TypeScript:\n{code}\n\nAdd proper TypeScript types and interfaces.', improveCode: 'Improve code', addTests: 'Add tests', fastapiVersion: 'FastAPI version', makeRobust: 'Make robust', convertPackage: 'Convert to package' },
+  suggestions: { title: 'Suggestions', improve: 'Improve script', logging: 'Add logging', api: 'Convert to API', tests: 'Add tests', types: 'Add types', improvePrompt: `Review and improve this code. Focus on:
+- Performance (algorithmic complexity, unnecessary work, blocking I/O)
+- Readability (naming, structure, comments where non-obvious)
+- Correctness (edge cases, error handling, type safety)
+- Pythonic style (idiomatic patterns, stdlib where appropriate)
+
+Constraints:
+- Preserve the public API (function signatures, return types)
+- Do not introduce new external dependencies
+- Keep the diff focused — fix what's broken, don't refactor what's fine
+
+Output:
+1. Brief diagnosis (one line per issue)
+2. Improved code with inline comments explaining non-obvious changes
+3. One-paragraph summary of what changed and why
+
+{code}`, loggingPrompt: `Add structured logging and proper error handling to this code.
+
+For logging (use the \`logging\` module, never print):
+- DEBUG: verbose flow (function entry, intermediate values)
+- INFO: state changes, lifecycle events
+- WARNING: recoverable issues, deprecated usage
+- ERROR: failures that affect the user
+- Use lazy formatting: logger.debug("got %s", x) not logger.debug(f"got {x}")
+- Include context: logger name (auto), exception info via exc_info=True
+
+For error handling:
+- Catch specific exceptions (e.g., ValueError, KeyError) — never bare \`except:\`
+- Re-raise with \`raise NewError(...) from e\` to preserve the chain
+- Fail loud — log + re-raise, don't silently swallow
+
+{code}`, apiPrompt: `Convert this into a FastAPI endpoint.
+
+- Pydantic v2 models for request and response (with type validation, not just dicts)
+- Use proper status codes: 200/201/204 for success, 400/404/422 for client errors
+- Add a docstring — it becomes the OpenAPI summary
+- Use async def if the underlying work is I/O-bound (DB, HTTP, file I/O)
+- Add input validation in the route, not in the model alone
+- Include CORS middleware if a frontend will call this
+
+Output the full file as a complete, runnable module (imports + app + endpoint + if __name__ == "__main__" guard with uvicorn.run).
+
+{code}`, testsPrompt: `Write pytest tests for this code.
+
+Structure:
+- One test function per behavior, not per function
+- Use @pytest.mark.parametrize for table-driven cases (input → expected)
+- Use fixtures for shared setup (avoid duplication across tests)
+- Group related tests in a class if they share setup
+
+Coverage targets:
+- Happy path (typical inputs)
+- Edge cases (empty, None, boundary values, single element, max size)
+- Error cases (invalid input, exceptions, side effects)
+- Performance: one test asserting the function is fast enough on a realistic input
+
+Style:
+- Clear names: test_<function>_<scenario>_<expected>
+- Assert specific values, not just truthiness
+- Use tmp_path for filesystem, monkeypatch for env vars, mocker.patch for external calls
+- Aim for 80%+ line coverage of the code under test
+
+{code}`, typesPrompt: `Add TypeScript types to this JavaScript code.
+
+For each function:
+- Declare parameter types (avoid \`any\`; use \`unknown\` if truly dynamic)
+- Declare the return type
+- Use generics where applicable: <T>, <K extends keyof T>, etc.
+
+For objects:
+- Use \`interface\` for public API shapes (extensible)
+- Use \`type\` for unions, intersections, mapped/conditional types
+- Mark immutable properties with \`readonly\`
+- Use \`as const\` for literal arrays/tuples
+
+Configuration:
+- Enable strict mode in tsconfig.json if not already
+- Add JSDoc for non-obvious behavior (especially side effects)
+
+Output the typed file plus any new interfaces/types at the top.
+
+{code}`, improveCode: 'Improve code', addTests: 'Add tests', fastapiVersion: 'FastAPI version', makeRobust: 'Make robust', convertPackage: 'Convert to package' },
   sidebar: {
     newChat: 'New Chat',
     recentChats: 'Recent Chats',
@@ -258,7 +339,88 @@ const fr: Translations = {
   codeBlock: { copy: 'Copier', copied: 'Copié', save: 'Enregistrer', run: 'Exécuter', running: 'Exécution...', installing: 'Installation...', dependencies: 'Deps' },
   messageBubble: { regenerate: 'Régénérer', continue: 'Continuer', copy: 'Copier', copied: 'Copié' },
   history: { title: 'Historique', empty: 'Aucune conversation', confirmDelete: 'Confirmer ?' },
-  suggestions: { title: 'Suggestions', improve: 'Améliorer', logging: 'Ajouter log', api: 'Convertir API', tests: 'Ajouter tests', types: 'Ajouter types', improvePrompt: 'Améliorer ce script:\n{code}\n\nAméliorer avec de meilleures performances et pratiques.', loggingPrompt: 'Ajouter logging et gestion erreurs:\n{code}\n\nAjouter un logging propre et la gestion des exceptions.', apiPrompt: 'Convertir en FastAPI:\n{code}\n\nConvertir en endpoint FastAPI avec routage approprié.', testsPrompt: 'Ajouter tests unitaires:\n{code}\n\nÉcrire des tests pytest pour ce code.', typesPrompt: 'Ajouter TypeScript:\n{code}\n\nAjouter les types et interfaces TypeScript appropriés.', improveCode: 'Améliorer code', addTests: 'Ajouter tests', fastapiVersion: 'Version FastAPI', makeRobust: 'Rendre robuste', convertPackage: 'Convertir package' },
+  suggestions: { title: 'Suggestions', improve: 'Améliorer', logging: 'Ajouter log', api: 'Convertir API', tests: 'Ajouter tests', types: 'Ajouter types', improvePrompt: `Revois et améliore ce code. Concentre-toi sur :
+- Performance (complexité algorithmique, travail inutile, I/O bloquante)
+- Lisibilité (nommage, structure, commentaires là où c'est non évident)
+- Correction (cas limites, gestion d'erreurs, sûreté du typage)
+- Style pythonique (idiomes, stdlib quand c'est approprié)
+
+Contraintes :
+- Préserve l'API publique (signatures, types de retour)
+- N'introduis pas de nouvelles dépendances externes
+- Reste focalisé — corrige ce qui est cassé, ne refactore pas ce qui marche
+
+Sortie :
+1. Diagnostic bref (une ligne par problème)
+2. Code amélioré avec commentaires expliquant les changements non évidents
+3. Résumé en un paragraphe de ce qui a changé et pourquoi
+
+{code}`, loggingPrompt: `Ajoute du logging structuré et une gestion d'erreurs propre à ce code.
+
+Pour le logging (utilise le module \`logging\`, jamais print) :
+- DEBUG : flux verbeux (entrée de fonction, valeurs intermédiaires)
+- INFO : changements d'état, événements de cycle de vie
+- WARNING : problèmes récupérables, usage déprécié
+- ERROR : échecs qui affectent l'utilisateur
+- Formatage paresseux : logger.debug("reçu %s", x) et non logger.debug(f"reçu {x}")
+- Inclus le contexte : nom du logger (auto), info d'exception via exc_info=True
+
+Pour la gestion d'erreurs :
+- Capture des exceptions spécifiques (ex. ValueError, KeyError) — jamais \`except:\` nu
+- Relance avec \`raise NewError(...) from e\` pour préserver la chaîne
+- Échec bruyant — log + relance, n'avale jamais en silence
+
+{code}`, apiPrompt: `Convertis ceci en endpoint FastAPI.
+
+- Modèles Pydantic v2 pour requête et réponse (avec validation de types, pas juste des dicts)
+- Codes HTTP appropriés : 200/201/204 pour succès, 400/404/422 pour erreurs client
+- Ajoute une docstring — elle devient le résumé OpenAPI
+- Utilise async def si le travail sous-jacent est I/O-bound (BDD, HTTP, fichier)
+- Valide les entrées dans la route, pas uniquement dans le modèle
+- Inclus le middleware CORS si un frontend va appeler cet endpoint
+
+Sors le fichier complet comme module exécutable (imports + app + endpoint + garde if __name__ == "__main__" avec uvicorn.run).
+
+{code}`, testsPrompt: `Écris des tests pytest pour ce code.
+
+Structure :
+- Une fonction de test par comportement, pas par fonction
+- Utilise @pytest.mark.parametrize pour les cas en table (entrée → attendu)
+- Utilise des fixtures pour le setup partagé (évite la duplication)
+- Groupe les tests liés dans une classe s'ils partagent le setup
+
+Couverture visée :
+- Chemin nominal (entrées typiques)
+- Cas limites (vide, None, valeurs limites, un seul élément, taille max)
+- Cas d'erreur (entrée invalide, exceptions, effets de bord)
+- Performance : un test qui vérifie que la fonction est assez rapide sur une entrée réaliste
+
+Style :
+- Noms clairs : test_<fonction>_<scénario>_<attendu>
+- Assertions sur valeurs spécifiques, pas juste truthiness
+- Utilise tmp_path pour le filesystem, monkeypatch pour les env vars, mocker.patch pour les appels externes
+- Vise 80%+ de couverture de ligne du code testé
+
+{code}`, typesPrompt: `Ajoute des types TypeScript à ce code JavaScript.
+
+Pour chaque fonction :
+- Déclare les types de paramètres (évite \`any\` ; utilise \`unknown\` si vraiment dynamique)
+- Déclare le type de retour
+- Utilise des génériques là où c'est applicable : <T>, <K extends keyof T>, etc.
+
+Pour les objets :
+- Utilise \`interface\` pour les formes d'API publique (extensibles)
+- Utilise \`type\` pour unions, intersections, types mappés/conditionnels
+- Marque les propriétés immuables avec \`readonly\`
+- Utilise \`as const\` pour les tableaux/tuples littéraux
+
+Configuration :
+- Active strict mode dans tsconfig.json si pas déjà fait
+- Ajoute du JSDoc pour les comportements non évidents (surtout les effets de bord)
+
+Sors le fichier typé plus les nouvelles interfaces/types en haut.
+
+{code}`, improveCode: 'Améliorer code', addTests: 'Ajouter tests', fastapiVersion: 'Version FastAPI', makeRobust: 'Rendre robuste', convertPackage: 'Convertir package' },
   sidebar: {
     newChat: 'Nouveau Chat',
     recentChats: 'Conversations Récentes',

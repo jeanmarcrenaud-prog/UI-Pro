@@ -14,11 +14,41 @@ export function MessageSuggestions({ onSuggestion }: MessageSuggestionsProps) {
   const { t } = useI18n()
   
   const suggestionPresets = [
-    { icon: Wand2, key: 'improveCode' as const, prompt: 'Improve this code: ' },
-    { icon: FileCode, key: 'addTests' as const, prompt: 'Add unit tests for: ' },
-    { icon: Zap, key: 'fastapiVersion' as const, prompt: 'Create a FastAPI endpoint for: ' },
-    { icon: Shield, key: 'makeRobust' as const, prompt: 'Make this more robust with error handling: ' },
-    { icon: Package, key: 'convertPackage' as const, prompt: 'Convert this into a Python package: ' },
+    {
+      icon: Wand2,
+      key: 'improveCode' as const,
+      prompt: `Review and improve this code for performance, readability, and correctness. Preserve the public API, no new dependencies, focused diff. Output: diagnosis + improved code + summary.
+
+{code}`,
+    },
+    {
+      icon: FileCode,
+      key: 'addTests' as const,
+      prompt: `Write pytest tests for this code. One test per behavior, parametrize for cases, fixtures for shared setup. Cover: happy path, edge cases, error cases. Aim for 80%+ coverage.
+
+{code}`,
+    },
+    {
+      icon: Zap,
+      key: 'fastapiVersion' as const,
+      prompt: `Convert this into a FastAPI endpoint with Pydantic v2 models, proper status codes (200/201/204/404/422), and OpenAPI docstrings. Output a complete runnable file.
+
+{code}`,
+    },
+    {
+      icon: Shield,
+      key: 'makeRobust' as const,
+      prompt: `Add proper error handling and structured logging to this code. Catch specific exceptions (never bare except:), preserve exception chains with "raise ... from e", use the logging module (not print) with lazy formatting.
+
+{code}`,
+    },
+    {
+      icon: Package,
+      key: 'convertPackage' as const,
+      prompt: `Convert this into a modern Python package (src/ layout, pyproject.toml with PEP 621). Include __init__.py, py.typed marker, and a basic test file. Specify requires-python, dependencies, and dev extras.
+
+{code}`,
+    },
   ]
 
   return (
