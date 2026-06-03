@@ -22,6 +22,8 @@ class _StubRouter:
 
     async def astream(self, **_kwargs: object) -> AsyncIterator[str]:
         self.calls += 1
+        if not self._behaviors:
+            return
         behavior = self._behaviors.pop(0)
         if isinstance(behavior, Exception):
             raise behavior
@@ -29,7 +31,13 @@ class _StubRouter:
             yield token
 
     def generate(self, *args, **kwargs) -> str:  # noqa: ARG002
-        return ""  # used by stream_generate fallback
+        self.calls += 1
+        if not self._behaviors:
+            return ""
+        behavior = self._behaviors.pop(0)
+        if isinstance(behavior, Exception):
+            raise behavior
+        return behavior
 
 
 @pytest.mark.asyncio
@@ -120,3 +128,66 @@ async def test_run_node_strip_markdown_fences():
 
     assert "print('hi')" in result
     assert "```" not in result
+
+
+# ====================== generate() retry ======================
+
+
+@pytest.mark.asyncio
+async def test_generate_retries_on_timeout_and_succeeds():
+    """generate() itself should retry once when the router hangs."""
+    from backend.domain.core.langgraph.llm_wrapper import LLMWrapper
+
+    # First behavior is consumed by the cancelled attempt (run_in_executor
+    # submits the lambda immediately, even though the patched wait_for
+    # will raise before awaiting the result). Second is for the retry.
+    router = _StubRouter(["ignored", "recovered response"])
+    wrapper = LLMWrapper(router, user_model="m", user_provider="ollama")
+
+    wait_for_calls = {"n": 0}
+    real_wait_for = asyncio.wait_for
+
+    async def flaky_wait_for(awaitable, timeout=None):  # type: ignore[no-untyped-def]
+        wait_for_calls["n"] += 1
+        if wait_for_calls["n"] == 1:
+            raise asyncio.TimeoutError()
+        return await real_wait_for(awaitable, timeout=timeout)
+
+    with patch(
+        "backend.domain.core.langgraph.llm_wrapper.asyncio.wait_for",
+        side_effect=flaky_wait_for,
+    ):
+        with patch("backend.domain.core.langgraph.llm_wrapper.settings") as mock_settings:
+            mock_settings.llm_timeout = 5
+            result = await wrapper.generate(
+                "hi", model_type="fast", max_retries=1
+            )
+
+    assert result == "recovered response"
+    assert wait_for_calls["n"] == 2
+
+
+@pytest.mark.asyncio
+async def test_generate_raises_after_exhausted_retries():
+    """generate() should raise once the retry budget is exhausted."""
+    from backend.domain.core.langgraph.llm_wrapper import LLMWrapper
+
+    router = _StubRouter([])
+    wrapper = LLMWrapper(router, user_model="m", user_provider="ollama")
+
+    wait_for_calls = {"n": 0}
+
+    async def always_timeout(awaitable, timeout=None):  # type: ignore[no-untyped-def]
+        wait_for_calls["n"] += 1
+        raise asyncio.TimeoutError()
+
+    with patch(
+        "backend.domain.core.langgraph.llm_wrapper.asyncio.wait_for",
+        side_effect=always_timeout,
+    ):
+        with patch("backend.domain.core.langgraph.llm_wrapper.settings") as mock_settings:
+            mock_settings.llm_timeout = 5
+            with pytest.raises(TimeoutError, match="timed out after 5"):
+                await wrapper.generate("hi", model_type="fast", max_retries=1)
+
+    assert wait_for_calls["n"] == 2

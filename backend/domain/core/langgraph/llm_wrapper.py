@@ -19,23 +19,51 @@ class LLMWrapper:
         self.user_provider = user_provider
 
     async def generate(
-        self, prompt: str, model_type: str = "fast", temperature: float = 0.7
+        self,
+        prompt: str,
+        model_type: str = "fast",
+        temperature: float = 0.7,
+        max_retries: int = 1,
     ) -> str:
-        """Fallback full generation."""
-        loop = asyncio.get_running_loop()
-        return await asyncio.wait_for(
-            loop.run_in_executor(
-                None,
-                lambda: self.router.generate(
-                    prompt,
-                    model_type,
-                    temperature=temperature,
-                    model=self.user_model,
-                    provider=self.user_provider,
-                ),
-            ),
-            timeout=float(settings.llm_timeout),
-        )
+        """Fallback full generation with retry on timeout.
+
+        Local LLMs (Lemonade/Ollama) sometimes stall on the first request
+        after VRAM load. One retry recovers the response in most cases.
+        """
+        timeout = float(settings.llm_timeout)
+
+        last_exc: BaseException | None = None
+        for attempt in range(max_retries + 1):
+            loop = asyncio.get_running_loop()
+            try:
+                return await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None,
+                        lambda: self.router.generate(
+                            prompt,
+                            model_type,
+                            temperature=temperature,
+                            model=self.user_model,
+                            provider=self.user_provider,
+                        ),
+                    ),
+                    timeout=timeout,
+                )
+            except asyncio.TimeoutError as e:
+                last_exc = e
+                if attempt < max_retries:
+                    logger.warning(
+                        "LLM generate timed out after %ss (model_type=%s, attempt %d/%d) — retrying",
+                        timeout,
+                        model_type,
+                        attempt + 1,
+                        max_retries + 1,
+                    )
+                    continue
+
+        msg = f"LLM call timed out after {timeout}s (model_type={model_type})"
+        logger.error(msg)
+        raise TimeoutError(msg) from last_exc
 
     async def stream_generate(
         self, prompt: str, model_type: str = "fast", temperature: float = 0.7
