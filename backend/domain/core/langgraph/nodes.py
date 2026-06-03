@@ -105,7 +105,13 @@ async def analyzing_node(state: AgentState) -> AgentState:
 
     _emit_step("analyzing", f"Tâche classifiée: {task_json[:80]}...")
     state["task_type"] = task_json
-    state["messages"].append({"role": "assistant", "content": task_json})
+    # NOTE: do NOT append the classification to state["messages"]. The
+    # streaming layer (streaming.py:188-213) iterates LangGraph events and
+    # yields any new assistant message as a [TOKEN] to the WebSocket. The
+    # classification is already correctly surfaced as a [STEP] event by
+    # streaming.py:154-157 via state["task_type"], so an additional entry
+    # in state["messages"] would leak the JSON to the user as a visible
+    # "thinking" token. Downstream nodes read state["task_type"] directly.
     return state
 
 
