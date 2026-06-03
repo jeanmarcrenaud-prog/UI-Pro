@@ -56,6 +56,7 @@ _VALID_EXTENSIONS = _PYTHON_EXTENSIONS | {
     ".hs", ".lhs",                   # Haskell
     ".clj", ".cljs", ".edn",        # Clojure
     ".txt",                          # Plain text
+    ".typed",                        # PEP 561 marker (py.typed for typed packages)
     "Makefile", "makefile",          # Make
 }
 

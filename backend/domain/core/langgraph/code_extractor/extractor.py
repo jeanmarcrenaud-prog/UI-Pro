@@ -172,6 +172,14 @@ def extract_code_dict(response: str) -> dict[str, Any]:
         dict with "files" key mapping filenames to code strings
     """
     raw = response.strip()
+
+    if not raw:
+        logger.warning(
+            "extract_code_dict received EMPTY response — coding_node LLM call "
+            "likely timed out or the model returned no content. Returning empty files dict."
+        )
+        return {"steps": [], "files": {}}
+
     response_clean = _strip_llm_preamble(raw)
     if response_clean != raw:
         logger.info("LLM preamble stripped (%d chars removed)", len(raw) - len(response_clean))
@@ -210,8 +218,12 @@ def extract_code_dict(response: str) -> dict[str, Any]:
 
     # Fallback (Strategy 7)
     if code_dict is None:
-        code_dict = {"files": {"main.py": response_clean}}
+        code_dict = {"steps": [], "files": {"main.py": response_clean}}
         logger.info("Fallback (strategy 7): raw response as main.py (%d chars)", len(response_clean))
+
+    # Ensure 'steps' key exists for downstream code that expects it
+    if "steps" not in code_dict:
+        code_dict["steps"] = []
 
     # Final validation — salvage chain
     return _finalize(code_dict)
@@ -451,7 +463,14 @@ def _strategy_pure_python(text: str) -> dict[str, Any] | None:
 
 
 def _finalize(code_dict: dict[str, Any]) -> dict[str, Any]:
-    """Final validation with salvage chain."""
+    """Final validation with salvage chain.
+
+    When a file has an unsupported extension (e.g. `py.typed` not in
+    the whitelist) the content fixes below won't help — the filename
+    itself is invalid.  In that case we **drop** the offending files
+    so the rest of the extraction survives instead of returning raw
+    content with invalid entries.
+    """
     try:
         extracted = ExtractedCode.model_validate(code_dict)
         return extracted.to_dict()
@@ -459,7 +478,38 @@ def _finalize(code_dict: dict[str, Any]) -> dict[str, Any]:
         logger.warning("Final validation failed: %s — attempting salvage...", e)
 
         if "files" in code_dict:
-            # Salvage 1: fix indentation
+            # Rebuild with only validly-named files first (content may still
+            # fail, but at least the filename check passes). This handles
+            # unsupported extensions like `.typed` without dropping
+            # everything downstream.
+            valid_names: dict[str, str] = {}
+            invalid_names: list[str] = []
+            for fname, fcontent in code_dict["files"].items():
+                try:
+                    ExtractedFile(name=fname, content=fcontent or "")
+                    valid_names[fname] = str(fcontent)
+                except ValueError:
+                    invalid_names.append(fname)
+
+            if invalid_names:
+                logger.warning(
+                    "Dropping %d invalid file(s) during salvage: %s",
+                    len(invalid_names),
+                    ", ".join(invalid_names),
+                )
+                if valid_names:
+                    try:
+                        extracted = ExtractedCode.model_validate({"files": valid_names})
+                        logger.info(
+                            "Salvaged by dropping %d invalid file(s): %d file(s) remaining",
+                            len(invalid_names),
+                            len(valid_names),
+                        )
+                        return extracted.to_dict()
+                    except ValueError:
+                        pass
+
+            # Salvage 1: fix indentation on the (remaining) files
             salvaged: dict[str, str] = {}
             for fname, fcontent in code_dict["files"].items():
                 if isinstance(fcontent, str):

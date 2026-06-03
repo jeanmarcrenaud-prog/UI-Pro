@@ -100,3 +100,39 @@ class TestWebSocketEndpoint:
 
         routes = [r.path for r in app.routes]
         assert "/ws" in routes
+
+
+class TestVersionEndpoint:
+    """Tests for /api/version endpoint"""
+
+    def test_version_returns_200(self, client):
+        response = client.get("/api/version")
+        assert response.status_code == 200
+
+    def test_version_includes_required_fields(self, client):
+        response = client.get("/api/version")
+        data = response.json()
+        assert "ui_pro_version" in data
+        assert "fastapi_version" in data
+        assert "python_version" in data
+        assert "capabilities" in data
+        assert isinstance(data["capabilities"], dict)
+
+    def test_version_capabilities_known_keys(self, client):
+        response = client.get("/api/version")
+        data = response.json()
+        caps = data["capabilities"]
+        # Always report presence (True or False) for these modules
+        for mod in ("faiss", "aiosqlite", "pynvml", "sentence_transformers"):
+            assert mod in caps
+            assert caps[mod] in (True, False)
+
+    def test_version_fastapi_is_semver_like(self, client):
+        response = client.get("/api/version")
+        data = response.json()
+        # Sanity: at least "X.Y" pattern
+        import re
+
+        assert re.match(r"^\d+\.\d+", data["fastapi_version"]), (
+            f"Unexpected FastAPI version format: {data['fastapi_version']}"
+        )

@@ -96,19 +96,41 @@ class LLMWrapper:
         model_type: str = "fast",
         temperature: float = 0.3,
         strip_markdown: bool = False,
+        max_retries: int = 1,
     ) -> str:
-        """Helper: collect full response from streaming with timeout."""
+        """Helper: collect full response from streaming with timeout.
+
+        Retries once on TimeoutError before failing — local models
+        (Lemonade/Ollama) sometimes stall on the first request after
+        VRAM load, and a single retry often recovers the response.
+        """
         timeout = float(settings.llm_timeout)
 
-        async def _collect() -> str:
-            result = ""
-            async for token in self.stream_generate(prompt, model_type, temperature):
-                result += token
-            return result
+        last_exc: BaseException | None = None
+        for attempt in range(max_retries + 1):
+            async def _collect() -> str:
+                result = ""
+                async for token in self.stream_generate(prompt, model_type, temperature):
+                    result += token
+                return result
 
-        try:
-            full_response = await asyncio.wait_for(_collect(), timeout=timeout)
-        except asyncio.TimeoutError:
+            try:
+                full_response = await asyncio.wait_for(_collect(), timeout=timeout)
+                last_exc = None
+                break
+            except asyncio.TimeoutError as e:
+                last_exc = e
+                if attempt < max_retries:
+                    logger.warning(
+                        "LLM call timed out after %ss (model_type=%s, attempt %d/%d) — retrying",
+                        timeout,
+                        model_type,
+                        attempt + 1,
+                        max_retries + 1,
+                    )
+                    continue
+
+        if last_exc is not None:
             msg = f"LLM call timed out after {timeout}s (model_type={model_type})"
             logger.error(msg)
             raise TimeoutError(msg) from None

@@ -285,11 +285,22 @@ class ModelDiscovery:
     # ── Internal ────────────────────────────────────────────────
 
     async def _discover_backend(self, name: str) -> list[DiscoveredModel]:
-        """Découvre et enrichit les modèles d'un backend."""
+        """Découvre et enrichit les modèles d'un backend.
+
+        Timeout de 5s par backend — si list_models est lent
+        (ex. Lemonade /v1/models parfois >3s) on ne bloque pas
+        tout le /api/models.
+        """
         try:
             backend = get_backend(name)
-            models = await asyncio.to_thread(backend.list_models)
+            models = await asyncio.wait_for(
+                asyncio.to_thread(backend.list_models),
+                timeout=self.timeout * 2,
+            )
             return [self._enrich_model(m, name) for m in models]
+        except asyncio.TimeoutError:
+            logger.warning("%s list_models timed out after %ss", name, self.timeout * 2)
+            return []
         except Exception as e:
             logger.debug("%s discovery failed: %s", name, e)
             return []

@@ -187,9 +187,17 @@ class TestExtractCodeDict:
 
     def test_empty_response(self):
         result = extract_code_dict("")
-        # Fallback: empty response becomes main.py
+        # Empty LLM response (e.g. timeout) yields empty files dict
+        # with explicit 'steps' key, so downstream code can distinguish
+        # "nothing to execute" from "fallback raw text".
         assert "files" in result
-        assert "main.py" in result["files"]
+        assert result["files"] == {}
+        assert result.get("steps") == []
+
+    def test_whitespace_only_response(self):
+        result = extract_code_dict("   \n\n  \n")
+        assert "files" in result
+        assert result["files"] == {}
 
     def test_no_code_blocks(self):
         result = extract_code_dict("Just some text")
@@ -237,3 +245,40 @@ class TestExtractEdgeCases:
         result = extract_code_dict(response)
         # Without ## headers, falls back to file_1.py, file_2.py
         assert len(result["files"]) >= 1
+
+    def test_py_typed_in_python_block(self):
+        """PEP 561 marker accepted now .typed extension is whitelisted.
+
+        LLM generates py.typed inside a ```python block following the
+        same ## filename convention as .py files.
+        """
+        response = (
+            "## src/mytool/__init__.py\n"
+            "```python\n"
+            "from .core import MyTool\n"
+            "```\n\n"
+            "## src/mytool/py.typed\n"
+            "```python\n"
+            "# Marker for PEP 561 typed package support\n"
+            "```\n"
+        )
+        result = extract_code_dict(response)
+        assert "src/mytool/__init__.py" in result["files"]
+        assert "src/mytool/py.typed" in result["files"]
+
+    def test_py_typed_survives_salvage_with_other_files(self):
+        """When py.typed is included alongside real .py files, all survive."""
+        response = (
+            "## main.py\n"
+            "```python\n"
+            "def hello():\n"
+            "    print('hi')\n"
+            "```\n\n"
+            "## py.typed\n"
+            "```python\n"
+            "# Marker for PEP 561\n"
+            "```\n"
+        )
+        result = extract_code_dict(response)
+        assert "main.py" in result["files"]
+        assert "py.typed" in result["files"]

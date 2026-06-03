@@ -301,6 +301,7 @@ def home(request: Request):
         <li><code>GET /api/stream</code> - SSE streaming</li>
         <li><code>WebSocket /ws</code> - Real-time streaming</li>
         <li><code>POST /api/chat</code> - REST chat</li>
+        <li><code>GET /api/version</code> - UI-Pro / FastAPI / capability info</li>
     </ul>
     
     <p><a href="/docs">📚 API Documentation</a></p>
@@ -323,6 +324,54 @@ app.include_router(ws_router)
 app.include_router(stream_router)
 app.include_router(execute_router)
 app.include_router(logs_router)
+
+
+# ==================== VERSION ENDPOINT ====================
+
+
+@app.get("/api/version")
+def version_endpoint():
+    """Return UI-Pro and FastAPI version info.
+
+    Useful for diagnostics, deployment verification, and the frontend
+    "About" panel. Reports the pinned UI-Pro version, the running
+    FastAPI version, the Python version, and a per-component presence
+    map so the UI can show capabilities (e.g. "GPU monitoring: yes").
+    """
+    import platform
+    import sys
+
+    try:
+        import fastapi
+
+        fastapi_version = fastapi.__version__
+    except Exception:
+        fastapi_version = "unknown"
+
+    try:
+        import langgraph
+
+        langgraph_version = langgraph.__version__
+    except Exception:
+        langgraph_version = "unknown"
+
+    # Optional native deps — True/None per module, never raise.
+    capabilities: dict[str, bool] = {}
+    for mod in ("faiss", "aiosqlite", "pynvml", "sentence_transformers"):
+        try:
+            __import__(mod)
+            capabilities[mod] = True
+        except Exception:
+            capabilities[mod] = False
+
+    return {
+        "ui_pro_version": app.version,
+        "fastapi_version": fastapi_version,
+        "langgraph_version": langgraph_version,
+        "python_version": sys.version.split()[0],
+        "platform": platform.platform(),
+        "capabilities": capabilities,
+    }
 
 
 # ==================== CHAT ENDPOINT ====================
