@@ -158,17 +158,20 @@ class ModelDiscovery:
 
     def __init__(self, timeout: float = 3.0):
         self.timeout = timeout
-        # TTL=110s so Sidebar polling (120s) lands on a cache hit with a small
-        # safety margin. In-place VRAM mutation in _schedule_vram_refresh keeps
-        # the "is_loaded" state fresh without invalidating the model list.
-        self._cache = TTLCache(ttl=110.0)
+        # TTL=300s (5 min) — model list is essentially static (only changes on
+        # install/uninstall). Sidebar polls every 120s, so the cache always
+        # lands on a hit. VRAM state is mutated in-place by
+        # _schedule_vram_refresh, so freshness is preserved without
+        # invalidating the model list. The 3-4s discovery cost is paid once
+        # at startup (lifespan hook) and on force_refresh=True.
+        self._cache = TTLCache(ttl=300.0)
 
     # ── Public API ──────────────────────────────────────────────
 
     async def discover_all(self, force_refresh: bool = False) -> list[DiscoveredModel]:
-        """Découvre les modèles de tous les backends avec capacités enrichies.
+        """Découvre les modèles de tous les providers LLM avec capacités enrichies.
 
-        Les résultats sont mis en cache (TTL 15s par défaut).
+        Les résultats sont mis en cache (TTL 300s par défaut).
         Utiliser force_refresh=True pour contourner le cache.
 
         L'état VRAM (is_loaded, size_vram_gb) est enrichi en arrière-plan
@@ -199,8 +202,10 @@ class ModelDiscovery:
             all_models.extend(result)
 
         # Lancer la sonde VRAM en arrière-plan sans bloquer la réponse.
-        # La première réponse est livrée immédiatement ; les polls suivants
-        # (TTL 15s) verront le cache VRAM rempli.
+        # La première réponse est livrée immédiatement (is_loaded=None) ;
+        # les polls suivants verront le cache VRAM rempli (mutation in-place
+        # sur la liste cachée, et entrée "vram" séparée pour les lecteurs
+        # tardifs).
         self._schedule_vram_refresh(all_models)
 
         all_models.sort(key=lambda m: (m.backend, m.name))
