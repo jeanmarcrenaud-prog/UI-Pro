@@ -287,21 +287,38 @@ async def reviewing_node(state: AgentState) -> AgentState:
     )
 
     full_response = await llm.run_node(prompt, model_type="reasoning")
+    logger.info(
+        f"[reviewing_node] LLM response: {full_response[:200] if full_response else 'EMPTY'}"
+    )
 
+    # Review must be a JSON OBJECT with at least a "passed" key. Small/odd
+    # models sometimes return a JSON ARRAY (e.g. [{"passed": true, ...}])
+    # or wrap their answer in a list. Without this guard, review.get("passed")
+    # below raises AttributeError and crashes the whole stream.
+    _REVIEW_FALLBACK: ReviewData = {
+        "passed": False,
+        "issues": ["Parse error"],
+        "suggestions": ["Could not parse review response"],
+    }
+
+    def _coerce_to_dict(obj: object) -> ReviewData | None:
+        return obj if isinstance(obj, dict) else None  # type: ignore[return-value]
+
+    review: ReviewData
     try:
-        review: ReviewData = json.loads(full_response)
+        review = _coerce_to_dict(json.loads(full_response)) or _REVIEW_FALLBACK
     except json.JSONDecodeError:
-        # Fallback: extraire bloc JSON
+        # Fallback: extract the first top-level {...} block
         json_block = re.search(r"\{[\s\S]*\}", full_response)
         if json_block:
             try:
-                review = json.loads(json_block.group(0))
+                review = _coerce_to_dict(json.loads(json_block.group(0))) or _REVIEW_FALLBACK
             except Exception:
-                review = {"passed": False, "issues": ["Parse error"], "suggestions": ["Could not parse review response"]}
+                review = _REVIEW_FALLBACK
         else:
-            review = {"passed": False, "issues": ["Parse error"], "suggestions": ["Could not parse review response"]}
+            review = _REVIEW_FALLBACK
     except Exception:
-        review = {"passed": False, "issues": ["Parse error"], "suggestions": ["Could not parse review response"]}
+        review = _REVIEW_FALLBACK
 
     state["review"] = review
     if review.get("passed"):
