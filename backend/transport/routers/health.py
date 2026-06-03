@@ -4,7 +4,7 @@ import asyncio
 import time
 from typing import Any
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Query, Response
 from pydantic import BaseModel
 
 from models.settings import settings
@@ -231,13 +231,31 @@ async def status():
 
 
 @router.get("/api/models")
-async def get_models(response: Response):
-    """Get all discovered models"""
-    response.headers["Cache-Control"] = "public, max-age=15"
+async def get_models(
+    response: Response,
+    force: bool = Query(
+        False,
+        description="Bypass the discovery cache and re-query every backend. "
+        "Use this after starting a backend that was offline at API startup.",
+    ),
+):
+    """Get all discovered models.
+
+    With force=true, the in-memory TTL cache is bypassed and a fresh
+    discovery is run against every registered backend. The response is
+    marked Cache-Control: no-store so the browser and any intermediate
+    caches don't replay a stale result. With force=false (default), the
+    cache is served with a 15s max-age.
+    """
     from backend.infrastructure.model_discovery import get_model_discovery, get_models_summary
 
+    if force:
+        response.headers["Cache-Control"] = "no-store"
+    else:
+        response.headers["Cache-Control"] = "public, max-age=15"
+
     discovery = get_model_discovery()
-    all_models = await discovery.discover_all()
+    all_models = await discovery.discover_all(force_refresh=force)
     model_summaries = get_models_summary(all_models)
     return {
         "models": model_summaries,

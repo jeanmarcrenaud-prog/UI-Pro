@@ -34,7 +34,7 @@ class ModelDiscoveryService {
     this.backends = backends
   }
 
-  async discover(): Promise<Model[]> {
+  async discover(force: boolean = false): Promise<Model[]> {
     // Prevent concurrent discovery
     if (this.isDiscovering) {
       console.log('[ModelDiscovery] Discovery already in progress, skipping')
@@ -48,9 +48,10 @@ class ModelDiscoveryService {
     // First try to fetch from backend API (includes isLoaded/sizeVramGb)
     try {
       const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), 5000)
+      const timeout = setTimeout(() => controller.abort(), force ? 15000 : 5000)
 
-      const response = await fetch('/api/models', {
+      const url = force ? '/api/models?force=true' : '/api/models'
+      const response = await fetch(url, {
         method: 'GET',
         signal: controller.signal,
       })

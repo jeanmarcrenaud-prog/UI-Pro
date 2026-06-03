@@ -24,7 +24,10 @@ export function useModelDiscovery() {
     setError(null)
 
     try {
-      await modelDiscovery.discover()
+      // force=true bypasses the backend's 5-min TTL cache so backends
+      // that came online after the API started (e.g. user launched
+      // LM Studio mid-session) are picked up immediately.
+      await modelDiscovery.discover(true)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to refresh models'
       setError(message)
