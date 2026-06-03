@@ -19,9 +19,16 @@ class LMStudioBackend(OpenAICompatMixin, LLMBackend):
     backend_name = "lmstudio"
 
     def list_models(self) -> list[dict]:
-        """Get available models from LM Studio."""
+        """Get available models from LM Studio.
+
+        Uses the OpenAI-compatible /v1/models endpoint. LM Studio also
+        exposes /api/v1/models (native) but its shape is different
+        (``{"models": [{"key": ...}]}`` vs. ``{"data": [{"id": ...}]}``).
+        /v1/models matches the OpenAI mixin parser and the existing
+        health_check mock in tests/test_llm_backends.py.
+        """
         try:
-            resp = self._request("GET", f"{self._base_url()}/api/v1/models")
+            resp = self._request("GET", f"{self._base_url()}/v1/models")
             data = resp.json()
             items = data.get("data", [])
             return [{"name": m.get("id", "")} for m in items if m.get("id")]
@@ -30,7 +37,7 @@ class LMStudioBackend(OpenAICompatMixin, LLMBackend):
             return []
 
     def health_check(self) -> dict:
-        url = f"{self._base_url()}/api/v1/models"
+        url = f"{self._base_url()}/v1/models"
         result = self._measure("GET", url, timeout=min(self.config.timeout, 5))
         result["model"] = self.config.model
         if result["status"] == "ok":
