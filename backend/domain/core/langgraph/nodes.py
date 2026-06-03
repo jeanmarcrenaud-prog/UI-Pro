@@ -75,10 +75,18 @@ async def analyzing_node(state: AgentState) -> AgentState:
     user_message = _get_user_message(state)
 
     _emit_step("analyzing", "Classification de la tâche...")
+    # Use angle-bracket placeholders to avoid small models (e.g. 1.2B)
+    # misinterpreting "code|reasoning|general" as a literal value. Explicit
+    # value list + one-shot example makes the directive unambiguous.
     prompt = (
         f"User request: {user_message}\n\n"
-        "Classify the task type and respond with ONLY valid JSON:\n"
-        '{"task_type": "code|reasoning|general", "summary": "brief description"}\n'
+        "Classify the task. Respond with ONLY a valid JSON object:\n"
+        '{"task_type": "<code|reasoning|general>", "summary": "<brief description>"}\n\n'
+        "Pick ONE task_type value:\n"
+        '- "code": user wants code written (script, function, file)\n'
+        '- "reasoning": user wants analysis, planning, or explanation\n'
+        '- "general": chat, Q&A, or anything else\n\n'
+        'Example: {"task_type": "code", "summary": "Build a CLI todo app in Python"}\n\n'
         "No markdown, no explanation - only JSON."
     )
 
