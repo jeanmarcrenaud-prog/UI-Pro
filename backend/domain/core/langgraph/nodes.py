@@ -271,19 +271,29 @@ async def reviewing_node(state: AgentState) -> AgentState:
     code = state.get("code", {})
 
     _emit_step("reviewing", "Vérification de la qualité du code...")
+    # Multi-line template + explicit "OBJET JSON" directive + "PAS une liste"
+    # warning reduce the failure mode where the model outputs the issues as
+    # a bare array (e.g. ["issue 1", "issue 2"]) instead of the full
+    # {passed, issues, suggestions} envelope. The parser below also handles
+    # the list shape as a graceful degradation.
     prompt = (
-        "Tu es un relecteur de code. Analyse le code ci-dessous et retourne UNIQUEMENT ce JSON — "
-        "pas de markdown, pas d'explication :\n\n"
-        '{"passed": true, "issues": [], "suggestions": []}\n\n'
-        "Code à analyser :\n"
-        f"{json.dumps(code, ensure_ascii=False)}\n\n"
+        "Tu es un relecteur de code. Analyse le code ci-dessous et réponds "
+        "UNIQUEMENT avec un OBJET JSON (PAS une liste, PAS un tableau, "
+        "PAS du markdown) contenant EXACTEMENT ces trois clés :\n\n"
+        "{\n"
+        '  "passed": <bool>,\n'
+        '  "issues": [<string>, ...],\n'
+        '  "suggestions": [<string>, ...]\n'
+        "}\n\n"
         "Règles :\n"
         "- passed=true SI le code est syntaxiquement correct ET fait ce qui est attendu\n"
         "- passed=false UNIQUEMENT s'il y a une vraie erreur (import manquant, variable indéfinie, boucle infinie)\n"
         "- Ne mets pas passed=false pour des problèmes de style ou d'optimisation\n"
-        "- Issues : liste vide si passed=true, sinon décris l'erreur concrète\n"
-        "- Suggestions : peut être vide\n"
-        "- Ne commence pas par ```json — réponds DIRECTEMENT par le JSON brut"
+        "- issues : liste de chaînes (vide si passed=true)\n"
+        "- suggestions : peut être vide\n\n"
+        "Code à analyser :\n"
+        f"{json.dumps(code, ensure_ascii=False)}\n\n"
+        "Réponds UNIQUEMENT avec l'objet JSON, rien d'autre."
     )
 
     full_response = await llm.run_node(prompt, model_type="reasoning")
@@ -291,10 +301,15 @@ async def reviewing_node(state: AgentState) -> AgentState:
         f"[reviewing_node] LLM response: {full_response[:200] if full_response else 'EMPTY'}"
     )
 
-    # Review must be a JSON OBJECT with at least a "passed" key. Small/odd
-    # models sometimes return a JSON ARRAY (e.g. [{"passed": true, ...}])
-    # or wrap their answer in a list. Without this guard, review.get("passed")
-    # below raises AttributeError and crashes the whole stream.
+    # Review must be a JSON OBJECT with at least a "passed" key, but small
+    # or MoE models sometimes return a JSON ARRAY instead of the envelope.
+    # Two failure modes seen in the wild:
+    #   - [{"passed": true, ...}]              (list of dict)
+    #   - ["API_KEY manquant", "..."]]         (list of strings, often with
+    #                                            trailing ]])
+    # Without the multi-strategy parser below, review.get("passed") crashes
+    # the whole stream with AttributeError, or silently shows a misleading
+    # "Parse error" to the user.
     _REVIEW_FALLBACK: ReviewData = {
         "passed": False,
         "issues": ["Parse error"],
@@ -304,21 +319,66 @@ async def reviewing_node(state: AgentState) -> AgentState:
     def _coerce_to_dict(obj: object) -> ReviewData | None:
         return obj if isinstance(obj, dict) else None  # type: ignore[return-value]
 
-    review: ReviewData
-    try:
-        review = _coerce_to_dict(json.loads(full_response)) or _REVIEW_FALLBACK
-    except json.JSONDecodeError:
-        # Fallback: extract the first top-level {...} block
-        json_block = re.search(r"\{[\s\S]*\}", full_response)
-        if json_block:
+    def _list_as_review(obj: list) -> ReviewData | None:
+        """Recover a review dict from a list response.
+
+        - list[str]      -> the model is listing issues; passed=False
+        - list[dict]     -> take the first dict (likely the review envelope)
+        - mixed          -> take the first dict, else the first string
+        """
+        if not obj:
+            return None
+        if all(isinstance(x, str) for x in obj):
+            return {"passed": False, "issues": list(obj), "suggestions": []}
+        for x in obj:
+            if isinstance(x, dict):
+                coerced = _coerce_to_dict(x)
+                if coerced is not None:
+                    return coerced
+        return None
+
+    def _parse_review(text: str) -> ReviewData:
+        """Multi-strategy JSON extraction for review responses.
+
+        Tries, in order:
+        1. Direct json.loads — must be a dict
+        2. First top-level {...} block — must be a dict
+        3. First top-level [...] block — list of strings or list of dicts
+        4. Fallback
+        """
+        # 1. Direct parse
+        try:
+            coerced = _coerce_to_dict(json.loads(text))
+            if coerced is not None:
+                return coerced
+        except json.JSONDecodeError:
+            pass
+
+        # 2. First top-level {...} block
+        obj_block = re.search(r"\{[\s\S]*\}", text)
+        if obj_block:
             try:
-                review = _coerce_to_dict(json.loads(json_block.group(0))) or _REVIEW_FALLBACK
-            except Exception:
-                review = _REVIEW_FALLBACK
-        else:
-            review = _REVIEW_FALLBACK
-    except Exception:
-        review = _REVIEW_FALLBACK
+                coerced = _coerce_to_dict(json.loads(obj_block.group(0)))
+                if coerced is not None:
+                    return coerced
+            except json.JSONDecodeError:
+                pass
+
+        # 3. First top-level [...] block (handles bare list-of-issues)
+        list_block = re.search(r"\[[\s\S]*?\]", text)
+        if list_block:
+            try:
+                parsed_list = json.loads(list_block.group(0))
+                if isinstance(parsed_list, list):
+                    recovered = _list_as_review(parsed_list)
+                    if recovered is not None:
+                        return recovered
+            except json.JSONDecodeError:
+                pass
+
+        return _REVIEW_FALLBACK
+
+    review = _parse_review(full_response)
 
     state["review"] = review
     if review.get("passed"):
