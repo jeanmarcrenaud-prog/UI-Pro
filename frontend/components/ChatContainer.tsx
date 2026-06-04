@@ -12,6 +12,7 @@ import { StepProgress } from './chat/StepProgress'
 import { StreamingTokenGraph } from './chat/StreamingTokenGraph'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useI18n } from '@/lib/i18n'
+import { useEnableThinking } from './settings/hooks/useEnableThinking'
 
 const DEFAULT_EXAMPLES = [
   {
@@ -186,6 +187,13 @@ export function ChatContainer({
   } = useChat()
 
   const { t, locale } = useI18n()
+  // Cosmetic indicator on the send button — a small brain emoji when
+  // thinking-mode is OFF reminds the operator that the model will
+  // jump straight to the answer (no internal chain-of-thought).
+  // Hidden when thinking is ON to keep the button focused on the
+  // primary action.
+  const { enabled: thinkingEnabled } = useEnableThinking()
+  const thinkingOff = !thinkingEnabled
 
   const [inputValue, setInputValue] = useState('')
 
@@ -322,9 +330,22 @@ export function ChatContainer({
             <button
               onClick={handleSend}
               disabled={!inputValue.trim() || isLoading}
-              className="absolute bottom-4 right-4 bg-violet-600 hover:bg-violet-700 disabled:bg-slate-700 disabled:text-slate-500 text-white p-3 rounded-2xl transition-all disabled:cursor-not-allowed"
+              className="absolute bottom-4 right-4 bg-violet-600 hover:bg-violet-700 disabled:bg-slate-700 disabled:text-slate-500 text-white px-3.5 py-3 rounded-2xl transition-all disabled:cursor-not-allowed flex items-center gap-1.5"
               aria-label="Send message"
+              title={
+                thinkingOff
+                  ? 'Send — Thinking mode is OFF (model jumps straight to the answer)'
+                  : 'Send — Thinking mode is ON (model may reason internally)'
+              }
             >
+              {thinkingOff && (
+                <span
+                  className="text-[11px] leading-none opacity-90"
+                  aria-hidden="true"
+                >
+                  🧠
+                </span>
+              )}
               <span className="text-xl leading-none">↑</span>
             </button>
           </div>
