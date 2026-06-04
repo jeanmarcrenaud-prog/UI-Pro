@@ -422,6 +422,42 @@ async def get_node_routing():
     }
 
 
+class EnableThinkingRequest(BaseModel):
+    enabled: bool = False
+
+
+@router.get("/api/settings/llm-enable-thinking")
+async def get_llm_enable_thinking():
+    """Whether thinking-mode models (Qwen3.5+, o1, DeepSeek-R1) are
+    allowed to spend tokens on internal chain-of-thought before responding.
+
+    When true, the model is sent without `chat_template_kwargs` and is
+    free to reason internally. When false, `chat_template_kwargs=
+    {"enable_thinking": false}` is injected so the model jumps straight
+    to the visible answer. Live test on qwen3.5-9b showed 0 visible
+    tokens with thinking ON and ~500 visible tokens with thinking OFF
+    (for the same 8K-token budget).
+    """
+    return {
+        "enabled": settings.get_llm_enable_thinking(),
+    }
+
+
+@router.post("/api/settings/llm-enable-thinking")
+async def set_llm_enable_thinking_endpoint(body: EnableThinkingRequest):
+    """Toggle thinking mode at runtime. No restart needed — the mixin
+    reads the setting on every request.
+    """
+    try:
+        settings.set_llm_enable_thinking(body.enabled)
+        return {
+            "status": "ok",
+            "enabled": settings.get_llm_enable_thinking(),
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 @router.post("/api/settings/node-routing")
 async def set_node_routing(body: NodeRoutingRequest):
     """Toggle per-node model routing. Takes effect on the next pipeline run."""
