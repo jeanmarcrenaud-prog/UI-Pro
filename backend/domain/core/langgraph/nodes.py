@@ -240,8 +240,20 @@ async def planning_node(state: AgentState) -> AgentState:
 
     state["plan"] = _clean_plan(plan)
     steps_count = len(state.get("plan", {}).get("steps", []))
+    files_count = len(state.get("plan", {}).get("files", {}))
     _emit_step("planning", f"Plan créé avec {steps_count} étapes")
-    state["messages"].append({"role": "assistant", "content": str(state["plan"])})
+    # Append a SHORT human-readable intro instead of the raw plan JSON.
+    # The streaming layer (streaming.py) tracks the last assistant message
+    # and emits its tokens to the user. Appending the full plan dict here
+    # would surface the JSON to the user as visible text — the plan is
+    # already shown step-by-step in the AgentSteps UI via [STEP] events,
+    # so a brief intro is the right surface here. The actual executed
+    # output is appended later by executing_node as a final summary.
+    intro = (
+        f"I'll implement this with {steps_count} step(s) across "
+        f"{files_count} file(s). Generating the code now..."
+    )
+    state["messages"].append({"role": "assistant", "content": intro})
     return state
 
 
@@ -575,6 +587,45 @@ async def executing_node(state: AgentState) -> AgentState:
         logger.exception("Execution failed")
 
     state["attempt"] = state.get("attempt", 0) + 1
+
+    # Build a final user-facing summary so the visible assistant text in
+    # the chat reflects what actually happened, not the plan JSON. The
+    # streaming layer (streaming.py) tracks the LAST assistant message in
+    # state["messages"] and emits its tokens — appending here puts the
+    # executed output (or the failure trace) in front of the user.
+    # On a successful run, this includes the sandbox stdout. On failure,
+    # it shows the error so the user can see what went wrong.
+    exec_result = state.get("execution_result") or {}
+    attempt = state.get("attempt", 0)
+    max_attempts = state.get("max_attempts", 3)
+    files_written = exec_result.get("files_written") or list(
+        (state.get("code") or {}).get("files", {}).keys()
+    )
+
+    if exec_result.get("success"):
+        output = (exec_result.get("output") or "").strip()
+        parts = ["✅ Code executed successfully."]
+        if output:
+            truncated = output[:2000]
+            if len(output) > 2000:
+                truncated += "\n... (truncated, full output in execution_result)"
+            parts.append(f"\n\n**Output:**\n```\n{truncated}\n```")
+        if files_written:
+            parts.append(
+                f"\n\n**Generated file(s):** `{', '.join(files_written)}`"
+            )
+        parts.append(f"\n\n_Attempt {attempt}/{max_attempts}._")
+        summary = "\n".join(parts)
+    else:
+        error_text = (exec_result.get("error") or "").strip()
+        if not error_text:
+            error_text = "(no error message captured by the sandbox)"
+        summary = (
+            f"❌ Execution failed (attempt {attempt}/{max_attempts})\n\n"
+            f"**Error:**\n```\n{error_text[:1000]}\n```"
+        )
+
+    state["messages"].append({"role": "assistant", "content": summary})
     return state
 
 

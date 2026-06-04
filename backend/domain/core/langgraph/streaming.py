@@ -21,6 +21,12 @@ BATCH_SIZE = 6
 
 _stream_checkpoints: dict[str, dict] = {}  # stream_id -> checkpoint data
 _last_message_length: dict[str, int] = {}
+# Track the index of the last assistant message we streamed tokens for,
+# so we can detect when a NEW message is appended (e.g. the final summary
+# in executing_node) vs when the same message is being extended in place.
+# Without this, a short new message after a long plan would be silently
+# dropped because the length-tracker only emits `len(content) > last_len`.
+_last_msg_idx: dict[str, int] = {}
 
 
 def _emit_step(phase: str, message: str):
@@ -189,7 +195,19 @@ async def stream_agent(
                 last_msg = event["messages"][-1]
                 if last_msg.get("role") == "assistant":
                     content = last_msg.get("content", "")
-                    last_len = _last_message_length.get(session_id, start_index)
+                    # Detect a brand-new assistant message vs an in-place
+                    # extension of the previous one. The summary appended
+                    # by executing_node is a NEW message and would be
+                    # missed by length-only tracking if it's shorter than
+                    # the previous plan.
+                    current_idx = len(event["messages"]) - 1
+                    if _last_msg_idx.get(session_id) != current_idx:
+                        last_len = 0
+                        _last_msg_idx[session_id] = current_idx
+                    else:
+                        last_len = _last_message_length.get(
+                            session_id, start_index
+                        )
 
                     # Skip tokens already sent (for resume)
                     if start_index > 0 and len(content) > start_index:
@@ -245,6 +263,7 @@ async def stream_agent(
 
     finally:
         _last_message_length.pop(session_id, None)
+        _last_msg_idx.pop(session_id, None)
         try:
             bus.unsubscribe(EventType.AGENT, _on_agent_event)
         except Exception:
