@@ -13,10 +13,40 @@ logger = logging.getLogger(__name__)
 
 
 class LLMWrapper:
-    def __init__(self, router, user_model: str = "", user_provider: str = "ollama"):
+    def __init__(
+        self,
+        router,
+        user_model: str = "",
+        user_provider: str = "ollama",
+        force_model: str = "",
+        force_provider: str = "",
+    ):
         self.router = router
         self.user_model = user_model
         self.user_provider = user_provider
+        # Per-node model override: when set, wins over user_model.
+        # Used by the orchestrator to route analyze/plan/code/review to
+        # different preset tiers (fast / reasoning / code) regardless of
+        # the user-selected chat model. Without this, the user_model
+        # picked in the chat UI is sent for *every* node, which means a
+        # small model (e.g. lfm2.5-1.2b) is forced to do heavy tasks
+        # (code gen, review) it can't handle.
+        self.force_model = force_model
+        # If the caller pins a model but no provider, reuse the user's
+        # provider (common case: all models live on the same backend,
+        # e.g. LM Studio). The caller can override explicitly if models
+        # are split across providers.
+        self.force_provider = force_provider or user_provider
+
+    def _resolved(self) -> tuple[str, str]:
+        """Return the (model, provider) that should actually be used.
+
+        force_model wins over user_model. Empty force_model keeps the
+        legacy "user_model wins" behavior.
+        """
+        if self.force_model:
+            return self.force_model, self.force_provider
+        return self.user_model, self.user_provider
 
     async def generate(
         self,
@@ -31,6 +61,7 @@ class LLMWrapper:
         after VRAM load. One retry recovers the response in most cases.
         """
         timeout = float(settings.llm_timeout)
+        model, provider = self._resolved()
 
         last_exc: BaseException | None = None
         for attempt in range(max_retries + 1):
@@ -43,8 +74,8 @@ class LLMWrapper:
                             prompt,
                             model_type,
                             temperature=temperature,
-                            model=self.user_model,
-                            provider=self.user_provider,
+                            model=model,
+                            provider=provider,
                         ),
                     ),
                     timeout=timeout,
@@ -69,15 +100,16 @@ class LLMWrapper:
         self, prompt: str, model_type: str = "fast", temperature: float = 0.7
     ) -> AsyncIterator[str]:
         """Streaming unifié avec tracking de progression."""
-        tracker = LLMProgressTracker(backend=self.user_provider)
+        model, provider = self._resolved()
+        tracker = LLMProgressTracker(backend=provider)
 
         try:
             async for chunk in self.router.astream(
                 prompt=prompt,
                 model_type=model_type,
                 temperature=temperature,
-                model=self.user_model,
-                provider=self.user_provider,
+                model=model,
+                provider=provider,
             ):
                 # Mise à jour du tracker
                 speed = tracker.on_token(chunk)
@@ -88,7 +120,7 @@ class LLMWrapper:
 
                         emit_agent_step(
                             "progress",
-                            f"[{self.user_provider.upper()}] {speed:.1f} tok/s",
+                            f"[{provider.upper()}] {speed:.1f} tok/s",
                         )
                     except Exception:
                         pass
@@ -114,7 +146,7 @@ class LLMWrapper:
                     yield str(chunk)
 
         except Exception as e:
-            logger.error(f"Streaming error ({self.user_provider}): {e}")
+            logger.error(f"Streaming error ({provider}): {e}")
             full = await self.generate(prompt, model_type, temperature)
             yield full
 
