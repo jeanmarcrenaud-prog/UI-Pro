@@ -286,7 +286,6 @@ async def coding_node(state: AgentState) -> AgentState:
         "FORMAT — use exactly this structure (the example is a dummy, replace with real code):\n"
         "## main.py\n"
         "```python\n"
-        "import requests\n"
         "print('real code here')\n"
         "```\n\n"
         "ABSOLUTE RULES:\n"
@@ -294,16 +293,78 @@ async def coding_node(state: AgentState) -> AgentState:
         "- The code block MUST contain ONLY valid Python — no prose, no comments about the code\n"
         "- Do NOT explain what the code does — the code IS the answer\n"
         "- Do NOT include the planning instructions or this prompt in the output\n"
-        "- Do NOT add any text outside the ## filename / ```python structure"
+        "- Do NOT add any text outside the ## filename / ```python structure\n"
+        "- Do NOT use `import requests` or `import httpx` in the example — the example is a FORMAT template, not a content suggestion"
     )
+
+    # Constraint reinforcement: if the user explicitly forbids `requests` /
+    # `httpx` (e.g. "stdlib only", "no requests", "urllib only"), the model
+    # is shown to ignore the rule. This block is a "negative example + good
+    # example" pair to push it the right way. The sanitizer in code_sanitizer
+    # provides a runtime safety net, but we still try to teach the model first.
+    user_msg_lower = user_message.lower()
+    stdlib_only_hint = any(
+        phrase in user_msg_lower
+        for phrase in (
+            "stdlib only",
+            "no requests",
+            "no httpx",
+            "urllib only",
+            "urllib.request",
+            "standard library only",
+            "stdlib uniquement",
+            "pas de requests",
+        )
+    )
+    if stdlib_only_hint:
+        prompt_parts.append(
+            "IMPORTANT — STDLIB ONLY (user requirement):\n"
+            "The user explicitly asked for stdlib-only code. You MUST use "
+            "`urllib.request` for HTTP, NOT `requests` or `httpx`.\n\n"
+            "BAD (do NOT do this):\n"
+            "```python\n"
+            "import requests\n"
+            "response = requests.get(url, params=params)\n"
+            "```\n\n"
+            "GOOD (do this):\n"
+            "```python\n"
+            "import urllib.request\n"
+            "import urllib.parse\n"
+            "import json\n"
+            "url = 'https://api.example.com' + '?' + urllib.parse.urlencode(params)\n"
+            "with urllib.request.urlopen(url, timeout=10) as resp:\n"
+            "    data = json.loads(resp.read().decode('utf-8'))\n"
+            "```\n\n"
+            "Wrap all HTTP calls in try/except for `urllib.error.URLError` "
+            "(network), `urllib.error.HTTPError` (HTTP status), and "
+            "`json.JSONDecodeError` (parse) with distinct error messages."
+        )
 
     prompt = "\n\n".join(prompt_parts)
     full_response = await llm.run_node(prompt, model_type="fast", temperature=0.3)
 
     _emit_step("coding", "Extraction et validation du code...")
     from .code_extractor import extract_code_dict
+    from .code_sanitizer import sanitize_files
 
     state["code"] = extract_code_dict(full_response)
+
+    # Runtime safety net: even with the negative example in the prompt, the
+    # model frequently still imports `requests` or `httpx` (we observed this
+    # on 1.2B, 9B and 35B models in the live test). The sanitizer detects
+    # such imports and prepends a urllib-backed compatibility shim so the
+    # code runs in our sandbox without `requests` / `httpx` being installed.
+    original_files = state["code"].get("files", {})
+    sanitized_files, sanitize_meta = sanitize_files(original_files)
+    state["code"]["files"] = sanitized_files
+    state["code"]["sanitize_meta"] = sanitize_meta
+
+    for inj in sanitize_meta.get("injections", []):
+        logger.info(
+            f"[coding_node] Injected stdlib shim for '{inj['package']}' in {inj['file']} "
+            f"(user requested stdlib-only; model ignored)"
+        )
+
     files_count = len(state["code"].get("files", {}))
     _emit_step("coding", f"Code généré: {files_count} fichiers")
     return state
