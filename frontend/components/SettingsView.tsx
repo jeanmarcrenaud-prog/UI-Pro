@@ -13,6 +13,7 @@ import { ModelSelector } from './settings/ModelSelector'
 import { BackendStatusGrid } from './settings/BackendStatusGrid'
 import { ThemeSelector } from './settings/ThemeSelector'
 import { NodeRoutingSettings } from './settings/NodeRoutingSettings'
+import { EnableThinkingSettings } from './settings/EnableThinkingSettings'
 import { SystemStats } from './SystemStats'
 
 export function SettingsView() {
@@ -55,6 +56,9 @@ export function SettingsView() {
 
         {/* Per-Node Routing - Compact Card */}
         <NodeRoutingSettings />
+
+        {/* LLM Thinking Mode - Compact Card */}
+        <EnableThinkingSettings />
 
         {/* Model Count - Compact Card */}
         <ModelCountCard />
