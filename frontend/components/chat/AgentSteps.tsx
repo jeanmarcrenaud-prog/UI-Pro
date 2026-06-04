@@ -6,6 +6,7 @@
 import { memo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { AgentStep } from '@/lib/types'
+import { useEnableThinking } from '../settings/hooks/useEnableThinking'
 
 interface AgentStepsProps {
   steps: AgentStep[]
@@ -19,13 +20,20 @@ const statusConfig: Record<string, { icon: string; color: string; bgColor: strin
   error: { icon: '⚠️', color: 'text-red-400', bgColor: 'bg-red-500/20' },
 }
 
-export const AgentSteps = memo(function AgentSteps({ 
-  steps, 
-  className = '' 
+export const AgentSteps = memo(function AgentSteps({
+  steps,
+  className = ''
 }: AgentStepsProps) {
   const completedCount = steps.filter(s => s.status === 'done').length
   const progress = steps.length > 0 ? Math.round((completedCount / steps.length) * 100) : 0
   const hasActiveStep = steps.some(s => s.status === 'active')
+  // Mirror the send-button brain indicator here so the user sees the
+  // thinking-mode reminder while the LLM is being called. The brain
+  // pulses on the active step (when an LLM call is in flight) so the
+  // "thinking is OFF" reminder is contextually tied to the moment of
+  // generation, not just a passive UI badge.
+  const { enabled: thinkingEnabled } = useEnableThinking()
+  const thinkingOff = !thinkingEnabled
 
   return (
     <div className={`bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-violet-500/30 rounded-2xl p-5 shadow-lg shadow-violet-500/10 ${className}`}>
@@ -129,13 +137,26 @@ export const AgentSteps = memo(function AgentSteps({
                 </span>
 
                 {isActive && (
-                  <motion.div
-                    animate={{ opacity: [1, 0.4, 1], scale: [1, 1.05, 1] }}
-                    transition={{ repeat: Infinity, duration: 1.5 }}
-                    className="text-xs px-2 py-1 bg-violet-500 text-white rounded-full font-medium"
-                  >
-                    ● Active
-                  </motion.div>
+                  <div className="flex items-center gap-2">
+                    {thinkingOff && (
+                      <motion.span
+                        className="text-sm"
+                        aria-hidden="true"
+                        animate={{ scale: [1, 1.2, 1], opacity: [0.7, 1, 0.7] }}
+                        transition={{ repeat: Infinity, duration: 1.6, ease: 'easeInOut' }}
+                        title="Thinking mode is OFF — the model jumps straight to the answer"
+                      >
+                        🧠
+                      </motion.span>
+                    )}
+                    <motion.div
+                      animate={{ opacity: [1, 0.4, 1], scale: [1, 1.05, 1] }}
+                      transition={{ repeat: Infinity, duration: 1.5 }}
+                      className="text-xs px-2 py-1 bg-violet-500 text-white rounded-full font-medium"
+                    >
+                      ● Active
+                    </motion.div>
+                  </div>
                 )}
               </motion.div>
             )

@@ -330,7 +330,11 @@ export function ChatContainer({
             <button
               onClick={handleSend}
               disabled={!inputValue.trim() || isLoading}
-              className="absolute bottom-4 right-4 bg-violet-600 hover:bg-violet-700 disabled:bg-slate-700 disabled:text-slate-500 text-white px-3.5 py-3 rounded-2xl transition-all disabled:cursor-not-allowed flex items-center gap-1.5"
+              className={`absolute bottom-4 right-4 ${
+                thinkingOff
+                  ? 'bg-violet-600 hover:bg-violet-700'
+                  : 'bg-blue-600 hover:bg-blue-700'
+              } disabled:bg-slate-700 disabled:text-slate-500 text-white px-3.5 py-3 rounded-2xl transition-all disabled:cursor-not-allowed flex items-center gap-1.5`}
               aria-label="Send message"
               title={
                 thinkingOff
@@ -339,12 +343,14 @@ export function ChatContainer({
               }
             >
               {thinkingOff && (
-                <span
-                  className="text-[11px] leading-none opacity-90"
+                <motion.span
+                  className="text-[11px] leading-none"
                   aria-hidden="true"
+                  animate={{ scale: [1, 1.18, 1], opacity: [0.7, 1, 0.7] }}
+                  transition={{ repeat: Infinity, duration: 1.8, ease: 'easeInOut' }}
                 >
                   🧠
-                </span>
+                </motion.span>
               )}
               <span className="text-xl leading-none">↑</span>
             </button>
