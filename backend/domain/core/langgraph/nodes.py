@@ -63,6 +63,19 @@ def _emit_step(phase: str, message: str):
 # ========================================
 
 
+def _force_model_for(tier: str) -> str:
+    """Resolve the preset tier to a model name, honoring the routing toggle.
+
+    Returns the preset's model for the given tier when per-node routing
+    is enabled (the default). Returns "" (empty) when the user has
+    disabled routing — the LLMWrapper then falls back to user_model,
+    restoring the legacy "all nodes use the chat model" behavior.
+    """
+    if not settings.get_node_routing_enabled():
+        return ""
+    return settings.get_model_for_task(tier)
+
+
 async def analyzing_node(state: AgentState) -> AgentState:
     _emit_step("analyzing", "Analyse des exigences...")
 
@@ -70,10 +83,12 @@ async def analyzing_node(state: AgentState) -> AgentState:
     # Per-node routing: classification is a simple task that benefits from
     # a fast, lightweight model. We force the preset's "fast" slot so a
     # 1.2B classifier isn't asked to do reasoning, and conversely a
-    # 35B model isn't wasted on a 30-token JSON output.
-    force_model = settings.get_model_for_task("fast")
+    # 35B model isn't wasted on a 30-token JSON output. Honored only
+    # when node_routing_enabled is true; otherwise user_model wins.
+    force_model = _force_model_for("fast")
+    routing_state = "on" if force_model else "off (user model)"
     logger.info(
-        f"[analyzing_node] user_model={user_model} → resolved={force_model} (tier=fast)"
+        f"[analyzing_node] user_model={user_model} → force_model={force_model or user_model} (tier=fast, routing={routing_state})"
     )
 
     from .llm_wrapper import LLMWrapper
@@ -138,10 +153,12 @@ async def planning_node(state: AgentState) -> AgentState:
     user_model, user_provider = _get_model_info(state)
     # Per-node routing: planning needs structured JSON output with
     # multi-step reasoning — a small model (1.2B) tends to produce
-    # minimal/empty plans. Force the preset's "reasoning" slot.
-    force_model = settings.get_model_for_task("reasoning")
+    # minimal/empty plans. Force the preset's "reasoning" slot when
+    # node_routing_enabled; otherwise user_model wins.
+    force_model = _force_model_for("reasoning")
+    routing_state = "on" if force_model else "off (user model)"
     logger.info(
-        f"[planning_node] user_model={user_model} → resolved={force_model} (tier=reasoning)"
+        f"[planning_node] user_model={user_model} → force_model={force_model or user_model} (tier=reasoning, routing={routing_state})"
     )
 
     from .llm_wrapper import LLMWrapper
@@ -235,10 +252,11 @@ async def coding_node(state: AgentState) -> AgentState:
     # Per-node routing: code generation is the heaviest LLM task. Small
     # models (1.2B) ignore explicit constraints (e.g. "stdlib only") and
     # hallucinate API endpoints/keys. Force the preset's "reasoning"
-    # slot (9B+) so the model can follow multi-constraint instructions.
-    force_model = settings.get_model_for_task("reasoning")
+    # slot (9B+) when node_routing_enabled; otherwise user_model wins.
+    force_model = _force_model_for("reasoning")
+    routing_state = "on" if force_model else "off (user model)"
     logger.info(
-        f"[coding_node] user_model={user_model} → resolved={force_model} (tier=reasoning)"
+        f"[coding_node] user_model={user_model} → force_model={force_model or user_model} (tier=reasoning, routing={routing_state})"
     )
 
     from .llm_wrapper import LLMWrapper
@@ -298,10 +316,12 @@ async def reviewing_node(state: AgentState) -> AgentState:
     # Per-node routing: review needs a model that can follow the
     # "{passed, issues, suggestions}" envelope directive. Small models
     # (1.2B) frequently return a bare list of issues or hallucinate
-    # problems. Force the preset's "reasoning" slot for stability.
-    force_model = settings.get_model_for_task("reasoning")
+    # problems. Force the preset's "reasoning" slot for stability
+    # when node_routing_enabled; otherwise user_model wins.
+    force_model = _force_model_for("reasoning")
+    routing_state = "on" if force_model else "off (user model)"
     logger.info(
-        f"[reviewing_node] user_model={user_model} → resolved={force_model} (tier=reasoning)"
+        f"[reviewing_node] user_model={user_model} → force_model={force_model or user_model} (tier=reasoning, routing={routing_state})"
     )
 
     from .llm_wrapper import LLMWrapper

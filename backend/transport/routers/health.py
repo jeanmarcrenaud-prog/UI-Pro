@@ -326,6 +326,7 @@ class FullSettingsRequest(BaseModel):
     llm_timeout: int | None = None
     executor_timeout: int | None = None
     log_level: str | None = None
+    node_routing_enabled: bool | None = None
 
 
 @router.get("/api/settings")
@@ -342,6 +343,7 @@ async def get_all_settings():
         "executor_timeout": _get_setting("executor_timeout", 60),
         "log_level": _get_setting("log_level", "INFO"),
         "ollama_url": _get_setting("ollama_url", "http://localhost:11434"),
+        "node_routing_enabled": settings.get_node_routing_enabled(),
         "presets": {
             preset_id: {
                 "id": preset.id,
@@ -376,11 +378,54 @@ async def update_settings(body: FullSettingsRequest):
             updates["executor_timeout"] = body.executor_timeout
         if body.log_level is not None:
             updates["log_level"] = body.log_level
+        if body.node_routing_enabled is not None:
+            updates["node_routing_enabled"] = body.node_routing_enabled
 
         # Apply updates via set_runtime_override so singletons get invalidated
         for key, value in updates.items():
             settings.set_runtime_override(key, value)
 
         return {"status": "ok", "updated": list(updates.keys())}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+class NodeRoutingRequest(BaseModel):
+    enabled: bool = True
+
+
+@router.get("/api/settings/node-routing")
+async def get_node_routing():
+    """Whether each pipeline node routes to its preset tier.
+
+    When true, analyzing/plan/code/review use the corresponding
+    preset slot (fast / reasoning / reasoning / reasoning). When
+    false, every node uses the user-selected chat model.
+    """
+    return {
+        "enabled": settings.get_node_routing_enabled(),
+        "routing": {
+            "analyzing_node": "fast" if settings.get_node_routing_enabled() else "user_model",
+            "planning_node": "reasoning" if settings.get_node_routing_enabled() else "user_model",
+            "coding_node": "reasoning" if settings.get_node_routing_enabled() else "user_model",
+            "reviewing_node": "reasoning" if settings.get_node_routing_enabled() else "user_model",
+        },
+        "models": {
+            "fast": _get_setting("model_fast", ""),
+            "reasoning": _get_setting("model_reasoning", ""),
+            "code": _get_setting("model_code", ""),
+        },
+    }
+
+
+@router.post("/api/settings/node-routing")
+async def set_node_routing(body: NodeRoutingRequest):
+    """Toggle per-node model routing. Takes effect on the next pipeline run."""
+    try:
+        settings.set_node_routing(body.enabled)
+        return {
+            "status": "ok",
+            "enabled": settings.get_node_routing_enabled(),
+        }
     except Exception as e:
         return {"status": "error", "message": str(e)}

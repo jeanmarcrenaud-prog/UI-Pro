@@ -140,6 +140,13 @@ class Settings(BaseSettings):
 
     active_preset: str = Field(default="balanced", pattern="^(light|balanced|heavy)$")
 
+    # Per-node model routing: when True (default), each pipeline node
+    # (analyzing/plan/code/review) uses the preset tier (fast/reasoning)
+    # instead of the user-selected chat model. When False, every node
+    # uses the user model (legacy behavior). Toggle is session-only —
+    # the change applies immediately, no restart required.
+    node_routing_enabled: bool = True
+
     # Rate limiting
     rate_limit_enabled: bool = True
     rate_limit_requests_per_minute: int = Field(default=60, ge=1, le=10000)
@@ -297,6 +304,21 @@ class Settings(BaseSettings):
         self.runtime_overrides[key] = value
         if hasattr(self, key):
             setattr(self, key, value)
+
+    def get_node_routing_enabled(self) -> bool:
+        """Whether each pipeline node routes to its preset tier.
+
+        Read from runtime_overrides first (UI toggle), falling back
+        to the constructor default (env or True).
+        """
+        return bool(self.runtime_overrides.get("node_routing_enabled", self.node_routing_enabled))
+
+    def set_node_routing(self, enabled: bool) -> None:
+        """Toggle per-node routing. No-op for LLM router singletons —
+        nodes.py reads this on every call, so the change applies to
+        the next pipeline run without a restart.
+        """
+        self.set_runtime_override("node_routing_enabled", bool(enabled))
         self._invalidate_provider_singletons()
 
     def _invalidate_provider_singletons(self) -> None:
