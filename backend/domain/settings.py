@@ -117,6 +117,17 @@ class Settings(BaseSettings):
     llm_timeout: int = Field(default=600, ge=10, le=1800)
     executor_timeout: int = Field(default=60, ge=5, le=600)
 
+    # Qwen3.5+ and other "thinking-mode" models (Qwen, DeepSeek-R1, OpenAI o1/o3)
+    # spend the majority of their `max_tokens` budget on internal chain-of-thought
+    # BEFORE any visible output. Live test on qwen3.5-9b (9B parameters) with
+    # max_tokens=8000: 7999 tokens of reasoning, 0 of visible code. With
+    # enable_thinking=False: 4199 of 4706 are still reasoning, but the remaining
+    # 507 tokens produce the actual code response. Non-thinking models (lfm2.5,
+    # llama-3, mistral) ignore this parameter. Default is OFF because the
+    # default user-facing experience is "give me code" not "show me your
+    # thinking". Set to True for o1/o3-style models where reasoning IS the answer.
+    llm_enable_thinking: bool = False
+
     log_level: str = Field(default="INFO")
 
     api_host: str = "0.0.0.0"
@@ -320,6 +331,23 @@ class Settings(BaseSettings):
         """
         self.set_runtime_override("node_routing_enabled", bool(enabled))
         self._invalidate_provider_singletons()
+
+    def get_llm_enable_thinking(self) -> bool:
+        """Whether to let thinking-mode models (Qwen3.5+, o1, DeepSeek-R1)
+        spend tokens on internal chain-of-thought before responding.
+
+        Read from runtime_overrides first (API toggle), falling back to
+        the constructor default (env or False).
+        """
+        return bool(self.runtime_overrides.get("llm_enable_thinking", self.llm_enable_thinking))
+
+    def set_llm_enable_thinking(self, enabled: bool) -> None:
+        """Toggle thinking mode at runtime. Sent as `chat_template_kwargs`
+        to all OpenAI-compatible backends. Non-thinking models ignore it.
+        """
+        self.set_runtime_override("llm_enable_thinking", bool(enabled))
+        # No need to invalidate singletons — the mixin reads this fresh
+        # on every request.
 
     def _invalidate_provider_singletons(self) -> None:
         """Reset cached router so runtime changes (model, URL, provider) take effect."""
