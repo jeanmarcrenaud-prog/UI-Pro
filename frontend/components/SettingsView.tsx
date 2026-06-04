@@ -12,6 +12,7 @@ import { ModelCountCard } from './settings/ModelCountCard'
 import { ModelSelector } from './settings/ModelSelector'
 import { BackendStatusGrid } from './settings/BackendStatusGrid'
 import { ThemeSelector } from './settings/ThemeSelector'
+import { NodeRoutingSettings } from './settings/NodeRoutingSettings'
 import { SystemStats } from './SystemStats'
 
 export function SettingsView() {
@@ -51,6 +52,9 @@ export function SettingsView() {
 
         {/* Log Level Settings - Compact Card */}
         <LogLevelSettings />
+
+        {/* Per-Node Routing - Compact Card */}
+        <NodeRoutingSettings />
 
         {/* Model Count - Compact Card */}
         <ModelCountCard />
