@@ -327,6 +327,7 @@ class FullSettingsRequest(BaseModel):
     executor_timeout: int | None = None
     log_level: str | None = None
     node_routing_enabled: bool | None = None
+    llm_enable_thinking: bool | None = None
 
 
 @router.get("/api/settings")
@@ -344,6 +345,7 @@ async def get_all_settings():
         "log_level": _get_setting("log_level", "INFO"),
         "ollama_url": _get_setting("ollama_url", "http://localhost:11434"),
         "node_routing_enabled": settings.get_node_routing_enabled(),
+        "llm_enable_thinking": settings.get_llm_enable_thinking(),
         "presets": {
             preset_id: {
                 "id": preset.id,
@@ -380,6 +382,8 @@ async def update_settings(body: FullSettingsRequest):
             updates["log_level"] = body.log_level
         if body.node_routing_enabled is not None:
             updates["node_routing_enabled"] = body.node_routing_enabled
+        if body.llm_enable_thinking is not None:
+            updates["llm_enable_thinking"] = body.llm_enable_thinking
 
         # Apply updates via set_runtime_override so singletons get invalidated
         for key, value in updates.items():

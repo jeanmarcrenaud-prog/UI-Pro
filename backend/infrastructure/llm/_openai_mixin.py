@@ -41,6 +41,28 @@ class OpenAICompatMixin:
         msgs.append({"role": "user", "content": prompt})
         return msgs
 
+    def _thinking_kwargs(self) -> dict:
+        """Return `chat_template_kwargs` for thinking-mode control.
+
+        Qwen3.5+, DeepSeek-R1, and OpenAI o1/o3 spend most of their
+        `max_tokens` budget on internal chain-of-thought before the
+        visible response. The Qwen3.5 API exposes
+        `chat_template_kwargs={"enable_thinking": false}` to disable
+        that, so the model jumps straight to the answer. Non-thinking
+        models (lfm2.5, llama-3, mistral) ignore this parameter.
+
+        Read at request time so runtime overrides (Settings UI) take
+        effect without a restart.
+        """
+        try:
+            from models.settings import settings
+            enable = settings.get_llm_enable_thinking()
+        except Exception:
+            # Settings not importable in some test contexts — default
+            # to OFF, which is the safer choice (visible output > thinking).
+            enable = False
+        return {"chat_template_kwargs": {"enable_thinking": enable}}
+
     def generate(self, prompt: str, **kwargs: object) -> str:
         url = f"{self._base_url()}/v1/chat/completions"
         payload: dict = {
@@ -49,6 +71,7 @@ class OpenAICompatMixin:
             "stream": False,
             "temperature": kwargs.get("temperature", 0.7),
         }
+        payload.update(self._thinking_kwargs())
         # Cast self to LLMBackend for _request access
         backend: LLMBackend = self  # type: ignore[assignment]
         resp = backend._request("POST", url, json=payload).json()
@@ -65,6 +88,7 @@ class OpenAICompatMixin:
             "stream": True,
             "temperature": kwargs.get("temperature", 0.7),
         }
+        payload.update(self._thinking_kwargs())
         backend: LLMBackend = self  # type: ignore[assignment]
         with requests.post(
             url, json=payload, stream=True, timeout=backend.config.timeout
@@ -103,6 +127,7 @@ class OpenAICompatMixin:
             "stream": True,
             "temperature": kwargs.get("temperature", 0.7),
         }
+        payload.update(self._thinking_kwargs())
         backend: LLMBackend = self  # type: ignore[assignment]
 
         try:
