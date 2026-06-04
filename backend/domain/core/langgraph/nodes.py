@@ -67,11 +67,20 @@ async def analyzing_node(state: AgentState) -> AgentState:
     _emit_step("analyzing", "Analyse des exigences...")
 
     user_model, user_provider = _get_model_info(state)
-    logger.info(f"[analyzing_node] model={user_model}, provider={user_provider}")
+    # Per-node routing: classification is a simple task that benefits from
+    # a fast, lightweight model. We force the preset's "fast" slot so a
+    # 1.2B classifier isn't asked to do reasoning, and conversely a
+    # 35B model isn't wasted on a 30-token JSON output.
+    force_model = settings.get_model_for_task("fast")
+    logger.info(
+        f"[analyzing_node] user_model={user_model} → resolved={force_model} (tier=fast)"
+    )
 
     from .llm_wrapper import LLMWrapper
 
-    llm = LLMWrapper(_get_llm_router(), user_model, user_provider)
+    llm = LLMWrapper(
+        _get_llm_router(), user_model, user_provider, force_model=force_model
+    )
     user_message = _get_user_message(state)
 
     _emit_step("analyzing", "Classification de la tâche...")
@@ -127,9 +136,19 @@ async def planning_node(state: AgentState) -> AgentState:
     _emit_step("planning", "Creation du plan d'implementation...")
 
     user_model, user_provider = _get_model_info(state)
+    # Per-node routing: planning needs structured JSON output with
+    # multi-step reasoning — a small model (1.2B) tends to produce
+    # minimal/empty plans. Force the preset's "reasoning" slot.
+    force_model = settings.get_model_for_task("reasoning")
+    logger.info(
+        f"[planning_node] user_model={user_model} → resolved={force_model} (tier=reasoning)"
+    )
+
     from .llm_wrapper import LLMWrapper
 
-    llm = LLMWrapper(_get_llm_router(), user_model, user_provider)
+    llm = LLMWrapper(
+        _get_llm_router(), user_model, user_provider, force_model=force_model
+    )
     user_message = _get_user_message(state)
 
     _emit_step("planning", "Consultation du LLM pour le plan...")
@@ -213,9 +232,20 @@ async def coding_node(state: AgentState) -> AgentState:
     _emit_step("coding", "Generation du code...")
 
     user_model, user_provider = _get_model_info(state)
+    # Per-node routing: code generation is the heaviest LLM task. Small
+    # models (1.2B) ignore explicit constraints (e.g. "stdlib only") and
+    # hallucinate API endpoints/keys. Force the preset's "reasoning"
+    # slot (9B+) so the model can follow multi-constraint instructions.
+    force_model = settings.get_model_for_task("reasoning")
+    logger.info(
+        f"[coding_node] user_model={user_model} → resolved={force_model} (tier=reasoning)"
+    )
+
     from .llm_wrapper import LLMWrapper
 
-    llm = LLMWrapper(_get_llm_router(), user_model, user_provider)
+    llm = LLMWrapper(
+        _get_llm_router(), user_model, user_provider, force_model=force_model
+    )
     user_message = _get_user_message(state)
     plan_clean = _clean_plan(state.get("plan", {}))
     attempt = state.get("attempt", 0)
@@ -265,9 +295,20 @@ async def reviewing_node(state: AgentState) -> AgentState:
     _emit_step("reviewing", "Analyse statique du code...")
 
     user_model, user_provider = _get_model_info(state)
+    # Per-node routing: review needs a model that can follow the
+    # "{passed, issues, suggestions}" envelope directive. Small models
+    # (1.2B) frequently return a bare list of issues or hallucinate
+    # problems. Force the preset's "reasoning" slot for stability.
+    force_model = settings.get_model_for_task("reasoning")
+    logger.info(
+        f"[reviewing_node] user_model={user_model} → resolved={force_model} (tier=reasoning)"
+    )
+
     from .llm_wrapper import LLMWrapper
 
-    llm = LLMWrapper(_get_llm_router(), user_model, user_provider)
+    llm = LLMWrapper(
+        _get_llm_router(), user_model, user_provider, force_model=force_model
+    )
     code = state.get("code", {})
 
     _emit_step("reviewing", "Vérification de la qualité du code...")
