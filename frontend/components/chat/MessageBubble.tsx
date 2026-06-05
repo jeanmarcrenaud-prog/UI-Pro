@@ -5,7 +5,7 @@ import { useState, memo } from 'react'
 import type { Message } from '@/lib/types'
 import { MarkdownRenderer } from '@/components/markdown'
 import { motion } from 'framer-motion'
-import { Copy, Check, RefreshCw, ArrowDown, Play } from 'lucide-react'
+import { Copy, Check, RefreshCw, ArrowDown, Play, Pencil } from 'lucide-react'
 import { MessageSuggestions } from './MessageSuggestions'
 import { useI18n } from '@/lib/i18n'
 
@@ -14,6 +14,7 @@ interface MessageBubbleProps {
   onRegenerate?: () => void  // Optional callback for regenerate
   onContinue?: () => void   // Optional callback for continue
   onSuggestion?: (prompt: string) => void  // Optional callback for suggestions
+  onEdit?: () => void       // Optional callback for editing user message
 }
 
 const statusIcons: Record<string, string> = {
@@ -58,6 +59,7 @@ export const MessageBubble = memo(function MessageBubble({
   onRegenerate,
   onContinue,
   onSuggestion,
+  onEdit,
 }: MessageBubbleProps) {
   const { t } = useI18n()
   const [copied, setCopied] = useState(false)
@@ -126,6 +128,16 @@ export const MessageBubble = memo(function MessageBubble({
         {isUser ? (
           <div className="whitespace-pre-wrap text-[15px] leading-relaxed">
             {message.content}
+            {/* Edit Button (user messages) */}
+            {onEdit && (
+              <button
+                onClick={onEdit}
+                className="ml-2 p-1 rounded-md bg-violet-500/30 hover:bg-violet-500/50 text-violet-200 hover:text-white opacity-0 group-hover:opacity-100 transition-all align-middle"
+                title="Edit message"
+              >
+                <Pencil className="w-3 h-3" />
+              </button>
+            )}
           </div>
         ) : (
           <div className="prose prose-invert prose-slate max-w-none text-[15px] leading-relaxed">

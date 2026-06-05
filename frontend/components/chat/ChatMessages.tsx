@@ -10,9 +10,10 @@ interface ChatMessagesProps {
   onRegenerate?: (messageId: string) => void
   onContinue?: (messageId: string) => void
   onSuggestion?: (messageId: string, prompt: string) => void
+  onEdit?: (messageId: string) => void
 }
 
-export function ChatMessages({ messages, onRegenerate, onContinue, onSuggestion }: ChatMessagesProps) {
+export function ChatMessages({ messages, onRegenerate, onContinue, onSuggestion, onEdit }: ChatMessagesProps) {
   // Filter out null/undefined messages
   const displayMessages = messages
     .filter(m => 
@@ -39,6 +40,7 @@ export function ChatMessages({ messages, onRegenerate, onContinue, onSuggestion 
             () => onContinue?.(msg.id) : undefined}
           onSuggestion={msg.role === 'assistant' && msg.status === 'done' ? 
             (prompt: string) => onSuggestion?.(msg.id, prompt) : undefined}
+          onEdit={msg.role === 'user' ? () => onEdit?.(msg.id) : undefined}
         />
       ))}
     </div>

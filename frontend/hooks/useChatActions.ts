@@ -147,11 +147,11 @@ export const useChatActions = () => {
     }
   }, [getCurrentModelInfo, initializeNewGeneration, setCurrentMessage, addMessage, setError, cancel])
 
-  const regenerate = useCallback(async (messageId: string) => {
+  const regenerate = useCallback(async (messageId: string, newContent?: string) => {
     const userIndex = messages.findIndex(m => m.id === messageId && m.role === 'user')
     if (userIndex === -1) return
 
-    const content = messages[userIndex].content
+    const content = newContent ?? messages[userIndex].content
 
     // Capture model immediately to avoid race condition
     const modelInfo = getCurrentModelInfo()

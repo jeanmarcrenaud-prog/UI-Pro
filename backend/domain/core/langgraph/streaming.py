@@ -173,6 +173,8 @@ async def stream_agent(
                 _state_emitted.add("code")
                 files = code_val.get("files", {})
                 yield f"[STEP]coding:Code generation completed ({len(files)} fichiers)"
+                for filename, source in files.items():
+                    yield f"[TOKEN]\n\n**{filename}**\n```python\n{source}\n```\n\n"
 
             review_val = event.get("review")
             if review_val and "review" not in _state_emitted:

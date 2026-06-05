@@ -1,7 +1,7 @@
 // components/chat/ChatContainer.tsx
 'use client'
 
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useRef } from 'react'
 import type { Message, AgentStep } from '@/lib/types'
 import { useChat } from '@/hooks/useChat'
 import { ChatMessages } from './chat/ChatMessages'
@@ -196,6 +196,8 @@ export function ChatContainer({
   const thinkingOff = !thinkingEnabled
 
   const [inputValue, setInputValue] = useState('')
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Priority: props > hook (useful for modal/preview modes)
   const messages = propMessages.length > 0 ? propMessages : hookMessages
@@ -213,9 +215,14 @@ export function ChatContainer({
     const trimmed = inputValue.trim()
     if (!trimmed || isLoading) return
 
-    sendMessage(trimmed)
+    if (editingMessageId) {
+      regenerate(editingMessageId, trimmed)
+      setEditingMessageId(null)
+    } else {
+      sendMessage(trimmed)
+    }
     setInputValue('')
-  }, [inputValue, isLoading, sendMessage])
+  }, [inputValue, isLoading, sendMessage, regenerate, editingMessageId])
 
   const handleExampleSelect = useCallback((prompt: string) => {
     sendMessage(prompt)
@@ -229,6 +236,18 @@ export function ChatContainer({
     // Prepend to input for review instead of sending immediately
     const enhancedPrompt = prompt + message.content
     setInputValue(enhancedPrompt)
+  }, [messages])
+
+  const handleEdit = useCallback((messageId: string) => {
+    const message = messages.find(m => m.id === messageId)
+    if (!message) return
+    setEditingMessageId(messageId)
+    setInputValue(message.content)
+    // Focus and scroll to textarea after state update
+    setTimeout(() => {
+      textareaRef.current?.focus()
+      textareaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 100)
   }, [messages])
 
   const handleStop = useCallback(() => {
@@ -259,7 +278,7 @@ export function ChatContainer({
               disabled={isLoading}
             />
           ) : (
-            <ChatMessages messages={messages} onSuggestion={handleSuggestion} onRegenerate={regenerate} />
+            <ChatMessages messages={messages} onSuggestion={handleSuggestion} onRegenerate={regenerate} onEdit={handleEdit} />
           )}
         </AnimatePresence>
 
@@ -312,7 +331,21 @@ export function ChatContainer({
       <div className="sticky bottom-0 bg-gradient-to-t from-[var(--bg-primary)] via-[var(--bg-primary)] to-transparent pt-6 pb-8 px-6 border-t border-[var(--border-subtle)]">
         <div className="max-w-4xl mx-auto">
           <div className="relative bg-slate-900 rounded-3xl border border-slate-700 focus-within:border-violet-500 transition-colors">
+            {editingMessageId && (
+              <div className="absolute -top-3 left-4 flex items-center gap-2">
+                <span className="text-[11px] text-amber-400 bg-slate-800 px-2 py-0.5 rounded-full border border-amber-500/30">
+                  Editing
+                </span>
+                <button
+                  onClick={() => { setEditingMessageId(null); setInputValue('') }}
+                  className="text-[11px] text-slate-400 hover:text-white bg-slate-800 px-2 py-0.5 rounded-full border border-slate-600 hover:border-slate-500 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
             <textarea
+              ref={textareaRef}
               value={inputValue}
               onChange={handleTextareaChange}
               disabled={isLoading}
