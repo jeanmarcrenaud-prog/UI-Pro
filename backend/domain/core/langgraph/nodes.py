@@ -565,10 +565,37 @@ async def executing_node(state: AgentState) -> AgentState:
 
     _emit_step("executing", f"Exécution de {len(files)} fichier(s) dans le sandbox...")
     try:
-        result = await asyncio.wait_for(
-            executor.run_files_async(files),
-            timeout=float(settings.executor_timeout),
-        )
+        try:
+            result = await asyncio.wait_for(
+                executor.run_files_async(files),
+                timeout=float(settings.executor_timeout),
+            )
+        except asyncio.TimeoutError:
+            # asyncio.TimeoutError has str(e) == '' — surface a useful message
+            # so the user sees WHY execution failed (otherwise error field is empty).
+            timeout_s = int(float(settings.executor_timeout))
+            err_msg = (
+                f"Execution timed out after {timeout_s}s "
+                f"(sandbox exceeded EXECUTOR_TIMEOUT). "
+                f"Increase executor_timeout in Settings, or simplify the code."
+            )
+            state["error"] = err_msg
+            state["execution_result"] = {"success": False, "error": err_msg, "output": ""}
+            _emit_step("executing", f"❌ Timeout ({timeout_s}s)")
+            logger.warning("Sandbox execution timed out after %ss", timeout_s)
+            state["attempt"] = state.get("attempt", 0) + 1
+            # Skip the success-summary path and emit a failure summary instead.
+            return _build_execution_summary(state)
+
+        except asyncio.CancelledError:
+            err_msg = "Execution was cancelled (e.g. client disconnect or shutdown)"
+            state["error"] = err_msg
+            state["execution_result"] = {"success": False, "error": err_msg, "output": ""}
+            _emit_step("executing", "❌ Cancelled")
+            logger.warning("Sandbox execution cancelled")
+            state["attempt"] = state.get("attempt", 0) + 1
+            return _build_execution_summary(state)
+
         # Stocker en dict (pas dataclass) pour compatibilité TypedDict
         state["execution_result"] = {
             "success": result.success,
@@ -579,22 +606,35 @@ async def executing_node(state: AgentState) -> AgentState:
         if result.success:
             _emit_step("executing", "✅ Exécution réussie")
         else:
-            _emit_step("executing", f"❌ Échec: {result.error[:80] if result.error else 'unknown'}")
+            # Defense in depth: if the upstream executor returned success=False
+            # with an empty error, generate a meaningful fallback so the user
+            # never sees a silent empty failure.
+            err_msg = result.error or "(no error message from sandbox — check executor logs)"
+            _emit_step("executing", f"❌ Échec: {err_msg[:80]}")
     except Exception as e:
-        state["error"] = str(e)
-        state["execution_result"] = {"success": False, "error": str(e)}
-        _emit_step("executing", f"❌ Exception: {str(e)[:80]}")
+        err_msg = f"{type(e).__name__}: {e}" if str(e) else f"{type(e).__name__} (no message)"
+        state["error"] = err_msg
+        state["execution_result"] = {"success": False, "error": err_msg, "output": ""}
+        _emit_step("executing", f"❌ Exception: {err_msg[:80]}")
         logger.exception("Execution failed")
 
     state["attempt"] = state.get("attempt", 0) + 1
 
-    # Build a final user-facing summary so the visible assistant text in
-    # the chat reflects what actually happened, not the plan JSON. The
-    # streaming layer (streaming.py) tracks the LAST assistant message in
-    # state["messages"] and emits its tokens — appending here puts the
-    # executed output (or the failure trace) in front of the user.
-    # On a successful run, this includes the sandbox stdout. On failure,
-    # it shows the error so the user can see what went wrong.
+    return _build_execution_summary(state)
+
+
+def _build_execution_summary(state: AgentState) -> AgentState:
+    """Append a final user-facing summary to state["messages"].
+
+    The streaming layer (streaming.py) tracks the LAST assistant message
+    in state["messages"] and emits its tokens — appending here puts the
+    executed output (or the failure trace) in front of the user.
+
+    On a successful run, this includes the sandbox stdout. On failure,
+    it shows the error so the user can see what went wrong.
+
+    Returns the state for fluent chaining from error/timeout paths.
+    """
     exec_result = state.get("execution_result") or {}
     attempt = state.get("attempt", 0)
     max_attempts = state.get("max_attempts", 3)

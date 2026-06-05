@@ -106,10 +106,31 @@ class BaseExecutor(ABC):
             f"=== {r['filename']} ===\n{r['output'] or r['error']}" for r in results
         )
 
+        # Defense in depth: if any file failed, never return an empty error.
+        # Empty error fields propagate to the user as a silent failure (P3#2).
+        if all_success:
+            final_error = ""
+        else:
+            last = results[-1]
+            if last["error"]:
+                final_error = last["error"]
+            elif last["output"]:
+                # Subprocess produced stdout but failed — surface that the file
+                # returned non-zero with no stderr, so the user isn't left guessing.
+                final_error = (
+                    f"{last['filename']} exited with a non-zero status "
+                    f"(no stderr captured). Partial output: {last['output'][:200]}"
+                )
+            else:
+                final_error = (
+                    f"{last['filename']} exited with a non-zero status "
+                    f"and no output or stderr captured. Check executor logs."
+                )
+
         return ExecutionResult(
             success=all_success,
             output=combined_output,
-            error="" if all_success else results[-1]["error"],
+            error=final_error,
             execution_time_ms=sum(r["execution_time_ms"] for r in results),
             sandbox_type=self.__class__.__name__.replace("Executor", "").lower(),
         )

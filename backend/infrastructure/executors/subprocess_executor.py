@@ -69,7 +69,10 @@ class SubprocessExecutor(BaseExecutor):
                 elapsed_ms = (time.perf_counter() - start) * 1000
                 return ExecutionResult(
                     False,
-                    error="execution timeout",
+                    error=(
+                        f"Subprocess execution timed out after {self.timeout_seconds}s "
+                        f"(EXECUTOR_TIMEOUT). Simplify the code or increase the timeout."
+                    ),
                     execution_time_ms=elapsed_ms,
                     sandbox_type="subprocess",
                 )
@@ -86,9 +89,11 @@ class SubprocessExecutor(BaseExecutor):
                     sandbox_type="subprocess",
                 )
             else:
+                # Defense in depth: if stderr is empty for any reason, surface
+                # the exit code so the user never gets a silent empty failure.
                 return ExecutionResult(
                     False,
-                    error=err_text or f"exit code {proc.returncode}",
+                    error=err_text or f"Subprocess exited with code {proc.returncode} (no stderr captured)",
                     execution_time_ms=elapsed_ms,
                     sandbox_type="subprocess",
                 )
