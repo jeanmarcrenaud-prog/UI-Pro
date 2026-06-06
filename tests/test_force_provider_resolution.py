@@ -27,6 +27,7 @@ from backend.domain.core.langgraph.llm_wrapper import (
     LLMWrapper,
     _resolve_provider_for_model,
 )
+from backend.domain.core.langgraph import nodes as langgraph_nodes
 
 
 # ========================================
@@ -228,3 +229,108 @@ class TestForceProviderResolution:
             model, provider = w._resolved()
             assert model == "liquid/lfm2.5-1.2b"
             assert provider == "lmstudio"
+
+
+# ========================================
+# _force_model_for -- preset tier discovery validation
+# ========================================
+
+
+class _FakeSettings:
+    def __init__(self, routing_on=True, preset_model="qwen3.5:9b"):
+        self._routing_on = routing_on
+        self._preset_model = preset_model
+
+    def get_node_routing_enabled(self) -> bool:
+        return self._routing_on
+
+    def get_model_for_task(self, tier: str) -> str:
+        return self._preset_model
+
+
+class TestForceModelFor:
+    def test_routing_off_returns_empty(self):
+        fake = _FakeSettings(routing_on=False, preset_model="anything")
+        with _patched_discovery({"qwen3.5:9b": "ollama"}):
+            with patch.object(langgraph_nodes, "settings", fake):
+                assert langgraph_nodes._force_model_for("fast") == ""
+
+    def test_routing_on_model_discovered_returns_model(self):
+        fake = _FakeSettings(routing_on=True, preset_model="qwen3.5:9b")
+        with _patched_discovery({"qwen3.5:9b": "ollama"}):
+            with patch.object(langgraph_nodes, "settings", fake):
+                assert langgraph_nodes._force_model_for("fast") == "qwen3.5:9b"
+
+    def test_routing_on_model_undiscovered_returns_empty(self):
+        fake = _FakeSettings(routing_on=True, preset_model="liquid/lfm2.5-1.2b")
+        with _patched_discovery({"qwen3.5:9b": "ollama"}):
+            with patch.object(langgraph_nodes, "settings", fake):
+                assert langgraph_nodes._force_model_for("fast") == ""
+
+    def test_routing_on_undiscovered_logs_warning(self):
+        fake = _FakeSettings(routing_on=True, preset_model="liquid/lfm2.5-1.2b")
+        with _patched_discovery({"qwen3.5:9b": "ollama"}):
+            with patch.object(langgraph_nodes, "settings", fake):
+                with patch.object(langgraph_nodes.logger, "warning") as warn:
+                    langgraph_nodes._force_model_for("fast")
+        warn.assert_called_once()
+        # logger.warning(format, *args) is lazy-formatted. The format
+        # string stays unformatted; the actual values are in args.
+        args = warn.call_args.args
+        assert "fast" in args           # tier
+        assert "liquid/lfm2.5-1.2b" in args  # candidate
+
+    def test_routing_on_discovery_unavailable_keeps_candidate(self):
+        """Defensive: if model_discovery itself is unavailable
+        (e.g. import failure, broker crashed), the function keeps
+        the preset candidate as best effort. The router will
+        surface whatever error the backend produces. Better than
+        silently downgrading every node to the chat model.
+        """
+        fake = _FakeSettings(
+            routing_on=True, preset_model="liquid/lfm2.5-1.2b"
+        )
+
+        class _RaisingFactory:
+            @staticmethod
+            def get_model_discovery():
+                raise RuntimeError("discovery module not loaded")
+
+        with patch(
+            "backend.infrastructure.model_discovery.get_model_discovery",
+            _RaisingFactory.get_model_discovery,
+        ):
+            with patch.object(langgraph_nodes, "settings", fake):
+                assert (
+                    langgraph_nodes._force_model_for("fast")
+                    == "liquid/lfm2.5-1.2b"
+                )
+
+
+    def test_routing_on_empty_preset_returns_empty(self):
+        fake = _FakeSettings(routing_on=True, preset_model="")
+        with _patched_discovery({"qwen3.5:9b": "ollama"}):
+            with patch.object(langgraph_nodes, "settings", fake):
+                assert langgraph_nodes._force_model_for("fast") == ""
+
+    def test_routing_on_discovery_raises_keeps_candidate(self):
+        fake = _FakeSettings(routing_on=True, preset_model="qwen3.5:9b")
+
+        class _Exploding:
+            def get_backend_for_model(self, name):
+                raise RuntimeError("discovery broken")
+
+        class _Factory:
+            @staticmethod
+            def get_model_discovery():
+                return _Exploding()
+
+        with patch("backend.infrastructure.model_discovery.get_model_discovery", _Factory.get_model_discovery):
+            with patch.object(langgraph_nodes, "settings", fake):
+                assert langgraph_nodes._force_model_for("fast") == "qwen3.5:9b"
+
+    def test_cross_backend_discovered_returns_model(self):
+        fake = _FakeSettings(routing_on=True, preset_model="liquid/lfm2.5-1.2b")
+        with _patched_discovery({"liquid/lfm2.5-1.2b": "lmstudio"}):
+            with patch.object(langgraph_nodes, "settings", fake):
+                assert langgraph_nodes._force_model_for("fast") == "liquid/lfm2.5-1.2b"

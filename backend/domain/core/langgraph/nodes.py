@@ -125,13 +125,66 @@ def _force_model_for(tier: str) -> str:
     """Resolve the preset tier to a model name, honoring the routing toggle.
 
     Returns the preset's model for the given tier when per-node routing
-    is enabled (the default). Returns "" (empty) when the user has
-    disabled routing — the LLMWrapper then falls back to user_model,
-    restoring the legacy "all nodes use the chat model" behavior.
+    is enabled (the default) AND that model is actually discovered on
+    a running backend. Returns "" (empty) when:
+
+      - the user has disabled routing (legacy "all nodes use the chat
+        model" path);
+      - the preset model is not in the model_discovery cache (e.g.
+        model_fast points to a LM Studio model but LM Studio is off).
+
+    In the second case the LLMWrapper takes the legacy user_model path
+    on the user's selected backend, which is safe and predictable. The
+    alternative — silently forwarding an undiscovered model to whatever
+    backend the user happens to be on — produced the
+    LLMModelNotFoundError in the original bug report.
+
+    Note on cold cache: if model_discovery hasn't run yet (the cache
+    is empty), we keep the preset candidate as best effort. The
+    LLMWrapper's own discovery lookup will catch it on first call
+    and the router will surface a clean 404 if it's truly missing.
     """
     if not settings.get_node_routing_enabled():
         return ""
-    return settings.get_model_for_task(tier)
+    candidate = settings.get_model_for_task(tier)
+    if not candidate:
+        return ""
+
+    # Late import: model_discovery pulls in heavy backend clients, and
+    # we don't want to slow down the import of this module for tests
+    # or simple unit paths.
+    try:
+        from backend.infrastructure.model_discovery import (
+            get_model_discovery,
+        )
+    except Exception:  # pragma: no cover - import-time guard
+        return candidate
+
+    try:
+        discovered_backend = (
+            get_model_discovery().get_backend_for_model(candidate)
+        )
+    except Exception:
+        # Discovery itself failed (e.g. backend process is in a bad
+        # state). Best effort: keep the candidate and let the router
+        # surface whatever error it actually produces.
+        return candidate
+
+    if discovered_backend is None:
+        # Warm cache but the model isn't on any running backend.
+        # Log once per call so the user can fix their preset in
+        # Settings, then return "" -> legacy user_model path.
+        logger.warning(
+            "[routing] Preset tier '%s' points to model '%s', which is "
+            "not discovered on any running backend. Falling back to "
+            "the user's chat model. Either start the backend that hosts "
+            "this model (check Settings -> Backends), or change the "
+            "active preset in Settings -> Models.",
+            tier,
+            candidate,
+        )
+        return ""
+    return candidate
 
 
 async def analyzing_node(state: AgentState) -> AgentState:
