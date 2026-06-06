@@ -13,25 +13,107 @@ def client():
 
 
 class TestHealthEndpoint:
-    """Tests for /health endpoint"""
+    """Tests for the fast /health liveness probe.
+
+    P1#4 split: /health is for Docker/k8s liveness only and must do
+    no I/O. Deep diagnostics live on /health/deep — see the next class.
+    """
 
     def test_health_returns_200(self, client):
         """Health check should return 200"""
         response = client.get("/health")
         assert response.status_code == 200
 
-    def test_health_returns_healthy(self, client):
-        """Health check should return valid status"""
+    def test_health_status_is_ok(self, client):
+        """Fast probe always reports 'ok' status (no I/O performed)."""
         response = client.get("/health")
         data = response.json()
-        assert data.get("status") in ("healthy", "degraded"), f"Unexpected status: {data.get('status')}"
-        assert "dependencies" in data, "Missing dependencies field"
+        assert data.get("status") == "ok", f"Unexpected status: {data.get('status')}"
 
-    def test_health_includes_services(self, client):
-        """Health check should include services info"""
+    def test_health_payload_is_shallow(self, client):
+        """Fast probe payload is shallow — no dependencies/services fields."""
         response = client.get("/health")
         data = response.json()
+        # These are the deep-only fields; the fast probe must not surface
+        # them or it defeats the whole point of the split.
+        assert "dependencies" not in data
+        assert "services" not in data
+
+    def test_health_stays_fast(self, client):
+        """Fast probe must complete in under 100ms (orchestration tools
+        poll this on every second)."""
+        import time
+
+        start = time.perf_counter()
+        response = client.get("/health")
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        assert response.status_code == 200
+        # 100ms is generous — typical is ~5ms. We're guarding against
+        # accidentally re-introducing I/O in the fast path.
+        assert elapsed_ms < 100, f"/health took {elapsed_ms:.1f}ms (>100ms)"
+
+
+class TestHealthDeepEndpoint:
+    """Tests for /health/deep diagnostic endpoint.
+
+    P1#4 split: deep checks perform I/O (backends, deps, ollama version)
+    and may take up to 4s. They are not safe for liveness probes.
+    """
+
+    def test_health_deep_returns_200(self, client):
+        """Deep health check should return 200"""
+        response = client.get("/health/deep")
+        assert response.status_code == 200
+
+    def test_health_deep_includes_dependencies(self, client):
+        """Deep health check should report structured dependencies."""
+        response = client.get("/health/deep")
+        data = response.json()
+        assert "dependencies" in data
         assert "services" in data
+
+    def test_health_deep_includes_services(self, client):
+        """Deep health check should include services info."""
+        response = client.get("/health/deep")
+        data = response.json()
+        services = data["services"]
+        assert "backends" in services
+        assert "llm" in services
+        assert "backends_summary" in services
+
+    def test_health_deep_includes_ollama_version(self, client):
+        """Deep health check surfaces the Ollama version probe result.
+
+        The probe is a thin wrapper over check_ollama_version which
+        returns a dict with at least a 'status' key — that key is
+        always present even when Ollama is disabled (status='skipped').
+        """
+        response = client.get("/health/deep")
+        data = response.json()
+        ollama_version = data["services"].get("ollama_version")
+        assert ollama_version is not None, "services.ollama_version missing"
+        assert "status" in ollama_version
+        # The status field is one of: "ok", "error", "unknown", "skipped".
+        assert ollama_version["status"] in ("ok", "error", "unknown", "skipped")
+        # latency_ms is always present and is a number (int/float)
+        assert "latency_ms" in ollama_version
+        assert isinstance(ollama_version["latency_ms"], (int, float))
+
+    def test_health_deep_includes_required_models_field(self, client):
+        """Deep health check surfaces the required_models block.
+
+        The block always exists so consumers can iterate over it
+        without null-checking, even when ollama_required_models is
+        empty (the default).
+        """
+        response = client.get("/health/deep")
+        data = response.json()
+        rm = data.get("required_models")
+        assert rm is not None, "required_models field missing from /health/deep"
+        assert "configured" in rm
+        assert "missing" in rm
+        assert isinstance(rm["configured"], list)
+        assert isinstance(rm["missing"], list)
 
 
 class TestStatusEndpoint:
