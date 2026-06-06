@@ -28,6 +28,56 @@ def check_backend_health(url: str, timeout: float = 5.0) -> dict:
         return {"status": "error", "latency_ms": ms, "error": str(e)}
 
 
+def check_ollama_version(ollama_url: str, timeout: float = 5.0) -> dict:
+    """Probe Ollama's /api/version endpoint for diagnostic info.
+
+    Returns a dict with:
+        - status: "ok" | "error" | "unknown"
+        - version: the reported Ollama version string (or None on failure)
+        - latency_ms: round-trip in ms
+        - error: error string or None
+
+    Ollama exposes /api/version since v0.1.14. Older installs return 404,
+    which is treated as "unknown" rather than a hard error so deployments
+    on older versions don't get a false alarm.
+    """
+    base = ollama_url.rstrip("/")
+    # ollama_url is often the chat URL (e.g. http://localhost:11434). Trim
+    # any /api/* suffix so we hit the version root.
+    for suffix in ("/api/generate", "/api/chat", "/api/tags"):
+        if base.endswith(suffix):
+            base = base[: -len(suffix)]
+            break
+    version_url = f"{base}/api/version"
+    start = time.monotonic()
+    try:
+        resp = requests.get(version_url, timeout=timeout)
+        ms = round((time.monotonic() - start) * 1000, 1)
+        if resp.status_code == 404:
+            return {
+                "status": "unknown",
+                "version": None,
+                "latency_ms": ms,
+                "error": "Ollama /api/version not available (older version?)",
+            }
+        resp.raise_for_status()
+        data = resp.json()
+        return {
+            "status": "ok",
+            "version": data.get("version"),
+            "latency_ms": ms,
+            "error": None,
+        }
+    except requests.RequestException as e:
+        ms = round((time.monotonic() - start) * 1000, 1)
+        return {
+            "status": "error",
+            "version": None,
+            "latency_ms": ms,
+            "error": str(e),
+        }
+
+
 def check_backends_parallel(
     endpoints: dict[str, str], timeout: float = 5.0
 ) -> dict[str, dict]:
@@ -101,4 +151,5 @@ __all__ = [
     "aggregate_health",
     "check_backend_health",
     "check_backends_parallel",
+    "check_ollama_version",
 ]

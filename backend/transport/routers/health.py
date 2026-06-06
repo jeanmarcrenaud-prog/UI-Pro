@@ -1,6 +1,7 @@
 # views/routers/health.py - Health and status endpoints
 
 import asyncio
+import logging
 import time
 from typing import Any
 
@@ -8,6 +9,8 @@ from fastapi import APIRouter, Query, Response
 from pydantic import BaseModel
 
 from models.settings import settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="", tags=["health"])
 
@@ -110,7 +113,12 @@ async def health_check():
 
 @router.get("/health/deep")
 async def health_check_deep():
-    """Deep health check: dependencies + backends + GPU. May take up to 4s."""
+    """Deep health check: dependencies + backends + GPU + Ollama version.
+
+    May take up to 4s. The fast /health probe is for Docker/k8s liveness
+    and intentionally does no I/O. Use /health/deep from monitoring tools
+    and dashboards where you want the full picture.
+    """
     # Check dependencies and backends in parallel
     deps_task = asyncio.create_task(_check_dependencies())
     backend_health_task = asyncio.create_task(asyncio.to_thread(_check_backends))
@@ -118,12 +126,55 @@ async def health_check_deep():
     deps = await deps_task
     backend_health = await backend_health_task
 
-    from backend.infrastructure.llm.health import aggregate_health
+    from backend.infrastructure.llm.health import (
+        aggregate_health,
+        check_ollama_version,
+    )
+
+    # Probe Ollama's /api/version in parallel (uses the configurable
+    # timeout). Only runs when Ollama is actually enabled in settings,
+    # so deployments without Ollama don't pay the cost.
+    ollama_version: dict = {"status": "skipped", "version": None, "error": None}
+    if settings.backends.get("ollama", {}).get("enabled", False):
+        ollama_version = await asyncio.to_thread(
+            check_ollama_version,
+            settings.ollama_url,
+            float(settings.ollama_health_timeout),
+        )
+
     health_summary = aggregate_health(backend_health)
+
+    # Required-models check: if ollama_required_models is configured,
+    # verify each one is in the discovered model set. Uses the cached
+    # discovery so this is cheap. A missing required model is a soft
+    # signal — degraded, not unhealthy, so orchestration keeps the pod
+    # alive while ops investigates.
+    required_models: list[str] = list(
+        getattr(settings, "ollama_required_models", []) or []
+    )
+    missing_models: list[str] = []
+    if required_models:
+        try:
+            from backend.infrastructure.model_discovery import get_model_discovery
+
+            discovery = get_model_discovery()
+            available = set(discovery.get_model_names())
+            if not available:
+                # Cache miss — fall back to a live discovery. This code
+                # path is only hit when required_models is set, so the
+                # extra discovery cost is acceptable.
+                models = await discovery.discover_all()
+                available = {m.name for m in models}
+            missing_models = [m for m in required_models if m not in available]
+        except Exception as e:
+            logger.debug("Required-models check failed: %s", e)
 
     overall = "healthy" if all(d["ok"] for d in deps.values()) else "degraded"
     # Degrade overall if no backends are ok
     if health_summary["ok_count"] == 0 and backend_health:
+        overall = "degraded"
+    # Required models missing — also degraded (even if Ollama is up)
+    if missing_models:
         overall = "degraded"
 
     return {
@@ -136,6 +187,11 @@ async def health_check_deep():
             "backends": backend_health,
             "llm": health_summary["status"],
             "backends_summary": health_summary,
+            "ollama_version": ollama_version,
+        },
+        "required_models": {
+            "configured": required_models,
+            "missing": missing_models,
         },
         "system": _get_system_info(),
     }

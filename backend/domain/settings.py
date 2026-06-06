@@ -110,6 +110,18 @@ class Settings(BaseSettings):
     llamacpp_url: str = "http://localhost:8080"
     lmstudio_url: str = "http://localhost:1234"
 
+    # Health check tuning for the /health/deep endpoint. The fast /health
+    # probe intentionally does no I/O so Docker/k8s load balancers can
+    # check it in <50ms; only /health/deep hits these. health_timeout is
+    # the per-backend probe deadline (lower than llm_timeout because we
+    # only need a /api/version or /api/ps round-trip). required_models
+    # lets production deployments assert that the expected model set is
+    # installed — if any are missing, /health/deep returns "degraded"
+    # rather than "healthy", so an alert can fire BEFORE the user
+    # notices the model is gone.
+    ollama_health_timeout: int = Field(default=5, ge=1, le=30)
+    ollama_required_models: list[str] = Field(default_factory=list)
+
     model_fast: str = ""
     model_reasoning: str = ""
     model_code: str = ""
