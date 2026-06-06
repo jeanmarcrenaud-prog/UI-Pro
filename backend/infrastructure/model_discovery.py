@@ -287,6 +287,33 @@ class ModelDiscovery:
         cached = self._cache.get("all")
         return any(m.name == model_name for m in cached) if cached else False
 
+    def get_backend_for_model(self, model_name: str) -> str | None:
+        """Return the backend ("ollama", "lmstudio", ...) that hosts
+        `model_name`, or None if the cache is cold or the model is
+        unknown.
+
+        Used by the per-node routing layer: when the routing preset
+        forces a model from a different backend than the one the user
+        originally selected (e.g. user picked an Ollama model, but
+        the "fast" tier forces a LM Studio model), the router needs
+        to know the right backend to send the request to — otherwise
+        it would forward the LM Studio model name to Ollama, which
+        404s.
+
+        Synchronous because it only reads the warm cache. If the
+        cache is cold (no discovery has run yet), returns None and
+        callers must fall back to whatever default they had.
+        """
+        if not model_name:
+            return None
+        cached = self._cache.get("all")
+        if not cached:
+            return None
+        for m in cached:
+            if m.name == model_name:
+                return m.backend
+        return None
+
     # ── Internal ────────────────────────────────────────────────
 
     async def _discover_backend(self, name: str) -> list[DiscoveredModel]:

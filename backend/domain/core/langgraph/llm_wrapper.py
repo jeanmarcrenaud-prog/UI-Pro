@@ -12,6 +12,28 @@ from backend.infrastructure.llm.progress import LLMProgressTracker
 logger = logging.getLogger(__name__)
 
 
+def _resolve_provider_for_model(model_name: str) -> str | None:
+    """Look up which backend currently hosts `model_name`.
+
+    Returns the backend name (e.g. "ollama", "lmstudio") or None if
+    the model_discovery cache is cold or the model is unknown. Wraps
+    the import in a try/except so this module stays importable in
+    test environments that don't have model_discovery wired up.
+    """
+    if not model_name:
+        return None
+    try:
+        from backend.infrastructure.model_discovery import (
+            get_model_discovery,
+        )
+    except Exception:  # pragma: no cover - import-time guard
+        return None
+    try:
+        return get_model_discovery().get_backend_for_model(model_name)
+    except Exception:
+        return None
+
+
 class LLMWrapper:
     def __init__(
         self,
@@ -32,11 +54,32 @@ class LLMWrapper:
         # small model (e.g. lfm2.5-1.2b) is forced to do heavy tasks
         # (code gen, review) it can't handle.
         self.force_model = force_model
-        # If the caller pins a model but no provider, reuse the user's
-        # provider (common case: all models live on the same backend,
-        # e.g. LM Studio). The caller can override explicitly if models
-        # are split across providers.
-        self.force_provider = force_provider or user_provider
+        # Per-node provider resolution. Three cases:
+        #
+        #   1) Caller passed force_provider explicitly -> trust it
+        #      (e.g. tests, or future per-node overrides).
+        #   2) force_model is set but the caller did NOT pass a
+        #      provider -> look up which backend actually hosts the
+        #      forced model. If the model lives on a DIFFERENT backend
+        #      than the user's selected one (common with cross-backend
+        #      presets: user picks an Ollama chat model, but the
+        #      "fast" tier forces a LM Studio model), switch
+        #      force_provider to the right backend. Otherwise the
+        #      router forwards the LM Studio model name to Ollama
+        #      and gets a 404.
+        #   3) No force_model at all -> keep user_provider (legacy
+        #      "all nodes use the chat model" behavior).
+        #
+        # Fallback: if the cache is cold or the model is unknown,
+        # inherit user_provider. A 404 from the router is still a
+        # clean error -- much better than silently misrouting.
+        if force_provider:
+            self.force_provider = force_provider
+        elif force_model:
+            derived = _resolve_provider_for_model(force_model)
+            self.force_provider = derived or user_provider
+        else:
+            self.force_provider = user_provider
 
     def _resolved(self) -> tuple[str, str]:
         """Return the (model, provider) that should actually be used.
