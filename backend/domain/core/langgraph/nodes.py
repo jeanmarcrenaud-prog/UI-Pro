@@ -10,6 +10,7 @@ from typing import Any, Literal
 
 from models.settings import settings
 
+from .fix_prompts import format_fix_prompt
 from .state import AgentState, CodeData, PlanData, ReviewData
 
 logger = logging.getLogger(__name__)
@@ -286,12 +287,25 @@ async def coding_node(state: AgentState) -> AgentState:
     if plan_clean:
         prompt_parts.append(f"Implementation plan: {json.dumps(plan_clean, ensure_ascii=False)}")
 
-    if attempt > 0 and previous_error:
-        prompt_parts.append(
-            f"PREVIOUS EXECUTION FAILED (attempt {attempt}/{state.get('max_attempts', 3)}):\n"
-            f"Error: {previous_error[:500]}\n\n"
-            "Fix the code to resolve this error. Do NOT repeat the same mistake."
+    # Retry path: when attempt > 0, build a structured self-correction
+    # prompt that hands the model the previous code, the execution
+    # error, and the review issues/suggestions. The helper returns an
+    # empty string when there is nothing to fix (attempt == 0) so we
+    # can append unconditionally. We lower the temperature on retries
+    # (0.25 instead of 0.3) to favour deterministic, targeted fixes
+    # over creative rewrites. `settings.advanced_self_critique` flips
+    # between the basic prompt and the CoT+self-critique variant.
+    is_fix_attempt = attempt > 0 and bool(previous_error or state.get("review"))
+    if is_fix_attempt:
+        fix_ctx = format_fix_prompt(
+            state, advanced=bool(getattr(settings, "advanced_self_critique", False))
         )
+        if fix_ctx:
+            prompt_parts.append(fix_ctx)
+            logger.info(
+                f"[coding_node] fix attempt {attempt}/"
+                f"{state.get('max_attempts', 3)} — advanced={settings.advanced_self_critique}"
+            )
 
     prompt_parts.append(
         "Generate Python code that solves the request.\n\n"
@@ -385,7 +399,14 @@ async def coding_node(state: AgentState) -> AgentState:
         )
 
     prompt = "\n\n".join(prompt_parts)
-    full_response = await llm.run_node(prompt, model_type="fast", temperature=0.3)
+    # Lower temperature on retries so the model converges on a fix
+    # rather than exploring variants. 0.25 is the same value proposed
+    # in the fix_prompts docstring — small enough to be deterministic,
+    # large enough not to be brittle.
+    retry_temperature = 0.25 if is_fix_attempt else 0.3
+    full_response = await llm.run_node(
+        prompt, model_type="fast", temperature=retry_temperature
+    )
 
     _emit_step("coding", "Extraction et validation du code...")
     from .code_extractor import extract_code_dict

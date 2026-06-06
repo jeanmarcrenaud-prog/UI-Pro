@@ -129,6 +129,15 @@ class Settings(BaseSettings):
     llm_timeout: int = Field(default=600, ge=10, le=1800)
     executor_timeout: int = Field(default=60, ge=5, le=600)
 
+    # When True, the coding_node retry path uses the advanced self-correction
+    # prompt (chain-of-thought + self-critique blocks before the code). When
+    # False (default), it uses the basic fix prompt — context-only, no
+    # explicit CoT. The advanced prompt costs ~30% of the token budget on
+    # the meta-cognition blocks, which 9B-class models spend at the
+    # expense of the final code (often truncating it). 14B+ models benefit
+    # from it. Default OFF keeps the 9B default-model path safe.
+    advanced_self_critique: bool = False
+
     # Qwen3.5+ and other "thinking-mode" models (Qwen, DeepSeek-R1, OpenAI o1/o3)
     # spend the majority of their `max_tokens` budget on internal chain-of-thought
     # BEFORE any visible output. Live test on qwen3.5-9b (9B parameters) with
