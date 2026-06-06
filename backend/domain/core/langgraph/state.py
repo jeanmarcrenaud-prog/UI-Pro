@@ -32,12 +32,24 @@ class CodeData(TypedDict, total=False):
 
 
 class ReviewData(TypedDict, total=False):
-    """Code review result."""
+    """Code review result.
+
+    `issues` and `suggestions` are the human-readable strings, kept as
+    `list[str]` for backward compatibility with the existing parser and
+    with `format_fix_prompt`. `issue_severities` (when present) is a
+    parallel array where `issue_severities[i]` classifies `issues[i]`
+    as one of "high" / "medium" / "low". `score` is a 0.0-1.0 quality
+    score, useful for ops dashboards and for prioritising retry context.
+    All three new fields are optional: existing producers and consumers
+    that don't know about them keep working unchanged.
+    """
 
     passed: bool
     issues: list[str]
     suggestions: list[str]
     raw: str
+    score: float
+    issue_severities: list[str]
 
 
 class ExecutionResult(TypedDict, total=False):

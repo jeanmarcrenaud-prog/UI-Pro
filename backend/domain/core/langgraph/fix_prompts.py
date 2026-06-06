@@ -220,17 +220,41 @@ def _format_files(files: dict[str, str] | None) -> str:
     return "\n\n".join(parts)
 
 
-def _format_issues(issues: list[str] | None) -> str:
+def _format_issues(
+    issues: list[str] | None,
+    severities: list[str] | None = None,
+) -> str:
     """Render review issues (a list[str] per the actual ReviewData schema).
 
     We deliberately do NOT call `.get('message')` / `.get('severity')` —
     the schema is `list[str]`, not `list[dict]`. Items are joined with
     bullets and truncated to keep the prompt small.
+
+    If `severities` is provided (a parallel array classifying each issue
+    as "high" / "medium" / "low"), each line is prefixed with a short
+    `[HIGH]` / `[MED]` / `[LOW]` tag so the LLM can prioritise the
+    blocking issues first. Length-mismatched severities (rare, e.g. a
+    legacy review that didn't set them) are treated as "low" for that
+    line.
     """
     if not issues:
         return "(aucun)"
-    inlined = [str(i).strip() for i in issues if i][: _MAX_ISSUES_INLINED]
-    rendered = "\n".join(f"- {line}" for line in inlined)
+    items: list[str] = []
+    for idx, raw in enumerate(issues[:_MAX_ISSUES_INLINED]):
+        line = str(raw).strip()
+        if not line:
+            continue
+        sev: str | None = None
+        if severities and idx < len(severities):
+            sev = severities[idx]
+        if sev == "high":
+            line = f"[HIGH] {line}"
+        elif sev == "medium":
+            line = f"[MED] {line}"
+        elif sev == "low":
+            line = f"[LOW] {line}"
+        items.append(f"- {line}")
+    rendered = "\n".join(items)
     if len(issues) > _MAX_ISSUES_INLINED:
         rendered += f"\n- ... ({len(issues) - _MAX_ISSUES_INLINED} more omitted)"
     return rendered
@@ -317,7 +341,7 @@ def format_fix_prompt(state: "AgentState", advanced: bool = False) -> str:
         "previous_error": previous_error_str,
         "review_passed_label": review_passed_label,
         "issues_count": len(issues),
-        "issues_list": _format_issues(issues),
+        "issues_list": _format_issues(issues, review.get("issue_severities")),
         "suggestions_list": _format_suggestions(suggestions),
     }
 

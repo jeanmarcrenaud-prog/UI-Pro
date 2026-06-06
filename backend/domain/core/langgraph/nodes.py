@@ -59,6 +59,63 @@ def _emit_step(phase: str, message: str):
         pass
 
 
+# Heuristics used by the reviewing_node to surface severity and a
+# coarse quality score from a free-text review. Both run in
+# microseconds and never block on the LLM — the LLM is asked for a
+# score in the prompt (so we prefer it when present) but the
+# classifier and the score fallback are deterministic and
+# non-LLM-dependent. The keyword lists are intentionally short and
+# high-precision: false positives would just clutter format_fix_prompt
+# and waste retry context.
+_HIGH_SEVERITY_KEYWORDS = (
+    "error", "undefined", "nameerror", "typeerror", "syntax",
+    "import", "missing", "crash", "exception", "injection",
+    "security", "vulnerability", "xss", "csrf", "rce", "ssrf",
+    "race", "deadlock", "leak", "secret", "credential",
+)
+_MEDIUM_SEVERITY_KEYWORDS = (
+    "warning", "deprecated", "unused", "no entry-point",
+    "no type", "no timeout", "no error", "no try", "no except",
+    "no if __name__", "stdlib only", "should", "consider",
+)
+
+
+def _classify_issue_severity(text: str) -> str:
+    """Map a free-text review issue to "high" / "medium" / "low".
+
+    Keyword-based heuristic. We pick the highest severity that matches
+    (high > medium > low) and return "low" if nothing matches.
+    Operates on lowercased text. Defensive against empty / non-str
+    input.
+    """
+    if not isinstance(text, str) or not text:
+        return "low"
+    t = text.lower()
+    for kw in _HIGH_SEVERITY_KEYWORDS:
+        if kw in t:
+            return "high"
+    for kw in _MEDIUM_SEVERITY_KEYWORDS:
+        if kw in t:
+            return "medium"
+    return "low"
+
+
+def _heuristic_review_score(issues: list[str], suggestions: list[str]) -> float:
+    """Coarse 0.0-1.0 quality score from issue / suggestion counts.
+
+    Heuristic: start at 1.0, subtract 0.10 per issue and 0.05 per
+    suggestion, clamped to [0.0, 1.0]. The LLM is asked for a
+    richer score in the prompt and that wins when present and
+    well-formed; this is the deterministic fallback.
+    """
+    if not isinstance(issues, list):
+        issues = []
+    if not isinstance(suggestions, list):
+        suggestions = []
+    score = 1.0 - 0.10 * len(issues) - 0.05 * len(suggestions)
+    return max(0.0, min(1.0, score))
+
+
 # ========================================
 # Nodes
 # ========================================
@@ -462,13 +519,16 @@ async def reviewing_node(state: AgentState) -> AgentState:
     # warning reduce the failure mode where the model outputs the issues as
     # a bare array (e.g. ["issue 1", "issue 2"]) instead of the full
     # {passed, issues, suggestions} envelope. The parser below also handles
-    # the list shape as a graceful degradation.
+    # the list shape as a graceful degradation. The "score" field is a
+    # 0.0-1.0 quality score that the LLM is asked to fill in — we
+    # prefer it when present, fall back to a heuristic when missing.
     prompt = (
         "Tu es un relecteur de code. Analyse le code ci-dessous et réponds "
         "UNIQUEMENT avec un OBJET JSON (PAS une liste, PAS un tableau, "
-        "PAS du markdown) contenant EXACTEMENT ces trois clés :\n\n"
+        "PAS du markdown) contenant EXACTEMENT ces quatre clés :\n\n"
         "{\n"
         '  "passed": <bool>,\n'
+        '  "score": <float entre 0.0 et 1.0>,\n'
         '  "issues": [<string>, ...],\n'
         '  "suggestions": [<string>, ...]\n'
         "}\n\n"
@@ -476,6 +536,8 @@ async def reviewing_node(state: AgentState) -> AgentState:
         "- passed=true SI le code est syntaxiquement correct ET fait ce qui est attendu\n"
         "- passed=false UNIQUEMENT s'il y a une vraie erreur (import manquant, variable indéfinie, boucle infinie)\n"
         "- Ne mets pas passed=false pour des problèmes de style ou d'optimisation\n"
+        "- score: qualité globale du code (1.0 = parfait, 0.0 = inutilisable)\n"
+        "        Pondère : -0.2 par erreur bloquante, -0.1 par problème de qualité, -0.05 par suggestion\n"
         "- issues : liste de chaînes (vide si passed=true)\n"
         "- suggestions : peut être vide\n\n"
         "Code à analyser :\n"
@@ -566,6 +628,30 @@ async def reviewing_node(state: AgentState) -> AgentState:
         return _REVIEW_FALLBACK
 
     review = _parse_review(full_response)
+
+    # Post-parse enrichment. Two new fields on top of the existing
+    # {passed, issues, suggestions} envelope:
+    #
+    #   score           : 0.0-1.0 quality score. Prefer the LLM's value
+    #                     when it's a well-formed float in range;
+    #                     otherwise fall back to the deterministic
+    #                     heuristic. This means an old-style LLM that
+    #                     omits "score" still produces a usable number.
+    #   issue_severities: parallel array to `issues`, classifying each
+    #                     issue as "high" / "medium" / "low" via the
+    #                     keyword heuristic. This is used by
+    #                     `format_fix_prompt` to prefix the most
+    #                     important issues first when surfacing the
+    #                     review in a retry prompt.
+    issues = list(review.get("issues") or [])
+    suggestions = list(review.get("suggestions") or [])
+    review["issue_severities"] = [_classify_issue_severity(i) for i in issues]
+
+    raw_score = review.get("score")
+    if isinstance(raw_score, (int, float)) and 0.0 <= float(raw_score) <= 1.0:
+        review["score"] = float(raw_score)
+    else:
+        review["score"] = _heuristic_review_score(issues, suggestions)
 
     state["review"] = review
     if review.get("passed"):
