@@ -278,5 +278,113 @@ class TestTimeoutFloor:
         assert s.llm_timeout == 1800  # clamped from 99999 to max
 
 
+class TestSettingsReload:
+    """Tests for Settings.reload_from_env() — the hot-reload primitive
+    behind POST /api/settings/reload.
+
+    The Settings singleton is constructed once at process start
+    (@lru_cache on get_settings()) and does not re-read .env on
+    access. reload_from_env() is the only way to apply a .env change
+    without restarting the process, so its contract is critical.
+
+    Three behaviors to lock down:
+
+      1. Reload picks up new env values (the happy path).
+      2. Reload preserves runtime_overrides (UI toggles set after
+         process start must survive a .env reload, otherwise the
+         Settings UI's node-routing toggle would reset every time
+         the user bumps a timeout in .env).
+      3. Reload with invalid env raises ValidationError and leaves
+         the existing instance untouched (no half-applied state).
+    """
+
+    def test_reload_picks_up_new_env_value(self, monkeypatch):
+        """reload_from_env() must read the current LLM_TIMEOUT from env,
+        not the value captured at the original Settings() construction."""
+        from settings import Settings, get_settings
+
+        monkeypatch.setenv("LLM_TIMEOUT", "30")
+        get_settings.cache_clear()
+        s = Settings()
+        assert s.llm_timeout == 30
+
+        # Simulate the user editing .env, then hitting the reload endpoint
+        monkeypatch.setenv("LLM_TIMEOUT", "1800")
+        s.reload_from_env()
+
+        assert s.llm_timeout == 1800
+
+    def test_reload_preserves_runtime_overrides(self, monkeypatch):
+        """runtime_overrides (Field exclude=True init=False) are
+        in-memory UI state, not env-driven config. They must NOT be
+        wiped by a .env reload — otherwise toggling node_routing in
+        the Settings UI would reset every time the user bumps a
+        timeout in .env and reloads."""
+        from settings import Settings, get_settings
+
+        monkeypatch.setenv("LLM_TIMEOUT", "30")
+        get_settings.cache_clear()
+        s = Settings()
+
+        # Simulate the user toggling node_routing in the UI
+        s.set_node_routing(False)
+        assert s.get_node_routing_enabled() is False
+
+        # User edits .env to bump the timeout, then reloads
+        monkeypatch.setenv("LLM_TIMEOUT", "900")
+        s.reload_from_env()
+
+        # Env change applied
+        assert s.llm_timeout == 900
+        # UI toggle preserved
+        assert s.get_node_routing_enabled() is False
+
+    def test_reload_with_invalid_env_raises_and_preserves_state(self, monkeypatch):
+        """If the new .env has a value below the ge=30 floor, the
+        pydantic ValidationError must propagate and the existing
+        instance must be left UNTOUCHED. The cache stays cleared
+        so the next call retries with the same bad config (the
+        operator should be able to fix the file and reload again
+        without restarting)."""
+        from pydantic import ValidationError
+        from settings import Settings, get_settings
+
+        monkeypatch.setenv("LLM_TIMEOUT", "900")
+        get_settings.cache_clear()
+        s = Settings()
+        assert s.llm_timeout == 900
+
+        # Simulate the operator accidentally writing LLM_TIMEOUT=10
+        monkeypatch.setenv("LLM_TIMEOUT", "10")
+
+        with pytest.raises(ValidationError):
+            s.reload_from_env()
+
+        # The pre-reload value survives — the instance is untouched
+        assert s.llm_timeout == 900
+
+    def test_reload_updates_executor_timeout_alongside(self, monkeypatch):
+        """Sanity: the reload copies ALL env-driven fields, not just
+        llm_timeout. Catches a regression where someone might
+        refactor reload_from_env to only touch the field they care
+        about and forget the rest."""
+        from settings import Settings, get_settings
+
+        monkeypatch.setenv("LLM_TIMEOUT", "30")
+        monkeypatch.setenv("EXECUTOR_TIMEOUT", "60")
+        get_settings.cache_clear()
+        s = Settings()
+        assert s.executor_timeout == 60
+
+        monkeypatch.setenv("EXECUTOR_TIMEOUT", "120")
+        s.reload_from_env()
+
+        assert s.executor_timeout == 120
+        # llm_timeout should also be reloaded even though we didn't
+        # explicitly change it — its env var is still present and
+        # the fresh Settings() will have read it.
+        assert s.llm_timeout == 30
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
