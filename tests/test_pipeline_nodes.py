@@ -277,3 +277,44 @@ class TestParsePlanIntegration:
         result = self._parse_and_clean(text)
         assert "steps" in result
 
+    def test_prose_with_braces_around_json(self):
+        r"""Regression: gemma-style output with {placeholder} in prose.
+
+        The previous greedy regex \{[\s\S]*\} would match from the first
+        { (inside "{requests}") to the last }, producing invalid JSON
+        and triggering the empty-plan fallback.
+        """
+        text = (
+            'I will use {requests} to make calls.\n'
+            '{"steps": [{"description": "x", "file": "a.py"}], '
+            '"files": {"a.py": "y"}}\n'
+            'End of plan.'
+        )
+        result = self._parse_and_clean(text)
+        assert len(result["steps"]) == 1  # type: ignore[arg-type]
+
+    def test_multiple_json_objects_picks_first(self):
+        """If multiple top-level objects exist, the scanner returns the first
+        valid one without crashing on the second. The exact object chosen is
+        not part of the contract — only that one of them is returned cleanly.
+        """
+        text = (
+            '{"unrelated": "first"}\n'
+            '{"steps": [{"description": "real", "file": "b.py"}], '
+            '"files": {"b.py": "z"}}'
+        )
+        result = self._parse_and_clean(text)
+        # First valid object wins — and both are valid, so we get the first.
+        assert result.get("unrelated") == "first"  # type: ignore[arg-type]
+
+    def test_nested_json_in_prose(self):
+        """Nested objects inside JSON shouldn't trip the scanner."""
+        text = (
+            'Prose: see {thing}.\n'
+            '{"steps": [{"description": "x", "approach": "use {tool}"}], '
+            '"files": {"a.py": "y"}}\n'
+            'Done.'
+        )
+        result = self._parse_and_clean(text)
+        assert len(result["steps"]) == 1  # type: ignore[arg-type]
+
