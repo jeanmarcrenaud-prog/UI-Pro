@@ -130,11 +130,25 @@ class OpenAICompatMixin:
         payload.update(self._thinking_kwargs())
         backend: LLMBackend = self  # type: ignore[assignment]
 
+        # Telemetry for the "empty-response" failure mode observed in
+        # production (coding_node returns a stream where every delta.content
+        # is empty — role-only chunks, reasoning-only deltas, or
+        # finish_reason=length cutoffs). The aggregate is logged in
+        # `finally` so a single line per stream tells us exactly which of
+        # these patterns triggered the empty result downstream.
+        chunk_count = 0
+        content_chunks = 0
+        empty_content_chunks = 0
+        total_content_chars = 0
+        last_finish_reason: str | None = None
+        last_empty_delta: dict | None = None
+
         try:
             async with httpx.AsyncClient(timeout=backend.config.timeout) as client:
                 async with client.stream("POST", url, json=payload) as resp:
                     resp.raise_for_status()
                     async for line in resp.aiter_lines():
+                        chunk_count += 1
                         text = backend._parse_sse_line(line.encode())
                         if text is None:
                             continue
@@ -147,8 +161,14 @@ class OpenAICompatMixin:
                             content = delta.get("content", "")
                             finish_reason = choices[0].get("finish_reason")
                             if content:
+                                content_chunks += 1
+                                total_content_chars += len(content)
                                 yield content
+                            else:
+                                empty_content_chunks += 1
+                                last_empty_delta = delta
                             if finish_reason:
+                                last_finish_reason = finish_reason
                                 return
                         except json.JSONDecodeError:
                             logger.warning(
@@ -163,6 +183,25 @@ class OpenAICompatMixin:
         except httpx.RequestError as e:
             logger.error("%s async stream failed: %s", backend.backend_name, e)
             raise
+        finally:
+            # One summary line per stream. WARN when no content was yielded
+            # (the actual bug case the user is chasing); DEBUG otherwise so
+            # normal streams stay quiet in the log.
+            if chunk_count > 0:
+                level = logging.WARNING if total_content_chars == 0 else logging.DEBUG
+                logger.log(
+                    level,
+                    "%s stream summary: model=%s chunks=%d content_chunks=%d "
+                    "empty_chunks=%d total_chars=%d finish_reason=%s last_empty_delta=%s",
+                    backend.backend_name,
+                    self.config.model,
+                    chunk_count,
+                    content_chunks,
+                    empty_content_chunks,
+                    total_content_chars,
+                    last_finish_reason,
+                    last_empty_delta,
+                )
 
 
 __all__ = ["OpenAICompatMixin"]
