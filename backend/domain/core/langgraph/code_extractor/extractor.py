@@ -101,7 +101,9 @@ LANG_EXTENSIONS: dict[str, str] = {
     "jsonc": ".jsonc",
 }
 
-# Préambules LLM fréquents à ignorer
+# Common LLM preamble phrases to ignore at the start of a response.
+# Includes both English ("Thinking", "Here's") and French ("Voici", "Je vais",
+# "Analyse") markers since the LLM may produce either.
 _LLM_PREAMBLE_PATTERNS = re.compile(
     r"^(#|//|-\s*)?(Thinking|Analyzing|Reasoning|Here'?s|Here is|Let me|I'?ll|The (solution|code|approach|best)|Code[:\s]|Voici|Je vais|Analyse)",
     re.IGNORECASE,
@@ -109,7 +111,7 @@ _LLM_PREAMBLE_PATTERNS = re.compile(
 
 
 def _strip_llm_preamble(text: str) -> str:
-    """Supprime le préambule 'Thinking Process' ou 'Here's the code' des réponses LLM."""
+    """Strip the LLM 'thinking process' or 'here's the code' preamble from a response."""
     lines = text.split("\n")
     code_start = 0
     for i, line in enumerate(lines):
@@ -128,7 +130,7 @@ def _strip_llm_preamble(text: str) -> str:
 
 
 def _find_json_objects(text: str) -> list[str]:
-    """Trouve les objets JSON de premier niveau par compteur d'accolades."""
+    """Find top-level JSON objects via brace counting (respects string literals)."""
     objects: list[str] = []
     i = 0
     while i < len(text):
@@ -154,6 +156,90 @@ def _find_json_objects(text: str) -> list[str]:
         else:
             i += 1
     return objects
+
+
+# ---------------------------------------------------------------------------
+# Block-processing helpers shared by strategies 1 (```python) and 2 (generic).
+# Kept private — they are internal contract for these two strategies only.
+# ---------------------------------------------------------------------------
+
+
+def _normalize_block_indent(block: str) -> str:
+    """Strip the common leading whitespace from a code block.
+
+    Empty or whitespace-only lines are preserved as empty strings (not
+    dropped) so the resulting line count matches the input. Non-empty
+    lines are dedented to the minimum indent across all non-empty lines.
+    Tabs are expanded to 4 spaces before the calculation, matching the
+    behavior of common code-block renderers.
+
+    Returns an empty string when the block has no non-empty content.
+    """
+    lines = block.expandtabs(4).split("\n")
+    non_empty = [line for line in lines if line.strip()]
+    if not non_empty:
+        return ""
+    min_indent = min(len(line) - len(line.lstrip()) for line in non_empty)
+    fixed_lines: list[str] = []
+    for line in lines:
+        if line.strip():
+            fixed_lines.append(line[min_indent:])
+        else:
+            fixed_lines.append("")
+    return "\n".join(fixed_lines).strip()
+
+
+def _dedup_filename(fname: str, seen: dict[str, int]) -> str:
+    """Return a unique filename, appending ``_N`` to the stem on collision.
+
+    The first occurrence of ``fname`` is returned unchanged. Subsequent
+    occurrences get ``_2``, ``_3``... inserted before the last extension
+    (``foo.py`` → ``foo_2.py``). Filenames without an extension get the
+    suffix appended to the end (``Makefile`` → ``Makefile_2``).
+
+    The ``seen`` dict is mutated in place: the counter for ``fname`` is
+    set to 1 on first use and incremented on each collision.
+    """
+    if fname in seen:
+        seen[fname] += 1
+        dot_idx = fname.rfind(".")
+        if dot_idx != -1:
+            return f"{fname[:dot_idx]}_{seen[fname]}{fname[dot_idx:]}"
+        return f"{fname}_{seen[fname]}"
+    seen[fname] = 1
+    return fname
+
+
+def _validate_python_block(name: str, content: str) -> str:
+    """Validate a Python block; return the best salvage on failure.
+
+    Delegates to ``ExtractedFile`` (which compiles the content, with
+    internal dedent / fix_indent / fix_syntax fallback chain). On
+    ``ValueError`` — i.e. when even the salvage chain inside
+    ``ExtractedFile`` failed — falls back to ``textwrap.dedent`` so the
+    caller still gets a non-empty string to work with. The result is
+    never None; callers should check ``.strip()`` for emptiness.
+    """
+    try:
+        return ExtractedFile(name=name, content=content).content
+    except ValueError:
+        return textwrap.dedent(content).strip()
+
+
+def _validate_generic_block(name: str, content: str) -> str:
+    """Validate a non-Python block; warn and return content on failure.
+
+    Generic (non-Python, non-JSON) files don't get a compilation step,
+    so a ``ValueError`` from ``ExtractedFile`` means the *filename* is
+    invalid (unsupported extension or unsafe characters). The content
+    itself is still potentially useful, so we log a warning and return
+    it as-is rather than dropping the file.
+    """
+    try:
+        return ExtractedFile(name=name, content=content).content
+    except ValueError:
+        logger.warning("Generic block '%s' failed validation: keeping raw", name)
+        return content
 
 
 def extract_code_dict(response: str) -> dict[str, Any]:
@@ -270,47 +356,20 @@ def _strategy_python_blocks(text: str) -> dict[str, Any] | None:
     seen_names: dict[str, int] = {}
 
     for block_start, block_content in blocks:
-        block = block_content.strip()
-        if not block:
+        if not block_content.strip():
             continue
 
-        # Try to extract filename from header before the block
+        # Filename: prefer `## name.ext` header before the block, else
+        # auto-generate `file_N.py` (deduped on collision).
         fname = _extract_filename_from_header(text, block_start)
         if not fname:
             fname = f"file_{len(files) + 1}.py"
+        fname = _dedup_filename(fname, seen_names)
 
-        # Deduplicate filenames
-        if fname in seen_names:
-            seen_names[fname] += 1
-            base, ext = fname.rsplit(".", 1)
-            fname = f"{base}_{seen_names[fname]}.{ext}"
-        else:
-            seen_names[fname] = 1
-
-        # Normalize indentation
-        lines = block.expandtabs(4).split("\n")
-        non_empty = [l for l in lines if l.strip()]
-        if not non_empty:
+        normalized = _normalize_block_indent(block_content)
+        if not normalized:
             continue
-        min_indent = min(len(l) - len(l.lstrip()) for l in non_empty)
-        fixed_lines: list[str] = []
-        for line in lines:
-            if line.strip():
-                fixed_lines.append(line[min_indent:])
-            else:
-                fixed_lines.append("")
-        normalized = "\n".join(fixed_lines).strip()
-
-        try:
-            validated = ExtractedFile(name=fname, content=normalized)
-            normalized = validated.content
-        except ValueError:
-            fixed = fix_indentation(normalized)
-            try:
-                validated = ExtractedFile(name=fname, content=fixed)
-                normalized = validated.content
-            except ValueError:
-                normalized = textwrap.dedent(normalized).strip()
+        normalized = _validate_python_block(fname, normalized)
 
         if normalized.strip():
             files[fname] = normalized + "\n"
@@ -342,48 +401,21 @@ def _strategy_generic_blocks(text: str) -> dict[str, Any] | None:
     seen_names: dict[str, int] = {}
 
     for block_start, lang, block_content in blocks:
-        block = block_content.strip()
-        if not block:
+        if not block_content.strip():
             continue
 
-        # Try filename from header before block
+        # Filename: prefer `## name.ext` header, else `script.<ext>` where
+        # <ext> is mapped from the language id (powershell -> .ps1, etc.).
         fname = _extract_filename_from_header(text, block_start)
         if not fname:
             ext = LANG_EXTENSIONS.get(lang, f".{lang}")
             fname = f"script{ext}"
+        fname = _dedup_filename(fname, seen_names)
 
-        # Deduplicate filenames
-        if fname in seen_names:
-            seen_names[fname] += 1
-            dot_idx = fname.rfind(".")
-            if dot_idx != -1:
-                fname = f"{fname[:dot_idx]}_{seen_names[fname]}{fname[dot_idx:]}"
-            else:
-                fname = f"{fname}_{seen_names[fname]}"
-        else:
-            seen_names[fname] = 1
-
-        # Normalize indentation (strip common leading whitespace)
-        lines = block.expandtabs(4).split("\n")
-        non_empty = [l for l in lines if l.strip()]
-        if not non_empty:
+        normalized = _normalize_block_indent(block_content)
+        if not normalized:
             continue
-        min_indent = min(len(l) - len(l.lstrip()) for l in non_empty)
-        fixed_lines: list[str] = []
-        for line in lines:
-            if line.strip():
-                fixed_lines.append(line[min_indent:])
-            else:
-                fixed_lines.append("")
-        normalized = "\n".join(fixed_lines).strip()
-
-        # Validate with ExtractedFile (skips Python compile for non-.py files)
-        try:
-            validated = ExtractedFile(name=fname, content=normalized)
-            normalized = validated.content
-        except ValueError:
-            # If validation fails, include but warn
-            logger.warning("Generic block '%s' failed validation: keeping raw", fname)
+        normalized = _validate_generic_block(fname, normalized)
 
         if normalized.strip():
             files[fname] = normalized + "\n"

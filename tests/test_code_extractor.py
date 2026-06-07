@@ -6,8 +6,12 @@ import pytest
 
 from backend.domain.core.langgraph.code_extractor import extract_code_dict
 from backend.domain.core.langgraph.code_extractor.extractor import (
+    _dedup_filename,
     _extract_filename_from_header,
+    _normalize_block_indent,
     _strategy_python_blocks,
+    _validate_generic_block,
+    _validate_python_block,
 )
 
 
@@ -48,6 +52,162 @@ class TestExtractFilenameFromHeader:
         pos = text.find("```python")
         # Single # is not a valid header pattern (must be ##)
         assert _extract_filename_from_header(text, pos) is None
+
+
+# ====================== _normalize_block_indent ======================
+
+
+class TestNormalizeBlockIndent:
+    def test_empty_string(self):
+        assert _normalize_block_indent("") == ""
+
+    def test_whitespace_only(self):
+        assert _normalize_block_indent("   \n\n   \n") == ""
+
+    def test_no_indent_unchanged(self):
+        block = "print('hi')\nx = 1"
+        assert _normalize_block_indent(block) == block
+
+    def test_uniform_indent_dedented(self):
+        block = "    print('hi')\n    x = 1"
+        result = _normalize_block_indent(block)
+        assert result == "print('hi')\nx = 1"
+
+    def test_mixed_indent_dedents_to_min(self):
+        block = "        if True:\n            print('hi')\n        x = 1"
+        result = _normalize_block_indent(block)
+        # The minimum non-empty indent is 8, so all lines are dedented by 8
+        assert result == "if True:\n    print('hi')\nx = 1"
+
+    def test_tabs_expanded_to_spaces(self):
+        # Tab at start counts as 4 spaces of indent
+        block = "\tprint('hi')\n\tx = 1"
+        result = _normalize_block_indent(block)
+        # expandtabs(4) makes both lines have 4 leading spaces
+        # min_indent=4, so dedented to 0
+        assert result == "print('hi')\nx = 1"
+
+    def test_preserves_empty_lines_as_empty(self):
+        block = "    print('hi')\n\n    x = 1"
+        result = _normalize_block_indent(block)
+        # Empty line stays empty (not dropped, not dedented)
+        assert "print('hi')" in result
+        assert "x = 1" in result
+        # The blank line between should still be present
+        assert "\n\n" in result or result.count("\n") == 2
+
+
+# ====================== _dedup_filename ======================
+
+
+class TestDedupFilename:
+    def test_first_occurrence_unchanged(self):
+        seen: dict[str, int] = {}
+        assert _dedup_filename("main.py", seen) == "main.py"
+        assert seen == {"main.py": 1}
+
+    def test_second_occurrence_appends_counter(self):
+        seen: dict[str, int] = {}
+        _dedup_filename("main.py", seen)
+        assert _dedup_filename("main.py", seen) == "main_2.py"
+        assert seen == {"main.py": 2}
+
+    def test_third_occurrence(self):
+        seen: dict[str, int] = {}
+        _dedup_filename("main.py", seen)
+        _dedup_filename("main.py", seen)
+        assert _dedup_filename("main.py", seen) == "main_3.py"
+        assert seen == {"main.py": 3}
+
+    def test_no_extension_filename(self):
+        seen: dict[str, int] = {}
+        _dedup_filename("Makefile", seen)
+        assert _dedup_filename("Makefile", seen) == "Makefile_2"
+        assert seen == {"Makefile": 2}
+
+    def test_different_names_have_independent_counters(self):
+        seen: dict[str, int] = {}
+        assert _dedup_filename("a.py", seen) == "a.py"
+        assert _dedup_filename("b.py", seen) == "b.py"
+        # Reusing `a.py` should still only see one prior occurrence
+        assert _dedup_filename("a.py", seen) == "a_2.py"
+        # `b.py` counter is independent
+        assert seen == {"a.py": 2, "b.py": 1}
+
+    def test_multi_dot_filename(self):
+        # `my.script.py` — the last dot determines the extension
+        seen: dict[str, int] = {}
+        _dedup_filename("my.script.py", seen)
+        assert _dedup_filename("my.script.py", seen) == "my.script_2.py"
+
+
+# ====================== _validate_python_block ======================
+
+
+class TestValidatePythonBlock:
+    def test_valid_python_returned_unchanged(self):
+        content = "def hello():\n    print('hi')\n"
+        result = _validate_python_block("test.py", content)
+        assert "def hello" in result
+        assert "print" in result
+
+    def test_over_indented_salvaged(self):
+        # Code is over-indented but compiles once dedented
+        content = "        def hello():\n            print('hi')\n"
+        result = _validate_python_block("test.py", content)
+        # Should be dedented (or fix_indented) to valid form
+        assert "def hello" in result
+
+    def test_completely_broken_returns_non_empty(self):
+        # Total garbage that can't be salvaged — function should still
+        # return a non-empty string (the dedent fallback) so the caller
+        # can make a decision instead of getting None.
+        content = "((( this is not python @@@ !!!"
+        result = _validate_python_block("test.py", content)
+        assert isinstance(result, str)
+        # The dedent fallback returns the original content (stripped)
+        assert result  # non-empty
+
+    def test_empty_content(self):
+        # ExtractedFile accepts empty content (model_validator returns early).
+        # The helper should return an empty string without raising.
+        result = _validate_python_block("test.py", "")
+        assert result == ""
+
+
+# ====================== _validate_generic_block ======================
+
+
+class TestValidateGenericBlock:
+    def test_valid_json_block_returned(self):
+        content = '{"key": "value"}'
+        result = _validate_generic_block("data.json", content)
+        assert result == content
+
+    def test_valid_shell_script_returned(self):
+        content = "#!/bin/bash\necho hello"
+        result = _validate_generic_block("script.sh", content)
+        assert result == content
+
+    def test_invalid_extension_warns_and_keeps_content(self, caplog):
+        # `.foo` is not in _VALID_EXTENSIONS, so ExtractedFile raises.
+        # The helper should log a warning and return the content as-is
+        # (the content itself is still useful even with a bad filename).
+        content = "some content here"
+        with caplog.at_level("WARNING"):
+            result = _validate_generic_block("test.foo", content)
+        assert result == content
+        assert any("test.foo" in rec.message for rec in caplog.records)
+
+    def test_unsafe_chars_in_name_warns_and_keeps_content(self, caplog):
+        # `..` is allowed but a name with a null byte isn't.
+        # Use a name with a clearly invalid character instead.
+        content = "x = 1"
+        with caplog.at_level("WARNING"):
+            result = _validate_generic_block("test\x00.py", content)
+        # The function should not raise; content is preserved
+        assert result == content
+        assert any("test" in rec.message for rec in caplog.records)
 
 
 # ====================== Strategy 1: Python blocks ======================
