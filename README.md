@@ -279,10 +279,130 @@ All settings are configurable via the **Settings UI** at http://localhost:3000:
 | `MODEL_REASONING` | (from preset) | Reasoning model for complex tasks |
 | `MODEL_CODE` | (from preset) | Code-specific model |
 | `ACTIVE_PRESET` | balanced | Model preset (light/balanced/heavy) |
-| `LLM_TIMEOUT` | 300s | Max time for LLM responses |
+| `LLM_TIMEOUT` | 900s | Max time for LLM responses (see [Troubleshooting](#-troubleshooting)) |
 | `EXECUTOR_TIMEOUT` | 60s | Max time for code execution |
 | `LOG_LEVEL` | INFO | Logging level |
 | `LANGSMITH_API_KEY` | (none) | Enable LangSmith tracing |
+
+## 🛠️ Troubleshooting
+
+### LLM_TIMEOUT — "LLM call timed out after Ns"
+
+**Symptôme**: Le chat renvoie une erreur 504 ou le WebSocket se ferme
+brutalement (status 1006) après plusieurs minutes. Le log contient:
+
+```
+ERROR - backend.domain.core.langgraph.llm_wrapper - LLM call timed out after Ns (model_type=reasoning)
+ERROR - backend.infrastructure.llm.ollama - Ollama async stream failed: Read timed out.
+TimeoutError: LLM call timed out after Ns (model_type=reasoning)
+```
+
+**Cause**: Deux timeouts doivent rester alignés:
+
+| Variable | Défaut | Localisation | Rôle |
+|----------|--------|--------------|------|
+| `LLM_TIMEOUT` | **900s** (15 min) | `backend/domain/settings.py` | Délai max côté wrapper Python |
+| `read_timeout` (Ollama/Lemonade/LM Studio/llama.cpp) | **900s** | `backends_template[*].timeout` | Délai max côté client HTTP |
+
+Si `read_timeout < LLM_TIMEOUT`, le backend HTTP coupe la requête **avant**
+le wrapper, et Ollama log `Ollama async stream failed: Read timed out.`
+même si la réponse arriverait 1 seconde plus tard.
+
+**Solutions par ordre de préférence**:
+
+1. **Via l'UI Settings** (sans redémarrage):
+   - Ouvrir http://localhost:3000 → Settings → Timeouts
+   - Bouger `LLM timeout` (slider 10–1800s)
+   - Cliquer Save → déclenche `POST /api/settings/timeouts`
+   - Le `.env` est mis à jour atomiquement
+
+2. **Via `.env`** (redémarrage requis):
+   ```bash
+   # Éditer .env à la racine
+   LLM_TIMEOUT=900
+   # Si vous modifiez cette valeur, alignez aussi les backends
+   # dans backend/domain/settings.py (backends_template[*].timeout)
+   ```
+
+3. **Pour les modèles 14B+** (`qwen3.6:latest`, preset `heavy`):
+   ```env
+   ACTIVE_PRESET=heavy
+   LLM_TIMEOUT=1800  # max
+   ```
+   Prévoir GPU dédié et 32 Go de RAM minimum.
+
+4. **GPU partagé / Ollama distant**:
+   Le `read_timeout` du backend HTTP peut se déclencher avant `LLM_TIMEOUT`
+   à cause du réseau. Augmenter les **deux** valeurs.
+
+**Pourquoi c'est long pour les modèles de raisonnement**:
+Les modèles "thinking-mode" (Qwen3.5+, DeepSeek-R1, OpenAI o1/o3) passent
+la majorité de leur budget `max_tokens` sur du raisonnement interne
+**avant** toute sortie visible. Pour un `qwen3.5-9b` avec `max_tokens=8000`:
+7999 tokens de raisonnement, 0 token visible. Désactiver le mode thinking
+via `Settings → LLM Thinking Mode = OFF` (env: `LLM_ENABLE_THINKING=false`)
+récupère 50% du temps.
+
+**Vérification rapide**:
+```bash
+# Temps de réponse actuel
+curl -w "\n%{time_total}s\n" http://localhost:8000/health
+
+# Test Ollama direct (sans wrapper)
+curl -X POST http://localhost:11434/api/generate \
+  -d '{"model":"qwen3.5:9b","prompt":"hi","stream":false}' \
+  -w "\n%{time_total}s\n"
+```
+
+Si Ollama répond en <5s directement mais que le chat timeout à 300s, c'est
+le `read_timeout` du backend HTTP qui est trop court — voir l'alignement
+ci-dessus.
+
+**Ressources**:
+- `docs/api/API.md` → section "504 — LLM Timeout" pour le détail API
+- `docs/architecture/AGENTS.md` → "Critical Quirks" pour le résumé rapide
+
+### Ollama "Read timed out" sur `/api/tags` (model discovery)
+
+**Symptôme**: `/api/models` met >2s à répondre, `run_error.log` montre
+`Read timed out` même pour des requêtes triviales.
+
+**Cause**: Ollama charge le modèle en VRAM à la première requête. Les
+requêtes suivantes pendant ce chargement (1–5s) sont lentes.
+
+**Solution**: C'est le comportement normal d'Ollama. Si >5s systématiquement,
+vérifier:
+- VRAM disponible (`nvidia-smi`)
+- Modèle pas trop gros pour le GPU
+- Pas d'autre process qui utilise le GPU (`nvidia-smi pmon -s 1`)
+
+### WebSocket droppé après 7 minutes
+
+**Symptôme**: Client WebSocket se ferme, le serveur log:
+```
+INFO - backend.transport.routers.ws - WebSocket disconnected
+```
+
+**Cause**: Le navigateur/Uvicorn a un timeout WebSocket (souvent 10 min par
+défaut) OU le `LLM_TIMEOUT` a expiré et le stream s'est arrêté sans envoyer
+`[DONE]`.
+
+**Solution**: Vérifier `run_error.log` pour `TimeoutError`. Si présent,
+appliquer la section LLM_TIMEOUT ci-dessus.
+
+### Faiss "AVX512 not available"
+
+**Symptôme**: Au démarrage:
+```
+INFO - faiss.loader - Could not load library with AVX512 support due to:
+ModuleNotFoundError("No module named 'faiss.swigfaiss_avx512')
+INFO - faiss.loader - Successfully loaded faiss with AVX2 support.
+```
+
+**Cause**: Le CPU ne supporte pas AVX-512 (rare en 2026). FAISS fallback
+sur AVX2 automatiquement. **Pas une erreur** — juste un INFO.
+
+---
 
 ## 🔐 Security
 
