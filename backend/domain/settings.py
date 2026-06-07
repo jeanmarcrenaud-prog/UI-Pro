@@ -126,7 +126,11 @@ class Settings(BaseSettings):
     model_reasoning: str = ""
     model_code: str = ""
 
-    llm_timeout: int = Field(default=600, ge=10, le=1800)
+    # Default bumped 600s -> 900s to accommodate reasoning models
+    # (qwen3.5:9b / qwen3.6:latest) on long prompts. See README
+    # "Troubleshooting > LLM_TIMEOUT" for the full rationale and the
+    # relationship with the per-backend `read_timeout` below.
+    llm_timeout: int = Field(default=900, ge=10, le=1800)
     executor_timeout: int = Field(default=60, ge=5, le=600)
 
     # When True, the coding_node retry path uses the advanced self-correction
@@ -207,25 +211,29 @@ class Settings(BaseSettings):
                 "url": "http://localhost:11434",
                 "enabled": True,
                 "models_endpoint": "/api/tags",
-                "timeout": 300,
+                # Per-backend read_timeout. MUST stay <= llm_timeout or
+                # the backend will kill the stream before the outer LLM
+                # deadline fires. Default raised 300s -> 900s to match
+                # the new llm_timeout default above.
+                "timeout": 900,
             },
             "lemonade": {
                 "url": "http://localhost:13305",
                 "enabled": True,
                 "models_endpoint": "/api/v1/models",
-                "timeout": 300,
+                "timeout": 900,
             },
             "llamacpp": {
                 "url": "http://localhost:8080",
                 "enabled": False,
                 "models_endpoint": "/props",
-                "timeout": 300,
+                "timeout": 900,
             },
             "lmstudio": {
                 "url": "http://localhost:1234",
                 "enabled": True,
                 "models_endpoint": "/api/v1/models",
-                "timeout": 300,
+                "timeout": 900,
             },
         },
         exclude=True,
