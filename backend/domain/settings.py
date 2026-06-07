@@ -187,7 +187,7 @@ class Settings(BaseSettings):
     # instead of the user-selected chat model. When False, every node
     # uses the user model (legacy behavior). Toggle is session-only —
     # the change applies immediately, no restart required.
-    node_routing_enabled: bool = True
+    node_routing_enabled: bool = False
 
     # Rate limiting
     rate_limit_enabled: bool = True
