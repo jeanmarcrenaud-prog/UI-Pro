@@ -6,7 +6,17 @@ import { useI18n } from '@/lib/i18n'
 
 export function TimeoutSettings() {
   const { t } = useI18n()
-  const { llmTimeout, executorTimeout, setLlmTimeout, setExecutorTimeout, isSaving, message, saveTimeouts } = useTimeouts()
+  const {
+    llmTimeout,
+    executorTimeout,
+    setLlmTimeout,
+    setExecutorTimeout,
+    isSaving,
+    isReloading,
+    message,
+    saveTimeouts,
+    reloadFromEnv,
+  } = useTimeouts()
 
   return (
     <section className="glass-panel rounded-xl p-4 hover:border-violet-500/30 transition-all duration-200 hover:shadow-[0_0_20px_rgba(168,85,247,0.1)]">
@@ -47,14 +57,25 @@ export function TimeoutSettings() {
           <p className="text-[9px] text-slate-600 mt-0.5">{t.settings.executorTimeoutHelp}</p>
         </div>
       </div>
-      <button
-        onClick={() => saveTimeouts(t)}
-        disabled={isSaving}
-        className="mt-3 w-full px-3 py-1.5 bg-violet-600 hover:bg-violet-700 disabled:bg-violet-800/70 disabled:cursor-wait text-white text-xs font-medium rounded-lg transition-all flex items-center justify-center gap-1.5"
-      >
-        {isSaving ? '...' : '💾'}
-        {isSaving ? 'Saving...' : 'Save'}
-      </button>
+      <div className="mt-3 flex gap-2">
+        <button
+          onClick={() => saveTimeouts(t)}
+          disabled={isSaving || isReloading}
+          className="flex-1 px-3 py-1.5 bg-violet-600 hover:bg-violet-700 disabled:bg-violet-800/70 disabled:cursor-wait text-white text-xs font-medium rounded-lg transition-all flex items-center justify-center gap-1.5"
+        >
+          {isSaving ? '...' : '💾'}
+          {isSaving ? 'Saving...' : 'Save'}
+        </button>
+        <button
+          onClick={() => reloadFromEnv(t)}
+          disabled={isSaving || isReloading}
+          title={t.settings.reloadFromEnvHelp}
+          className="flex-1 px-3 py-1.5 bg-slate-700/60 hover:bg-slate-600/60 disabled:bg-slate-800/40 disabled:cursor-wait text-slate-200 text-xs font-medium rounded-lg transition-all flex items-center justify-center gap-1.5 border border-slate-600/60"
+        >
+          {isReloading ? '...' : '↻'}
+          {isReloading ? t.settings.reloading : t.settings.reloadFromEnv}
+        </button>
+      </div>
       {message && (
         <p className={`mt-2 text-[10px] text-center rounded px-2 py-1 ${message.type === 'success' ? 'bg-emerald-900/50 text-emerald-400' : 'bg-red-900/50 text-red-400'}`}>
           {message.text}

@@ -49,6 +49,11 @@ export interface Translations {
     executorTimeoutHelp: string
     savedSuccess: string
     saveFailed: string
+    reloadFromEnv: string
+    reloadFromEnvHelp: string
+    reloadSuccess: string
+    reloadFailed: string
+    reloading: string
     seconds: string
   }
   debug: {
@@ -158,10 +163,15 @@ const en: Translations = {
     timeouts: 'Timeouts',
     llmTimeout: 'LLM Timeout',
     executorTimeout: 'Execution Timeout',
-    llmTimeoutHelp: 'Max time for model responses (10–1800s)',
+    llmTimeoutHelp: 'Max time for model responses (30–1800s)',
     executorTimeoutHelp: 'Max time for code execution (5–600s)',
     savedSuccess: 'Saved successfully',
     saveFailed: 'Failed to save',
+    reloadFromEnv: 'Reload from .env',
+    reloadFromEnvHelp: 'Re-read timeouts from .env without restarting the server',
+    reloadSuccess: 'Reloaded from .env',
+    reloadFailed: 'Reload failed',
+    reloading: 'Reloading...',
     seconds: 's',
   },
   debug: {
@@ -317,10 +327,15 @@ const fr: Translations = {
     timeouts: 'Timeouts',
     llmTimeout: 'Timeout LLM',
     executorTimeout: "Timeout d'exécution",
-    llmTimeoutHelp: "Temps max pour les réponses du modèle (10–1800s)",
+    llmTimeoutHelp: "Temps max pour les réponses du modèle (30–1800s)",
     executorTimeoutHelp: 'Temps max pour exécuter le code (5–600s)',
     savedSuccess: 'Enregistré avec succès',
     saveFailed: "Échec de l'enregistrement",
+    reloadFromEnv: 'Recharger depuis .env',
+    reloadFromEnvHelp: 'Relire les timeouts depuis .env sans redémarrer le serveur',
+    reloadSuccess: 'Rechargé depuis .env',
+    reloadFailed: 'Échec du rechargement',
+    reloading: 'Rechargement...',
     seconds: 's',
   },
   debug: {

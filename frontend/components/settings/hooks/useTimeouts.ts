@@ -2,10 +2,20 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { SettingsMessage } from '../types'
 
+// LLM_TIMEOUT floor raised 10s→30s in commit 4a3b40b (validated
+// server-side by Field(ge=30) on Settings.llm_timeout). Mirroring
+// the floor in the input guard keeps the UI from displaying a value
+// the backend will silently clamp to 30.
+const LLM_TIMEOUT_FLOOR = 30
+const LLM_TIMEOUT_CEIL = 1800
+const EXECUTOR_TIMEOUT_FLOOR = 5
+const EXECUTOR_TIMEOUT_CEIL = 600
+
 export function useTimeouts() {
   const [llmTimeout, setLlmTimeout] = useState(300)
   const [executorTimeout, setExecutorTimeout] = useState(60)
   const [isSaving, setIsSaving] = useState(false)
+  const [isReloading, setIsReloading] = useState(false)
   const [message, setMessage] = useState<SettingsMessage | null>(null)
 
   // Load timeouts from API on mount
@@ -20,13 +30,13 @@ export function useTimeouts() {
   }, [])
 
   const updateLlmTimeout = useCallback((value: number) => {
-    if (value >= 10 && value <= 1800) {
+    if (value >= LLM_TIMEOUT_FLOOR && value <= LLM_TIMEOUT_CEIL) {
       setLlmTimeout(value)
     }
   }, [])
 
   const updateExecutorTimeout = useCallback((value: number) => {
-    if (value >= 5 && value <= 600) {
+    if (value >= EXECUTOR_TIMEOUT_FLOOR && value <= EXECUTOR_TIMEOUT_CEIL) {
       setExecutorTimeout(value)
     }
   }, [])
@@ -46,7 +56,7 @@ export function useTimeouts() {
         setExecutorTimeout(data.executor_timeout)
         setMessage({ type: 'success', text: t.settings.savedSuccess })
       } else {
-        setMessage({ type: 'error', text: t.settings.saveFailed })
+        setMessage({ type: 'error', text: data.message || t.settings.saveFailed })
       }
     } catch {
       setMessage({ type: 'error', text: t.settings.saveFailed })
@@ -56,13 +66,43 @@ export function useTimeouts() {
     }
   }, [llmTimeout, executorTimeout])
 
+  // Hot-reload from .env. Use this when the user has edited .env by
+  // hand (e.g. bumped LLM_TIMEOUT=1800 in vim) — POST /api/settings/reload
+  // re-reads the file, revalidates, and mutates the in-memory Settings
+  // singleton in place. On success, we sync the form values from the
+  // server response so the UI matches reality. On ValidationError
+  // (bad value below the 30s floor) the server keeps the old values
+  // and the form is left unchanged.
+  const reloadFromEnv = useCallback(async (t: { settings: { reloadSuccess: string; reloadFailed: string } }) => {
+    setIsReloading(true)
+    setMessage(null)
+    try {
+      const res = await fetch('/api/settings/reload', { method: 'POST' })
+      const data = await res.json()
+      if (data.status === 'ok') {
+        if (typeof data.llm_timeout === 'number') setLlmTimeout(data.llm_timeout)
+        if (typeof data.executor_timeout === 'number') setExecutorTimeout(data.executor_timeout)
+        setMessage({ type: 'success', text: t.settings.reloadSuccess })
+      } else {
+        setMessage({ type: 'error', text: data.message || t.settings.reloadFailed })
+      }
+    } catch {
+      setMessage({ type: 'error', text: t.settings.reloadFailed })
+    } finally {
+      setIsReloading(false)
+      setTimeout(() => setMessage(null), 3000)
+    }
+  }, [])
+
 return {
     llmTimeout,
     executorTimeout,
-    setLlmTimeout: (v: number) => v >= 10 && v <= 1800 && setLlmTimeout(v),
-    setExecutorTimeout: (v: number) => v >= 5 && v <= 600 && setExecutorTimeout(v),
+    setLlmTimeout: (v: number) => v >= LLM_TIMEOUT_FLOOR && v <= LLM_TIMEOUT_CEIL && setLlmTimeout(v),
+    setExecutorTimeout: (v: number) => v >= EXECUTOR_TIMEOUT_FLOOR && v <= EXECUTOR_TIMEOUT_CEIL && setExecutorTimeout(v),
     isSaving,
+    isReloading,
     message,
     saveTimeouts,
+    reloadFromEnv,
   }
 }
