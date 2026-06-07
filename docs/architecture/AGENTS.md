@@ -114,6 +114,26 @@ Available models are shown at startup. Default `.env` uses `gemma4:latest`. Othe
 - **Nouveau code**: Importez directement depuis `backend/domain/core/`, `backend/infrastructure/`, etc.
 - **Plus de legacy folders**: Les dossiers re-export ont été supprimés.
 
+### 7. LLM_TIMEOUT vs Ollama read_timeout (must stay aligned)
+There are **TWO** timeout values that must stay in sync, or the backend
+HTTP client kills the request before the LLM wrapper can finish:
+
+| Layer | Setting | Default | Location |
+|-------|---------|---------|----------|
+| Outer (Python wrapper) | `LLM_TIMEOUT` | **900s** | `backend/domain/settings.py` (`Settings.llm_timeout`) |
+| Inner (HTTP client) | `read_timeout` | **900s** | `backend/domain/settings.py` (`backends_template[*].timeout`) |
+
+**Symptom of desync**: `Ollama async stream failed: Read timed out. (read timeout=300)`
+in `run_error.log` followed by `TimeoutError: LLM call timed out after Ns`.
+
+**Fix**: If you bump `LLM_TIMEOUT` (UI Settings or `.env`), bump all four
+`backends_template[*].timeout` values in the same commit. The Settings
+`set_timeout()` helper only touches `LLM_TIMEOUT`/`EXECUTOR_TIMEOUT`, NOT
+the backend read timeouts — those are independent.
+
+Full troubleshooting guide: `README.md` → "Troubleshooting → LLM_TIMEOUT".
+API-level detail: `docs/api/API.md` → "504 — LLM Timeout".
+
 ## Commands
 
 ```bash
