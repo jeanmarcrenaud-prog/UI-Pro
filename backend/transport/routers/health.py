@@ -374,6 +374,40 @@ async def set_timeouts(body: TimeoutRequest):
         return {"status": "error", "message": str(e)}
 
 
+@router.post("/api/settings/reload")
+async def reload_settings():
+    """Hot-reload settings from .env without restarting the server.
+
+    The Settings singleton is constructed once at process start (via
+    @lru_cache on get_settings()) and does not re-read .env on access.
+    Editing .env at runtime therefore has no effect until restart.
+
+    This endpoint clears the lru_cache, constructs a fresh Settings()
+    with the current .env, and copies the new values into the existing
+    module-level instance in place. Runtime overrides (UI toggles like
+    node_routing_enabled, llm_enable_thinking) are preserved.
+
+    Typical use: edit .env to bump LLM_TIMEOUT, then POST this
+    endpoint to apply without a process restart. The in-flight
+    pipeline run picks up the new timeout on its next LLM call.
+
+    Errors:
+      - 200 with status="error" + message if pydantic rejects the new
+        .env (e.g. LLM_TIMEOUT=10 below the ge=30 floor). The
+        existing instance is left untouched in that case.
+    """
+    try:
+        settings.reload_from_env()
+        return {
+            "status": "ok",
+            "llm_timeout": settings.llm_timeout,
+            "executor_timeout": settings.executor_timeout,
+            "message": "Settings reloaded from .env. Runtime overrides preserved.",
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 class FullSettingsRequest(BaseModel):
     model_fast: str | None = None
     model_reasoning: str | None = None

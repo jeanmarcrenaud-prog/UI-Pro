@@ -347,6 +347,57 @@ class Settings(BaseSettings):
             }
         )
 
+    def reload_from_env(self) -> None:
+        """Re-read .env and update this instance in place.
+
+        The Settings class is normally instantiated exactly once at
+        process start, via the @lru_cache(maxsize=1) on get_settings().
+        Every consumer holds a direct reference to that single instance
+        (e.g. `from backend.domain.settings import settings`), so
+        re-assigning the module attribute would not update them. The
+        fix is to mutate the existing instance in place.
+
+        Behavior:
+          1. Clear the lru_cache so get_settings() will re-construct.
+          2. Build a fresh Settings() with the current .env / env vars.
+             If the new env is invalid (e.g. LLM_TIMEOUT=10 below the
+             ge=30 floor), the pydantic ValidationError propagates and
+             this instance is left UNTOUCHED. The cache stays cleared
+             so the next call retries with the same bad config.
+          3. Snapshot runtime_overrides — these are Field(exclude=True,
+             init=False) in-memory state (UI toggles like
+             node_routing_enabled, llm_enable_thinking) that must NOT
+             be reset by a .env reload, because the user may have
+             toggled them after process start.
+          4. Copy every declared model field from the fresh instance
+             onto this one.
+          5. Restore runtime_overrides (defense in depth: the setattr
+             loop already skips it via the `if field_name == ...`
+             guard, but we restore explicitly to make the intent
+             unambiguous to readers).
+
+        Use case: change LLM_TIMEOUT in .env, then call this from
+        /api/settings/reload. The running server picks up the new
+        value without a process restart, and any in-progress pipeline
+        run sees the new timeout on its next LLM call.
+        """
+        get_settings.cache_clear()
+        fresh = get_settings()  # raises ValidationError on bad env
+
+        saved_overrides = self.runtime_overrides.copy()
+
+        for field_name in type(self).model_fields:
+            if field_name == "runtime_overrides":
+                continue
+            setattr(self, field_name, getattr(fresh, field_name))
+
+        self.runtime_overrides = saved_overrides
+        logger.info(
+            "Settings reloaded from env (llm_timeout=%ss, executor_timeout=%ss)",
+            self.llm_timeout,
+            self.executor_timeout,
+        )
+
     def set_log_level(self, level: str) -> None:
         self.log_level = level.upper()
         self._save_to_env({"LOG_LEVEL": self.log_level})
