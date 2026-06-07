@@ -50,3 +50,9 @@ ui-pro-ui/node_modules/
 ui-pro-ui/.next/
 frontend/node_modules/
 frontend/.next/
+
+# Claude Code local session state. The transcripts/ subfolder
+# in particular contains per-session JSONL logs that must never
+# land in a public repo (private conversation content). Removed
+# from history via git filter-repo; this entry prevents re-leak.
+.claude/transcripts/
