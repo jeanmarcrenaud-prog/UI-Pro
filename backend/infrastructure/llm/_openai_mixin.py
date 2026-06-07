@@ -17,6 +17,7 @@ import requests
 
 from backend.infrastructure.llm.base import LLMBackend
 from backend.infrastructure.llm.errors import LLMStreamError
+from backend.infrastructure.llm.models import ModelConfig
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,10 @@ class OpenAICompatMixin:
     """
 
     backend_name: str = ""
+
+    # Provided at runtime by LLMBackend via multiple inheritance
+    # (e.g. class LMStudioBackend(OpenAICompatMixin, LLMBackend))
+    config: ModelConfig
 
     def _base_url(self) -> str:
         raw = self.config.url.rstrip("/")
