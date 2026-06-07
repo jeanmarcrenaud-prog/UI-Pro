@@ -183,12 +183,41 @@ class TestParsePlanIntegration:
                 except json.JSONDecodeError:
                     pass
 
-            brace_match = re.search(r"\{[\s\S]*\}", text)
-            if brace_match:
+            # Balanced-brace scan, first valid top-level object wins.
+            # Replaces a greedy regex that failed when the LLM added prose
+            # with {...} placeholders before/after the JSON.
+            depth = 0
+            start = -1
+            in_string = False
+            escape = False
+            candidates: list[str] = []
+            for i, ch in enumerate(text):
+                if escape:
+                    escape = False
+                    continue
+                if ch == "\\":
+                    escape = True
+                    continue
+                if ch == '"':
+                    in_string = not in_string
+                    continue
+                if in_string:
+                    continue
+                if ch == "{":
+                    if depth == 0:
+                        start = i
+                    depth += 1
+                elif ch == "}":
+                    if depth > 0:
+                        depth -= 1
+                        if depth == 0 and start >= 0:
+                            candidates.append(text[start : i + 1])
+                            start = -1
+            for cand in candidates:
                 try:
-                    return json.loads(brace_match.group(0))
+                    return json.loads(cand)
                 except json.JSONDecodeError:
-                    pass
+                    continue
 
             cleaned = text.strip()
             cleaned = re.sub(r"(?<!\\)'", '"', cleaned)
@@ -247,3 +276,4 @@ class TestParsePlanIntegration:
         text = 'Some text before {"steps": [], "files": {}} and after'
         result = self._parse_and_clean(text)
         assert "steps" in result
+

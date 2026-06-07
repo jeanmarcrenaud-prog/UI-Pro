@@ -320,13 +320,43 @@ async def planning_node(state: AgentState) -> AgentState:
             except json.JSONDecodeError:
                 pass
 
-        # Strategy 3: first top-level {…} object
-        brace_match = re.search(r"\{[\s\S]*\}", text)
-        if brace_match:
+        # Strategy 3: balanced-brace scan, first valid top-level object wins.
+        # Replaces a greedy regex that failed when the LLM added prose with
+        # {...} placeholders (e.g. "{requests}") before/after the JSON — the
+        # greedy `\{[\s\S]*\}` would span the whole response including prose,
+        # producing invalid JSON and forcing the empty-plan fallback.
+        depth = 0
+        start = -1
+        in_string = False
+        escape = False
+        candidates: list[str] = []
+        for i, ch in enumerate(text):
+            if escape:
+                escape = False
+                continue
+            if ch == "\\":
+                escape = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == "{":
+                if depth == 0:
+                    start = i
+                depth += 1
+            elif ch == "}":
+                if depth > 0:
+                    depth -= 1
+                    if depth == 0 and start >= 0:
+                        candidates.append(text[start : i + 1])
+                        start = -1
+        for cand in candidates:
             try:
-                return json.loads(brace_match.group(0))
+                return json.loads(cand)
             except json.JSONDecodeError:
-                pass
+                continue
 
         # Strategy 4: repair common LLM mistakes (trailing comma, single quotes)
         import ast
