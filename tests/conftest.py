@@ -80,7 +80,10 @@ def config_override(monkeypatch):
     monkeypatch.setenv("MODEL_FAST", "qwen2.5-coder:32b")
     monkeypatch.setenv("MODEL_REASONING", "qwen-opus")
     monkeypatch.setenv("MODEL_CODE", "qwen2.5-coder:32b")
-    monkeypatch.setenv("LLM_TIMEOUT", "10")
+    # Floor raised 10s -> 30s to match the new Pydantic constraint in
+    # backend/domain/settings.py (Field(ge=30, le=1800)). A value below
+    # 30 now raises ValidationError on Settings() construction.
+    monkeypatch.setenv("LLM_TIMEOUT", "30")
     monkeypatch.setenv("EXECUTOR_TIMEOUT", "30")
     yield
     monkeypatch.delenv("HF_TOKEN", raising=False)

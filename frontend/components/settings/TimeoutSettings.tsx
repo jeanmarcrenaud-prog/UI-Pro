@@ -20,7 +20,7 @@ export function TimeoutSettings() {
           <div className="flex items-center gap-2">
             <input
               type="number"
-              min={10}
+              min={30}
               max={1800}
               value={llmTimeout}
               onChange={(e) => setLlmTimeout(Number(e.target.value))}

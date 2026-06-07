@@ -130,7 +130,13 @@ class Settings(BaseSettings):
     # (qwen3.5:9b / qwen3.6:latest) on long prompts. See README
     # "Troubleshooting > LLM_TIMEOUT" for the full rationale and the
     # relationship with the per-backend `read_timeout` below.
-    llm_timeout: int = Field(default=900, ge=10, le=1800)
+    # Floor raised 10s -> 30s: even the "fast" tier can stall for 10-20s on
+    # the first request after VRAM load (Ollama model compile + load). A
+    # 10s floor is silently misconfigurable via the Settings UI slider,
+    # which previously caused repeated "LLM call timed out after 10.0s"
+    # failures on small models. See the live-test note in commit history
+    # for the reasoning-model timing.
+    llm_timeout: int = Field(default=900, ge=30, le=1800)
     executor_timeout: int = Field(default=60, ge=5, le=600)
 
     # When True, the coding_node retry path uses the advanced self-correction
@@ -327,7 +333,12 @@ class Settings(BaseSettings):
         logger.info(f"Preset activé : {preset_id}")
 
     def set_timeout(self, llm: int, executor: int) -> None:
-        self.llm_timeout = max(10, min(1800, llm))
+        # Floor matches the Pydantic Field constraint (ge=30). The clamp
+        # is redundant for env-var-driven loads (those go through Settings
+        # validation) but is the only defense for runtime overrides via
+        # the Settings UI — keeping them aligned prevents the slider from
+        # writing a value the next Settings() reload would reject.
+        self.llm_timeout = max(30, min(1800, llm))
         self.executor_timeout = max(5, min(600, executor))
         self._save_to_env(
             {
