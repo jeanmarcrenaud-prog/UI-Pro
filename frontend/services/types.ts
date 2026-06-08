@@ -27,4 +27,5 @@ export type TokenCallback = (id: string, content: string, done: boolean) => void
 export type StepCallback = (stepId: string, status: string, content?: string) => void
 export type ErrorCallback = (message: string) => void
 export type CompleteCallback = (id: string) => void
+export type ApprovalCallback = (streamId: string, codePreview: string, messageId: string) => void
 export type MessageHandlerCallback = (content: string, done: boolean) => void
