@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { chatService } from '@/services/chatService';
 import { events } from '@/lib/events';
 import type { Message } from '@/lib/types';
+import { ExecutionApproval } from './ExecutionApproval';
 
 export default function ChatInterface() {
   const [messages, setMessages] = useState<any[]>([]);
@@ -121,6 +122,9 @@ export default function ChatInterface() {
             </div>
           </motion.div>
         ))}
+
+        {/* Execution approval (human-in-the-loop) */}
+        <ExecutionApproval />
 
         {/* Indicateur de génération en cours */}
         <AnimatePresence>

@@ -41,7 +41,8 @@ class ChatService {
       this.handleToken.bind(this),
       this.handleStep.bind(this),
       this.handleError.bind(this),
-      this.handleComplete.bind(this)
+      this.handleComplete.bind(this),
+      this.handleApproval.bind(this),
     )
   }
 
@@ -181,12 +182,44 @@ class ChatService {
 
   private handleError(message: string): void {
     this.emit({ id: crypto.randomUUID(), role: 'assistant', content: message, status: 'error' })
-    this.clearRequest()
+    this.clearRequest({ closeWs: true })
   }
 
   private handleComplete(id: string): void {
     this.emit({ id, role: 'assistant', content: '', status: 'done' })
-    this.clearRequest()
+    this.activeRequest = null
+    this.manuallyClosed = true
+    events.emit('status', { status: 'idle' })
+    // Keep WS alive for potential execute_decision (Phase 2)
+    // closeWs = true would break the approval flow
+  }
+
+  private handleApproval(streamId: string, codePreview: string, messageId: string): void {
+    this.activeRequest = null
+    this.manuallyClosed = true
+    events.emit('status', { status: 'idle' })
+    events.emit('awaitingApproval', { stream_id: streamId, code_preview: codePreview, message_id: messageId })
+  }
+
+  /** Send execute/correct/cancel decision for human-in-the-loop approval. */
+  sendExecuteDecision(decision: 'execute' | 'correct' | 'cancel', feedback?: string): void {
+    // Set a new active request so Phase 2 tokens/steps get processed
+    this.activeRequest = {
+      id: crypto.randomUUID(),
+      prompt: '',
+      model: '',
+      provider: '',
+      assistantId: crypto.randomUUID(),
+      lastChunkIndex: 0,
+    }
+    this.manuallyClosed = false
+
+    this.wsManager.send({
+      type: 'execute_decision',
+      message_id: this.activeRequest.id,
+      decision,
+      feedback: feedback || null,
+    })
   }
 
   // =====================
@@ -256,10 +289,12 @@ class ChatService {
     this.clearRequest()
   }
 
-  private clearRequest(): void {
+  private clearRequest(opts?: { closeWs?: boolean }): void {
     this.activeRequest = null
     this.manuallyClosed = true
-    this.wsManager.close()
+    if (opts?.closeWs) {
+      this.wsManager.close()
+    }
     events.emit('status', { status: 'idle' })
   }
 

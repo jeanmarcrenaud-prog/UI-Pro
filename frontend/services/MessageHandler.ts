@@ -2,7 +2,14 @@
 // Parse and emit messages from WebSocket/SSE
 
 import { WS_EVENTS } from './constants'
-import type { ActiveRequest, TokenCallback, StepCallback, ErrorCallback, CompleteCallback } from './types'
+import type {
+  ActiveRequest,
+  TokenCallback,
+  StepCallback,
+  ErrorCallback,
+  CompleteCallback,
+  ApprovalCallback,
+} from './types'
 import { debugLogger } from '@/lib/debug/logger'
 
 export class MessageHandler {
@@ -10,7 +17,8 @@ export class MessageHandler {
     private onToken: TokenCallback,
     private onStep: StepCallback,
     private onError: ErrorCallback,
-    private onComplete: CompleteCallback
+    private onComplete: CompleteCallback,
+    private onApproval: ApprovalCallback,
   ) {}
 
   process(data: any, activeRequest: ActiveRequest | null): void {
@@ -58,6 +66,16 @@ export class MessageHandler {
     if (type === 'cancelled') {
       debugLogger.logInfo('Request cancelled by user', 'cancel')
       this.onComplete(activeRequest?.assistantId || '')
+      return
+    }
+
+    // Handle human-in-the-loop execution approval
+    if (type === 'awaiting_approval') {
+      const streamId = data.stream_id || ''
+      const codePreview = data.code_preview || data.content || ''
+      const msgId = data.message_id || ''
+      debugLogger.logInfo(`Awaiting approval for stream: ${streamId}`, 'approval')
+      this.onApproval(streamId, codePreview, msgId)
       return
     }
 
