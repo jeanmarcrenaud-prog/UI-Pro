@@ -6,7 +6,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 
-from models.settings import settings
+from backend.domain.settings import settings
 from backend.infrastructure.llm.progress import LLMProgressTracker
 
 logger = logging.getLogger(__name__)

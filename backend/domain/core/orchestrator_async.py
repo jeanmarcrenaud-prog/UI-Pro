@@ -14,7 +14,7 @@ import time
 from datetime import datetime
 from typing import Any, Literal
 
-from models.settings import settings
+from backend.domain.settings import settings
 
 # Workspace constant for test compatibility
 WORKSPACE = settings.workspace_path

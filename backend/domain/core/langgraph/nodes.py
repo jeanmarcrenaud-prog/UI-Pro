@@ -8,7 +8,7 @@ import logging
 import re
 from typing import Any, Literal
 
-from models.settings import settings
+from backend.domain.settings import settings
 
 from .fix_prompts import format_fix_prompt
 from .state import AgentState, CodeData, PlanData, ReviewData
