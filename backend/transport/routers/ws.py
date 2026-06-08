@@ -70,6 +70,28 @@ async def websocket_endpoint(ws: WebSocket):
                 )
                 break
 
+            # ── Phase 2: human-in-the-loop execution decision ────────
+            if request.get("type") == "execute_decision":
+                decision = request.get("decision")
+                feedback = request.get("feedback")
+                msg_id = request.get("message_id", current_message_id or str(uuid.uuid4()))
+                logger.info(
+                    f"[ws] Execute decision: {decision} "
+                    f"(message_id={msg_id}, feedback={feedback})"
+                )
+
+                streamer = get_unified_streamer()
+                transport = WebSocketTransport(ws)
+
+                async for event in streamer.stream(
+                    transport=transport,
+                    session_id=session_id,
+                    decision=decision,
+                    feedback=feedback,
+                ):
+                    await ws.send_text(event.to_ws())
+                continue
+
             # Validate request
             is_valid, error_msg, parsed = await ws_controller.validate_request(request)
             if not is_valid:

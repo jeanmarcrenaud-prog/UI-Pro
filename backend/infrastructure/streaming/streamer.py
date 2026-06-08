@@ -48,13 +48,16 @@ class UnifiedStreamer:
     async def stream(
         self,
         transport: StreamTransport,
-        message: str,
         session_id: str,
+        message: str = "",
         model: str = "",
         provider: str = "ollama",
         temperature: float = 0.7,
         max_attempts: int = 3,
         resume_from: str | None = None,
+        # Human-in-the-loop execution approval (Phase 2)
+        decision: str | None = None,  # "execute" | "correct" | "cancel"
+        feedback: str | None = None,
     ) -> AsyncIterator[StreamEvent]:
         async with self._lock:
             self._counter += 1
@@ -86,6 +89,9 @@ class UnifiedStreamer:
                 provider=provider,
                 max_attempts=max_attempts,
                 resume_from=resume_from,
+                # Phase 2 approval params
+                decision=decision,
+                feedback=feedback,
             ):
                 if not transport.is_connected:
                     break
@@ -130,9 +136,6 @@ class UnifiedStreamer:
                 message_id=message_id,
             )
             yield StreamEvent(event_type="done", message_id=message_id)
-
-        finally:
-            await transport.close()
 
 
 __all__ = ["UnifiedStreamer"]

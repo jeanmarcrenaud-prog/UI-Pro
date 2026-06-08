@@ -8,6 +8,7 @@ import asyncio
 import logging
 import uuid
 from datetime import datetime
+from collections.abc import AsyncIterator
 from typing import Any
 
 from backend.domain.core.events import EventType, get_event_bus
@@ -62,33 +63,47 @@ def save_stream_checkpoint(
 
 
 async def stream_agent(
-    message: str,
+    message: str = "",
     session_id: str = "default",
     max_attempts: int = 3,
     model: str = "",
     provider: str = "ollama",
     resume_from: str | None = None,
+    # Human-in-the-loop approval (Phase 2)
+    decision: str | None = None,  # "execute" | "correct" | "cancel"
+    feedback: str | None = None,  # User feedback for "correct"
 ):
     """
-    Streaming optimisé avec batching et resume.
+    Agent streaming with human-in-the-loop execution approval.
+
+    Phase 1 (decision=None): analyze → plan → code → review, then interrupt
+    BEFORE execute. Yields [AWAITING_APPROVAL] with the stream_id so the
+    frontend can show "Execute / Correct / Cancel" buttons.
+
+    Phase 2 (decision="execute"): resume from checkpoint → execute →
+    should_continue → (fix_code loop | end). The fix loop auto-executes as
+    before when execution fails, since the user already approved running.
+
+    Phase 2 (decision="correct"): re-run code generation with user feedback
+    as a new context message, then interrupt before execute again.
+
+    Phase 2 (decision="cancel"): immediately end — code stays as-is.
     """
     from backend.domain.core.langgraph import get_orchestrator
 
     app = await get_orchestrator()
 
-    # Generate or resume stream_id
-    if resume_from and resume_from in _stream_checkpoints:
-        checkpoint = _stream_checkpoints[resume_from]
-        stream_id = resume_from
-        start_index = checkpoint["last_token_index"]
-        logger.info(f"[stream] Resuming stream {stream_id} from index {start_index}")
-        yield f"[RESUME]stream_id:{stream_id}:from_index:{start_index}"
-    else:
-        stream_id = str(uuid.uuid4())[:12]
-        start_index = 0
-        logger.info(f"[stream] Starting new stream {stream_id}")
+    # ── Phase 2: handle user decision ──────────────────────────
+    if decision is not None:
+        async for raw in _handle_decision(app, session_id, decision, feedback):
+            yield raw
+        return
 
-    # Emit stream_id immediately
+    # ── Phase 1: code generation (analyze → plan → code → review) ──
+    stream_id = str(uuid.uuid4())[:12]
+    start_index = 0
+    logger.info(f"[stream] Starting new stream {stream_id}")
+
     yield f"[STREAM_ID]{stream_id}"
 
     initial_state: AgentState = {
@@ -98,6 +113,8 @@ async def stream_agent(
         "review": None,
         "execution_result": None,
         "error": None,
+        "awaiting_approval": False,
+        "execution_decision": None,
         "attempt": 0,
         "max_attempts": max_attempts,
         "session_id": session_id,
@@ -120,10 +137,8 @@ async def stream_agent(
 
     try:
         yield "[STEP]orchestrator:Starting agent pipeline"
-        logger.info("[streaming] Starting astream...")
+        logger.info("[streaming] Starting astream (Phase 1 — interrupt before execute)...")
 
-        # Subscribe to event bus for step events emitted by nodes.py (_emit_step)
-        # and generation stats emitted by LLMWrapper
         step_queue: asyncio.Queue[str] = asyncio.Queue()
 
         def _on_agent_event(event: Any) -> None:
@@ -136,13 +151,13 @@ async def stream_agent(
         bus = get_event_bus()
         bus.subscribe(EventType.AGENT, _on_agent_event)
 
-        # Track state fields already emitted (each only ONCE, not every snapshot)
         _state_emitted: set[str] = set()
 
         async for event in app.astream(
             initial_state,
             config={"configurable": {"thread_id": session_id}},
             stream_mode="values",
+            interrupt_before=["execute"],
         ):
             # Drain detailed sub-step events from nodes.py
             # (emitted during node execution via _emit_step → event bus)
@@ -254,7 +269,17 @@ async def stream_agent(
         # Save final checkpoint
         save_stream_checkpoint(stream_id, session_id, token_count, {})
 
-        yield "[STEP]completed:Task completed successfully"
+        # If execution_result was NOT emitted, the graph was interrupted
+        # before "execute" — yield AWAITING_APPROVAL instead of completed.
+        if "execution_result" not in _state_emitted:
+            logger.info(
+                f"[stream] Phase 1 complete — yielding AWAITING_APPROVAL "
+                f"(stream_id={stream_id})"
+            )
+            yield f"[AWAITING_APPROVAL]stream_id:{stream_id}"
+        else:
+            yield "[STEP]completed:Task completed successfully"
+
         yield "[DONE]"
 
     except Exception as e:
@@ -272,4 +297,221 @@ async def stream_agent(
             pass
 
 
-__all__ = ["get_stream_checkpoint", "save_stream_checkpoint", "stream_agent"]
+# ── Phase 2 helpers ──────────────────────────────────────────────
+
+
+async def _handle_decision(
+    app: Any,
+    session_id: str,
+    decision: str,
+    feedback: str | None,
+) -> AsyncIterator[str]:
+    """Handle Phase 2 user decision after the graph is interrupted."""
+
+    if decision == "execute":
+        async for raw in _resume_execution(app, session_id):
+            yield raw
+    elif decision == "correct":
+        async for raw in _resume_correct(app, session_id, feedback):
+            yield raw
+    elif decision == "cancel":
+        yield "[STEP]completed:Code generated (execution skipped by user)"
+        yield "[DONE]"
+    else:
+        yield f"[ERROR]400:Unknown decision: {decision}"
+        yield "[DONE]"
+
+
+async def _resume_execution(app: Any, session_id: str) -> AsyncIterator[str]:
+    """Phase 2 execute: resume from checkpoint → execute → should_continue → ..."""
+    logger.info(f"[stream] Phase 2: resuming execution (session={session_id})")
+
+    yield "[STEP]orchestrator:Executing code..."
+
+    step_queue: asyncio.Queue[str] = asyncio.Queue()
+
+    def _on_agent_event(event: Any) -> None:
+        try:
+            if hasattr(event, "step") and hasattr(event, "message"):
+                step_queue.put_nowait(f"{event.step}:{event.message}")
+        except Exception:
+            pass
+
+    bus = get_event_bus()
+    bus.subscribe(EventType.AGENT, _on_agent_event)
+
+    _state_emitted: set[str] = set()
+    token_buffer: list[str] = []
+    token_count = 0
+    _last_message_length[session_id] = 0
+
+    try:
+        async for event in app.astream(
+            None,  # None = resume from last checkpoint
+            config={"configurable": {"thread_id": session_id}},
+            stream_mode="values",
+        ):
+            # Drain sub-step events
+            _step_dedup = set()
+            try:
+                while True:
+                    step_msg = step_queue.get_nowait()
+                    if step_msg not in _step_dedup:
+                        _step_dedup.add(step_msg)
+                        yield f"[STEP]{step_msg}"
+            except asyncio.QueueEmpty:
+                pass
+
+            exec_val = event.get("execution_result")
+            if exec_val and "execution_result" not in _state_emitted:
+                _state_emitted.add("execution_result")
+                success = (
+                    exec_val.get("success", False)
+                    if isinstance(exec_val, dict)
+                    else False
+                )
+                yield f"[STEP]executing:Execution {'OK' if success else 'FAILED'}"
+
+            # Token streaming from latest assistant message
+            if event.get("messages"):
+                last_msg = event["messages"][-1]
+                if last_msg.get("role") == "assistant":
+                    content = last_msg.get("content", "")
+                    current_idx = len(event["messages"]) - 1
+                    if _last_msg_idx.get(session_id) != current_idx:
+                        last_len = 0
+                        _last_msg_idx[session_id] = current_idx
+                    else:
+                        last_len = _last_message_length.get(session_id, 0)
+
+                    if len(content) > last_len:
+                        new_text = content[last_len:]
+                        if new_text.strip():
+                            token_buffer.append(new_text)
+                            token_count += len(new_text)
+                            if len(token_buffer) >= BATCH_SIZE:
+                                batch = "".join(token_buffer)
+                                yield f"[TOKEN]{batch}"
+                                token_buffer.clear()
+                        _last_message_length[session_id] = len(content)
+
+    except Exception as e:
+        logger.exception("[stream] Phase 2 execution failed")
+        yield f"[ERROR]500:{e!s}"
+    finally:
+        if token_buffer:
+            yield f"[TOKEN]{''.join(token_buffer)}"
+        bus.unsubscribe(EventType.AGENT, _on_agent_event)
+        _last_message_length.pop(session_id, None)
+        _last_msg_idx.pop(session_id, None)
+
+    yield "[STEP]completed:Execution completed"
+    yield "[DONE]"
+
+
+async def _resume_correct(
+    app: Any,
+    session_id: str,
+    feedback: str | None,
+) -> AsyncIterator[str]:
+    """Phase 2 correct: re-run code gen with user feedback."""
+    logger.info(
+        f"[stream] Phase 2: correcting code (session={session_id}, "
+        f"feedback={feedback})"
+    )
+
+    # Get the last checkpoint state to preserve plan/metadata
+    try:
+        state_snapshot = await app.aget_state(
+            config={"configurable": {"thread_id": session_id}}
+        )
+    except Exception:
+        state_snapshot = None
+
+    base_state = dict(state_snapshot.values) if state_snapshot else {}
+
+    feedback_msg = feedback or "Please correct the code."
+
+    # TypedDict is too strict for dynamic state; pass raw dict
+    modified_state: dict[str, Any] = {
+        "messages": base_state.get("messages", [])
+        + [{"role": "user", "content": feedback_msg}],
+        "plan": base_state.get("plan"),  # keep plan for context
+        "code": None,  # re-generate
+        "review": None,  # re-review
+        "execution_result": None,
+        "error": None,
+        "awaiting_approval": False,
+        "execution_decision": None,
+        "attempt": base_state.get("attempt", 0) + 1,
+        "max_attempts": base_state.get("max_attempts", 3),
+        "session_id": f"{session_id}_correct",
+        "metadata": base_state.get("metadata"),
+        "stream_id": base_state.get("stream_id"),
+        "last_token_index": 0,
+        "checkpoint_enabled": True,
+    }
+
+    yield "[STEP]orchestrator:Regenerating code with feedback..."
+
+    _state_emitted: set[str] = set()
+    token_buffer: list[str] = []
+
+    try:
+        async for event in app.astream(
+            modified_state,
+            config={"configurable": {"thread_id": f"{session_id}_correct"}},
+            stream_mode="values",
+            interrupt_before=["execute"],
+        ):
+            code_val = event.get("code")
+            if code_val and "code" not in _state_emitted:
+                _state_emitted.add("code")
+                files = code_val.get("files", {})
+                yield f"[STEP]coding:Code regenerated ({len(files)} fichiers)"
+                for filename, source in files.items():
+                    yield f"[TOKEN]\n\n**{filename}**\n```python\n{source}\n```\n\n"
+
+            review_val = event.get("review")
+            if review_val and "review" not in _state_emitted:
+                _state_emitted.add("review")
+                status = "PASSED" if review_val.get("passed") else "Needs improvement"
+                yield f"[STEP]reviewing:Review - {status}"
+
+            # Token streaming
+            if event.get("messages"):
+                last_msg = event["messages"][-1]
+                if last_msg.get("role") == "assistant":
+                    content = last_msg.get("content", "")
+                    current_idx = len(event["messages"]) - 1
+                    if _last_msg_idx.get(f"{session_id}_correct") != current_idx:
+                        last_len = 0
+                        _last_msg_idx[f"{session_id}_correct"] = current_idx
+                    else:
+                        last_len = _last_message_length.get(f"{session_id}_correct", 0)
+                    if len(content) > last_len:
+                        new_text = content[last_len:]
+                        if new_text.strip():
+                            token_buffer.append(new_text)
+                            if len(token_buffer) >= BATCH_SIZE:
+                                yield f"[TOKEN]{''.join(token_buffer)}"
+                                token_buffer.clear()
+                        _last_message_length[f"{session_id}_correct"] = len(content)
+
+    except Exception as e:
+        logger.exception("[stream] Phase 2 correction failed")
+        yield f"[ERROR]500:{e!s}"
+    finally:
+        if token_buffer:
+            yield f"[TOKEN]{''.join(token_buffer)}"
+
+    # After correction, yield AWAITING_APPROVAL again
+    yield f"[AWAITING_APPROVAL]stream_id:{base_state.get('stream_id', 'unknown')}"
+    yield "[DONE]"
+
+
+__all__ = [
+    "get_stream_checkpoint",
+    "save_stream_checkpoint",
+    "stream_agent",
+]
