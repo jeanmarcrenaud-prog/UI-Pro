@@ -897,6 +897,20 @@ def should_continue(state: AgentState) -> Literal["fix_code", "end"]:
     attempt = state.get("attempt", 0)
     max_attempts = state.get("max_attempts", 3)
 
+    # Priorité 0: reviewing_node a détecté un code vide (LLM stream
+    # retourné vide). Ce check doit être AVANT les Priorités 1-3 qui
+    # traitent execution_result, car l'exécuteur tourne après le
+    # reviewing_node et produit un échec "no files to run" — le sentinel
+    # doit être capturé indépendamment de ce que l'exécuteur a fait.
+    if review is not None:
+        issues = review.get("issues") or []
+        if any("No code was generated" in str(i) for i in issues):
+            _emit_step(
+                "no_code_short_circuit",
+                "❌ coding_node returned no code; skipping auto-fix loop",
+            )
+            return "end"
+
     # Priorité 1: exécution réussie → STOP (le code marche, inutile de boucler)
     if execution_result is not None:
         result_dict: dict = execution_result  # type: ignore[assignment]
@@ -926,13 +940,13 @@ def should_continue(state: AgentState) -> Literal["fix_code", "end"]:
         return "end"
 
     # Priorité 5: reviewing_node a détecté un code vide (LLM stream
-    # retourné vide) et il n'y a pas encore eu d'exécution. Boucler
-    # vers coding_node avec le même modèle + même prompt ne ferait que
-    # reproduire la réponse vide — on coupe court pour épargner les
-    # ~6 minutes de fix attempts inutiles. L'utilisateur voit un
-    # message clair dans l'UI et peut retry manuellement avec un autre
-    # modèle.
-    if execution_result is None and review is not None:
+    # retourné vide). L'exécuteur a déjà échoué (pas de fichiers à
+    # exécuter) ou ne s'est jamais lancé. Boucler vers coding_node
+    # avec le même modèle + même prompt ne ferait que reproduire la
+    # réponse vide — on coupe court pour épargner les ~6 minutes de
+    # fix attempts inutiles. L'utilisateur voit un message clair dans
+    # l'UI et peut retry manuellement avec un autre modèle.
+    if review is not None:
         issues = review.get("issues") or []
         if any("No code was generated" in str(i) for i in issues):
             _emit_step(
