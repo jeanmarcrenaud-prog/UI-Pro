@@ -8,7 +8,7 @@ Tests for:
 - Model settings
 """
 
-from models.settings import settings
+from backend.domain.settings import settings
 
 from backend.infrastructure.llm.models import ModelConfig
 from backend.infrastructure.llm.factory import get_backend, list_available_backends

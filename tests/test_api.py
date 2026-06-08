@@ -128,11 +128,11 @@ class TestStatusEndpoint:
     def test_status_with_api_key(self, client, mocker):
         """Status should work with valid API key"""
         # Get API key from settings
-        from models.settings import settings
+        from backend.domain.settings import settings
 
         # Mock settings.api_key to prevent import issues during test
         mock_settings = mocker.MagicMock(api_key=None)
-        mocker.patch("models.settings.settings", mock_settings)
+        mocker.patch("backend.domain.settings.settings", mock_settings)
 
         response = client.get(
             "/status",

@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from settings import get_settings
+from backend.domain.settings import get_settings
 
 
 class TestSettingsLoad:
@@ -263,7 +263,7 @@ class TestTimeoutFloor:
         raise (Pydantic ge=30 wins) but the in-memory `settings` object
         would have the bad value until the next process start.
         """
-        from settings import Settings
+        from backend.domain.settings import Settings
 
         s = Settings()
         s.set_timeout(llm=10, executor=60)
@@ -271,7 +271,7 @@ class TestTimeoutFloor:
 
     def test_set_timeout_runtime_clamps_above_max(self, monkeypatch):
         """Runtime set_timeout() must also clamp to the new max."""
-        from settings import Settings
+        from backend.domain.settings import Settings
 
         s = Settings()
         s.set_timeout(llm=99999, executor=60)
@@ -301,7 +301,7 @@ class TestSettingsReload:
     def test_reload_picks_up_new_env_value(self, monkeypatch):
         """reload_from_env() must read the current LLM_TIMEOUT from env,
         not the value captured at the original Settings() construction."""
-        from settings import Settings, get_settings
+        from backend.domain.settings import Settings, get_settings
 
         monkeypatch.setenv("LLM_TIMEOUT", "30")
         get_settings.cache_clear()
@@ -320,7 +320,7 @@ class TestSettingsReload:
         wiped by a .env reload — otherwise toggling node_routing in
         the Settings UI would reset every time the user bumps a
         timeout in .env and reloads."""
-        from settings import Settings, get_settings
+        from backend.domain.settings import Settings, get_settings
 
         monkeypatch.setenv("LLM_TIMEOUT", "30")
         get_settings.cache_clear()
@@ -347,7 +347,7 @@ class TestSettingsReload:
         operator should be able to fix the file and reload again
         without restarting)."""
         from pydantic import ValidationError
-        from settings import Settings, get_settings
+        from backend.domain.settings import Settings, get_settings
 
         monkeypatch.setenv("LLM_TIMEOUT", "900")
         get_settings.cache_clear()
@@ -368,7 +368,7 @@ class TestSettingsReload:
         llm_timeout. Catches a regression where someone might
         refactor reload_from_env to only touch the field they care
         about and forget the rest."""
-        from settings import Settings, get_settings
+        from backend.domain.settings import Settings, get_settings
 
         monkeypatch.setenv("LLM_TIMEOUT", "30")
         monkeypatch.setenv("EXECUTOR_TIMEOUT", "60")
