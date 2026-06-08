@@ -158,7 +158,7 @@ async def set_log_level(request: LogLevelRequest):
 
         # Persist to settings
         try:
-            from settings import settings
+            from backend.domain.settings import settings
 
             settings.set_log_level(level_str)
             logger.info(f"[LOGS] Persisted log level {level_str} to settings")

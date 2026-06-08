@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from settings import settings
+from backend.domain.settings import settings
 
 router = APIRouter(prefix="/api", tags=["chat"])
 

@@ -5,7 +5,7 @@ import logging
 from fastapi import APIRouter, Body, Query
 from pydantic import BaseModel
 
-from models.settings import settings
+from backend.domain.settings import settings
 
 logger = logging.getLogger(__name__)
 

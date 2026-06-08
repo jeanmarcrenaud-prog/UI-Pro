@@ -22,7 +22,7 @@ from pydantic import BaseModel
 
 def setup_logging():
     """Configure structured logging with settings-aware levels."""
-    from settings import settings
+    from backend.domain.settings import settings
 
     # Get log level from settings (env variable)
     log_level_str = getattr(settings, "log_level", "INFO").upper()
@@ -117,7 +117,7 @@ async def lifespan(app: FastAPI):
     # Prune old checkpoints
     try:
         from backend.infrastructure.checkpointer import CheckpointManager
-        from models.settings import settings
+        from backend.domain.settings import settings
 
         checkpointer = CheckpointManager(settings)
         deleted = await checkpointer.cleanup_old_checkpoints()
@@ -163,7 +163,7 @@ app = FastAPI(
 def _get_settings_cached():
     """Get settings with caching."""
     try:
-        from models.settings import settings
+        from backend.domain.settings import settings
 
         return settings
     except ImportError:

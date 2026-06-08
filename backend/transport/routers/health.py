@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Query, Response
 from pydantic import BaseModel
 
-from models.settings import settings
+from backend.domain.settings import settings
 
 logger = logging.getLogger(__name__)
 

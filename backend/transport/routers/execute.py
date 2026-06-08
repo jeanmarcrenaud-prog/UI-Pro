@@ -5,7 +5,7 @@ import time
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
-from settings import settings
+from backend.domain.settings import settings
 
 router = APIRouter(prefix="/api", tags=["execute"])
 
