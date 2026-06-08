@@ -26,7 +26,7 @@ _FALLBACK_PRIORITY = ["ollama", "lmstudio", "lemonade", "llamacpp"]
 
 def _healthy_backends() -> list[str]:
     """Return list of backends that respond to health check, in priority order."""
-    from models.settings import settings
+    from backend.domain.settings import settings
 
     healthy: list[str] = []
     for name in _FALLBACK_PRIORITY:
@@ -76,7 +76,7 @@ def generate_with_fallback(
     Raises:
         LLMBackendError: All backends failed.
     """
-    from models.settings import settings
+    from backend.domain.settings import settings
 
     provider = provider or getattr(settings, "active_provider", None) or "ollama"
     model_name = model or settings.model_fast
@@ -122,7 +122,7 @@ def stream_with_fallback(
     Raises:
         LLMBackendError: All backends failed.
     """
-    from models.settings import settings
+    from backend.domain.settings import settings
 
     provider = provider or getattr(settings, "active_provider", None) or "ollama"
     model_name = model or settings.model_fast
@@ -165,7 +165,7 @@ async def astream_with_fallback(
     Yields:
         Tokens from the first successful backend.
     """
-    from models.settings import settings
+    from backend.domain.settings import settings
 
     provider = provider or getattr(settings, "active_provider", None) or "ollama"
     model_name = model or settings.model_fast

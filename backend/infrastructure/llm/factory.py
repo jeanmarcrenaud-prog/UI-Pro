@@ -39,7 +39,7 @@ def get_backend(provider: str, config: ModelConfig | None = None) -> LLMBackend:
         )
 
     if config is None:
-        from models.settings import settings
+        from backend.domain.settings import settings
 
         # Build URL for this provider
         url_map = {

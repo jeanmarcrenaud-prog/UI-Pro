@@ -403,7 +403,7 @@ class ModelDiscovery:
         try:
             import asyncio
             import httpx
-            from models.settings import settings
+            from backend.domain.settings import settings
 
             base_url = settings.lemonade_url.rstrip("/")
             chat_url = f"{base_url}/v1/chat/completions"

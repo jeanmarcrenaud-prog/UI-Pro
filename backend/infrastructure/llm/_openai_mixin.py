@@ -60,7 +60,7 @@ class OpenAICompatMixin:
         effect without a restart.
         """
         try:
-            from models.settings import settings
+            from backend.domain.settings import settings
             enable = settings.get_llm_enable_thinking()
         except Exception:
             # Settings not importable in some test contexts — default
