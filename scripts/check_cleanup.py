@@ -82,22 +82,15 @@ def check_legacy_imports():
 
 
 def check_reexports():
-    """Check that re-exports work"""
-    print(f"\n{YELLOW}Checking re-exports...{RESET}")
+    """Check that backend.domain.settings direct import works"""
+    print(f"\n{YELLOW}Checking backend.domain.settings import...{RESET}")
 
-    # Check models/settings.py re-exports
     try:
-        print(f"  {GREEN}OK{RESET} models.settings re-exports work")
+        from backend.domain.settings import settings, get_settings, Settings
+        print(f"  {GREEN}OK{RESET} backend.domain.settings")
     except Exception as e:
-        ERRORS.append(f"models.settings re-export failed: {e}")
-        print(f"  {RED}x{RESET} models.settings: {e}")
-
-    # Check root settings.py re-exports
-    try:
-        print(f"  {GREEN}OK{RESET} root settings.py re-exports work")
-    except Exception as e:
-        ERRORS.append(f"root settings.py re-export failed: {e}")
-        print(f"  {RED}x{RESET} root settings.py: {e}")
+        ERRORS.append(f"backend.domain.settings import failed: {e}")
+        print(f"  {RED}x{RESET} backend.domain.settings: {e}")
 
 
 def check_backend_imports():
@@ -162,11 +155,30 @@ def check_legacy_folders():
         print(f"  {GREEN}OK{RESET} No legacy folders found")
 
 
+def check_legacy_shims_removed():
+    """Verify legacy shim files have been removed"""
+    print(f"\n{YELLOW}Checking legacy shims removed...{RESET}")
+    legacy_files = [
+        PROJECT_ROOT / "settings.py",
+        PROJECT_ROOT / "models" / "settings.py",
+        PROJECT_ROOT / "models" / "__init__.py",
+        PROJECT_ROOT / "config" / "__init__.py",
+    ]
+    found = [f for f in legacy_files if f.exists()]
+    if found:
+        for f in found:
+            WARNINGS.append(f"Legacy shim still exists: {f.relative_to(PROJECT_ROOT)}")
+            print(f"  {YELLOW}W{RESET} {f.relative_to(PROJECT_ROOT)} still exists")
+    else:
+        print(f"  {GREEN}OK{RESET} No legacy shim files found")
+
+
 def main():
     print(f"{'=' * 50}")
     print("UI-Pro Cleanup Verification")
     print(f"{'=' * 50}")
 
+    check_legacy_shims_removed()
     check_legacy_folders()
     check_legacy_imports()
     check_reexports()

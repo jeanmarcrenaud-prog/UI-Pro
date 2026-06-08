@@ -117,21 +117,16 @@ def check_backend_imports():
             print(f"  {RED}x{RESET} {module_path}: {e}")
 
 
-def check_models_imports():
-    """Check models imports work"""
-    print(f"\n{YELLOW}Checking models imports...{RESET}")
+def check_backend_settings():
+    """Check backend.domain.settings import works"""
+    print(f"\n{YELLOW}Checking backend.domain.settings import...{RESET}")
 
     try:
-        print(f"  {GREEN}OK{RESET} models.settings")
+        from backend.domain.settings import settings, get_settings, Settings
+        print(f"  {GREEN}OK{RESET} backend.domain.settings")
     except Exception as e:
-        ERRORS.append(f"models.settings failed: {e}")
-        print(f"  {RED}x{RESET} models.settings: {e}")
-
-    try:
-        print(f"  {GREEN}OK{RESET} settings (root)")
-    except Exception as e:
-        ERRORS.append(f"settings (root) failed: {e}")
-        print(f"  {RED}x{RESET} settings (root): {e}")
+        ERRORS.append(f"backend.domain.settings failed: {e}")
+        print(f"  {RED}x{RESET} backend.domain.settings: {e}")
 
 
 def check_llm_imports():
@@ -143,6 +138,24 @@ def check_llm_imports():
     except Exception as e:
         ERRORS.append(f"llm failed: {e}")
         print(f"  {RED}x{RESET} llm: {e}")
+
+
+def check_legacy_shims_removed():
+    """Verify legacy shim files have been removed"""
+    print(f"\n{YELLOW}Checking legacy shims removed...{RESET}")
+    legacy_files = [
+        PROJECT_ROOT / "settings.py",
+        PROJECT_ROOT / "models" / "settings.py",
+        PROJECT_ROOT / "models" / "__init__.py",
+        PROJECT_ROOT / "config" / "__init__.py",
+    ]
+    found = [f for f in legacy_files if f.exists()]
+    if found:
+        for f in found:
+            WARNINGS.append(f"Legacy shim still exists: {f.relative_to(PROJECT_ROOT)}")
+            print(f"  {YELLOW}W{RESET} {f.relative_to(PROJECT_ROOT)} still exists")
+    else:
+        print(f"  {GREEN}OK{RESET} No legacy shim files found")
 
 
 def check_circular_imports():
@@ -158,7 +171,7 @@ def check_circular_imports():
     # Just verify basic imports work (would fail on circular)
     try:
         from backend.domain.core import OrchestratorAsync
-        from models.settings import settings
+        from backend.domain.settings import settings
 
         print(f"  {GREEN}OK{RESET} No obvious circular imports")
     except ImportError as e:
@@ -176,8 +189,9 @@ def main():
 
     check_legacy_imports()
     check_backend_imports()
-    check_models_imports()
+    check_backend_settings()
     check_llm_imports()
+    check_legacy_shims_removed()
     check_circular_imports()
 
     print(f"\n{'=' * 50}")
