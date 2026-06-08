@@ -95,6 +95,23 @@ def _get_gpu_info() -> dict[str, Any] | None:
     return None
 
 
+# ====================== Prometheus /metrics ======================
+
+
+@router.get("/metrics")
+async def prometheus_metrics():
+    """Prometheus /metrics endpoint (text format).
+
+    Exposes GPU, system, and LLM metrics when prometheus-client is
+    installed. Returns a plain-text response compatible with the
+    Prometheus scrape protocol.
+    """
+    from backend.infrastructure.monitoring.prometheus import generate_metrics_response
+
+    body, status, headers = generate_metrics_response()
+    return Response(content=body, status_code=status, media_type=headers.get("content-type", "text/plain"))
+
+
 # ====================== Routes ======================
 
 

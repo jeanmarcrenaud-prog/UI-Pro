@@ -1,13 +1,20 @@
-"""LLM wrapper with unified progress tracking."""
+"""LLM wrapper with unified progress tracking and Prometheus metrics."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import AsyncIterator
 
 from backend.domain.settings import settings
 from backend.infrastructure.llm.progress import LLMProgressTracker
+from backend.infrastructure.monitoring.llm_metrics import (
+    inc_llm_error,
+    inc_llm_tokens,
+    observe_llm_latency,
+    set_active_requests,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -105,12 +112,14 @@ class LLMWrapper:
         """
         timeout = float(settings.llm_timeout)
         model, provider = self._resolved()
+        start = time.monotonic()
+        set_active_requests(provider, 1)
 
         last_exc: BaseException | None = None
         for attempt in range(max_retries + 1):
             loop = asyncio.get_running_loop()
             try:
-                return await asyncio.wait_for(
+                result = await asyncio.wait_for(
                     loop.run_in_executor(
                         None,
                         lambda: self.router.generate(
@@ -123,8 +132,13 @@ class LLMWrapper:
                     ),
                     timeout=timeout,
                 )
+                set_active_requests(provider, 0)
+                observe_llm_latency(provider, time.monotonic() - start, model_type)
+                inc_llm_tokens(provider, len(result))
+                return result
             except asyncio.TimeoutError as e:
                 last_exc = e
+                inc_llm_error(provider, "timeout")
                 if attempt < max_retries:
                     logger.warning(
                         "LLM generate timed out after %ss (model_type=%s, attempt %d/%d) — retrying",
@@ -137,6 +151,7 @@ class LLMWrapper:
 
         msg = f"LLM call timed out after {timeout}s (model_type={model_type})"
         logger.error(msg)
+        set_active_requests(provider, 0)
         raise TimeoutError(msg) from last_exc
 
     async def stream_generate(
@@ -145,6 +160,9 @@ class LLMWrapper:
         """Streaming unifié avec tracking de progression."""
         model, provider = self._resolved()
         tracker = LLMProgressTracker(backend=provider)
+        start = time.monotonic()
+        token_count = 0
+        set_active_requests(provider, 1)
 
         try:
             async for chunk in self.router.astream(
@@ -154,6 +172,12 @@ class LLMWrapper:
                 model=model,
                 provider=provider,
             ):
+                # Comptage de tokens pour métriques
+                if isinstance(chunk, dict) and "content" in chunk:
+                    token_count += 1
+                elif isinstance(chunk, str):
+                    token_count += 1
+
                 # Mise à jour du tracker
                 speed = tracker.on_token(chunk)
 
@@ -188,8 +212,15 @@ class LLMWrapper:
                 else:
                     yield str(chunk)
 
+            # Streaming terminé avec succès — enregistrer les métriques
+            set_active_requests(provider, 0)
+            observe_llm_latency(provider, time.monotonic() - start, model_type)
+            inc_llm_tokens(provider, token_count)
+
         except Exception as e:
             logger.error(f"Streaming error ({provider}): {e}")
+            inc_llm_error(provider, "stream_error")
+            set_active_requests(provider, 0)
             full = await self.generate(prompt, model_type, temperature)
             yield full
 
@@ -208,6 +239,8 @@ class LLMWrapper:
         VRAM load, and a single retry often recovers the response.
         """
         timeout = float(settings.llm_timeout)
+        model, provider = self._resolved()
+        start = time.monotonic()
 
         last_exc: BaseException | None = None
         for attempt in range(max_retries + 1):
@@ -223,6 +256,7 @@ class LLMWrapper:
                 break
             except asyncio.TimeoutError as e:
                 last_exc = e
+                inc_llm_error(provider, "timeout")
                 if attempt < max_retries:
                     logger.warning(
                         "LLM call timed out after %ss (model_type=%s, attempt %d/%d) — retrying",
