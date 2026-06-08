@@ -44,6 +44,9 @@ gradio-client>=1.0.0
 ## API Rate Limiting & Security
 slowapi>=0.1.9
 
+## Monitoring
+prometheus-client>=0.21.0
+
 ## Development & Testing
 pytest>=8.3.0
 pytest-mock>=3.14.0
