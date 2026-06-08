@@ -62,6 +62,10 @@ class StreamEvent:
             "message": lambda e: e.content,
             "code": lambda e: e.code or "500",
         },
+        "awaiting_approval": {
+            "stream_id": lambda e: e.stream_id,
+            "code_preview": lambda e: e.content,
+        },
         "done": {"done": lambda e: True},
         "resumed": {"from_index": lambda e: 0},
     }

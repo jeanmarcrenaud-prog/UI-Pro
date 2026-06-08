@@ -90,6 +90,10 @@ class AgentState(TypedDict, total=False):
     max_attempts: int
     session_id: str
     metadata: Metadata
+    # Human-in-the-loop approval (execute / correct / cancel)
+    awaiting_approval: bool
+    execution_decision: str | None
+
     # Streaming checkpoint fields
     stream_id: str | None
     last_token_index: int
