@@ -108,7 +108,7 @@ async def prometheus_metrics():
     """
     from backend.infrastructure.monitoring.prometheus import generate_metrics_response
 
-    body, status, headers = generate_metrics_response()
+    body, status, headers = await generate_metrics_response()
     return Response(content=body, status_code=status, media_type=headers.get("content-type", "text/plain"))
 
 

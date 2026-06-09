@@ -63,7 +63,13 @@ code_review:
     - "pylint"
   fail_on: ["high", "medium"]  # severity levels to fail on
 
-# Metrics Settings
+# Prometheus Metrics
+prometheus:
+  enabled: true              # exposes /metrics endpoint
+  prefix: "ui_pro_"          # metric name prefix (future)
+  gpu_index: 0               # GPU device index for NVML
+
+# Legacy Metrics (JSON-based)
 metrics:
   enabled: true
   persist_path: "data/metrics.json"

@@ -157,12 +157,17 @@ def update_system_metrics() -> None:
         logger.debug("NVML init failed, skipping GPU metrics")
 
 
-def generate_metrics_response() -> tuple[str, int, dict[str, str]]:
+async def generate_metrics_response() -> tuple[str, int, dict[str, str]]:
     """Render /metrics endpoint output.
+
+    Non-blocking variant: ``update_system_metrics()`` is offloaded to a
+    thread pool so psutil/pynvml calls don't block the async event loop.
 
     Returns a (body, status_code, headers) tuple compatible with
     FastAPI ``Response``.
     """
+    import asyncio
+
     reg = _ensure_registry()
     if reg is None:
         return ("# prometheus_client not installed\n", 200, {"content-type": "text/plain"})
@@ -170,8 +175,8 @@ def generate_metrics_response() -> tuple[str, int, dict[str, str]]:
     try:
         import prometheus_client  # type: ignore[import-untyped]
 
-        # Update system metrics lazily so every scrape refreshes data
-        update_system_metrics()
+        # Offload blocking psutil/pynvml calls to a thread
+        await asyncio.to_thread(update_system_metrics)
 
         body = prometheus_client.generate_latest(reg).decode("utf-8")
         return (body, 200, {"content-type": "text/plain; charset=utf-8"})
