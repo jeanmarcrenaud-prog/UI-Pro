@@ -241,6 +241,7 @@ class LLMWrapper:
         timeout = float(settings.llm_timeout)
         model, provider = self._resolved()
         start = time.monotonic()
+        set_active_requests(provider, 1)
 
         last_exc: BaseException | None = None
         for attempt in range(max_retries + 1):
@@ -270,7 +271,13 @@ class LLMWrapper:
         if last_exc is not None:
             msg = f"LLM call timed out after {timeout}s (model_type={model_type})"
             logger.error(msg)
+            set_active_requests(provider, 0)
             raise TimeoutError(msg) from None
+
+        # Overall metrics (complements stream_generate's per-stream metrics)
+        set_active_requests(provider, 0)
+        observe_llm_latency(provider, time.monotonic() - start, model_type)
+        inc_llm_tokens(provider, len(full_response))
 
         if strip_markdown:
             cleaned = full_response.strip()

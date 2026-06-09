@@ -32,7 +32,7 @@ _registry: Any = None
 
 def _ensure_registry():
     """Lazy-import prometheus_client and build registry on first use."""
-    global _PROMETHEUS_ENABLED, _registry
+    global _PROMETHEUS_ENABLED, _registry, PROMETHEUS_ENABLED
     if _registry is not None:
         return _registry
 
@@ -41,10 +41,12 @@ def _ensure_registry():
     except ImportError:
         logger.warning("prometheus_client not installed — metrics disabled")
         _PROMETHEUS_ENABLED = False
+        PROMETHEUS_ENABLED = False
         _registry = None
         return None
 
     _PROMETHEUS_ENABLED = True
+    PROMETHEUS_ENABLED = True
     _registry = prometheus_client.CollectorRegistry()
 
     # ── GPU metrics ──────────────────────────────────────────────────
@@ -106,8 +108,8 @@ def get_prometheus_enabled() -> bool:
     return _PROMETHEUS_ENABLED
 
 
-# Alias for cleaner imports
-PROMETHEUS_ENABLED = property(get_prometheus_enabled)  # type: ignore[assignment]
+# Module-level boolean alias (updated by _ensure_registry on first call)
+PROMETHEUS_ENABLED: bool = False
 
 
 def update_system_metrics() -> None:
