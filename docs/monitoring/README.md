@@ -4,13 +4,16 @@
 
 Toutes les métriques sont exposées au format Prometheus via l'endpoint `/metrics` :
 
-### GPU (NVML / pynvml)
-| Métrique | Type | Description |
-|---|---|---|
-| `gpu_utilization_percent` | Gauge | Utilisation GPU (0-100%) |
-| `gpu_memory_used_bytes` | Gauge | VRAM utilisée (bytes) |
-| `gpu_memory_total_bytes` | Gauge | VRAM totale (bytes) |
-| `gpu_temperature_celsius` | Gauge | Température GPU (°C) |
+### GPU (NVML / pynvml) — support multi-GPU
+| Métrique | Type | Labels | Description |
+|---|---|---|---|
+| `gpu_utilization_percent` | Gauge | `gpu` | Utilisation GPU (0-100%) |
+| `gpu_memory_used_bytes` | Gauge | `gpu` | VRAM utilisée (bytes) |
+| `gpu_memory_total_bytes` | Gauge | `gpu` | VRAM totale (bytes) |
+| `gpu_temperature_celsius` | Gauge | `gpu` | Température GPU (°C) |
+
+Chaque GPU est identifié par le label `gpu` (ex: `gpu="0"`, `gpu="1"`).
+Les métriques système (CPU/RAM) n'ont pas de label.
 
 ### Système (psutil)
 | Métrique | Type | Description |
@@ -21,12 +24,25 @@ Toutes les métriques sont exposées au format Prometheus via l'endpoint `/metri
 ### LLM
 | Métrique | Type | Labels | Description |
 |---|---|---|---|
-| `llm_request_latency_seconds` | Histogram | `provider`, `model_type` | Latence des appels LLM |
+| `llm_request_latency_seconds` | Histogram | `provider`, `model_type` | Latence des appels LLM (buckets: 0.1s–600s) |
 | `llm_errors_total` | Counter | `provider`, `error_type` | Erreurs LLM cumulées |
 | `llm_active_requests` | Gauge | `provider` | Requêtes LLM en cours |
 | `llm_tokens_total` | Counter | `provider` | Tokens générés cumulés |
 
-## Configuration Prometheus
+## Sécurité
+
+Si une `api_key` est configurée (via `API_KEY` env var ou `config.yaml`),
+l'endpoint `/metrics` est protégé par le header `x-api-key` :
+
+```bash
+# Avec API key
+curl -H "x-api-key: votre-cle" http://localhost:8000/metrics
+
+# Sans API key (self-hosted, aucun changement)
+curl http://localhost:8000/metrics
+```
+
+Prometheus peut être configuré avec le header :
 
 ```yaml
 # prometheus.yml
@@ -36,6 +52,16 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:8000']
     metrics_path: /metrics
+    authorization:
+      credentials: "votre-cle"
+      type: Bearer  # ou omettez pour utiliser x-api-key
+```
+
+Ou via `params` si vous préférez (non recommandé) :
+
+```yaml
+    params:
+      api_key: ['votre-cle']
 ```
 
 ## Dashboard Grafana

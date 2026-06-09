@@ -49,7 +49,7 @@ def _ensure_registry():
     PROMETHEUS_ENABLED = True
     _registry = prometheus_client.CollectorRegistry()
 
-    # ── GPU metrics ──────────────────────────────────────────────────
+    # ── GPU metrics (with `gpu` label for multi-GPU support) ─────────
     global METRIC_GPU_UTILIZATION, METRIC_GPU_MEMORY_USED
     global METRIC_GPU_MEMORY_TOTAL, METRIC_GPU_TEMPERATURE
     global METRIC_CPU_PERCENT, METRIC_MEMORY_PERCENT
@@ -57,21 +57,25 @@ def _ensure_registry():
     METRIC_GPU_UTILIZATION = prometheus_client.Gauge(
         "gpu_utilization_percent",
         "GPU compute utilization (0-100)",
+        labelnames=["gpu"],
         registry=_registry,
     )
     METRIC_GPU_MEMORY_USED = prometheus_client.Gauge(
         "gpu_memory_used_bytes",
         "VRAM currently used in bytes",
+        labelnames=["gpu"],
         registry=_registry,
     )
     METRIC_GPU_MEMORY_TOTAL = prometheus_client.Gauge(
         "gpu_memory_total_bytes",
         "Total VRAM in bytes",
+        labelnames=["gpu"],
         registry=_registry,
     )
     METRIC_GPU_TEMPERATURE = prometheus_client.Gauge(
         "gpu_temperature_celsius",
         "GPU temperature in Celsius",
+        labelnames=["gpu"],
         registry=_registry,
     )
     METRIC_CPU_PERCENT = prometheus_client.Gauge(
@@ -132,25 +136,29 @@ def update_system_metrics() -> None:
     except Exception:
         logger.debug("psutil not available, skipping system metrics")
 
-    # ── GPU (NVML) ───────────────────────────────────────────────────
+    # ── GPU (NVML) — multi-GPU via `gpu` label ─────────────────────
     try:
         import pynvml  # type: ignore[import-untyped]
 
-        handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-        util = pynvml.nvmlDeviceGetUtilizationRates(handle)
-        mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+        pynvml.nvmlInit()
+        device_count = pynvml.nvmlDeviceGetCount()
+        for i in range(device_count):
+            handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+            gpu_label = str(i)
+            util = pynvml.nvmlDeviceGetUtilizationRates(handle)
+            mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
 
-        METRIC_GPU_UTILIZATION.set(util.gpu)  # type: ignore[union-attr]
-        METRIC_GPU_MEMORY_USED.set(mem_info.used)  # type: ignore[union-attr]
-        METRIC_GPU_MEMORY_TOTAL.set(mem_info.total)  # type: ignore[union-attr]
+            METRIC_GPU_UTILIZATION.labels(gpu=gpu_label).set(util.gpu)  # type: ignore[union-attr]
+            METRIC_GPU_MEMORY_USED.labels(gpu=gpu_label).set(mem_info.used)  # type: ignore[union-attr]
+            METRIC_GPU_MEMORY_TOTAL.labels(gpu=gpu_label).set(mem_info.total)  # type: ignore[union-attr]
 
-        try:
-            temp = pynvml.nvmlDeviceGetTemperature(
-                handle, pynvml.NVML_TEMPERATURE_GPU
-            )
-            METRIC_GPU_TEMPERATURE.set(temp)  # type: ignore[union-attr]
-        except Exception:
-            pass
+            try:
+                temp = pynvml.nvmlDeviceGetTemperature(
+                    handle, pynvml.NVML_TEMPERATURE_GPU
+                )
+                METRIC_GPU_TEMPERATURE.labels(gpu=gpu_label).set(temp)  # type: ignore[union-attr]
+            except Exception:
+                pass
     except ImportError:
         logger.debug("pynvml not installed, skipping GPU metrics")
     except Exception:

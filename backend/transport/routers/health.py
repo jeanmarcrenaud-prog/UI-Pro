@@ -5,7 +5,7 @@ import logging
 import time
 from typing import Any
 
-from fastapi import APIRouter, Query, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import BaseModel
 
 from backend.domain.settings import settings
@@ -97,14 +97,37 @@ def _get_gpu_info() -> dict[str, Any] | None:
 
 # ====================== Prometheus /metrics ======================
 
+_API_KEY_HEADER = "x-api-key"
 
-@router.get("/metrics")
+
+def _verify_metrics_api_key(request: Request) -> bool:
+    """Optional API key protection for /metrics.
+
+    If ``api_key`` is configured in settings, the request must include
+    an ``x-api-key`` header matching that value. When no key is
+    configured the endpoint is freely accessible (default for
+    self-hosted deployments).
+    """
+    api_key = getattr(settings, "api_key", None)
+    if not api_key:
+        return True
+    if request.headers.get(_API_KEY_HEADER) != api_key:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    return True
+
+
+@router.get("/metrics", dependencies=[Depends(_verify_metrics_api_key)])
 async def prometheus_metrics():
     """Prometheus /metrics endpoint (text format).
 
     Exposes GPU, system, and LLM metrics when prometheus-client is
     installed. Returns a plain-text response compatible with the
     Prometheus scrape protocol.
+
+    If ``api_key`` is configured, requests must include the header
+    ``x-api-key: <your-api-key>``. Otherwise the endpoint is open.
     """
     from backend.infrastructure.monitoring.prometheus import generate_metrics_response
 

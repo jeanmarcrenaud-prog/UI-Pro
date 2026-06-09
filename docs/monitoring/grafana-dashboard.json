@@ -108,12 +108,31 @@
       },
       "pluginVersion": "11.3.0",
       "targets": [
-        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "gpu_utilization_percent", "legendFormat": "GPU", "refId": "A" }
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "avg(gpu_utilization_percent)", "legendFormat": "GPU avg", "refId": "A" }
       ],
-      "title": "GPU Utilization",
+      "title": "GPU Utilization (avg)",
       "type": "gauge"
     },
     {
+      "alert": {
+        "alertRuleTags": { "severity": "warning" },
+        "conditions": [
+          {
+            "evaluator": { "params": [85], "type": "gt" },
+            "operator": { "type": "and" },
+            "query": { "params": ["A", "5m", "now"] },
+            "reducer": { "params": [], "type": "last" },
+            "type": "query"
+          }
+        ],
+        "executionErrorState": "alerting",
+        "for": "5m",
+        "frequency": "60s",
+        "handler": 1,
+        "name": "GPU Temperature > 85°C",
+        "noDataState": "no_data",
+        "notifications": []
+      },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
@@ -122,7 +141,7 @@
           "thresholds": { "mode": "absolute", "steps": [
             { "color": "green", "value": null },
             { "color": "yellow", "value": 70 },
-            { "color": "red", "value": 90 }
+            { "color": "red", "value": 85 }
           ] },
           "unit": "celsius"
         },
@@ -138,9 +157,9 @@
       },
       "pluginVersion": "11.3.0",
       "targets": [
-        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "gpu_temperature_celsius", "legendFormat": "Temp", "refId": "A" }
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "max(gpu_temperature_celsius)", "legendFormat": "GPU max temp", "refId": "A" }
       ],
-      "title": "GPU Temperature",
+      "title": "GPU Temperature (max)",
       "type": "gauge"
     },
     {
@@ -209,17 +228,17 @@
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "gpu_memory_used_bytes",
-          "legendFormat": "VRAM used",
+          "legendFormat": "VRAM used {{gpu}}",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "gpu_memory_total_bytes",
-          "legendFormat": "VRAM total",
+          "legendFormat": "VRAM total {{gpu}}",
           "refId": "B"
         }
       ],
-      "title": "VRAM Usage",
+      "title": "VRAM Usage (per GPU)",
       "type": "timeseries"
     },
     {
@@ -389,6 +408,25 @@
           "showLegend": true
         },
         "tooltip": { "mode": "multi", "sort": "none" }
+      },
+      "alert": {
+        "alertRuleTags": { "severity": "critical" },
+        "conditions": [
+          {
+            "evaluator": { "params": [5], "type": "gt" },
+            "operator": { "type": "and" },
+            "query": { "params": ["A", "15m", "now"] },
+            "reducer": { "params": [], "type": "sum" },
+            "type": "query"
+          }
+        ],
+        "executionErrorState": "alerting",
+        "for": "5m",
+        "frequency": "60s",
+        "handler": 1,
+        "name": "High LLM Error Rate",
+        "noDataState": "no_data",
+        "notifications": []
       },
       "targets": [
         {
