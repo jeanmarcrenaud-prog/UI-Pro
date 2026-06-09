@@ -8,7 +8,7 @@ import re
 import textwrap
 from typing import Any
 
-from .models import ExtractedCode, ExtractedFile
+from .models import ExtractedCode, ExtractedFile, _PYTHON_EXTENSIONS
 from .repair import fix_indentation, fix_syntax_errors
 
 logger = logging.getLogger(__name__)
@@ -541,10 +541,11 @@ def _finalize(code_dict: dict[str, Any]) -> dict[str, Any]:
                     except ValueError:
                         pass
 
-            # Salvage 1: fix indentation on the (remaining) files
+            # Salvage 1: fix indentation on Python files only
+            # (fix_indentation uses compile() internally — not safe for .ps1, .sh, etc.)
             salvaged: dict[str, str] = {}
             for fname, fcontent in code_dict["files"].items():
-                if isinstance(fcontent, str):
+                if isinstance(fcontent, str) and fname.endswith(tuple(_PYTHON_EXTENSIONS)):
                     salvaged[fname] = fix_indentation(fcontent)
             if salvaged:
                 try:
@@ -554,10 +555,10 @@ def _finalize(code_dict: dict[str, Any]) -> dict[str, Any]:
                 except ValueError:
                     pass
 
-            # Salvage 2: syntax repair
+            # Salvage 2: syntax repair — Python files only (uses compile() internally)
             repaired_salvage: dict[str, str] = {}
             for fname, fcontent in code_dict["files"].items():
-                if isinstance(fcontent, str):
+                if isinstance(fcontent, str) and fname.endswith(tuple(_PYTHON_EXTENSIONS)):
                     repaired_salvage[fname] = fix_syntax_errors(fcontent)
             if repaired_salvage:
                 try:

@@ -630,16 +630,30 @@ async def reviewing_node(state: AgentState) -> AgentState:
         }
         return state
 
-    # ── Syntax validation (ast.parse) — cheap, catches errors before LLM review ──
-    # NOTE: Only Python files (.py, .pyw) are parsed — non-Python files (e.g. .ps1, .sh, .js)
-    # are skipped to avoid false-positive SyntaxErrors from ast.parse.
+    # ── Generic validation for ALL files (empty, binary, size) ──
+    # Catches structural issues before language-specific checks.
     _PYTHON_EXTS = (".py", ".pyw")
+    _MAX_FILE_SIZE = 500_000
     _syntax_errors: list[str] = []
     for fname, source in files.items():
         if not isinstance(source, str):
+            _syntax_errors.append(f"{fname}: contenu non-texte (type={type(source).__name__})")
             continue
+        if not source.strip():
+            _syntax_errors.append(f"{fname}: fichier vide")
+            continue
+        if len(source) > _MAX_FILE_SIZE:
+            _syntax_errors.append(
+                f"{fname}: fichier trop volumineux ({len(source)} > {_MAX_FILE_SIZE} octets)"
+            )
+            continue
+        if "\0" in source:
+            _syntax_errors.append(f"{fname}: contenu binaire détecté (null byte)")
+            continue
+
+        # ── Python-specific: ast.parse validation ──
         if not fname.endswith(_PYTHON_EXTS):
-            continue
+            continue  # non-Python files pass generic checks above
         try:
             ast.parse(source, filename=fname)
         except SyntaxError as exc:
@@ -652,17 +666,17 @@ async def reviewing_node(state: AgentState) -> AgentState:
             _syntax_errors.append(msg)
     if _syntax_errors:
         logger.warning(
-            "[reviewing_node] Syntax errors detected — skipping LLM review: %s",
+            "[reviewing_node] Validation errors detected — skipping LLM review: %s",
             "; ".join(_syntax_errors),
         )
-        _emit_step("reviewing", f"❌ {len(_syntax_errors)} erreur(s) de syntaxe détectée(s)")
+        _emit_step("reviewing", f"❌ {len(_syntax_errors)} erreur(s) de validation détectée(s)")
         state["review"] = {
             "passed": False,
             "score": 0.0,
             "issues": _syntax_errors,
             "suggestions": [
-                "Fix the syntax error(s) above and re-run",
-                "Check for missing colons, brackets, quotes, or indentation",
+                "Fix the error(s) above and re-run",
+                "Check for missing content, binary data, or syntax errors",
             ],
             "issue_severities": ["high"] * len(_syntax_errors),
         }
