@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import json
 import logging
@@ -626,6 +627,39 @@ async def reviewing_node(state: AgentState) -> AgentState:
                 "Simplify the user request if the prompt is long",
             ],
             "issue_severities": ["high"],
+        }
+        return state
+
+    # ── Syntax validation (ast.parse) — cheap, catches errors before LLM review ──
+    _syntax_errors: list[str] = []
+    for fname, source in files.items():
+        if not isinstance(source, str):
+            continue
+        try:
+            ast.parse(source, filename=fname)
+        except SyntaxError as exc:
+            msg = f"SyntaxError dans {fname}: {exc.msg}"
+            if exc.lineno:
+                msg += f" (ligne {exc.lineno}"
+                if exc.offset:
+                    msg += f", colonne {exc.offset}"
+                msg += ")"
+            _syntax_errors.append(msg)
+    if _syntax_errors:
+        logger.warning(
+            "[reviewing_node] Syntax errors detected — skipping LLM review: %s",
+            "; ".join(_syntax_errors),
+        )
+        _emit_step("reviewing", f"❌ {len(_syntax_errors)} erreur(s) de syntaxe détectée(s)")
+        state["review"] = {
+            "passed": False,
+            "score": 0.0,
+            "issues": _syntax_errors,
+            "suggestions": [
+                "Fix the syntax error(s) above and re-run",
+                "Check for missing colons, brackets, quotes, or indentation",
+            ],
+            "issue_severities": ["high"] * len(_syntax_errors),
         }
         return state
 
