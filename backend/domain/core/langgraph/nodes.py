@@ -631,9 +631,14 @@ async def reviewing_node(state: AgentState) -> AgentState:
         return state
 
     # ── Syntax validation (ast.parse) — cheap, catches errors before LLM review ──
+    # NOTE: Only Python files (.py, .pyw) are parsed — non-Python files (e.g. .ps1, .sh, .js)
+    # are skipped to avoid false-positive SyntaxErrors from ast.parse.
+    _PYTHON_EXTS = (".py", ".pyw")
     _syntax_errors: list[str] = []
     for fname, source in files.items():
         if not isinstance(source, str):
+            continue
+        if not fname.endswith(_PYTHON_EXTS):
             continue
         try:
             ast.parse(source, filename=fname)
