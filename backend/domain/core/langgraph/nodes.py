@@ -17,6 +17,42 @@ from .state import AgentState, CodeData, PlanData, ReviewData
 logger = logging.getLogger(__name__)
 
 
+# ── Timing decorator for node execution metrics ──────────────────────────
+
+
+def _timed_node(name: str):
+    """Decorator that records node execution duration as a Prometheus histogram.
+
+    Usage::
+
+        @_timed_node("analyzing")
+        async def analyzing_node(state: AgentState) -> AgentState: ...
+    """
+    import functools
+    import time
+
+    def decorator(func):
+        @functools.wraps(func)
+        async def wrapper(state, *args, **kwargs):
+            start = time.monotonic()
+            try:
+                return await func(state, *args, **kwargs)
+            finally:
+                duration = time.monotonic() - start
+                try:
+                    from backend.infrastructure.monitoring.pipeline_metrics import (
+                        observe_node_duration,
+                    )
+
+                    observe_node_duration(name, duration)
+                except Exception:
+                    pass
+
+        return wrapper
+
+    return decorator
+
+
 # ========================================
 # Helpers
 # ========================================
@@ -188,6 +224,7 @@ def _force_model_for(tier: str) -> str:
     return candidate
 
 
+@_timed_node("analyzing")
 async def analyzing_node(state: AgentState) -> AgentState:
     _emit_step("analyzing", "Analyse des exigences...")
 
@@ -259,6 +296,7 @@ async def analyzing_node(state: AgentState) -> AgentState:
     return state
 
 
+@_timed_node("planning")
 async def planning_node(state: AgentState) -> AgentState:
     _emit_step("planning", "Creation du plan d'implementation...")
 
@@ -399,6 +437,7 @@ async def planning_node(state: AgentState) -> AgentState:
     return state
 
 
+@_timed_node("coding")
 async def coding_node(state: AgentState) -> AgentState:
     _emit_step("coding", "Generation du code...")
 
@@ -576,6 +615,7 @@ async def coding_node(state: AgentState) -> AgentState:
     return state
 
 
+@_timed_node("reviewing")
 async def reviewing_node(state: AgentState) -> AgentState:
     _emit_step("reviewing", "Analyse statique du code...")
 
@@ -830,6 +870,7 @@ async def reviewing_node(state: AgentState) -> AgentState:
     return state
 
 
+@_timed_node("executing")
 async def executing_node(state: AgentState) -> AgentState:
     _emit_step("executing", "Préparation du sandbox...")
 
@@ -838,11 +879,25 @@ async def executing_node(state: AgentState) -> AgentState:
     executor = CodeExecutionService()
     files = state.get("code", {}).get("files", {})
 
+    # ── Wire streaming output callback via EventBus ──────────────
+    # Each line from the subprocess stdout/stderr is emitted as an
+    # EXEC_OUTPUT event so the streaming layer (streaming.py) can
+    # forward it to the frontend terminal panel in real-time.
+    from backend.domain.core.events import emit_exec_output
+
+    session_stream = (state.get("session_id") or state.get("stream_id") or "")
+
+    def _on_exec_line(line: str, channel: str) -> None:
+        try:
+            emit_exec_output(line, channel=channel, stream_id=session_stream)
+        except Exception:
+            pass
+
     _emit_step("executing", f"Exécution de {len(files)} fichier(s) dans le sandbox...")
     try:
         try:
             result = await asyncio.wait_for(
-                executor.run_files_async(files),
+                executor.run_files_async(files, output_callback=_on_exec_line),
                 timeout=float(settings.executor_timeout),
             )
         except asyncio.TimeoutError:

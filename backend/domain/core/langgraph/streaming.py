@@ -59,6 +59,9 @@ def save_stream_checkpoint(
         "state": state,
         "timestamp": datetime.now().isoformat(),
     }
+    from backend.infrastructure.monitoring.pipeline_metrics import inc_checkpoint_save
+
+    inc_checkpoint_save()
     logger.info(f"[checkpoint] Saved for stream {stream_id}: {last_token_index} tokens")
 
 
@@ -323,77 +326,125 @@ async def _handle_decision(
 
 
 async def _resume_execution(app: Any, session_id: str) -> AsyncIterator[str]:
-    """Phase 2 execute: resume from checkpoint → execute → should_continue → ..."""
+    """Phase 2 execute: resume from checkpoint → execute → should_continue → ...
+
+    Uses a **dual-producer** pattern so that execution output (``[EXEC_OUT]``
+    lines emitted by ``executing_node`` via the EventBus) can be interleaved
+    with LangGraph state events in real-time:
+
+      Producer 1 (background task): ``app.astream()`` → state events
+      Producer 2 (EventBus subscriber): ``EXEC_OUTPUT`` → exec output lines
+      Consumer (this coroutine): unified ``output_queue`` → WebSocket events
+    """
     logger.info(f"[stream] Phase 2: resuming execution (session={session_id})")
 
     yield "[STEP]orchestrator:Executing code..."
 
-    step_queue: asyncio.Queue[str] = asyncio.Queue()
+    # ── Unified queue + producers ────────────────────────────────────
+    bus = get_event_bus()
+    output_queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
 
+    # Producer 1: LangGraph state events (runs in background)
+    async def _astream_producer() -> None:
+        try:
+            async for event in app.astream(
+                None,  # None = resume from last checkpoint
+                config={"configurable": {"thread_id": session_id}},
+                stream_mode="values",
+            ):
+                await output_queue.put(("state", event))
+        except Exception as exc:
+            logger.exception("[stream] astream producer failed")
+            await output_queue.put(("error", str(exc)))
+        finally:
+            await output_queue.put(("__DONE__", None))
+
+    astream_task = asyncio.create_task(_astream_producer())
+
+    # Producer 2: execution output lines (from executing_node via EventBus)
     def _on_agent_event(event: Any) -> None:
         try:
             if hasattr(event, "step") and hasattr(event, "message"):
-                step_queue.put_nowait(f"{event.step}:{event.message}")
+                output_queue.put_nowait(("step", f"{event.step}:{event.message}"))
         except Exception:
             pass
 
-    bus = get_event_bus()
-    bus.subscribe(EventType.AGENT, _on_agent_event)
+    def _on_exec_output(event: Any) -> None:
+        try:
+            line = getattr(event, "line", None) or getattr(event, "content", "")
+            channel = getattr(event, "channel", "stdout")
+            if line:
+                output_queue.put_nowait(("exec_out", (line, channel)))
+        except Exception:
+            pass
 
+    bus.subscribe(EventType.AGENT, _on_agent_event)
+    bus.subscribe(EventType.EXEC_OUTPUT, _on_exec_output)
+
+    # ── Consumer loop ────────────────────────────────────────────────
     _state_emitted: set[str] = set()
     token_buffer: list[str] = []
-    token_count = 0
     _last_message_length[session_id] = 0
 
     try:
-        async for event in app.astream(
-            None,  # None = resume from last checkpoint
-            config={"configurable": {"thread_id": session_id}},
-            stream_mode="values",
-        ):
-            # Drain sub-step events
-            _step_dedup = set()
-            try:
-                while True:
-                    step_msg = step_queue.get_nowait()
-                    if step_msg not in _step_dedup:
-                        _step_dedup.add(step_msg)
-                        yield f"[STEP]{step_msg}"
-            except asyncio.QueueEmpty:
-                pass
+        while True:
+            msg_type, payload = await output_queue.get()
 
-            exec_val = event.get("execution_result")
-            if exec_val and "execution_result" not in _state_emitted:
-                _state_emitted.add("execution_result")
-                success = (
-                    exec_val.get("success", False)
-                    if isinstance(exec_val, dict)
-                    else False
-                )
-                yield f"[STEP]executing:Execution {'OK' if success else 'FAILED'}"
+            # ── Termination ──────────────────────────────────────────
+            if msg_type == "__DONE__":
+                break
+            if msg_type == "error":
+                yield f"[ERROR]500:{payload}"
+                yield "[DONE]"
+                return
 
-            # Token streaming from latest assistant message
-            if event.get("messages"):
-                last_msg = event["messages"][-1]
-                if last_msg.get("role") == "assistant":
-                    content = last_msg.get("content", "")
-                    current_idx = len(event["messages"]) - 1
-                    if _last_msg_idx.get(session_id) != current_idx:
-                        last_len = 0
-                        _last_msg_idx[session_id] = current_idx
-                    else:
-                        last_len = _last_message_length.get(session_id, 0)
+            # ── Execution output line → terminal panel ───────────────
+            if msg_type == "exec_out":
+                line, _channel = payload
+                yield f"[EXEC_OUT]{line}"
+                continue
 
-                    if len(content) > last_len:
-                        new_text = content[last_len:]
-                        if new_text.strip():
-                            token_buffer.append(new_text)
-                            token_count += len(new_text)
-                            if len(token_buffer) >= BATCH_SIZE:
-                                batch = "".join(token_buffer)
-                                yield f"[TOKEN]{batch}"
-                                token_buffer.clear()
-                        _last_message_length[session_id] = len(content)
+            # ── Agent step (from EventBus) ────────────────────────────
+            if msg_type == "step":
+                yield f"[STEP]{payload}"
+                continue
+
+            # ── LangGraph state event ─────────────────────────────────
+            if msg_type == "state":
+                event = payload
+
+                exec_val = event.get("execution_result")
+                if exec_val and "execution_result" not in _state_emitted:
+                    _state_emitted.add("execution_result")
+                    success = (
+                        exec_val.get("success", False)
+                        if isinstance(exec_val, dict)
+                        else False
+                    )
+                    yield f"[STEP]executing:Execution {'OK' if success else 'FAILED'}"
+
+                # Token streaming from latest assistant message
+                if event.get("messages"):
+                    last_msg = event["messages"][-1]
+                    if last_msg.get("role") == "assistant":
+                        content = last_msg.get("content", "")
+                        current_idx = len(event["messages"]) - 1
+                        if _last_msg_idx.get(session_id) != current_idx:
+                            last_len = 0
+                            _last_msg_idx[session_id] = current_idx
+                        else:
+                            last_len = _last_message_length.get(session_id, 0)
+
+                        if len(content) > last_len:
+                            new_text = content[last_len:]
+                            if new_text.strip():
+                                token_buffer.append(new_text)
+                                if len(token_buffer) >= BATCH_SIZE:
+                                    batch = "".join(token_buffer)
+                                    yield f"[TOKEN]{batch}"
+                                    token_buffer.clear()
+                            _last_message_length[session_id] = len(content)
+                continue
 
     except Exception as e:
         logger.exception("[stream] Phase 2 execution failed")
@@ -402,6 +453,7 @@ async def _resume_execution(app: Any, session_id: str) -> AsyncIterator[str]:
         if token_buffer:
             yield f"[TOKEN]{''.join(token_buffer)}"
         bus.unsubscribe(EventType.AGENT, _on_agent_event)
+        bus.unsubscribe(EventType.EXEC_OUTPUT, _on_exec_output)
         _last_message_length.pop(session_id, None)
         _last_msg_idx.pop(session_id, None)
 
