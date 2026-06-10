@@ -1,7 +1,7 @@
 // components/chat/ChatContainer.tsx
 'use client'
 
-import { useState, useCallback, useMemo, useRef } from 'react'
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import type { Message, AgentStep } from '@/lib/types'
 import { useChat } from '@/hooks/useChat'
 import { ChatMessages } from './chat/ChatMessages'
@@ -10,9 +10,11 @@ import { ExamplesList } from './chat/ExamplesList'
 import { LoadingIndicator } from './chat/LoadingIndicator'
 import { StepProgress } from './chat/StepProgress'
 import { StreamingTokenGraph } from './chat/StreamingTokenGraph'
+import { TerminalPanel, type TerminalOutputLine } from './chat/TerminalPanel'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useI18n } from '@/lib/i18n'
 import { useEnableThinking } from './settings/hooks/useEnableThinking'
+import { events } from '@/lib/events'
 
 const DEFAULT_EXAMPLES = [
   {
@@ -266,6 +268,33 @@ export function ChatContainer({
     return messages.some(m => m.status === 'streaming')
   }, [messages])
 
+  // ── Terminal state ──────────────────────────────────────────────────
+  const [execLines, setExecLines] = useState<TerminalOutputLine[]>([])
+  const [terminalVisible, setTerminalVisible] = useState(false)
+
+  useEffect(() => {
+    const handler = ({ line, channel }: { line: string; channel: string }) => {
+      setExecLines(prev => [...prev, { content: line, channel, timestamp: Date.now() }])
+    }
+    events.on('execOutput', handler)
+    return () => events.off('execOutput', handler)
+  }, [])
+
+  // Auto-show terminal when first exec line arrives
+  useEffect(() => {
+    if (execLines.length > 0 && !terminalVisible) {
+      setTerminalVisible(true)
+    }
+  }, [execLines.length, terminalVisible])
+
+  const handleClearTerminal = useCallback(() => {
+    setExecLines([])
+  }, [])
+
+  const handleToggleTerminal = useCallback(() => {
+    setTerminalVisible(prev => !prev)
+  }, [])
+
   return (
     <div className="flex flex-col h-full">
       {/* Messages Area */}
@@ -326,6 +355,14 @@ export function ChatContainer({
           )}
         </AnimatePresence>
       </div>
+
+      {/* Terminal Panel (execution output streaming) */}
+      <TerminalPanel
+        lines={execLines}
+        isVisible={terminalVisible}
+        onToggleVisibility={handleToggleTerminal}
+        onClear={handleClearTerminal}
+      />
 
       {/* Input Area */}
       <div className="sticky bottom-0 bg-gradient-to-t from-[var(--bg-primary)] via-[var(--bg-primary)] to-transparent pt-6 pb-8 px-6 border-t border-[var(--border-subtle)]">

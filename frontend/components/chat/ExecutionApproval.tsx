@@ -41,7 +41,7 @@ export function ExecutionApproval() {
 
   const handleExecute = () => {
     if (!approval) return
-    chatService.sendExecuteDecision('execute')
+    chatService.sendExecuteDecision('execute').catch(() => {})
     setApproval(null)
     setShowFeedbackInput(false)
     setFeedback('')
@@ -52,7 +52,7 @@ export function ExecutionApproval() {
       setShowFeedbackInput(true)
       return
     }
-    chatService.sendExecuteDecision('correct', feedback || undefined)
+    chatService.sendExecuteDecision('correct', feedback || undefined).catch(() => {})
     setApproval(null)
     setShowFeedbackInput(false)
     setFeedback('')
@@ -60,7 +60,7 @@ export function ExecutionApproval() {
 
   const handleCancel = () => {
     if (!approval) return
-    chatService.sendExecuteDecision('cancel')
+    chatService.sendExecuteDecision('cancel').catch(() => {})
     setApproval(null)
     setShowFeedbackInput(false)
     setFeedback('')
