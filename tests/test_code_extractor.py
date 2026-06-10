@@ -10,8 +10,11 @@ from backend.domain.core.langgraph.code_extractor.extractor import (
     _extract_filename_from_header,
     _normalize_block_indent,
     _strategy_python_blocks,
-    _validate_generic_block,
-    _validate_python_block,
+    _validate_block,
+)
+from backend.domain.core.langgraph.code_extractor.repair import (
+    fix_indentation,
+    fix_syntax_errors,
 )
 
 
@@ -141,71 +144,58 @@ class TestDedupFilename:
         assert _dedup_filename("my.script.py", seen) == "my.script_2.py"
 
 
-# ====================== _validate_python_block ======================
+# ====================== _validate_block ======================
 
 
-class TestValidatePythonBlock:
-    def test_valid_python_returned_unchanged(self):
+class TestValidateBlock:
+    """Tests pour la validation unifiée des blocs (Python et génériques)."""
+
+    # ── Mode strict=True (ex-Stratégie 1 : blocs ```python) ──────────
+
+    def test_strict_valid_python_returned_unchanged(self):
         content = "def hello():\n    print('hi')\n"
-        result = _validate_python_block("test.py", content)
+        result = _validate_block("test.py", content, strict=True)
         assert "def hello" in result
         assert "print" in result
 
-    def test_over_indented_salvaged(self):
-        # Code is over-indented but compiles once dedented
+    def test_strict_over_indented_salvaged(self):
         content = "        def hello():\n            print('hi')\n"
-        result = _validate_python_block("test.py", content)
-        # Should be dedented (or fix_indented) to valid form
+        result = _validate_block("test.py", content, strict=True)
         assert "def hello" in result
 
-    def test_completely_broken_returns_non_empty(self):
-        # Total garbage that can't be salvaged — function should still
-        # return a non-empty string (the dedent fallback) so the caller
-        # can make a decision instead of getting None.
+    def test_strict_completely_broken_returns_non_empty(self):
         content = "((( this is not python @@@ !!!"
-        result = _validate_python_block("test.py", content)
+        result = _validate_block("test.py", content, strict=True)
         assert isinstance(result, str)
-        # The dedent fallback returns the original content (stripped)
-        assert result  # non-empty
+        assert result
 
-    def test_empty_content(self):
-        # ExtractedFile accepts empty content (model_validator returns early).
-        # The helper should return an empty string without raising.
-        result = _validate_python_block("test.py", "")
+    def test_strict_empty_content(self):
+        result = _validate_block("test.py", "", strict=True)
         assert result == ""
 
+    # ── Mode normal (ex-Stratégie 2 : blocs génériques) ─────────────
 
-# ====================== _validate_generic_block ======================
-
-
-class TestValidateGenericBlock:
-    def test_valid_json_block_returned(self):
+    def test_normal_json_block_returned(self):
         content = '{"key": "value"}'
-        result = _validate_generic_block("data.json", content)
+        result = _validate_block("data.json", content)
         assert result == content
 
-    def test_valid_shell_script_returned(self):
+    def test_normal_shell_script_returned(self):
         content = "#!/bin/bash\necho hello"
-        result = _validate_generic_block("script.sh", content)
+        result = _validate_block("script.sh", content)
         assert result == content
 
-    def test_invalid_extension_warns_and_keeps_content(self, caplog):
-        # `.foo` is not in _VALID_EXTENSIONS, so ExtractedFile raises.
-        # The helper should log a warning and return the content as-is
-        # (the content itself is still useful even with a bad filename).
+    def test_normal_invalid_extension_warns_and_keeps_content(self, caplog):
         content = "some content here"
         with caplog.at_level("WARNING"):
-            result = _validate_generic_block("test.foo", content)
+            result = _validate_block("test.foo", content)
         assert result == content
         assert any("test.foo" in rec.message for rec in caplog.records)
 
-    def test_unsafe_chars_in_name_warns_and_keeps_content(self, caplog):
-        # `..` is allowed but a name with a null byte isn't.
-        # Use a name with a clearly invalid character instead.
+    def test_normal_unsafe_chars_warns_and_keeps_content(self, caplog):
         content = "x = 1"
         with caplog.at_level("WARNING"):
-            result = _validate_generic_block("test\x00.py", content)
-        # The function should not raise; content is preserved
+            result = _validate_block("test\x00.py", content)
         assert result == content
         assert any("test" in rec.message for rec in caplog.records)
 
@@ -442,3 +432,106 @@ class TestExtractEdgeCases:
         result = extract_code_dict(response)
         assert "main.py" in result["files"]
         assert "py.typed" in result["files"]
+
+
+# ====================== fix_syntax_errors ======================
+
+
+class TestFixSyntaxErrors:
+    """Cas limites pour la réparation syntaxique (tokenize + fallback)."""
+
+    def test_bracket_inside_string_untouched(self):
+        """Un ) dans une string ne doit pas être supprimé."""
+        code = 'print("hello ) world")'
+        assert fix_syntax_errors(code) == code
+        assert compile(code, "<test>", "exec")
+
+    def test_fstring_with_braces(self):
+        """Les {} des f-strings ne doivent pas fausser le matching."""
+        code = 'print(f"count = {count}")'
+        assert fix_syntax_errors(code) == code
+        assert compile(code, "<test>", "exec")
+
+    def test_comment_with_delimiters(self):
+        """Les délimiteurs dans un commentaire doivent être ignorés."""
+        code = "x = 1  # ) } ]"
+        assert fix_syntax_errors(code) == code
+        assert compile(code, "<test>", "exec")
+
+    def test_triple_quotes_with_nested_delimiters(self):
+        """Triple quotes avec délimiteurs imbriqués."""
+        code = '"""\n)\n}\n]\n"""'
+        assert fix_syntax_errors(code) == code
+        assert compile(code, "<test>", "exec")
+
+    def test_missing_bracket_appended(self):
+        """Un crochet manquant doit être ajouté."""
+        code = "x = [1, 2"
+        result = fix_syntax_errors(code)
+        assert result != code
+        assert compile(result, "<test>", "exec")
+
+    def test_extra_bracket_removed_in_fallback(self):
+        """Un crochet en trop (fallback caractère)."""
+        code = "x = [1, 2]]"
+        result = fix_syntax_errors(code)
+        assert compile(result, "<test>", "exec")
+
+    def test_bracket_in_string_with_missing_closer(self):
+        """Bracket dans une string + bracket manquant = réparé sans casser la string."""
+        code = "x = [1, 2,\nprint(')')"
+        result = fix_syntax_errors(code)
+        assert compile(result, "<test>", "exec")
+
+    def test_nested_missing_brackets(self):
+        """Plusieurs niveaux de brackets manquants."""
+        code = "x = [1, (2"
+        result = fix_syntax_errors(code)
+        assert compile(result, "<test>", "exec")
+
+    def test_already_valid_unchanged(self):
+        """Code déjà valide retourné inchangé."""
+        code = "def foo():\n    pass"
+        assert fix_syntax_errors(code) == code
+        assert compile(code, "<test>", "exec")
+
+    def test_empty_and_whitespace(self):
+        """Entrées vides."""
+        assert fix_syntax_errors("") == ""
+        assert fix_syntax_errors("   ") == "   "
+
+
+# ====================== fix_indentation ======================
+
+
+class TestFixIndentation:
+    """Cas limites pour la normalisation d'indentation."""
+
+    def test_tabs_expanded(self):
+        """Les tabulations sont converties en espaces."""
+        code = "\tdef foo():\n\t\tpass"
+        result = fix_indentation(code)
+        assert compile(result, "<test>", "exec")
+        assert "\t" not in result
+
+    def test_mixed_tabs_spaces(self):
+        """Mélange tabs + espaces normalisé."""
+        code = "\tdef foo():\n\t    pass"
+        result = fix_indentation(code)
+        assert compile(result, "<test>", "exec")
+        assert "\t" not in result
+
+    def test_already_valid(self):
+        """Code déjà bien indenté."""
+        code = "def foo():\n    pass"
+        assert fix_indentation(code) == code
+
+    def test_single_line_unchanged(self):
+        """Une seule ligne → inchangé."""
+        code = "    pass"
+        assert fix_indentation(code) == code
+
+    def test_no_indent_needed(self):
+        """Code sans indentation."""
+        code = "import os\nimport sys"
+        assert fix_indentation(code) == code

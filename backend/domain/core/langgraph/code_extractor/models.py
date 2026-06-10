@@ -1,4 +1,16 @@
-"""Pydantic models for extracted code with validation and security checks."""
+"""
+code_extractor/models.py — Modèles Pydantic pour le code extrait avec validation.
+
+Fonctionnement
+--------------
+1. ``ExtractedFile``  — Valide un fichier individuel (nom, contenu, compilation Python)
+2. ``ExtractedCode``  — Valide un dictionnaire complet ``{files: {nom: contenu}}``
+3. ``log_dangerous_patterns`` — Détecte les patterns à risque (os.system, eval, etc.)
+
+La validation compile chaque fichier Python avec ``compile()`` pour détecter les erreurs
+de syntaxe dès l'extraction, avant toute exécution. Une chaîne de réparation (dedent → 
+``fix_indentation`` → ``fix_syntax_errors``) tente de corriger les erreurs LLM courantes.
+"""
 
 from __future__ import annotations
 
@@ -10,13 +22,13 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 logger = logging.getLogger(__name__)
 
-# Taille maximale d'un fichier extrait (500KB)
+# Taille maximale d'un fichier extrait (500 Ko)
 MAX_FILE_SIZE = 500_000
 
-# Extensions for which we attempt Python compile() validation
+# Extensions pour lesquelles on tente une validation compile()
 _PYTHON_EXTENSIONS = {".py", ".pyw"}
 
-# Allowed file extensions for extracted code blocks
+# Extensions autorisées — tout fichier en dehors de cette liste est rejeté
 _VALID_EXTENSIONS = _PYTHON_EXTENSIONS | {
     ".ps1", ".psm1", ".psd1",        # PowerShell
     ".sh", ".bash", ".zsh",          # Shell
@@ -60,7 +72,8 @@ _VALID_EXTENSIONS = _PYTHON_EXTENSIONS | {
     "Makefile", "makefile",          # Make
 }
 
-# Patterns dangereux à logger (sécurité au niveau extraction)
+# Patterns à risque détectés à l'extraction (avertissement uniquement)
+# La sécurité réelle est gérée par le sandbox d'exécution (Docker, subprocess)
 DANGEROUS_PATTERNS: list[str] = [
     "os.system",
     "subprocess.",
@@ -71,11 +84,11 @@ DANGEROUS_PATTERNS: list[str] = [
 
 
 def log_dangerous_patterns(code: str, context: str = "") -> list[str]:
-    """Log warning if dangerous patterns detected in extracted code.
+    """Alerte si le code extrait contient des patterns dangereux.
 
-    This is a soft check — it does NOT block execution (runtime isolation
-    in DockerSandbox/SubprocessExecutor handles that). It just alerts
-    developers during debugging.
+    Vérification **soft** — elle ne bloque pas l'exécution (l'isolation
+    dans DockerSandbox / SubprocessExecutor s'en charge). Sert uniquement
+    à alerter les développeurs pendant le débogage.
     """
     found = [kw for kw in DANGEROUS_PATTERNS if kw.lower() in code.lower()]
     if found:
@@ -85,15 +98,23 @@ def log_dangerous_patterns(code: str, context: str = "") -> list[str]:
 
 
 class ExtractedFile(BaseModel):
-    """Validated file content with name and syntax check."""
+    """Fichier unique validé : nom, contenu, et compilation Python si applicable.
 
-    name: str = Field(..., description="File name with extension")
-    content: str = Field(..., description="File content")
+    Le validateur ``content`` exécute une chaîne de réparation progressive :
+      1. ``textwrap.dedent()``
+      2. ``fix_indentation()``   → normalise les indentations inconsistantes
+      3. ``fix_syntax_errors()`` → équilibre parenthèses/crochets manquants
+    Si tout échoue, une ``ValueError`` remonte pour que l'extracteur passe
+    à la stratégie suivante.
+    """
+
+    name: str = Field(..., description="Nom du fichier avec extension")
+    content: str = Field(..., description="Contenu du fichier")
 
     @field_validator("name")
     @classmethod
     def validate_name(cls, v: str) -> str:
-        """Ensure filename has a supported extension and safe characters."""
+        """Vérifie que le nom a une extension supportée et des caractères sûrs."""
         safe_chars = set(
             "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/_-."
         )
@@ -165,13 +186,17 @@ class ExtractedFile(BaseModel):
 
 
 class ExtractedCode(BaseModel):
-    """Validated extraction result with files dictionary."""
+    """Résultat d'extraction validé : dictionnaire ``{nom_fichier: contenu}``.
 
-    files: dict[str, str] = Field(..., description="Mapping of filename to content")
+    Chaque fichier est instancié comme ``ExtractedFile``, ce qui déclenche
+    la validation complète (nom + contenu + compilation Python).
+    """
+
+    files: dict[str, str] = Field(..., description="Mapping nom de fichier → contenu")
 
     @model_validator(mode="after")
     def validate_files(self) -> ExtractedCode:
-        """Validate all files have proper names and content."""
+        """Valide que tous les fichiers ont un nom et un contenu corrects."""
         if not self.files:
             raise ValueError("At least one file is required")
         validated: dict[str, str] = {}

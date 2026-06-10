@@ -1,4 +1,17 @@
-"""Multi-strategy extraction of code dicts from raw LLM output."""
+"""
+code_extractor/extractor.py — Extraction multi-stratégie de code depuis la sortie brute d'un LLM.
+
+Le LLM peut répondre avec du code dans plusieurs formats : blocs ```python,
+```json, JSON pur, ou simplement du code nu. Cette fonction essaie 7 stratégies
+séquentielles jusqu'à en trouver une qui produit un dictionnaire ``{files: {}}``
+valide.
+
+Chaîne de traitement
+--------------------
+1. Nettoyage du préambule LLM (``_strip_llm_preamble``)
+2. 7 stratégies de parsing (voir ``extract_code_dict``)
+3. Validation finale via ``ExtractedCode`` + chaîne de réparation (salvage)
+"""
 
 from __future__ import annotations
 
@@ -13,7 +26,7 @@ from .repair import fix_indentation, fix_syntax_errors
 
 logger = logging.getLogger(__name__)
 
-# Language → file extension mapping for generic code blocks (Strategy 6)
+# Mapping langage → extension pour les blocs de code génériques (stratégie 2)
 LANG_EXTENSIONS: dict[str, str] = {
     "powershell": ".ps1",
     "ps1": ".ps1",
@@ -101,9 +114,9 @@ LANG_EXTENSIONS: dict[str, str] = {
     "jsonc": ".jsonc",
 }
 
-# Common LLM preamble phrases to ignore at the start of a response.
-# Includes both English ("Thinking", "Here's") and French ("Voici", "Je vais",
-# "Analyse") markers since the LLM may produce either.
+# Phrases de préambule fréquentes des LLM — on les ignore en début de réponse.
+# Inclut l'anglais ("Thinking", "Here's") et le français ("Voici", "Je vais",
+# "Analyse") car le LLM peut produire les deux.
 _LLM_PREAMBLE_PATTERNS = re.compile(
     r"^(#|//|-\s*)?(Thinking|Analyzing|Reasoning|Here'?s|Here is|Let me|I'?ll|The (solution|code|approach|best)|Code[:\s]|Voici|Je vais|Analyse)",
     re.IGNORECASE,
@@ -111,7 +124,12 @@ _LLM_PREAMBLE_PATTERNS = re.compile(
 
 
 def _strip_llm_preamble(text: str) -> str:
-    """Strip the LLM 'thinking process' or 'here's the code' preamble from a response."""
+    """Supprime le préambule 'voici le code' ou 'raisonnement' du LLM.
+
+    Parcourt les lignes du début à la recherche du premier bloc de code
+    (`` ``` `` ou ``{``), en ignorant les lignes de préambule. Si aucune
+    ligne ne correspond à un préambule connu, le texte est retourné intact.
+    """
     lines = text.split("\n")
     code_start = 0
     for i, line in enumerate(lines):
@@ -120,17 +138,15 @@ def _strip_llm_preamble(text: str) -> str:
             continue
         if _LLM_PREAMBLE_PATTERNS.match(stripped):
             code_start = i + 1
-        elif stripped.startswith(("```", "{", "import ", "from ", "def ", "class ", "print")):
-            break
         else:
-            code_start = i
+            # Première ligne non vide qui n'est pas du préambule → début du contenu
             break
     trimmed = "\n".join(lines[code_start:]).strip()
     return trimmed if trimmed else text
 
 
 def _find_json_objects(text: str) -> list[str]:
-    """Find top-level JSON objects via brace counting (respects string literals)."""
+    """Trouve les objets JSON racines par comptage d'accolades (respecte les chaînes)."""
     objects: list[str] = []
     i = 0
     while i < len(text):
@@ -159,21 +175,20 @@ def _find_json_objects(text: str) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Block-processing helpers shared by strategies 1 (```python) and 2 (generic).
-# Kept private — they are internal contract for these two strategies only.
+# Utilitaires partagés par les stratégies 1 (```python) et 2 (générique).
+# Fonctions privées — contrat interne à ces deux stratégies uniquement.
 # ---------------------------------------------------------------------------
 
 
 def _normalize_block_indent(block: str) -> str:
-    """Strip the common leading whitespace from a code block.
+    """Supprime l'indentation commune d'un bloc de code.
 
-    Empty or whitespace-only lines are preserved as empty strings (not
-    dropped) so the resulting line count matches the input. Non-empty
-    lines are dedented to the minimum indent across all non-empty lines.
-    Tabs are expanded to 4 spaces before the calculation, matching the
-    behavior of common code-block renderers.
+    Les lignes vides sont conservées (pas supprimées) pour que le nombre
+    de lignes corresponde à l'entrée. Les lignes non vides sont dé-dentées
+    à l'indentation minimale. Les tabulations sont converties en 4 espaces
+    avant le calcul, comme le font les renderers de blocs de code.
 
-    Returns an empty string when the block has no non-empty content.
+    Retourne une chaîne vide si le bloc n'a aucun contenu non vide.
     """
     lines = block.expandtabs(4).split("\n")
     non_empty = [line for line in lines if line.strip()]
@@ -190,15 +205,15 @@ def _normalize_block_indent(block: str) -> str:
 
 
 def _dedup_filename(fname: str, seen: dict[str, int]) -> str:
-    """Return a unique filename, appending ``_N`` to the stem on collision.
+    """Génère un nom de fichier unique en cas de collision.
 
-    The first occurrence of ``fname`` is returned unchanged. Subsequent
-    occurrences get ``_2``, ``_3``... inserted before the last extension
-    (``foo.py`` → ``foo_2.py``). Filenames without an extension get the
-    suffix appended to the end (``Makefile`` → ``Makefile_2``).
+    La première occurrence de ``fname`` est retournée inchangée. Les
+    occurrences suivantes reçoivent ``_2``, ``_3``... avant la dernière
+    extension (``foo.py`` → ``foo_2.py``). Les noms sans extension
+    reçoivent le suffixe en fin de chaîne (``Makefile`` → ``Makefile_2``).
 
-    The ``seen`` dict is mutated in place: the counter for ``fname`` is
-    set to 1 on first use and incremented on each collision.
+    Le dict ``seen`` est muté sur place — compteur initialisé à 1
+    à la première occurrence, incrémenté à chaque collision.
     """
     if fname in seen:
         seen[fname] += 1
@@ -210,52 +225,54 @@ def _dedup_filename(fname: str, seen: dict[str, int]) -> str:
     return fname
 
 
-def _validate_python_block(name: str, content: str) -> str:
-    """Validate a Python block; return the best salvage on failure.
+def _validate_block(name: str, content: str, strict: bool = False) -> str:
+    """Valide un bloc via ``ExtractedFile`` ; retourne le meilleur contenu possible.
 
-    Delegates to ``ExtractedFile`` (which compiles the content, with
-    internal dedent / fix_indent / fix_syntax fallback chain). On
-    ``ValueError`` — i.e. when even the salvage chain inside
-    ``ExtractedFile`` failed — falls back to ``textwrap.dedent`` so the
-    caller still gets a non-empty string to work with. The result is
-    never None; callers should check ``.strip()`` for emptiness.
+    Délègue à ``ExtractedFile`` qui :
+    - Vérifie le nom (extension supportée, caractères sûrs)
+    - Compile les fichiers Python (``.py``/``.pyw``) avec chaîne de réparation
+    - Passe les autres extensions sans compile
+
+    En cas d'échec de validation :
+    - Mode **strict** (``strict=True``) → ``textwrap.dedent`` pour tenter
+      un salvage même sur un nom invalide (utilisé par la stratégie 1)
+    - Mode **normal** (``strict=False``) → avertit et retourne le contenu brut
+      (utilisé par la stratégie 2)
+
+    Le résultat n'est jamais None — l'appelant vérifie ``.strip()``.
     """
     try:
         return ExtractedFile(name=name, content=content).content
     except ValueError:
-        return textwrap.dedent(content).strip()
-
-
-def _validate_generic_block(name: str, content: str) -> str:
-    """Validate a non-Python block; warn and return content on failure.
-
-    Generic (non-Python, non-JSON) files don't get a compilation step,
-    so a ``ValueError`` from ``ExtractedFile`` means the *filename* is
-    invalid (unsupported extension or unsafe characters). The content
-    itself is still potentially useful, so we log a warning and return
-    it as-is rather than dropping the file.
-    """
-    try:
-        return ExtractedFile(name=name, content=content).content
-    except ValueError:
-        logger.warning("Generic block '%s' failed validation: keeping raw", name)
+        if strict:
+            return textwrap.dedent(content).strip()
+        logger.warning("Block '%s' failed validation: keeping raw", name)
         return content
 
 
 def extract_code_dict(response: str) -> dict[str, Any]:
-    """Multi-strategy extraction of {"files": {"name.py": "code"}} from raw LLM output.
+    """Extraction multi-stratégie de ``{files: {"nom.py": "code"}}`` depuis une réponse LLM brute.
 
-    Strategies:
-    1. Extract ```python code blocks
-    2. Extract generic ```<language> blocks (powershell, bash, js, etc.)
-    3. Extract ```json blocks (common LLM format)
-    4. Direct JSON parse of cleaned response
-    5. Find JSON object with "files" key (stack-based brace matching)
-    6. Direct Python code detection
-    7. Fallback: return raw response as main.py
+    Les 7 stratégies sont tentées **séquentiellement** — la première qui
+    produit un résultat valide est retournée immédiatement :
 
-    Returns:
-        dict with "files" key mapping filenames to code strings
+    ====== ========================================= ==================
+    Strat  Méthode                                  Format cible
+    ====== ========================================= ==================
+      1    Blocs ```python avec nom de fichier      ``fichier.py``
+      2    Blocs ```<lang> génériques               ``script.ps1``, etc.
+      3    Blocs ```json                            JSON ``{files: {}}``
+      4    Parsing JSON direct de la réponse        JSON ``{files: {}}``
+      5    Objet JSON avec clé "files"              JSON ``{files: {}}``
+      6    Détection de code Python nu              ``main.py``
+      7    *Fallback* — réponse brute en ``main.py`` ``main.py``
+    ====== ========================================= ==================
+
+    Returns
+    -------
+    dict
+        Dictionnaire avec la clé ``"files"`` mappant les noms aux codes.
+        Contient toujours une clé ``"steps"`` (liste vide par défaut).
     """
     raw = response.strip()
 
@@ -272,40 +289,36 @@ def extract_code_dict(response: str) -> dict[str, Any]:
 
     code_dict: dict[str, Any] | None = None
 
-    # Strategy 1: Extract ```python blocks
+    # Phase 1 — Stratégies basées sur les blocs ``` (backticks nécessaires)
+    for strategy in (
+        _strategy_python_blocks,
+        _strategy_generic_blocks,
+    ):
+        if (code_dict := strategy(response_clean)) is not None:
+            break
+
     if code_dict is None:
-        code_dict = _strategy_python_blocks(response_clean)
+        # Nettoyage des backticks pour les stratégies JSON et texte brut
+        text_no_backticks = re.sub(
+            r"^```(?:json|python)?\s*", "", response_clean, flags=re.MULTILINE
+        )
+        text_no_backticks = re.sub(r"\s*```$", "", text_no_backticks)
+        text_no_backticks = text_no_backticks.strip()
 
-    # Strategy 2: Extract generic ```<language> blocks (powershell, bash, etc.)
-    if code_dict is None:
-        code_dict = _strategy_generic_blocks(response_clean)
+        # Phase 2 — Stratégies JSON / texte brut
+        for strategy in (
+            _strategy_json_blocks,
+            _strategy_direct_json,
+            _strategy_brace_json,
+            _strategy_pure_python,
+        ):
+            if (code_dict := strategy(text_no_backticks)) is not None:
+                break
 
-    response_clean = re.sub(
-        r"^```(?:json|python)?\s*", "", response_clean, flags=re.MULTILINE
-    )
-    response_clean = re.sub(r"\s*```$", "", response_clean)
-    response_clean = response_clean.strip()
-
-    # Strategy 3: Extract ```json blocks
-    if code_dict is None:
-        code_dict = _strategy_json_blocks(response_clean)
-
-    # Strategy 4: Direct JSON parse
-    if code_dict is None:
-        code_dict = _strategy_direct_json(response_clean)
-
-    # Strategy 5: Brace-matched JSON with "files" key
-    if code_dict is None:
-        code_dict = _strategy_brace_json(response_clean)
-
-    # Strategy 6: Direct Python code detection
-    if code_dict is None:
-        code_dict = _strategy_pure_python(response_clean)
-
-    # Fallback (Strategy 7)
+    # Fallback (stratégie 7) — réponse brute
     if code_dict is None:
         code_dict = {"steps": [], "files": {"main.py": response_clean}}
-        logger.info("Fallback (strategy 7): raw response as main.py (%d chars)", len(response_clean))
+        logger.info("Fallback (stratégie 7): réponse brute en main.py (%d signes)", len(response_clean))
 
     # Ensure 'steps' key exists for downstream code that expects it
     if "steps" not in code_dict:
@@ -316,10 +329,11 @@ def extract_code_dict(response: str) -> dict[str, Any]:
 
 
 def _extract_filename_from_header(text: str, block_start: int) -> str | None:
-    """Look for '## filename.ext' header on the line before a code block.
+    """Cherche un en-tête ``## nom_fichier.ext`` avant un bloc de code.
 
-    Searches backward from block_start for a '## name.ext' pattern
-    on the nearest non-empty line. Accepts any extension.
+    Parcourt les lignes non vides avant ``block_start`` à la recherche
+    d'un pattern ``## nom.ext``, ``# filename: nom.ext`` ou
+    ``// nom.ext`` (commentaire JS/TS). Accepte n'importe quelle extension.
     """
     before = text[:block_start].rstrip()
     lines = before.split("\n")
@@ -343,7 +357,7 @@ def _extract_filename_from_header(text: str, block_start: int) -> str | None:
 
 
 def _strategy_python_blocks(text: str) -> dict[str, Any] | None:
-    """Strategy 1: Extract ```python code blocks with filenames."""
+    """Stratégie 1 : Extrait les blocs ```python avec nom de fichier."""
     # Find all ```python blocks with their positions
     blocks: list[tuple[int, str]] = []
     for m in re.finditer(r"```python\s*([\s\S]*?)```", text):
@@ -369,7 +383,7 @@ def _strategy_python_blocks(text: str) -> dict[str, Any] | None:
         normalized = _normalize_block_indent(block_content)
         if not normalized:
             continue
-        normalized = _validate_python_block(fname, normalized)
+        normalized = _validate_block(fname, normalized, strict=True)
 
         if normalized.strip():
             files[fname] = normalized + "\n"
@@ -381,10 +395,11 @@ def _strategy_python_blocks(text: str) -> dict[str, Any] | None:
 
 
 def _strategy_generic_blocks(text: str) -> dict[str, Any] | None:
-    """Strategy 2: Extract generic ```<language> code blocks (non-Python, non-JSON).
+    """Stratégie 2 : Extrait les blocs ```<langage> génériques (non-Python, non-JSON).
 
-    Maps language identifiers (powershell, bash, js, etc.) to file extensions.
-    Looks for ## filename.ext headers before the block.
+    Mappe les identifiants de langage (powershell, bash, js, etc.) vers
+    des extensions de fichier. Cherche les en-têtes ``## nom.ext`` avant
+    le bloc pour le nommage.
     """
     blocks: list[tuple[int, str, str]] = []
     for m in re.finditer(r"```(\w+)\s*\n([\s\S]*?)```", text):
@@ -415,7 +430,7 @@ def _strategy_generic_blocks(text: str) -> dict[str, Any] | None:
         normalized = _normalize_block_indent(block_content)
         if not normalized:
             continue
-        normalized = _validate_generic_block(fname, normalized)
+        normalized = _validate_block(fname, normalized)
 
         if normalized.strip():
             files[fname] = normalized + "\n"
@@ -427,7 +442,7 @@ def _strategy_generic_blocks(text: str) -> dict[str, Any] | None:
 
 
 def _strategy_json_blocks(text: str) -> dict[str, Any] | None:
-    """Strategy 3: Extract ```json blocks."""
+    """Stratégie 3 : Extrait les blocs ```json."""
     json_blocks = re.findall(r"```json\s*([\s\S]*?)```", text)
     for block in json_blocks:
         try:
@@ -442,7 +457,7 @@ def _strategy_json_blocks(text: str) -> dict[str, Any] | None:
 
 
 def _strategy_direct_json(text: str) -> dict[str, Any] | None:
-    """Strategy 4: Direct JSON parse of the whole response."""
+    """Stratégie 4 : Parse JSON direct de la réponse entière."""
     try:
         candidate = json.loads(text)
         if isinstance(candidate, dict) and "files" in candidate:
@@ -455,7 +470,7 @@ def _strategy_direct_json(text: str) -> dict[str, Any] | None:
 
 
 def _strategy_brace_json(text: str) -> dict[str, Any] | None:
-    """Strategy 5: Find JSON object with 'files' key via brace counter."""
+    """Stratégie 5 : Trouve un objet JSON avec clé ``files`` par comptage d'accolades."""
     json_objects = _find_json_objects(text)
     for obj_str in json_objects:
         try:
@@ -486,7 +501,7 @@ def _strategy_brace_json(text: str) -> dict[str, Any] | None:
 
 
 def _strategy_pure_python(text: str) -> dict[str, Any] | None:
-    """Strategy 6: Detect and return pure Python code."""
+    """Stratégie 6 : Détecte et retourne du code Python nu (sans ```)."""
     py_start = re.match(r"^\s*(?:def\s+\w+|class\s+\w+|import\s+|from\s+)", text)
     if py_start:
         logger.info("Strategy 6 (pure Python detected): main.py")
@@ -495,13 +510,18 @@ def _strategy_pure_python(text: str) -> dict[str, Any] | None:
 
 
 def _finalize(code_dict: dict[str, Any]) -> dict[str, Any]:
-    """Final validation with salvage chain.
+    """Validation finale avec chaîne de réparation (salvage).
 
-    When a file has an unsupported extension (e.g. `py.typed` not in
-    the whitelist) the content fixes below won't help — the filename
-    itself is invalid.  In that case we **drop** the offending files
-    so the rest of the extraction survives instead of returning raw
-    content with invalid entries.
+    Si le dictionnaire complet échoue la validation, on tente 3 palliatifs
+    dans l'ordre :
+
+    1. Supprimer les fichiers dont l'extension est invalide (ex: ``.typed``
+       n'est pas dans la liste blanche) et revalider le reste.
+    2. Corriger l'indentation des fichiers Python via ``fix_indentation``.
+    3. Réparer la syntaxe Python via ``fix_syntax_errors``.
+
+    Si tout échoue, on retourne le dictionnaire brut pour que l'appelant
+    décide — plutôt que de tout jeter.
     """
     try:
         extracted = ExtractedCode.model_validate(code_dict)
