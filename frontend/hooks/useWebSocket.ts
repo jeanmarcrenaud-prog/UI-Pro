@@ -141,5 +141,8 @@ export function mapStreamEvent(data: Record<string, unknown>): { type: string; p
   if (data.type === STREAM_EVENTS.CANCELLED) {
     return { type: STREAM_EVENTS.CANCELLED, payload: data }
   }
+  if (data.type === STREAM_EVENTS.EXEC_OUTPUT) {
+    return { type: STREAM_EVENTS.EXEC_OUTPUT, payload: { content: data.content, channel: data.channel } }
+  }
   return null
 }

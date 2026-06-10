@@ -9,6 +9,7 @@ export const WS_EVENTS = {
   STEP: 'step',
   ERROR: 'error',
   DONE: 'done',
+  EXEC_OUTPUT: 'exec_output',
 } as const
 
 export const RECONNECT = {

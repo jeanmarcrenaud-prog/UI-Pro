@@ -10,6 +10,7 @@ export const STREAM_EVENTS = {
   DONE: 'done',
   ERROR: 'error',
   CANCELLED: 'cancelled',
+  EXEC_OUTPUT: 'exec_output',
 } as const
 
 export type StreamEventType = typeof STREAM_EVENTS[keyof typeof STREAM_EVENTS]
@@ -38,6 +39,9 @@ interface EventMap {
   modelsDiscovered: { models: Array<{ id: string; name: string; provider: string }>; errors?: string[] }
   error: { message: string }
   
+  // Execution output events (terminal streaming)
+  execOutput: { line: string; channel: string }
+
   // Custom store events
   log: { message?: string }
   tokens: { tokenCount?: number }

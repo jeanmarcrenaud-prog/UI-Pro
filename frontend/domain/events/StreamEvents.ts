@@ -8,6 +8,7 @@ export const STREAM_EVENTS = {
   DONE: 'done',
   ERROR: 'error',
   CANCELLED: 'cancelled',
+  EXEC_OUTPUT: 'exec_output',
 } as const;
 
 export type StreamEventType = (typeof STREAM_EVENTS)[keyof typeof STREAM_EVENTS];
