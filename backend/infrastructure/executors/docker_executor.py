@@ -123,7 +123,10 @@ class DockerExecutor(BaseExecutor):
         self,
         code: str,
         filename: str = "main.py",
+        output_callback: Callable[[str, str], None] | None = None,
     ) -> ExecutionResult:
+        # NOTE: output_callback accepted for interface compatibility.
+        # Docker streaming support planned for Phase 2.
         sandbox = self._get_sandbox()
         if sandbox is None:
             return ExecutionResult(

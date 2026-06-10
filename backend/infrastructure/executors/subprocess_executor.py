@@ -4,6 +4,11 @@ SubprocessExecutor: executes Python code in an isolated child process.
 The code is written to a temp file and executed via sys.executable.
 stdout/stderr are captured through pipes.
 The subprocess is killed on timeout.
+
+Supports two modes:
+  - **Batch** (default): uses ``proc.communicate()``, returns all output at end.
+  - **Streaming** (when *output_callback* is provided): reads line by line and
+    calls *output_callback(line, channel)* for each line in real-time.
 """
 
 from __future__ import annotations
@@ -14,10 +19,14 @@ import os
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 
 from .base import BaseExecutor, ExecutionResult
 
 logger = logging.getLogger(__name__)
+
+# Type alias: callback(line_content, channel)
+OutputCallback = Callable[[str, str], None]
 
 
 class SubprocessExecutor(BaseExecutor):
@@ -37,6 +46,7 @@ class SubprocessExecutor(BaseExecutor):
         self,
         code: str,
         filename: str = "main.py",
+        output_callback: OutputCallback | None = None,
     ) -> ExecutionResult:
         fd = None
         path = None
@@ -55,48 +65,12 @@ class SubprocessExecutor(BaseExecutor):
                 stderr=asyncio.subprocess.PIPE,
             )
 
-            try:
-                stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(), timeout=self.timeout_seconds
-                )
-            except (asyncio.TimeoutError, asyncio.CancelledError):
-                if proc.returncode is None:
-                    try:
-                        proc.kill()
-                    except ProcessLookupError:
-                        pass
-                    await proc.wait()
-                elapsed_ms = (time.perf_counter() - start) * 1000
-                return ExecutionResult(
-                    False,
-                    error=(
-                        f"Subprocess execution timed out after {self.timeout_seconds}s "
-                        f"(EXECUTOR_TIMEOUT). Simplify the code or increase the timeout."
-                    ),
-                    execution_time_ms=elapsed_ms,
-                    sandbox_type="subprocess",
-                )
-
-            elapsed_ms = (time.perf_counter() - start) * 1000
-            out_text = stdout.decode("utf-8", errors="replace") if stdout else ""
-            err_text = stderr.decode("utf-8", errors="replace") if stderr else ""
-
-            if proc.returncode == 0:
-                return ExecutionResult(
-                    True,
-                    output=out_text,
-                    execution_time_ms=elapsed_ms,
-                    sandbox_type="subprocess",
+            if output_callback is not None:
+                return await self._execute_streaming(
+                    proc, start, output_callback
                 )
             else:
-                # Defense in depth: if stderr is empty for any reason, surface
-                # the exit code so the user never gets a silent empty failure.
-                return ExecutionResult(
-                    False,
-                    error=err_text or f"Subprocess exited with code {proc.returncode} (no stderr captured)",
-                    execution_time_ms=elapsed_ms,
-                    sandbox_type="subprocess",
-                )
+                return await self._execute_batch(proc, start)
 
         finally:
             if path:
@@ -104,3 +78,166 @@ class SubprocessExecutor(BaseExecutor):
                     os.unlink(path)
                 except OSError:
                     pass
+
+    # — Batch mode (original) ————————————————————————————————————————————
+
+    async def _execute_batch(
+        self, proc: asyncio.subprocess.Process, start: float
+    ) -> ExecutionResult:
+        """Original ``proc.communicate()`` path — no streaming."""
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(), timeout=self.timeout_seconds
+            )
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            if proc.returncode is None:
+                try:
+                    proc.kill()
+                except ProcessLookupError:
+                    pass
+                await proc.wait()
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            return ExecutionResult(
+                False,
+                error=(
+                    f"Subprocess execution timed out after {self.timeout_seconds}s "
+                    f"(EXECUTOR_TIMEOUT). Simplify the code or increase the timeout."
+                ),
+                execution_time_ms=elapsed_ms,
+                sandbox_type="subprocess",
+            )
+
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        out_text = stdout.decode("utf-8", errors="replace") if stdout else ""
+        err_text = stderr.decode("utf-8", errors="replace") if stderr else ""
+
+        if proc.returncode == 0:
+            return ExecutionResult(
+                True,
+                output=out_text,
+                execution_time_ms=elapsed_ms,
+                sandbox_type="subprocess",
+            )
+        else:
+            return ExecutionResult(
+                False,
+                error=err_text
+                or f"Subprocess exited with code {proc.returncode} (no stderr captured)",
+                execution_time_ms=elapsed_ms,
+                sandbox_type="subprocess",
+            )
+
+    # ── Streaming mode (line-by-line) ──────────────────────────────────
+
+    async def _execute_streaming(
+        self,
+        proc: asyncio.subprocess.Process,
+        start: float,
+        callback: OutputCallback,
+    ) -> ExecutionResult:
+        """Read stdout/stderr line-by-line, calling *callback* for each line.
+
+        Two concurrent tasks read the pipes so neither backs up.
+        All output is also collected for the ``ExecutionResult``.
+        """
+        stdout_lines: list[str] = []
+        stderr_lines: list[str] = []
+
+        async def _read_pipe(
+            stream: asyncio.StreamReader | None,
+            channel: str,
+            dest: list[str],
+        ) -> None:
+            """Read a single pipe line-by-line until EOF."""
+            if stream is None:
+                return
+            while True:
+                try:
+                    line_bytes = await asyncio.wait_for(
+                        stream.readline(), timeout=self.timeout_seconds
+                    )
+                except asyncio.TimeoutError:
+                    # No data yet — keep polling (the overall watcher above
+                    # will enforce the global timeout).
+                    continue
+                except (BrokenPipeError, ConnectionResetError, ValueError):
+                    break
+
+                if not line_bytes:  # EOF
+                    break
+                text = line_bytes.decode("utf-8", errors="replace").rstrip("\n\r")
+                if text:
+                    dest.append(text)
+                    try:
+                        callback(text, channel)
+                    except Exception:
+                        logger.exception(
+                            "output_callback failed for %s line", channel
+                        )
+
+        # Launch concurrent readers
+        reader_tasks = [
+            asyncio.create_task(_read_pipe(proc.stdout, "stdout", stdout_lines)),
+            asyncio.create_task(_read_pipe(proc.stderr, "stderr", stderr_lines)),
+        ]
+
+        # Wait for BOTH readers to complete (EOF) or timeout.
+        # ``ALL_COMPLETED`` ensures we don't cancel one pipe early.
+        done, pending = await asyncio.wait(
+            reader_tasks,
+            timeout=self.timeout_seconds + 5,
+            return_when=asyncio.ALL_COMPLETED,
+        )
+
+        # Timeout path: if any readers are still pending the process hung.
+        if pending:
+            for t in pending:
+                t.cancel()
+                try:
+                    await t
+                except asyncio.CancelledError:
+                    pass
+            if proc.returncode is None:
+                try:
+                    proc.kill()
+                except ProcessLookupError:
+                    pass
+                await proc.wait()
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            return ExecutionResult(
+                False,
+                error=(
+                    f"Subprocess execution timed out after {self.timeout_seconds}s "
+                    f"(EXECUTOR_TIMEOUT). Simplify the code or increase the timeout."
+                ),
+                execution_time_ms=elapsed_ms,
+                sandbox_type="subprocess",
+            )
+
+        # Normal path — both readers reached EOF.  Collect exit status.
+        if proc.returncode is None:
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=5)
+            except asyncio.TimeoutError:
+                logger.warning("Subprocess did not exit after all pipes closed")
+
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        out_text = "\n".join(stdout_lines)
+        err_text = "\n".join(stderr_lines)
+
+        if proc.returncode == 0:
+            return ExecutionResult(
+                True,
+                output=out_text,
+                execution_time_ms=elapsed_ms,
+                sandbox_type="subprocess",
+            )
+        else:
+            return ExecutionResult(
+                False,
+                error=err_text
+                or f"Subprocess exited with code {proc.returncode} (no stderr captured)",
+                output=out_text,
+                execution_time_ms=elapsed_ms,
+                sandbox_type="subprocess",
+            )

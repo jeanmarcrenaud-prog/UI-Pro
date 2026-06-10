@@ -7,8 +7,12 @@ from __future__ import annotations
 
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+
+# Streaming callback type: (line: str, channel: "stdout" | "stderr") -> None
+OutputCallback = Callable[[str, str], None]
 
 
 @dataclass(slots=True)
@@ -49,23 +53,35 @@ class BaseExecutor(ABC):
         self,
         code: str,
         filename: str = "main.py",
+        output_callback: OutputCallback | None = None,
     ) -> ExecutionResult:
         """Exécute un fichier de code dans l'environnement isolé.
 
         Args:
             code: Code Python à exécuter
             filename: Nom du fichier (pour le débogage)
+            output_callback: If provided, called as ``cb(line, channel)``
+                for each output line in real-time (streaming mode).
 
         Returns:
             ExecutionResult avec success, output, error, execution_time_ms
         """
         ...
 
-    async def run_files(self, files: dict[str, Any]) -> ExecutionResult:
+    async def run_files(
+        self,
+        files: dict[str, Any],
+        output_callback: Callable[[str, str], None] | None = None,
+    ) -> ExecutionResult:
         """Exécute plusieurs fichiers séquentiellement.
 
         Chaque fichier est exécuté via self.execute().
         Si un fichier échoue, les suivants sont ignorés.
+
+        Args:
+            files: Dict of ``{filename: source_code}``.
+            output_callback: Optional callback ``(line, channel)`` forwarded
+                to each ``execute()`` call for real-time output streaming.
         """
         if not isinstance(files, dict):
             return ExecutionResult(
@@ -88,7 +104,7 @@ class BaseExecutor(ABC):
                 logger.warning("Skipping %s: not a string", filename)
                 continue
             logger.info("Executing file: %s", filename)
-            result = await self.execute(code, filename)
+            result = await self.execute(code, filename, output_callback=output_callback)
             results.append(
                 {
                     "filename": filename,

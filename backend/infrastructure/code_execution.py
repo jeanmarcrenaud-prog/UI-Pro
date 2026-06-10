@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from typing import Any
 
 from backend.domain.core.code_review import review_code
@@ -97,12 +98,21 @@ class CodeExecutionService:
             logger.exception("execution failed")
             return ExecutionResult(False, error=str(exc))
 
-    async def run_files_async(self, files: dict[str, Any]) -> ExecutionResult:
+    async def run_files_async(
+        self,
+        files: dict[str, Any],
+        output_callback: Callable[[str, str], None] | None = None,
+    ) -> ExecutionResult:
         """Execute multiple files from a {"files": {"name.py": "content"}} dict.
 
         Délègue au backend (SubprocessExecutor ou DockerExecutor).
+
+        Args:
+            files: Dict of ``{filename: source_code}``.
+            output_callback: If provided, forwarded to the executor for
+                real-time output streaming ``(line, channel)``.
         """
-        return await self._executor.run_files(files)
+        return await self._executor.run_files(files, output_callback=output_callback)
 
     def run(self, files: dict[str, Any]) -> ExecutionResult:
         """Execute multiple files (sync wrapper around run_files_async).
