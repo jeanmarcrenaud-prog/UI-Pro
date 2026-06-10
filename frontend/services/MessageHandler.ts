@@ -10,6 +10,7 @@ import type {
   CompleteCallback,
   ApprovalCallback,
 } from './types'
+import { events } from '@/lib/events'
 import { debugLogger } from '@/lib/debug/logger'
 
 export class MessageHandler {
@@ -76,6 +77,16 @@ export class MessageHandler {
       const msgId = data.message_id || ''
       debugLogger.logInfo(`Awaiting approval for stream: ${streamId}`, 'approval')
       this.onApproval(streamId, codePreview, msgId)
+      return
+    }
+
+    // Handle execution output (terminal streaming)
+    if (type === WS_EVENTS.EXEC_OUTPUT) {
+      const line = data.content || data.data || ''
+      const channel = data.channel || 'stdout'
+      if (line) {
+        events.emit('execOutput', { line, channel })
+      }
       return
     }
 

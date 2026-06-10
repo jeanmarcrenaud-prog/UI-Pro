@@ -31,7 +31,7 @@ export interface BackendStreamChunk {
 }
 
 export interface StreamEvent {
-  type: 'token' | 'step' | 'tool' | 'done' | 'error' | 'cancelled' | 'stream_id' | 'resumed'
+  type: 'token' | 'step' | 'tool' | 'done' | 'error' | 'cancelled' | 'exec_output' | 'stream_id' | 'resumed'
   content: string
   index?: number
   tokens?: number
@@ -200,6 +200,15 @@ class StreamService {
         content: data.content || '',
         stepId: data.step_id,
         stepStatus: 'done',
+        streamId: data.stream_id,
+      }
+    }
+
+    // Execution output (terminal streaming)
+    if (data.type === 'exec_output') {
+      return {
+        type: 'exec_output',
+        content: data.content || data.data || '',
         streamId: data.stream_id,
       }
     }
