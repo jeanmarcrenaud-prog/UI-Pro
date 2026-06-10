@@ -62,6 +62,15 @@ class ErrorEvent(BaseEvent):
     details: dict[str, Any] | None = None
 
 
+@dataclass
+class ExecutionOutputEvent(BaseEvent):
+    """Real-time execution output line (stdout/stderr from sandbox)."""
+
+    line: str = ""
+    channel: str = "stdout"  # "stdout" | "stderr"
+    stream_id: str = ""  # session or execution stream id
+
+
 # ==================== Event Types Enum ====================
 
 
@@ -74,6 +83,7 @@ class EventType(str, Enum):
     ERROR = "error"
     STATUS = "status"
     HEALTH = "health"
+    EXEC_OUTPUT = "exec_output"
 
 
 # ==================== Event Bus (Pub/Sub) ====================
@@ -229,4 +239,19 @@ def emit_error(error_code: str, message: str, details: dict | None = None):
         error_code=error_code, message=message, details=details, source="system"
     )
     get_event_bus().publish(event, EventType.ERROR)
+    return event
+
+
+def emit_exec_output(line: str, channel: str = "stdout", stream_id: str = ""):
+    """Emit a single line of execution output for the integrated terminal.
+
+    Args:
+        line: The output line (without trailing newline).
+        channel: ``"stdout"`` or ``"stderr"``.
+        stream_id: Optional session / execution stream identifier.
+    """
+    event = ExecutionOutputEvent(
+        line=line, channel=channel, stream_id=stream_id, source="executor"
+    )
+    get_event_bus().publish(event, EventType.EXEC_OUTPUT)
     return event

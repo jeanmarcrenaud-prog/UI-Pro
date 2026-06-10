@@ -19,6 +19,7 @@ _PARSERS: dict[str, tuple[str, bool]] = {
     "[TOOL]": ("tool", True),
     "[ERROR]": ("error", True),
     "[AWAITING_APPROVAL]": ("awaiting_approval", False),
+    "[EXEC_OUT]": ("exec_output", False),
 }
 
 
@@ -87,6 +88,12 @@ def parse_event(raw_event: str | dict, message_id: str) -> StreamEvent | None:
             return StreamEvent(
                 event_type="awaiting_approval",
                 stream_id=rest,
+                content=rest,
+                message_id=message_id,
+            )
+        if event_type == "exec_output":
+            return StreamEvent(
+                event_type="exec_output",
                 content=rest,
                 message_id=message_id,
             )

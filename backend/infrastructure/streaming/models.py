@@ -68,6 +68,10 @@ class StreamEvent:
         },
         "done": {"done": lambda e: True},
         "resumed": {"from_index": lambda e: 0},
+        "exec_output": {
+            "data": lambda e: e.content,
+            "stream_id": lambda e: e.stream_id,
+        },
     }
 
     def to_dict(self) -> dict[str, Any]:
