@@ -202,7 +202,7 @@ class ChatService {
   }
 
   /** Send execute/correct/cancel decision for human-in-the-loop approval. */
-  sendExecuteDecision(decision: 'execute' | 'correct' | 'cancel', feedback?: string): void {
+  async sendExecuteDecision(decision: 'execute' | 'correct' | 'cancel', feedback?: string): Promise<void> {
     // Set a new active request so Phase 2 tokens/steps get processed
     this.activeRequest = {
       id: crypto.randomUUID(),
@@ -213,6 +213,15 @@ class ChatService {
       lastChunkIndex: 0,
     }
     this.manuallyClosed = false
+
+    // Ensure WS is connected before sending
+    if (!this.wsManager.isConnected) {
+      const reconnected = await this.connectWithRetry(3, 500)
+      if (!reconnected) {
+        this.handleError('Failed to reconnect for execution decision')
+        return
+      }
+    }
 
     this.wsManager.send({
       type: 'execute_decision',
