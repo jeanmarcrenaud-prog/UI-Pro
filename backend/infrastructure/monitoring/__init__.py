@@ -1,4 +1,4 @@
-"""Monitoring — Prometheus metrics for GPU, system, and LLM telemetry."""
+"""Monitoring — Prometheus metrics for GPU, system, LLM, and pipeline telemetry."""
 
 from backend.infrastructure.monitoring.prometheus import (
     PROMETHEUS_ENABLED,
@@ -17,6 +17,13 @@ from backend.infrastructure.monitoring.llm_metrics import (
     set_active_requests,
     inc_llm_tokens,
 )
+from backend.infrastructure.monitoring.pipeline_metrics import (
+    inc_active_sessions,
+    dec_active_sessions,
+    inc_pipeline_run,
+    inc_checkpoint_save,
+    observe_node_duration,
+)
 
 __all__ = [
     "PROMETHEUS_ENABLED",
@@ -32,4 +39,9 @@ __all__ = [
     "inc_llm_error",
     "set_active_requests",
     "inc_llm_tokens",
+    "inc_active_sessions",
+    "dec_active_sessions",
+    "inc_pipeline_run",
+    "inc_checkpoint_save",
+    "observe_node_duration",
 ]

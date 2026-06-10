@@ -348,23 +348,37 @@ class OrchestratorAsync:
         Returns:
             dict with status, data, errors
         """
+        from backend.infrastructure.monitoring.pipeline_metrics import (
+            inc_active_sessions,
+            dec_active_sessions,
+            inc_pipeline_run,
+        )
+
         start_time = time.time()
+        inc_active_sessions()
 
         try:
             # Use LangGraph if available
             if self.graph is not None:
-                return await self._run_langgraph(message, session_id)
+                result = await self._run_langgraph(message, session_id)
             else:
                 # Fallback to sequential pipeline
-                return await self._run_fallback(message, session_id)
+                result = await self._run_fallback(message, session_id)
+
+            status = result.get("status", "completed")
+            inc_pipeline_run(status)
+            return result
 
         except Exception as e:
             logger.exception("Orchestrator error")
             self.metrics.track_error("orchestrator", str(e))
+            inc_pipeline_run("failed")
             return {
                 "status": "failed",
                 "error": str(e),
             }
+        finally:
+            dec_active_sessions()
 
     async def _run_langgraph(self, message: str, session_id: str) -> dict[str, Any]:
         """Run using LangGraph"""
