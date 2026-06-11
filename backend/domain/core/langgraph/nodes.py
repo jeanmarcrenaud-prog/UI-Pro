@@ -154,6 +154,102 @@ def _heuristic_review_score(issues: list[str], suggestions: list[str]) -> float:
 
 
 # ========================================
+# Language detection helpers
+# ========================================
+
+_LANG_KEYWORDS: dict[str, set[str]] = {
+    "powershell": {"powershell", "pwsh", "ps1", "posh", "microsoft teams"},
+    "bash": {"bash", "shell script", "sh ", ".sh"},
+    "batch": {".bat", ".cmd", "batch"},
+    "javascript": {"javascript", "js ", ".js", "nodejs", "node.js"},
+    "typescript": {"typescript", "ts ", ".ts"},
+}
+
+_LANG_CONFIG: dict[str, dict[str, str]] = {
+    "python": {"ext": "py", "block": "python", "name": "Python"},
+    "powershell": {"ext": "ps1", "block": "powershell", "name": "PowerShell"},
+    "bash": {"ext": "sh", "block": "bash", "name": "Bash"},
+    "batch": {"ext": "bat", "block": "batch", "name": "Batch"},
+    "javascript": {"ext": "js", "block": "javascript", "name": "JavaScript"},
+    "typescript": {"ext": "ts", "block": "typescript", "name": "TypeScript"},
+}
+
+_DEFAULT_LANG = "python"
+
+
+def _detect_language(user_message: str) -> str:
+    """Detect the programming language requested by the user.
+
+    Uses keyword matching on the lowercased user message. Returns
+    the language key (e.g. 'python', 'powershell', 'bash') or
+    the default 'python' when no explicit language is mentioned.
+    """
+    msg_lower = user_message.lower()
+    for lang, keywords in _LANG_KEYWORDS.items():
+        if any(kw in msg_lower for kw in keywords):
+            return lang
+    return _DEFAULT_LANG
+
+
+def _get_lang_config(language: str) -> dict[str, str]:
+    """Get language config (ext, block, name) for a given language key."""
+    return _LANG_CONFIG.get(language, _LANG_CONFIG[_DEFAULT_LANG])
+
+
+def _build_code_quality_section(language: str) -> str:
+    """Build language-specific code quality rules for the coding prompt."""
+    cfg = _get_lang_config(language)
+    lang_name = cfg["name"]
+
+    if language == "python":
+        return (
+            "CODE QUALITY (apply unless the user explicitly opts out):\n"
+            "- Entry-point file MUST use `if __name__ == '__main__':` guard so it can be safely imported without side effects\n"
+            "- All HTTP calls MUST have an explicit `timeout` argument (e.g. `timeout=10`). Never call `urlopen()` without a timeout\n"
+            "- Wrap network, HTTP-status, and parse failures in a single `try/except` with three distinct branches:\n"
+            "    except urllib.error.URLError as e:   # network / DNS / connection refused\n"
+            "    except urllib.error.HTTPError as e:  # server returned 4xx / 5xx\n"
+            "    except json.JSONDecodeError:         # response was not valid JSON\n"
+            "  Each branch MUST print a different, human-readable message so the failure mode is obvious\n"
+            "- Use `with urllib.request.urlopen(...) as resp:` for auto-cleanup of the HTTP connection\n"
+            "- Do NOT invent API keys. Free public APIs (Open-Meteo, wttr.in, ipapi.co, CoinGecko, etc.) require no key. If you receive 401/403, the URL or parameter is wrong, not the key\n"
+            "- When the user specifies an output format (table, list, JSON, CSV, …), follow it EXACTLY — don't downgrade to bare `print()` calls\n"
+            "- Raise `ValueError` for bad inputs, `RuntimeError` for runtime failures. Do NOT `print('error:', e); sys.exit(1)` — callers and the auto-fix loop need to see the exception"
+        )
+    elif language == "powershell":
+        return (
+            f"{lang_name} CODE QUALITY:\n"
+            "- Use `Write-Output` for stdout output, `Write-Error` or `throw` for errors\n"
+            "- Use `-ErrorAction Stop` on critical cmdlets so errors become terminating\n"
+            "- Wrap fallible operations in `try { ... } catch { ... }` blocks\n"
+            "- When calling external APIs, use `Invoke-RestMethod` with `-TimeoutSec` set explicitly\n"
+            "- Do NOT invent API keys — use free/public APIs where possible\n"
+            "- Include `[CmdletBinding()]` and `param()` block for parameterized scripts\n"
+            "- Use `#Requires -Version 5.1` at the top when using modern PowerShell features"
+        )
+    elif language in ("bash", "shell"):
+        return (
+            "CODE QUALITY:\n"
+            "- Start with `#!/usr/bin/env bash` shebang\n"
+            "- Use `set -euo pipefail` for strict error handling\n"
+            "- Check exit codes and handle errors gracefully\n"
+            "- Use `curl -fsSL` with `--connect-timeout` and `--max-time` for HTTP calls\n"
+            "- Add meaningful error messages: `echo \"Error: ...\" >&2; exit 1`\n"
+            "- Quote all variable expansions: `\"$var\"` instead of `$var`\n"
+            "- Do NOT invent API keys — use free/public APIs where possible"
+        )
+    else:
+        return (
+            f"CODE QUALITY — {lang_name}:\n"
+            "- Follow idiomatic {lang_name} conventions\n"
+            "- Handle errors gracefully with try/catch or equivalent\n"
+            "- Set explicit timeouts on all network calls\n"
+            "- Do NOT invent API keys\n"
+            "- Include a proper entry-point / main function"
+        ).format(lang_name=lang_name)
+
+
+# ========================================
 # Nodes
 # ========================================
 
@@ -319,20 +415,26 @@ async def planning_node(state: AgentState) -> AgentState:
     user_message = _get_user_message(state)
 
     _emit_step("planning", "Consultation du LLM pour le plan...")
+
+    language = _detect_language(user_message)
+    lang_cfg = _get_lang_config(language)
+    ext = lang_cfg["ext"]
+    example_file = f"main.{ext}"
+
     prompt = (
         f"Demande utilisateur : {user_message}\n\n"
         "Crée un plan d'implémentation détaillé. Réponds UNIQUEMENT avec cette structure JSON — "
         "pas de markdown, pas de blocs de code, pas d'explication :\n\n"
         "{\n"
         '  "steps": [\n'
-        '    {"description": "description de l étape", "file": "main.py", "approach": "comment faire"}\n'
+        f'    {{"description": "description de l étape", "file": "{example_file}", "approach": "comment faire"}}\n'
         "  ],\n"
-        '  "files": {"main.py": "description du fichier"}\n'
+        f'  "files": {{"{example_file}": "description du fichier"}}\n'
         "}\n\n"
-        'Exemple complet : {"steps": [{"description": "Créer une fonction fetch", "file": "main.py", "approach": "Utiliser requests"}], "files": {"main.py": "Point d entrée"}}\n\n'
+        f'Exemple complet : {{"steps": [{{"description": "Créer une fonction", "file": "{example_file}", "approach": "À définir"}}], "files": {{"{example_file}": "Point d entrée"}}}}\n\n'
         "Règles :\n"
         "- steps est une liste d'étapes (peut être vide)\n"
-        "- files est un dictionnaire clé=valeur avec des noms de fichiers en .py\n"
+        f"- files est un dictionnaire clé=valeur avec des noms de fichiers en .{ext}\n"
         "- UNIQUEMENT du JSON valide — ni ```json, ni ```, ni texte autour\n"
         "- Commence directement par { et finis directement par }"
     )
@@ -487,33 +589,29 @@ async def coding_node(state: AgentState) -> AgentState:
                 f"{state.get('max_attempts', 3)} — advanced={settings.advanced_self_critique}"
             )
 
+    # Detect language from user request
+    language = _detect_language(user_message)
+    state["language"] = language
+    lang_cfg = _get_lang_config(language)
+    ext = lang_cfg["ext"]
+    block = lang_cfg["block"]
+    lang_name = lang_cfg["name"]
+
     prompt_parts.append(
-        "Generate Python code that solves the request.\n\n"
-        "FORMAT — use exactly this structure (the example is a dummy, replace with real code):\n"
-        "## main.py\n"
-        "```python\n"
-        "print('real code here')\n"
-        "```\n\n"
+        f"Generate {lang_name} code that solves the request.\n\n"
+        f"FORMAT — use exactly this structure (replace \"main\" with a meaningful filename):\n"
+        f"## main.{ext}\n"
+        f"```{block}\n"
+        f"# real {lang_name} code here\n"
+        f"```\n\n"
         "ABSOLUTE RULES:\n"
-        "- Put the filename on a line starting with ##, then the ```python block right after\n"
-        "- The code block MUST contain ONLY valid Python — no prose, no comments about the code\n"
+        f"- Put the filename on a line starting with ##, then the ```{block} block right after\n"
+        f"- The code block MUST contain ONLY valid {lang_name} — no prose, no comments about the code\n"
         "- Do NOT explain what the code does — the code IS the answer\n"
         "- Do NOT include the planning instructions or this prompt in the output\n"
-        "- Do NOT add any text outside the ## filename / ```python structure\n"
-        "- Do NOT use `import requests` or `import httpx` in the example — the example is a FORMAT template, not a content suggestion\n"
-        "- One file per ## header + ```python block. Multiple files = multiple ## headers, each followed by its own block\n\n"
-        "CODE QUALITY (apply unless the user explicitly opts out):\n"
-        "- Entry-point file MUST use `if __name__ == '__main__':` guard so it can be safely imported without side effects\n"
-        "- All HTTP calls MUST have an explicit `timeout` argument (e.g. `timeout=10`). Never call `urlopen()` without a timeout\n"
-        "- Wrap network, HTTP-status, and parse failures in a single `try/except` with three distinct branches:\n"
-        "    except urllib.error.URLError as e:   # network / DNS / connection refused\n"
-        "    except urllib.error.HTTPError as e:  # server returned 4xx / 5xx\n"
-        "    except json.JSONDecodeError:         # response was not valid JSON\n"
-        "  Each branch MUST print a different, human-readable message so the failure mode is obvious\n"
-        "- Use `with urllib.request.urlopen(...) as resp:` for auto-cleanup of the HTTP connection\n"
-        "- Do NOT invent API keys. Free public APIs (Open-Meteo, wttr.in, ipapi.co, CoinGecko, etc.) require no key. If you receive 401/403, the URL or parameter is wrong, not the key\n"
-        "- When the user specifies an output format (table, list, JSON, CSV, …), follow it EXACTLY — don't downgrade to bare `print()` calls\n"
-        "- Raise `ValueError` for bad inputs, `RuntimeError` for runtime failures. Do NOT `print('error:', e); sys.exit(1)` — callers and the auto-fix loop need to see the exception"
+        "- Do NOT add any text outside the ## filename / ``` code block structure\n"
+        "- One file per ## header + ``` block. Multiple files = multiple ## headers, each followed by its own block\n\n"
+        f"{_build_code_quality_section(language)}"
     )
 
     # Constraint reinforcement: if the user explicitly forbids `requests` /
@@ -535,7 +633,7 @@ async def coding_node(state: AgentState) -> AgentState:
             "pas de requests",
         )
     )
-    if stdlib_only_hint:
+    if language == "python" and stdlib_only_hint:
         prompt_parts.append(
             "IMPORTANT — STDLIB ONLY (user requirement):\n"
             "The user explicitly asked for stdlib-only code. You MUST use "
@@ -594,21 +692,19 @@ async def coding_node(state: AgentState) -> AgentState:
 
     state["code"] = extract_code_dict(full_response)
 
-    # Runtime safety net: even with the negative example in the prompt, the
-    # model frequently still imports `requests` or `httpx` (we observed this
-    # on 1.2B, 9B and 35B models in the live test). The sanitizer detects
-    # such imports and prepends a urllib-backed compatibility shim so the
-    # code runs in our sandbox without `requests` / `httpx` being installed.
-    original_files = state["code"].get("files", {})
-    sanitized_files, sanitize_meta = sanitize_files(original_files)
-    state["code"]["files"] = sanitized_files
-    state["code"]["sanitize_meta"] = sanitize_meta
+    # Runtime safety net: Python-specific stdlib shim injection.
+    # Detects `requests`/`httpx` imports and prepends urllib-backed shims.
+    if language == "python":
+        original_files = state["code"].get("files", {})
+        sanitized_files, sanitize_meta = sanitize_files(original_files)
+        state["code"]["files"] = sanitized_files
+        state["code"]["sanitize_meta"] = sanitize_meta
 
-    for inj in sanitize_meta.get("injections", []):
-        logger.info(
-            f"[coding_node] Injected stdlib shim for '{inj['package']}' in {inj['file']} "
-            f"(user requested stdlib-only; model ignored)"
-        )
+        for inj in sanitize_meta.get("injections", []):
+            logger.info(
+                f"[coding_node] Injected stdlib shim for '{inj['package']}' in {inj['file']} "
+                f"(user requested stdlib-only; model ignored)"
+            )
 
     files_count = len(state["code"].get("files", {}))
     _emit_step("coding", f"Code généré: {files_count} fichiers")

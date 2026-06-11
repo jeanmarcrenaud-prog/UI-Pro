@@ -10,6 +10,7 @@ import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism'
 // we explicitly register here. Without these calls, every block renders as
 // plain text (the user's "coloration syntaxique" issue).
 import bash from 'react-syntax-highlighter/dist/cjs/languages/prism/bash'
+import batch from 'react-syntax-highlighter/dist/cjs/languages/prism/batch'
 import cpp from 'react-syntax-highlighter/dist/cjs/languages/prism/cpp'
 import css from 'react-syntax-highlighter/dist/cjs/languages/prism/css'
 import java from 'react-syntax-highlighter/dist/cjs/languages/prism/java'
@@ -17,6 +18,7 @@ import javascript from 'react-syntax-highlighter/dist/cjs/languages/prism/javasc
 import json from 'react-syntax-highlighter/dist/cjs/languages/prism/json'
 import markdown from 'react-syntax-highlighter/dist/cjs/languages/prism/markdown'
 import markup from 'react-syntax-highlighter/dist/cjs/languages/prism/markup'
+import powershell from 'react-syntax-highlighter/dist/cjs/languages/prism/powershell'
 import python from 'react-syntax-highlighter/dist/cjs/languages/prism/python'
 import sql from 'react-syntax-highlighter/dist/cjs/languages/prism/sql'
 import tsx from 'react-syntax-highlighter/dist/cjs/languages/prism/tsx'
@@ -24,6 +26,7 @@ import typescript from 'react-syntax-highlighter/dist/cjs/languages/prism/typesc
 import yaml from 'react-syntax-highlighter/dist/cjs/languages/prism/yaml'
 
 SyntaxHighlighter.registerLanguage('bash', bash)
+SyntaxHighlighter.registerLanguage('batch', batch)
 SyntaxHighlighter.registerLanguage('cpp', cpp)
 SyntaxHighlighter.registerLanguage('css', css)
 SyntaxHighlighter.registerLanguage('html', markup)
@@ -32,6 +35,7 @@ SyntaxHighlighter.registerLanguage('javascript', javascript)
 SyntaxHighlighter.registerLanguage('json', json)
 SyntaxHighlighter.registerLanguage('markdown', markdown)
 SyntaxHighlighter.registerLanguage('markup', markup)
+SyntaxHighlighter.registerLanguage('powershell', powershell)
 SyntaxHighlighter.registerLanguage('python', python)
 SyntaxHighlighter.registerLanguage('sql', sql)
 SyntaxHighlighter.registerLanguage('tsx', tsx)

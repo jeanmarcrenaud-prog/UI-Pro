@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import uuid
 from datetime import datetime
 from collections.abc import AsyncIterator
@@ -63,6 +64,46 @@ def save_stream_checkpoint(
 
     inc_checkpoint_save()
     logger.info(f"[checkpoint] Saved for stream {stream_id}: {last_token_index} tokens")
+
+
+# Map file extensions to language identifiers for markdown code fences.
+# Used to replace the hardcoded "```python" when rendering generated code.
+_EXT_TO_LANG: dict[str, str] = {
+    ".ps1": "powershell",
+    ".psm1": "powershell",
+    ".psd1": "powershell",
+    ".sh": "bash",
+    ".bash": "bash",
+    ".zsh": "bash",
+    ".bat": "batch",
+    ".cmd": "batch",
+    ".js": "javascript",
+    ".ts": "typescript",
+    ".jsx": "jsx",
+    ".tsx": "tsx",
+    ".html": "html",
+    ".htm": "html",
+    ".css": "css",
+    ".json": "json",
+    ".yaml": "yaml",
+    ".yml": "yaml",
+    ".toml": "toml",
+    ".md": "markdown",
+    ".sql": "sql",
+    ".rs": "rust",
+    ".go": "go",
+    ".java": "java",
+    ".c": "c",
+    ".cpp": "cpp",
+    ".rb": "ruby",
+    ".php": "php",
+}
+
+
+def _lang_for_file(filename: str, fallback_lang: str = "python") -> str:
+    """Derive the language identifier for syntax highlighting from a filename."""
+    ext = os.path.splitext(filename)[1].lower()
+    return _EXT_TO_LANG.get(ext, fallback_lang)
 
 
 async def stream_agent(
@@ -191,8 +232,10 @@ async def stream_agent(
                 _state_emitted.add("code")
                 files = code_val.get("files", {})
                 yield f"[STEP]coding:Code generation completed ({len(files)} fichiers)"
+                code_lang = event.get("language") or (_lang_for_file(list(files.keys())[0]) if files else "python")
                 for filename, source in files.items():
-                    yield f"[TOKEN]\n\n**{filename}**\n```python\n{source}\n```\n\n"
+                    file_lang = _lang_for_file(filename, code_lang)
+                    yield f"[TOKEN]\n\n**{filename}**\n```{file_lang}\n{source}\n```\n\n"
 
             review_val = event.get("review")
             if review_val and "review" not in _state_emitted:
@@ -521,8 +564,10 @@ async def _resume_correct(
                 _state_emitted.add("code")
                 files = code_val.get("files", {})
                 yield f"[STEP]coding:Code regenerated ({len(files)} fichiers)"
+                code_lang = event.get("language") or (_lang_for_file(list(files.keys())[0]) if files else "python")
                 for filename, source in files.items():
-                    yield f"[TOKEN]\n\n**{filename}**\n```python\n{source}\n```\n\n"
+                    file_lang = _lang_for_file(filename, code_lang)
+                    yield f"[TOKEN]\n\n**{filename}**\n```{file_lang}\n{source}\n```\n\n"
 
             review_val = event.get("review")
             if review_val and "review" not in _state_emitted:

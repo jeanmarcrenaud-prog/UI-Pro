@@ -13,7 +13,7 @@ from typing import Any
 
 SYSTEM_PLANNER = "You are an expert technical planner. Break down tasks into clear, actionable steps."
 SYSTEM_ARCHITECT = "You are a senior software architect focused on clean, maintainable, and scalable design."
-SYSTEM_CODER = "You are a senior Python engineer who writes clean, idiomatic, and production-ready code."
+SYSTEM_CODER = "You are a senior software engineer who writes clean, idiomatic, and production-ready code."
 SYSTEM_REVIEWER = "You are a strict, detail-oriented code reviewer focused on correctness, security, and best practices."
 SYSTEM_FIXER = "You are an expert debugging specialist. Provide minimal, targeted, and correct fixes."
 
@@ -56,13 +56,13 @@ CODER_PROMPT = """{system}
 Architecture:
 {architecture}
 
-Write high-quality, clean, well-documented Python code.
+Write high-quality, clean, well-documented {language} code.
 
 Return **only** valid JSON:
 {{
-  "files": {{
-    "filename.py": "complete code here"
-  }}
+    "files": {{
+        "filename.{ext}": "complete code here"
+    }}
 }}
 """
 
@@ -201,9 +201,12 @@ def architect_prompt(plan: str, **kwargs: Any) -> str:
     return get_prompt("architect", **kwargs)
 
 
-def coder_prompt(architecture: str, **kwargs: Any) -> str:
+def coder_prompt(architecture: str, language: str = "python", **kwargs: Any) -> str:
     """Convenience wrapper for coder prompt"""
     kwargs["architecture"] = architecture
+    kwargs.setdefault("language", language)
+    ext = kwargs.pop("ext", _lang_to_ext(language))
+    kwargs.setdefault("ext", ext)
     return get_prompt("coder", **kwargs)
 
 
@@ -222,6 +225,25 @@ def fix_prompt(
     kwargs["attempt"] = attempt
     kwargs["max_retry"] = max_retry
     return get_prompt("fix", **kwargs)
+
+
+# ================== LANGUAGE HELPERS ==================
+
+_LANG_EXT_MAP: dict[str, str] = {
+    "python": "py",
+    "powershell": "ps1",
+    "bash": "sh",
+    "shell": "sh",
+    "batch": "bat",
+    "cmd": "bat",
+    "javascript": "js",
+    "typescript": "ts",
+}
+
+
+def _lang_to_ext(language: str) -> str:
+    """Map a language name to its file extension (without dot)."""
+    return _LANG_EXT_MAP.get(language.lower(), "py")
 
 
 # ================== EXPORTS ==================

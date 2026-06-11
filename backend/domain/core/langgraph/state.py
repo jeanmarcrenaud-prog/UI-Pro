@@ -94,6 +94,9 @@ class AgentState(TypedDict, total=False):
     awaiting_approval: bool
     execution_decision: str | None
 
+    # Language detected from user request (e.g. "python", "powershell", "bash")
+    language: str | None
+
     # Streaming checkpoint fields
     stream_id: str | None
     last_token_index: int
