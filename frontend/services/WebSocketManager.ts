@@ -71,7 +71,11 @@ export class WebSocketManager {
     this.stopHeartbeat()
     this.heartbeatInterval = setInterval(() => {
       if (this.isConnected) {
-        this.ws?.send(JSON.stringify({ type: WS_EVENTS.PING }))
+        // Send raw "ping" — the backend checks for the exact string
+        // BEFORE JSON parsing (data == "ping"). JSON.stringify would
+        // produce '{"type":"ping"}' which falls through to validate_request
+        // and is rejected as "Model is required" (no model field).
+        this.ws?.send('ping')
       }
     }, HEARTBEAT_INTERVAL)
   }
