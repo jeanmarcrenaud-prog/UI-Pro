@@ -107,6 +107,20 @@ class StepInfo(TypedDict, total=False):
     started_at: str | None  # ISO-8601
 
 
+def _merge_steps(
+    left: list[StepInfo], right: list[StepInfo]
+) -> list[StepInfo]:
+    """Merge steps history — last version of each step wins by name.
+
+    Unlike ``_last_wins`` (which replaces the whole list), this reducer
+    merges step-by-step so that two nodes updating different step names
+    don't erase each other's changes."""
+    merged = {s["name"]: s for s in left}
+    for step in right:
+        merged[step["name"]] = step
+    return list(merged.values())
+
+
 class AgentState(TypedDict, total=False):
     """Persistent state for the LangGraph agent pipeline.
 
@@ -130,8 +144,8 @@ class AgentState(TypedDict, total=False):
     session_id: Annotated[str, _last_wins]
     metadata: Annotated[Metadata, _last_wins]
     # Human-in-the-loop approval (execute / correct / cancel)
-    awaiting_approval: Annotated[bool, _last_wins]
-    execution_decision: Annotated[str | None, _last_wins]
+    approval_status: Literal["PENDING", "APPROVED", "REJECTED", None]
+    approval_reason: str | None
 
     # Language detected from user request (e.g. "python", "powershell", "bash")
     language: str | None
@@ -143,7 +157,7 @@ class AgentState(TypedDict, total=False):
 
     # Step tracking for Agent Canvas (populated by @_timed_node helpers)
     current_step: Annotated[str, _last_wins]
-    steps_history: Annotated[list[StepInfo], _last_wins]
+    steps_history: Annotated[list[StepInfo], _merge_steps]
     files_generated: Annotated[dict[str, str], _last_wins]
     thinking_mode: Annotated[bool, _last_wins]
 
