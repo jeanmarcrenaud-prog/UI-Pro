@@ -240,8 +240,8 @@ ERROR - backend.infrastructure.llm.ollama - Ollama async stream failed:
        HTTPConnectionPool(host='localhost', port=11434): Read timed out. (read timeout=30)
 Traceback (most recent call last):
   ...
-  File ".../backend/domain/core/langgraph/nodes.py", line 86, in analyzing_node
-    full_response = await llm.run_node(prompt, model_type="reasoning")
+  File ".../backend/domain/core/langgraph/nodes/__init__.py", line 79, in analyzing_node
+    full_response = await _llm_generate(llm, prompt, "analyzing", model_type="fast")
   File ".../backend/domain/core/langgraph/llm_wrapper.py", line 121, in run_node
     raise TimeoutError(msg) from None
 TimeoutError: LLM call timed out after 30.0s (model_type=reasoning)

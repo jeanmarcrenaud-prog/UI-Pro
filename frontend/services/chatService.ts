@@ -34,6 +34,8 @@ class ChatService {
   private activeRequest: ActiveRequest | null = null
   private manuallyClosed = false
   private pendingModel: PendingModel | null = null
+  private lastModel = DEFAULT_MODEL
+  private lastProvider = DEFAULT_PROVIDER
 
   constructor() {
     // Initialize message handler with bound callbacks
@@ -66,9 +68,11 @@ class ChatService {
     model?: string,
     provider?: string
   ): Promise<void> {
-    // Capture model before creating request
+    // Persist model/provider for Phase 2 (execute_decision)
     const effectiveModel = model || this.pendingModel?.model || DEFAULT_MODEL
     const effectiveProvider = provider || this.pendingModel?.provider || DEFAULT_PROVIDER
+    this.lastModel = effectiveModel
+    this.lastProvider = effectiveProvider
     this.pendingModel = null
 
     // Wait for existing request
@@ -203,12 +207,13 @@ class ChatService {
 
   /** Send execute/correct/cancel decision for human-in-the-loop approval. */
   async sendExecuteDecision(decision: 'execute' | 'correct' | 'cancel', feedback?: string): Promise<void> {
-    // Set a new active request so Phase 2 tokens/steps get processed
+    // Preserve the original model/provider so if a stale onclose fires
+    // tryReconnect → sendPayload, it won't send an empty model.
     this.activeRequest = {
       id: crypto.randomUUID(),
       prompt: '',
-      model: '',
-      provider: '',
+      model: this.lastModel,
+      provider: this.lastProvider,
       assistantId: crypto.randomUUID(),
       lastChunkIndex: 0,
     }
@@ -216,7 +221,12 @@ class ChatService {
 
     // Ensure WS is connected before sending
     if (!this.wsManager.isConnected) {
+      // Prevent handleClose → tryReconnect race (onclose from old WS
+      // could fire while connectWithRetry is running, causing a
+      // double-reconnect that sends sendPayload with empty model).
+      this.manuallyClosed = true
       const reconnected = await this.connectWithRetry(3, 500)
+      this.manuallyClosed = false
       if (!reconnected) {
         this.handleError('Failed to reconnect for execution decision')
         return
@@ -242,6 +252,10 @@ class ChatService {
   }
 
   private async tryReconnect(): Promise<void> {
+    // Safety guard: if another code path already reconnected, bail out
+    // to avoid a double-reconnect that sends sendPayload with empty model.
+    if (this.wsManager.isConnected) return
+
     while (this.activeRequest && this.wsManager.canReconnect()) {
       this.wsManager.incrementReconnect()
       const delay = this.wsManager.calculateReconnectDelay()

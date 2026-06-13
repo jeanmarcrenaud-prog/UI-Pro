@@ -52,11 +52,16 @@ type AnyEventHandler = EventHandler<unknown>
 class EventEmitter {
   private handlers: Map<string, Set<AnyEventHandler>> = new Map()
 
-  on<K extends keyof EventMap>(event: K, handler: EventHandler<EventMap[K]>): void {
+  on<K extends keyof EventMap>(event: K, handler: EventHandler<EventMap[K]>): () => void {
     if (!this.handlers.has(event)) {
       this.handlers.set(event, new Set())
     }
     this.handlers.get(event)!.add(handler as AnyEventHandler)
+    // Return an unsubscribe function so callers can clean up without
+    // keeping a separate reference to `handler` or calling `off()` manually.
+    return () => {
+      this.off(event, handler)
+    }
   }
 
   off<K extends keyof EventMap>(event: K, handler: EventHandler<EventMap[K]>): void {

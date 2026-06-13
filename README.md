@@ -83,7 +83,7 @@ The orchestrator runs a LangGraph pipeline with 5 main nodes + an auto-fix loop:
 | **6** | `should_fix_code` | **Edge conditionnel** : si la review échoue et `attempt < max_attempts` → retour étape 3 |
 | **7** | Re-code + Re-execute | Itération de correction automatique (jusqu'à `max_attempts=3` tentatives) |
 
-- **Fichier source** : `backend/domain/core/orchestrator_async.py` (orchestrateur) + `backend/domain/core/langgraph/nodes.py` (nœuds)
+- **Fichier source** : `backend/domain/core/orchestrator_async.py` (orchestrateur) + `backend/domain/core/langgraph/nodes/` (nœuds)
 - **Sources d'état** : `backend/domain/core/langgraph/state.py` (modèles `AgentState`, `PlanData`, `CodeData`, etc.)
 - **Checkpointing** : SQLite via `AsyncSqliteSaver` — reprise de session après redémarrage
 

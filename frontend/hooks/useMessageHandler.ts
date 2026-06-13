@@ -17,7 +17,7 @@ interface UseMessageHandlerProps {
   isSendingRef: React.MutableRefObject<boolean>
   updateMessageById: (id: string, updater: (prev: string) => string, status?: string) => void
   updateLastChunkIndex: (index: number) => void
-  updateStep: (stepId: string, status: 'pending' | 'active' | 'done') => void
+  updateStep: (stepId: string, status: 'pending' | 'active' | 'done', content?: string, duration?: number, tokens?: number) => void
   saveToHistory: () => void
   resetCurrentMessage: () => void
   trimMessageHistory: () => void
@@ -69,8 +69,10 @@ export const useMessageHandler = ({
     if (normalized.type === 'step' && normalized.stepId) {
       const stepName = normalized.stepId.replace('step-', '').replace('-', ' ')
       addLog(`[STEP] ${stepName}: ${normalized.content || normalized.status}`)
-      debugLogger.log('step', normalized.content || normalized.status, { step: stepName })
-      updateStep(normalized.stepId, normalized.status === 'done' ? 'done' : 'active', normalized.content)
+      debugLogger.log('step', normalized.content || normalized.status, { step: stepName, duration: normalized.duration })
+      // If duration is present, this is a node-completion event from @_timed_node
+      const status = normalized.duration ? 'done' : (normalized.status === 'done' ? 'done' : 'active')
+      updateStep(normalized.stepId, status, normalized.content, normalized.duration, normalized.tokenCount)
       return
     }
 

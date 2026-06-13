@@ -13,6 +13,7 @@ export interface NormalizedMessage {
   stepId?: string
   status?: 'pending' | 'active' | 'done'
   tokenCount?: number
+  duration?: number  // Node execution duration in seconds
   code?: string
   title?: string
 }
@@ -37,6 +38,7 @@ export function normalizeMessage(raw: any): NormalizedMessage {
   const stepId = raw.step_id || raw.stepId
   const status = normalizeStatus(raw.status || raw.step_status)
   const tokenCount = raw.token_count || raw.tokenCount
+  const duration = raw.duration
   const code = raw.code
   const title = raw.title || raw.step_title
 
@@ -47,6 +49,7 @@ export function normalizeMessage(raw: any): NormalizedMessage {
     stepId,
     status,
     tokenCount,
+    duration,
     code,
     title,
   }

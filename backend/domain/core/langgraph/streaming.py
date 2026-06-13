@@ -31,7 +31,7 @@ _last_message_length: dict[str, int] = {}
 _last_msg_idx: dict[str, int] = {}
 
 
-def _emit_step(phase: str, message: str):
+def _emit_step(phase: str, message: str, data: dict | None = None):
     """Emit agent step event, stripping non-ASCII for Windows console."""
     try:
         try:
@@ -40,7 +40,7 @@ def _emit_step(phase: str, message: str):
             message = message.encode("ascii", "replace").decode("ascii")
         from backend.domain.core.events import emit_agent_step
 
-        emit_agent_step(phase, message)
+        emit_agent_step(phase, message, data=data)
     except Exception:
         pass
 
@@ -188,7 +188,14 @@ async def stream_agent(
         def _on_agent_event(event: Any) -> None:
             try:
                 if hasattr(event, "step") and hasattr(event, "message"):
-                    step_queue.put_nowait(f"{event.step}:{event.message}")
+                    meta = getattr(event, "data", None) or {}
+                    if meta:
+                        import json
+                        step_queue.put_nowait(
+                            f"{event.step}:{event.message}||{json.dumps(meta, default=str)}"
+                        )
+                    else:
+                        step_queue.put_nowait(f"{event.step}:{event.message}")
             except Exception:
                 pass
 

@@ -316,6 +316,7 @@ def home(request: Request):
 from backend.transport.routers.execute import router as execute_router
 from backend.transport.routers.health import router as health_router
 from backend.transport.routers.logs import router as logs_router
+from backend.transport.routers.node_metrics import router as node_metrics_router
 from backend.transport.routers.stream import router as stream_router
 from backend.transport.routers.ws import router as ws_router
 
@@ -324,6 +325,7 @@ app.include_router(ws_router)
 app.include_router(stream_router)
 app.include_router(execute_router)
 app.include_router(logs_router)
+app.include_router(node_metrics_router)
 
 
 # ==================== VERSION ENDPOINT ====================

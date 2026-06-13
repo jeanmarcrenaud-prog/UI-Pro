@@ -15,6 +15,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useI18n } from '@/lib/i18n'
 import { useEnableThinking } from './settings/hooks/useEnableThinking'
 import { events } from '@/lib/events'
+import { AgentCanvas } from '@/components/agent/AgentCanvas'
+import { LayoutList, GitBranch } from 'lucide-react'
 
 const DEFAULT_EXAMPLES = [
   {
@@ -199,6 +201,7 @@ export function ChatContainer({
 
   const [inputValue, setInputValue] = useState('')
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
+  const [canvasView, setCanvasView] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Priority: props > hook (useful for modal/preview modes)
@@ -311,15 +314,44 @@ export function ChatContainer({
           )}
         </AnimatePresence>
 
-        {/* Step Progress */}
-        <AnimatePresence>
+        {/* Step Progress / Agent Canvas (toggle) */}
+        <AnimatePresence mode="wait">
           {agentSteps.length > 0 && (
             <motion.div
+              key={canvasView ? 'canvas' : 'list'}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 10 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
             >
-              <StepProgress steps={agentSteps} locale={locale} />
+              {/* View toggle */}
+              <div className="flex items-center justify-end gap-1 mb-1.5">
+                <span className="text-[10px] text-slate-600 mr-auto font-mono">
+                  {canvasView ? 'Agent Canvas' : 'Step Progress'}
+                </span>
+                <button
+                  onClick={() => setCanvasView(false)}
+                  data-active={!canvasView}
+                  className="p-1 rounded-md transition-colors data-[active=true]:bg-violet-500/20 data-[active=true]:text-violet-300 text-slate-600 hover:text-slate-300"
+                  title="List view"
+                >
+                  <LayoutList size={14} />
+                </button>
+                <button
+                  onClick={() => setCanvasView(true)}
+                  data-active={canvasView}
+                  className="p-1 rounded-md transition-colors data-[active=true]:bg-violet-500/20 data-[active=true]:text-violet-300 text-slate-600 hover:text-slate-300"
+                  title="Graph view"
+                >
+                  <GitBranch size={14} />
+                </button>
+              </div>
+
+              {canvasView ? (
+                <AgentCanvas />
+              ) : (
+                <StepProgress steps={agentSteps} locale={locale} />
+              )}
             </motion.div>
           )}
         </AnimatePresence>

@@ -29,6 +29,8 @@ export interface AgentStep {
   title: string
   detail?: string
   status: AgentStepStatus
+  duration?: number  // Node execution duration in seconds (from backend metrics)
+  tokens?: number    // Approximate token count used by this node
 }
 
 // UseChat hook return type

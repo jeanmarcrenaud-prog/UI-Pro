@@ -57,13 +57,28 @@ def parse_event(raw_event: str | dict, message_id: str) -> StreamEvent | None:
                 event_type="resumed", stream_id=key, message_id=message_id
             )
         if event_type == "step":
+            # Parse optional metadata appendix: content||{"duration":2.34}
+            step_content = content
+            step_data: dict[str, object] = {}
+            if "||" in content:
+                parts = content.split("||", 1)
+                step_content = parts[0]
+                if parts[1]:
+                    try:
+                        import json
+                        parsed = json.loads(parts[1])
+                        if isinstance(parsed, dict):
+                            step_data = parsed
+                    except (json.JSONDecodeError, ValueError):
+                        pass
             return StreamEvent(
                 event_type="step",
                 step_id=f"step-{key}",
                 title=key.replace("_", " ").title(),
                 status=StreamStatus.GENERATING,
-                content=content,
+                content=step_content,
                 message_id=message_id,
+                data=step_data,
             )
         if event_type == "token":
             return StreamEvent(

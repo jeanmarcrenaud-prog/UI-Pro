@@ -36,6 +36,7 @@ class StreamEvent:
     error: str | None = None
     code: str | None = None
     token_count: int = 0
+    data: dict[str, Any] = field(default_factory=dict)  # Extra metadata (duration, tokens, ...)
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
     _SERIALIZERS: ClassVar[dict[str, dict[str, Any]]] = {
@@ -45,6 +46,8 @@ class StreamEvent:
             "title": lambda e: e.title or "Step",
             "status": lambda e: "active" if e.status == StreamStatus.GENERATING else "done",
             "content": lambda e: e.content,
+            "duration": lambda e: e.data.get("duration", 0),
+            "token_count": lambda e: e.data.get("tokens", 0) or e.data.get("token_count", 0),
         },
         "token": {
             "content": lambda e: e.content,
