@@ -40,8 +40,10 @@ const nodeVariants = {
   },
 };
 
-// Define BEFORE nodeTypes so the reference is unambiguous at module level
-function AgentStepNode({ data, selected }: NodeProps) {
+// Arrow function assigned to const — STABLE reference across module
+// re-evaluations (unlike function declarations which get new references).
+// This is critical: nodeTypes must hold the same function reference forever.
+const AgentStepNode = ({ data, selected }: NodeProps) => {
   const { status, name, modelUsed, durationMs, tokens } = data as CanvasStep;
 
   const getStatusIcon = () => {
@@ -122,13 +124,16 @@ function AgentStepNode({ data, selected }: NodeProps) {
   );
 }
 
-// nodeTypes MUST be after AgentStepNode definition — stable reference, never recreated
-const nodeTypes = {
-  agentStep: AgentStepNode,
-};
-
 export default function GraphVisualization({ steps, onNodeClick }: GraphVisualizationProps) {
   const { selectedNodeId, setSelectedNode } = useAgentCanvasStore();
+
+  // Stable nodeTypes reference — useMemo with [] deps means it's created once
+  // and cached for the component's entire lifetime. This is safe even with
+  // StrictMode double-mount because useMemo state survives remount.
+  const nodeTypes = useMemo(
+    () => ({ agentStep: AgentStepNode }),
+    [],
+  );
 
   const nodes: Node[] = useMemo(() => {
     return steps.map((step, index) => ({
