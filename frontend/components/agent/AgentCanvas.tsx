@@ -13,6 +13,7 @@ import { ExecutionTimeline } from './ExecutionTimeline'
 import { NodeDetailPanel } from './NodeDetailPanel'
 import { NodePalette } from './NodePalette'
 import { useI18n } from '@/lib/i18n'
+import { events } from '@/lib/events'
 
 // ── Pipeline metadata (for detail panel) ──────────────────────────────
 
@@ -52,7 +53,7 @@ export function AgentCanvas({
   const canvasSteps = useAgentCanvasStore((s) => s.steps)
 
   // Sync agentStore steps into canvas store so both stay in sync
-  const { setSteps } = useAgentCanvasStore()
+  const { setSteps, setApprovalStatus } = useAgentCanvasStore()
   useEffect(() => {
     setSteps(
       agentSteps.map((s) => ({
@@ -65,6 +66,16 @@ export function AgentCanvas({
       })),
     )
   }, [agentSteps, setSteps])
+
+  // Subscribe to awaitingApproval event from chatService/MessageHandler
+  // This is the bridge: backend emits AWAITING_APPROVAL → MessageHandler calls
+  // chatService.handleApproval → events.emit('awaitingApproval') → we update the store
+  useEffect(() => {
+    const unsubscribe = events.on('awaitingApproval', () => {
+      setApprovalStatus('PENDING')
+    })
+    return unsubscribe
+  }, [setApprovalStatus])
 
   // Palette open/close
   const [paletteOpen, setPaletteOpen] = useState(false)

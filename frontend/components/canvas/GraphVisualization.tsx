@@ -11,14 +11,10 @@ import ReactFlow, {
   NodeProps,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { Play, CheckCircle, XCircle, Clock, AlertCircle } from 'lucide-react';
+import { Play, CheckCircle, XCircle, Clock } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 import { CanvasStep, useAgentCanvasStore } from '@/lib/stores/agentCanvasStore';
-
-const nodeTypes = {
-  agentStep: AgentStepNode,
-};
 
 interface GraphVisualizationProps {
   steps: CanvasStep[];
@@ -44,6 +40,7 @@ const nodeVariants = {
   },
 };
 
+// Define BEFORE nodeTypes so the reference is unambiguous at module level
 function AgentStepNode({ data, selected }: NodeProps) {
   const { status, name, modelUsed, durationMs, tokens } = data as CanvasStep;
 
@@ -102,7 +99,7 @@ function AgentStepNode({ data, selected }: NodeProps) {
         >
           {getStatusIcon()}
         </motion.div>
-        
+
         <div className="flex-1">
           <div className="font-semibold text-white text-base tracking-tight">{name}</div>
           {modelUsed && (
@@ -112,7 +109,7 @@ function AgentStepNode({ data, selected }: NodeProps) {
       </div>
 
       {(durationMs || tokens) && (
-        <motion.div 
+        <motion.div
           className="mt-3 text-xs text-gray-400 flex gap-4 font-mono"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -124,6 +121,11 @@ function AgentStepNode({ data, selected }: NodeProps) {
     </motion.div>
   );
 }
+
+// nodeTypes MUST be after AgentStepNode definition — stable reference, never recreated
+const nodeTypes = {
+  agentStep: AgentStepNode,
+};
 
 export default function GraphVisualization({ steps, onNodeClick }: GraphVisualizationProps) {
   const { selectedNodeId, setSelectedNode } = useAgentCanvasStore();
@@ -145,9 +147,9 @@ export default function GraphVisualization({ steps, onNodeClick }: GraphVisualiz
       target: steps[index + 1].name,
       type: 'smoothstep',
       animated: steps[index].status === 'running' || steps[index + 1].status === 'running',
-      style: { 
-        stroke: steps[index].status === 'running' ? '#60a5fa' : '#4b5563', 
-        strokeWidth: 2.5 
+      style: {
+        stroke: steps[index].status === 'running' ? '#60a5fa' : '#4b5563',
+        strokeWidth: 2.5
       },
     }));
   }, [steps]);
@@ -173,7 +175,7 @@ export default function GraphVisualization({ steps, onNodeClick }: GraphVisualiz
           nodesConnectable={false}
         >
           <Background color="#1f2937" gap={24} />
-          <Controls 
+          <Controls
             position="bottom-right"
             className="bg-gray-900/95 border border-gray-700 rounded-xl shadow-xl"
           />
