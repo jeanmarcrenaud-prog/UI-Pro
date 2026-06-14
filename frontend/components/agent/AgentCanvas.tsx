@@ -6,7 +6,7 @@ import { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useAgentStore } from '@/lib/stores/agentStore'
 import { useAgentCanvasStore } from '@/lib/stores'
-import { useCanvasWebSocket, sendApprovalDecision } from '@/services/canvasWebSocket'
+import { sendApprovalDecision } from '@/services/canvasWebSocket'
 import GraphVisualization from '../canvas/GraphVisualization'
 import { CanvasControls } from './CanvasControls'
 import { ExecutionTimeline } from './ExecutionTimeline'
@@ -50,9 +50,6 @@ export function AgentCanvas({
   const canvasSessionId = useAgentCanvasStore((s) => s.sessionId)
   const canvasIsRunning = useAgentCanvasStore((s) => s.isRunning)
   const canvasSteps = useAgentCanvasStore((s) => s.steps)
-
-  // WebSocket — connect to receive real-time step/approval/run events
-  useCanvasWebSocket(canvasSessionId ?? undefined)
 
   // Sync agentStore steps into canvas store so both stay in sync
   const { setSteps } = useAgentCanvasStore()

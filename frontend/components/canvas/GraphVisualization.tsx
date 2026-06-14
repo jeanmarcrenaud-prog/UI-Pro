@@ -12,7 +12,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { Play, CheckCircle, XCircle, Clock, AlertCircle } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 
 import { CanvasStep, useAgentCanvasStore } from '@/lib/stores/agentCanvasStore';
 
@@ -162,8 +162,7 @@ export default function GraphVisualization({ steps, onNodeClick }: GraphVisualiz
 
   return (
     <div className="w-full h-full bg-[#0a0e14] relative">
-      <AnimatePresence>
-        <ReactFlow
+      <ReactFlow
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
@@ -179,7 +178,6 @@ export default function GraphVisualization({ steps, onNodeClick }: GraphVisualiz
             className="bg-gray-900/95 border border-gray-700 rounded-xl shadow-xl"
           />
         </ReactFlow>
-      </AnimatePresence>
     </div>
   );
 }
