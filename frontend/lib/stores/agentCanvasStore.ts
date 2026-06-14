@@ -101,17 +101,16 @@ export const useAgentCanvasStore = create<CanvasState>()(
         },
 
         sendApprovalDecision: async (decision, reason) => {
-          // Notify backend first (lazy import avoids circular dep: service → store → service)
+          // Route through chatService so the execute_decision goes on the SAME
+          // WebSocket connection that has the active stream session.
           try {
-            const { sendCanvasMessage } = await import('@/services/canvasWebSocket')
-            sendCanvasMessage({
-              type: 'execute_decision',
-              decision,
+            const { chatService } = await import('@/services/chatService')
+            await chatService.sendExecuteDecision(
+              decision === 'APPROVED' ? 'execute' : 'cancel',
               reason,
-              message_id: Date.now().toString(),
-            })
-          } catch {
-            // WS not connected — update local state only
+            )
+          } catch (err) {
+            console.error('[canvasStore] Failed to send approval decision:', err)
           }
           // Update local state immediately (optimistic)
           set({ approvalStatus: decision, approvalReason: reason ?? undefined })

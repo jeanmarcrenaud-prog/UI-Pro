@@ -130,16 +130,16 @@ export const useCanvasWebSocket = (sessionId?: string) => {
 
 // ── Approval helpers (for use outside React) ───────────────────────────
 
+import { chatService } from './chatService'
+
 export function sendApprovalDecision(
   decision: 'APPROVED' | 'REJECTED',
   reason?: string,
 ): void {
-  sendCanvasMessage({
-    type: 'execute_decision',
-    decision,
+  chatService.sendExecuteDecision(
+    decision === 'APPROVED' ? 'execute' : 'cancel',
     reason,
-    message_id: Date.now().toString(),
-  })
+  )
 }
 
 export function disconnectCanvasWebSocket(): void {
