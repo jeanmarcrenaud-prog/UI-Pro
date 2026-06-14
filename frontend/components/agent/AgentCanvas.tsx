@@ -2,11 +2,12 @@
 // Agent Canvas orchestrator - React Flow graph visualization with timeline and controls
 'use client'
 
-import { useState, useCallback, useMemo, useRef } from 'react'
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useAgentStore } from '@/lib/stores/agentStore'
-import { useChatStore } from '@/lib/stores/chatStore'
-import { GraphVisualization } from './GraphVisualization'
+import { useAgentCanvasStore } from '@/lib/stores'
+import { useCanvasWebSocket, sendApprovalDecision } from '@/services/canvasWebSocket'
+import GraphVisualization from '../canvas/GraphVisualization'
 import { CanvasControls } from './CanvasControls'
 import { ExecutionTimeline } from './ExecutionTimeline'
 import { NodeDetailPanel } from './NodeDetailPanel'
@@ -42,10 +43,31 @@ export function AgentCanvas({
 }: AgentCanvasProps) {
   const { t } = useI18n()
   const agentSteps = useAgentStore((s) => s.steps)
-  const isStreaming = useChatStore((s) => s.isLoading)
 
-  // Selected node for detail panel
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  // Canvas store — UI state, approval status, session
+  const selectedNodeId = useAgentCanvasStore((s) => s.selectedNodeId)
+  const approvalStatus = useAgentCanvasStore((s) => s.approvalStatus)
+  const canvasSessionId = useAgentCanvasStore((s) => s.sessionId)
+  const canvasIsRunning = useAgentCanvasStore((s) => s.isRunning)
+  const canvasSteps = useAgentCanvasStore((s) => s.steps)
+
+  // WebSocket — connect to receive real-time step/approval/run events
+  useCanvasWebSocket(canvasSessionId ?? undefined)
+
+  // Sync agentStore steps into canvas store so both stay in sync
+  const { setSteps } = useAgentCanvasStore()
+  useEffect(() => {
+    setSteps(
+      agentSteps.map((s) => ({
+        name: s.id,
+        status: s.status === 'active' ? 'running' : (s.status as 'pending' | 'running' | 'done' | 'error'),
+        durationMs: s.duration ? s.duration * 1000 : undefined,
+        tokens: s.tokens,
+        startedAt: undefined,
+        error: s.detail,
+      })),
+    )
+  }, [agentSteps, setSteps])
 
   // Palette open/close
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -116,11 +138,11 @@ export function AgentCanvas({
   }, [agentSteps])
 
   const handleNodeClick = useCallback((nodeId: string) => {
-    setSelectedNodeId(nodeId)
+    useAgentCanvasStore.getState().setSelectedNode(nodeId)
   }, [])
 
   const handleCloseDetail = useCallback(() => {
-    setSelectedNodeId(null)
+    useAgentCanvasStore.getState().setSelectedNode(null)
   }, [])
 
   const hasSteps = agentSteps.length > 0
@@ -133,7 +155,7 @@ export function AgentCanvas({
           <span className="text-sm font-semibold text-white">
             {t.canvas?.title || 'Agent Canvas'}
           </span>
-          {isStreaming && (
+          {canvasIsRunning && (
             <motion.span
               animate={{ opacity: [1, 0.3, 1] }}
               transition={{ repeat: Infinity, duration: 1.2 }}
@@ -144,6 +166,27 @@ export function AgentCanvas({
             </motion.span>
           )}
         </div>
+
+        {/* Approval banner */}
+        {approvalStatus === 'PENDING' && (
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-amber-400 font-medium">
+              ⏳ {t.canvas?.approvalPending || 'Awaiting approval'}
+            </span>
+            <button
+              onClick={() => sendApprovalDecision('APPROVED')}
+              className="text-[10px] font-mono px-2 py-1 rounded-md bg-emerald-600/20 text-emerald-400 border border-emerald-600/30 hover:bg-emerald-600/30 transition-colors"
+            >
+              {t.canvas?.approve || 'Approve'}
+            </button>
+            <button
+              onClick={() => sendApprovalDecision('REJECTED', 'User cancelled')}
+              className="text-[10px] font-mono px-2 py-1 rounded-md bg-red-600/20 text-red-400 border border-red-600/30 hover:bg-red-600/30 transition-colors"
+            >
+              {t.canvas?.reject || 'Reject'}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Controls */}
@@ -164,7 +207,7 @@ export function AgentCanvas({
         {/* Graph area */}
         <div ref={reactFlowWrapper} className="flex-1 relative">
           {hasSteps ? (
-            <GraphVisualization steps={agentSteps} onNodeClick={handleNodeClick} paletteOpen={paletteOpen} />
+            <GraphVisualization steps={canvasSteps} onNodeClick={handleNodeClick} />
           ) : (
             <div className="flex items-center justify-center h-full text-slate-500 text-sm">
               {t.canvas?.noData || 'No execution data yet'}
