@@ -1,6 +1,6 @@
-# Jest Configuration
-# Run tests with: npm run test
-# Watch mode: npm run test:watch
+// Jest Configuration
+// Run tests with: npm run test
+// Watch mode: npm run test:watch
 
 /**
  * Jest Configuration

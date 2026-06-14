@@ -8,14 +8,14 @@ import { chatService } from '@/services/chatService'
 import { events } from '@/lib/events'
 import { normalizeMessage } from '@/lib/messageAdapter'
 import { debugLogger } from '@/lib/debug/logger'
-import type { AgentStep } from '@/lib/types'
+import type { AgentStep, Message } from '@/lib/types'
 
 interface UseMessageHandlerProps {
   assistantMessageIdRef: React.MutableRefObject<string>
   contentRef: React.MutableRefObject<string>
   isStreamActiveRef: React.MutableRefObject<boolean>
   isSendingRef: React.MutableRefObject<boolean>
-  updateMessageById: (id: string, updater: (prev: string) => string, status?: string) => void
+  updateMessageById: (id: string, updater: (prev: string) => string, status?: Message['status']) => void
   updateLastChunkIndex: (index: number) => void
   updateStep: (stepId: string, status: 'pending' | 'active' | 'done', content?: string, duration?: number, tokens?: number) => void
   saveToHistory: () => void
@@ -69,7 +69,7 @@ export const useMessageHandler = ({
     if (normalized.type === 'step' && normalized.stepId) {
       const stepName = normalized.stepId.replace('step-', '').replace('-', ' ')
       addLog(`[STEP] ${stepName}: ${normalized.content || normalized.status}`)
-      debugLogger.log('step', normalized.content || normalized.status, { step: stepName, duration: normalized.duration })
+      debugLogger.log('step', normalized.content || normalized.status || '', { step: stepName, duration: normalized.duration })
       // If duration is present, this is a node-completion event from @_timed_node
       const status = normalized.duration ? 'done' : (normalized.status === 'done' ? 'done' : 'active')
       updateStep(normalized.stepId, status, normalized.content, normalized.duration, normalized.tokenCount)

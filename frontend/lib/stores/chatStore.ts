@@ -31,7 +31,7 @@ interface ChatStore extends ChatState {
   trimMessageHistory: () => void
   getPromptById: (id: string) => string | undefined
   // Logs
-  logs: string[]
+  logs: CircularBuffer<string>
   addLog: (message: string) => void
   clearLogs: () => void
   // Tokens

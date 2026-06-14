@@ -222,7 +222,7 @@ class StreamService {
       return {
         type: 'error',
         content: '',
-        error: data.error || data.message || 'Unknown error occurred',
+        error: data.error || 'Unknown error occurred',
       }
     }
 

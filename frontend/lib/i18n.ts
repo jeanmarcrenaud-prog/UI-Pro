@@ -119,6 +119,24 @@ export interface Translations {
     chat: string
     settings: string
     history: string
+    canvas: string
+  }
+  canvas: {
+    title: string
+    pipeline: string
+    timeline: string
+    exportPng: string
+    exportJson: string
+    fitView: string
+    resetView: string
+    filterNodes: string
+    splitView: string
+    noData: string
+    live: string
+    status: string
+    duration: string
+    tokens: string
+    detail: string
   }
 }
 
@@ -283,6 +301,24 @@ Output the typed file plus any new interfaces/types at the top.
     chat: 'Chat',
     settings: 'Settings',
     history: 'History',
+    canvas: 'Canvas',
+  },
+  canvas: {
+    title: 'Agent Canvas',
+    pipeline: 'Pipeline',
+    timeline: 'Timeline',
+    exportPng: 'Export PNG',
+    exportJson: 'Export JSON',
+    fitView: 'Fit View',
+    resetView: 'Reset View',
+    filterNodes: 'Filter nodes...',
+    splitView: 'Split View',
+    noData: 'No execution data yet',
+    live: 'live',
+    status: 'Status',
+    duration: 'Duration',
+    tokens: 'Tokens',
+    detail: 'Detail',
   },
 }
 
@@ -447,6 +483,24 @@ Sors le fichier typé plus les nouvelles interfaces/types en haut.
     chat: 'Discussion',
     settings: 'Paramètres',
     history: 'Historique',
+    canvas: 'Canvas',
+  },
+  canvas: {
+    title: 'Agent Canvas',
+    pipeline: 'Pipeline',
+    timeline: 'Chronologie',
+    exportPng: 'Exporter PNG',
+    exportJson: 'Exporter JSON',
+    fitView: 'Ajuster la vue',
+    resetView: 'Réinitialiser',
+    filterNodes: 'Filtrer les nœuds...',
+    splitView: 'Vue scindée',
+    noData: 'Aucune donnée d\'exécution',
+    live: 'en direct',
+    status: 'Statut',
+    duration: 'Durée',
+    tokens: 'Tokens',
+    detail: 'Détail',
   },
 }
 

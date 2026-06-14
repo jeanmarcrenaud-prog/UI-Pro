@@ -28,7 +28,7 @@ interface UIState {
 
   // UI Generale
   sidebarOpen: boolean
-  activeTab: 'chat' | 'history' | 'settings'
+  activeTab: 'chat' | 'history' | 'settings' | 'canvas'
   compactMode: boolean
 
   // Model
@@ -92,7 +92,7 @@ interface UIState {
 
   // UI Actions
   toggleSidebar: () => void
-  setActiveTab: (tab: 'chat' | 'history' | 'settings') => void
+  setActiveTab: (tab: 'chat' | 'history' | 'settings' | 'canvas') => void
   toggleCompactMode: () => void
 }
 

@@ -18,7 +18,7 @@ const PIPELINE_STEP_IDS = [
   'step-executing',
 ] as const;
 
-const PIPELINE_SET = new Set(PIPELINE_STEP_IDS);
+const PIPELINE_SET: Set<string> = new Set(PIPELINE_STEP_IDS);
 
 interface StepProgressProps {
   steps: AgentStep[];

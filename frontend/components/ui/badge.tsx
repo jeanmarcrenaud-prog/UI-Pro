@@ -5,7 +5,7 @@
 
 import React from 'react'
 
-export type BadgeVariant = 'default' | 'success' | 'error' | 'warning' | 'info' | 'processing' | 'secondary'
+export type BadgeVariant = 'default' | 'success' | 'error' | 'warning' | 'info' | 'processing' | 'secondary' | 'outline'
 
 export interface BadgeProps {
   children: React.ReactNode
@@ -22,6 +22,7 @@ const variants: Record<BadgeVariant, string> = {
   info: 'bg-blue-900/30 text-blue-400',
   processing: 'bg-violet-900/30 text-violet-400',
   secondary: 'bg-slate-700 text-slate-300',
+  outline: 'bg-transparent text-slate-400 border border-slate-600',
 }
 
 // Badge for status display - small pills with colors

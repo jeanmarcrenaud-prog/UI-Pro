@@ -1,5 +1,10 @@
 // agent/index.ts
-// Role: Barrel exports for agent components - exposes StepItem for external import
+// Role: Barrel exports for agent components
 
-// Agent component barrel exports
 export { StepItem } from './StepItem'
+export { AgentCanvas } from './AgentCanvas'
+export { GraphVisualization } from './GraphVisualization'
+export { CanvasControls } from './CanvasControls'
+export { ExecutionTimeline } from './ExecutionTimeline'
+export { NodeDetailPanel } from './NodeDetailPanel'
+export { NodePalette } from './NodePalette'

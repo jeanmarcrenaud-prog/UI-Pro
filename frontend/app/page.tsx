@@ -10,6 +10,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Menu, X } from 'lucide-react'
 import { ChatContainer } from '@/components/ChatContainer'
+import { AgentCanvas } from '@/components/agent/AgentCanvas'
 import { CommandPalette, useKeyboardShortcuts } from '@/components/CommandPalette'
 import { Sidebar } from '@/components/Sidebar'
 
@@ -19,7 +20,14 @@ import { useUIStore } from '@/lib/stores/uiStore'
 import { useChatStore } from '@/lib/stores/chatStore'
 import { useResponsive } from '@/lib/hooks/useResponsive'
 
-type TabType = 'chat' | 'history' | 'settings'
+// Expose stores for e2e testing
+if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+  import('@/lib/stores/agentStore').then(m => {
+    (window as any).__TEST_AGENT_STORE__ = m.useAgentStore
+  })
+}
+
+type TabType = 'chat' | 'history' | 'settings' | 'canvas'
 
 export default function Home() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
@@ -171,6 +179,8 @@ export default function Home() {
               setActiveTab('chat')
             }} 
           />
+        ) : activeTab === 'canvas' ? (
+          <AgentCanvas className="flex-1 h-full" />
         ) : activeTab === 'settings' ? (
           <SettingsView />
         ) : (
