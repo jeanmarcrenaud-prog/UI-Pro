@@ -10,6 +10,7 @@ import ReactFlow, {
   ReactFlowProvider,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
+import { Play, CheckCircle, XCircle, Clock, AlertTriangle } from 'lucide-react'
 import type { AgentStep } from '@/lib/types'
 import type { PaletteNodeDef } from './NodePalette'
 
@@ -28,13 +29,14 @@ const NODE_HEIGHT = 80
 const H_GAP = 260
 const V_GAP = 120
 
-type StepStatus = 'pending' | 'active' | 'done' | 'error'
+type StepStatus = 'pending' | 'active' | 'done' | 'error' | 'awaiting_approval'
 
 const STATUS_THEME: Record<StepStatus, { border: string; fill: string; text: string; dot: string }> = {
-  pending:   { border: '#334155', fill: '#1e293b', text: '#64748b', dot: '#475569' },
-  active:    { border: '#8b5cf6', fill: '#2e1065', text: '#c4b5fd', dot: '#8b5cf6' },
-  done:      { border: '#34d399', fill: '#064e3b', text: '#6ee7b7', dot: '#34d399' },
-  error:     { border: '#f87171', fill: '#450a0a', text: '#fca5a5', dot: '#f87171' },
+  pending:           { border: '#334155', fill: '#1e293b', text: '#64748b', dot: '#475569' },
+  active:            { border: '#8b5cf6', fill: '#2e1065', text: '#c4b5fd', dot: '#8b5cf6' },
+  done:              { border: '#34d399', fill: '#064e3b', text: '#6ee7b7', dot: '#34d399' },
+  error:             { border: '#f87171', fill: '#450a0a', text: '#fca5a5', dot: '#f87171' },
+  awaiting_approval: { border: '#f59e0b', fill: '#451a03', text: '#fbbf24', dot: '#f59e0b' },
 }
 
 // ── Custom Node ───────────────────────────────────────────────────────
@@ -43,6 +45,15 @@ const AgentNode = memo(function AgentNode({ data }: NodeProps) {
   const { label, icon, status, duration, tokens } = data
   const theme = STATUS_THEME[status as StepStatus] || STATUS_THEME.pending
   const isActive = status === 'active'
+  const isAwaiting = status === 'awaiting_approval'
+
+  const StatusIcon = {
+    pending:           Clock,
+    active:            Play,
+    done:              CheckCircle,
+    error:             XCircle,
+    awaiting_approval: AlertTriangle,
+  }[status as StepStatus] || Clock
 
   return (
     <div
@@ -50,7 +61,7 @@ const AgentNode = memo(function AgentNode({ data }: NodeProps) {
       style={{
         backgroundColor: theme.fill,
         borderColor: theme.border,
-        boxShadow: isActive ? `0 0 20px ${theme.border}44` : undefined,
+        boxShadow: isActive || isAwaiting ? `0 0 20px ${theme.border}44` : undefined,
       }}
     >
       {/* Handles */}
@@ -65,12 +76,20 @@ const AgentNode = memo(function AgentNode({ data }: NodeProps) {
             {label}
           </div>
           <div className="flex items-center gap-1.5 mt-0.5">
-            <span
-              className={`w-2 h-2 rounded-full ${isActive ? 'animate-pulse' : ''}`}
-              style={{ backgroundColor: theme.dot }}
+            <StatusIcon
+              className={`w-3 h-3 ${isActive ? 'animate-pulse' : ''}`}
+              style={{ color: theme.dot }}
             />
             <span className="text-[10px] font-mono" style={{ color: theme.text, opacity: 0.7 }}>
-              {isActive ? 'Running...' : status === 'done' ? '✓ Done' : status === 'error' ? '✗ Failed' : 'Pending'}
+              {isActive
+                ? 'Running...'
+                : isAwaiting
+                  ? '⏳ Awaiting approval'
+                  : status === 'done'
+                    ? '✓ Done'
+                    : status === 'error'
+                      ? '✗ Failed'
+                      : 'Pending'}
             </span>
           </div>
         </div>
@@ -167,7 +186,7 @@ function GraphVisualizationInner({ steps, onNodeClick, paletteOpen, onNodesUpdat
     for (let i = 0; i < PIPELINE_DEFS.length - 1; i++) {
       const sourceStatus = statusMap.get(PIPELINE_DEFS[i].id)
       const targetStatus = statusMap.get(PIPELINE_DEFS[i + 1].id)
-      const isActive = targetStatus === 'active'
+      const isActive = targetStatus === 'active' || targetStatus === 'awaiting_approval'
       const isDone = sourceStatus === 'done'
 
       edges.push({
