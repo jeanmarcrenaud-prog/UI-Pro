@@ -29,7 +29,7 @@ export function DebugPanel() {
   const chatLoading = useChatStore((s) => s.isLoading)
   const { steps: agentSteps, isActive, currentStep, currentStepId } = useAgentStore()
 
-  const [isOpen, setIsOpen] = useState(true)
+  const [isOpen, setIsOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<'steps' | 'response' | 'stream' | 'errors' | 'state' | 'raw'>('response')
   const [filter, setFilter] = useState('')
   const [follow, setFollow] = useState(true)
