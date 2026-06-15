@@ -242,79 +242,129 @@ LANGSMITH_PROJECT=ui-pro-production
 | `python setup.py`     | Auto-setup environment        |
 | `python setup.py --yes` | Non-interactive setup      |
 
-## 📁 Project Structure (2026-05)
+## 📁 Project Structure
 
 > **NOTE**: `backend/domain/settings.py` is the single source of truth for configuration using pydantic-settings.
 
 ```
-ui-pro/                    # Project root
+ui-pro/
 ├── run.py                    # Main launcher
 ├── setup.py                  # Automated setup
-├── settings.py               # Config wrapper (backward compat)
+├── pyproject.toml            # Python project config
 ├── requirements.txt
+├── Dockerfile                # Container build
+├── Makefile                  # Dev commands
 ├── .env.example
-├── config.yaml.example      # YAML configuration template
-├── data/                     # Checkpoint DB (gitignored)
-│   └── checkpoints.db
+├── config.yaml.example
 │
-├── backend/                  # SOURCE OF TRUTH
-│   ├── domain/
-│   │   ├── settings.py      # Unified config (pydantic-settings)
-│   │   │   └── cache.py     # Generic TTL cache utility
-│   │   └── core/            # Business logic
-│   │       ├── langgraph_orchestrator.py  # Agent pipeline
-│   │       ├── orchestrator_async.py      # Async orchestrator
-│   │       ├── code_review.py            # Static analysis
-│   │       ├── events.py                 # Event bus
-│   │       └── langgraph/               # LangGraph nodes
-│   ├── infrastructure/       # Services
-│   │   ├── llm_router.py    # LLM routing + streaming
-│   │   ├── legacy_llm_router.py  # Legacy Ollama client
-│   │   ├── model_discovery.py  # Model discovery + presets
-│   │   ├── streaming_unified.py  # Unified SSE/WS protocol
-│   │   ├── streaming.py     # ⚠️ Deprecated shim
-│   │   ├── code_execution.py # Sandbox execution
-│   │   ├── memory.py        # FAISS vector store
-│   │   ├── cache.py         # TTL cache utility
-│   │   ├── checkpointer.py  # LangGraph checkpoint mgmt
-│   │   └── adapters/        # External integrations
-│   │       └── faiss.py     # FAISS memory adapter
-│   └── transport/           # API layer
-│       ├── views_api.py     # FastAPI app
-│       └── routers/        # API endpoints
-│           ├── ws.py        # WebSocket
-│           ├── stream.py    # SSE
-│           ├── logs.py      # Log management
-│           └── health.py    # Health + settings
+├── backend/                  # Python backend (FastAPI)
+│   ├── domain/               # Business logic
+│   │   ├── settings.py       # Unified config (pydantic-settings)
+│   │   ├── errors.py         # Domain error types
+│   │   └── core/             # LangGraph orchestrator
+│   │       ├── orchestrator_async.py
+│   │       ├── code_review.py
+│   │       ├── events.py     # Event bus
+│   │       └── langgraph/    # Pipeline nodes
+│   ├── infrastructure/       # Services & backends
+│   │   ├── llm/              # LLM clients (Ollama, LM Studio, etc.)
+│   │   ├── streaming/        # SSE/WebSocket streaming
+│   │   ├── executors/        # Code execution (Docker sandbox)
+│   │   ├── monitoring/       # Tracing & metrics
+│   │   ├── adapters/         # FAISS memory adapter
+│   │   ├── tools/            # Tool calling
+│   │   ├── llm_router.py
+│   │   ├── model_discovery.py
+│   │   ├── memory.py
+│   │   ├── checkpointer.py
+│   │   └── rate_limit.py
+│   ├── transport/            # API layer
+│   │   ├── main.py           # FastAPI app entry
+│   │   ├── views_api.py      # REST routes
+│   │   └── routers/          # WebSocket, SSE, health, logs
+│   └── application/          # App-level wiring
+│       └── websocket.py
 │
-├── models/                   # Data models (re-exports backend/)
-│   └── settings.py
+├── frontend/                 # Next.js 16 (React 18)
+│   ├── app/                  # App router pages
+│   │   ├── page.tsx          # Main dashboard
+│   │   ├── layout.tsx        # Root layout (debug panel, theme)
+│   │   └── globals.css
+│   ├── components/           # UI components
+│   │   ├── agent/            # AgentCanvas (graph view)
+│   │   ├── chat/             # Chat messages, streaming, steps
+│   │   ├── settings/         # Settings dashboard
+│   │   ├── sidebar/          # Navigation sidebar
+│   │   ├── markdown/         # Markdown rendering
+│   │   ├── ui/               # Primitive UI kit
+│   │   ├── ChatContainer.tsx
+│   │   ├── DebugPanel.tsx
+│   │   ├── Sidebar.tsx
+│   │   ├── HistoryView.tsx
+│   │   ├── SettingsView.tsx
+│   │   ├── ThemeProvider.tsx
+│   │   └── CommandPalette.tsx
+│   ├── features/             # Feature modules
+│   │   └── chat/             # Chat feature
+│   ├── hooks/                # Custom React hooks
+│   │   ├── useChat.ts        # Chat logic + streaming
+│   │   ├── useWebSocket.ts
+│   │   ├── useStream.ts
+│   │   └── useMessageHandler.ts
+│   ├── services/             # API clients
+│   │   ├── chatService.ts
+│   │   ├── streamService.ts
+│   │   ├── WebSocketManager.ts
+│   │   ├── MessageHandler.ts
+│   │   ├── modelDiscovery.ts
+│   │   └── providers/        # LLM provider adapters
+│   ├── infrastructure/       # Framework config
+│   │   ├── config/           # Env-specific config
+│   │   ├── events/           # Event bus
+│   │   ├── persistence/      # Local storage
+│   │   └── services/         # Service registry
+│   ├── domain/               # Frontend domain
+│   │   ├── entities/         # Domain entities
+│   │   ├── events/           # Domain events
+│   │   └── config/           # App configuration
+│   ├── lib/                  # Shared utilities
+│   │   ├── stores/           # Zustand stores
+│   │   ├── hooks/            # Shared hooks
+│   │   ├── debug/            # Debug logger
+│   │   ├── i18n.ts           # EN + FR translations
+│   │   ├── events.ts         # Pub/sub event bus
+│   │   └── types.ts
+│   ├── styles/
+│   │   └── tokens.ts         # Design tokens
+│   └── public/
+│       └── logo.png
 │
-├── llm/                      # ⚠️ Legacy shim (moved to backend/)
-│   └── router.py
+├── scripts/                  # Dev tooling
+│   └── launcher/             # CLI launcher (cli.py, services.py, etc.)
 │
-├── adapters/                 # ⚠️ Legacy shim (moved to backend/)
-│   └── memory/faiss.py
+├── tests/                    # Python tests
+│   ├── conftest.py
+│   ├── test_pipeline_nodes.py
+│   ├── test_llm.py
+│   ├── test_settings.py
+│   └── ...
 │
-└── frontend/                # Next.js frontend
-    ├── components/
-    │   ├── settings/        # Modular settings components
-    │   │   ├── SettingsView.tsx
-    │   │   ├── LanguageSelector.tsx
-    │   │   ├── TimeoutSettings.tsx
-    │   │   ├── LogLevelSettings.tsx
-    │   │   ├── ModelSelector.tsx
-    │   │   ├── BackendStatusGrid.tsx
-    │   │   └── hooks/       # Custom hooks
-    │   ├── chat/
-    │   │   ├── AgentSteps.tsx   # Thinking Process display
-    │   │   └── StepProgress.tsx
-    │   └── SystemStats.tsx   # Live metrics
-    ├── services/
-    │   └── modelDiscovery.ts
-    └── lib/
-        ├── i18n.ts          # EN + FR translations
-        └── stores/          # Zustand state
+├── docs/                     # Documentation
+│   ├── api/API.md
+│   ├── architecture/
+│   │   ├── ARCHITECTURE.md
+│   │   ├── AGENTS.md
+│   │   └── REVIEW.md
+│   └── monitoring/
+│
+├── data/                     # Runtime data (gitignored)
+│   ├── checkpoints.db        # LangGraph sessions
+│   ├── memory.index          # FAISS index
+│   └── memory_docs.pkl
+│
+└── logs/                     # Application logs
+    ├── app.log
+    └── api.log
 ```
 
 ## ⚙️ Configuration
