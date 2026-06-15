@@ -6,6 +6,7 @@ prompt construction, code extraction, and stdlib-shim logic.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
@@ -179,9 +180,19 @@ async def coding_node(state: AgentState) -> dict[str, Any]:
 
     prompt = "\n\n".join(prompt_parts)
     retry_temperature = 0.25 if is_fix_attempt else 0.3
-    full_response = await _llm_run_node(
-        llm, prompt, "coding", model_type="fast", temperature=retry_temperature,
-    )
+    try:
+        full_response = await _llm_run_node(
+            llm, prompt, "coding", model_type="fast", temperature=retry_temperature,
+        )
+    except (asyncio.TimeoutError, TimeoutError) as exc:
+        logger.warning("[coding_node] LLM call timed out after %ss — empty fallback", settings.llm_timeout)
+        _emit_step("coding", f"⏱️ LLM timeout ({settings.llm_timeout}s)")
+        state["code"] = {"files": {}}
+        state["error"] = f"LLM code generation timed out after {settings.llm_timeout}s"
+        return _step_done(state, "coding", status="error") | {
+            "code": state.get("code"),
+            "error": state.get("error"),
+        }
 
     _emit_step("coding", "Extraction et validation du code...")
     from ..code_extractor import extract_code_dict
