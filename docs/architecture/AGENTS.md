@@ -70,9 +70,9 @@ ui-pro/                    # Racine projet
 │   ├── infrastructure/    # Services: LLM, streaming, cache, checkpointer, adapters
 │   ├── application/       # Application layer: launcher, WebSocket
 │   └── transport/         # API: FastAPI, Gradio, routers
-├── llm/                   # ⚠️ Legacy shim (moved to backend/infrastructure/)
-├── adapters/              # ⚠️ Legacy shim (moved to backend/infrastructure/adapters/)
-├── models/                # Types + Config (re-exports backend/)
+├── data/                  # Checkpoints DB + FAISS index
+├── logs/                  # Application logs
+├── docs/                  # Documentation
 ├── tests/                 # Tests pytest
 ├── scripts/               # Scripts utilitaires
 ├── frontend/             # Frontend Next.js
