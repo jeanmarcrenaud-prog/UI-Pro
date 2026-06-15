@@ -1,45 +1,61 @@
-# UI-Pro — L'agent qui montre son travail
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/6d3f5ad0-1dee-4d03-80d3-da7281f66ebc" alt="UI-Pro Banner" width="600"/>
+</p>
 
-![UI-Pro Banner](https://github.com/user-attachments/assets/6d3f5ad0-1dee-4d03-80d3-da7281f66ebc)
+<h1 align="center">UI-Pro</h1>
+<p align="center"><strong>Visual AI Agent Orchestration for Autonomous Coding</strong></p>
+<p align="center"><em>Build, review, and refine code automatically — with full visibility into every step.</em></p>
 
-> **Un agent IA autonome open-source, auto-hébergé, avec une UI ChatGPT-quality et un pipeline visible de bout en bout.**
-
-![Status](https://img.shields.io/badge/status-beta-orange)
-![License](https://img.shields.io/badge/license-MIT-blue)
-![Python](https://img.shields.io/badge/python-3.10+-green)
-![Next.js](https://img.shields.io/badge/Next.js-16-blue)
-
----
-
-## 💡 Pourquoi UI-Pro ?
-
-| Critère | UI-Pro | GitHub Copilot | Flowise / LangFlow | Claude Code |
-|---------|--------|----------------|-------------------|-------------|
-| **Hébergement** | 100% local, aucun cloud | Cloud Microsoft | Local ou cloud | Cloud Anthropic |
-| **Pipeline visible** | ✅ Graph interactif temps réel | ❌ Boîte noire | ✅ oui | ❌ Boîte noire |
-| **LLM au choix** | Ollama, LM Studio, llama.cpp, Lemonade | Modèles OpenAI uniquement | Multi-backend | Claude uniquement |
-| **Sandbox execution** | ✅ Isolation Docker | ❌ | ❌ | ❌ |
-| **Checkpointing** | ✅ Reprise après redémarrage | ❌ | ❌ | ❌ |
-| **Prix** | Gratuit + votre GPU | $10–39/mois | Gratuit | $20/mois + API |
-| **UI** | ChatGPT-quality + canvas agent | Intégration IDE | Basique | Terminal |
-| **Multi-session** | ✅ Persistant SQLite | ❌ | ✅ | ❌ |
-
-**En une phrase :** Laissez un agent autonome analyser, planifier, coder, revoir et exécuter — localement, en toute transparence, avec une visibilité totale.
+<p align="center">
+  <img src="https://img.shields.io/badge/status-beta-orange" alt="Status"/>
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="License"/>
+  <img src="https://img.shields.io/badge/python-3.10+-green" alt="Python"/>
+  <img src="https://img.shields.io/badge/Next.js-16-blue" alt="Next.js"/>
+</p>
 
 ---
 
-## 🖼️ Aperçu
+## 🎯 The Problem
 
-> *🎥 GIFs et captures d'écran à venir (PR bienvenues !)*
+AI coding tools today are **black boxes** — you type, they generate, you hope it works.  
+UI-Pro changes that: **every decision is visible, every step can be reviewed, and failures trigger automatic fixes.**
 
-![Chat UI](https://github.com/user-attachments/assets/6d3f5ad0-1dee-4d03-80d3-da7281f66ebc)
+---
 
-| Interface | Description |
-|-----------|-------------|
-| 💬 **Chat** | Interface ChatGPT-like avec streaming token par token |
-| 🕸️ **Graph View** | Canvas interactif du pipeline agent (Analyse → Plan → Code → Review → Execute) |
-| 🐛 **Debug Panel** | Logs, métriques, états et historique des erreurs en temps réel (Ctrl+Shift+D) |
-| ⚙️ **Settings** | Dashboard de configuration live (timeouts, modèles, logs, backends) |
+## 🖼️ See It In Action
+
+> *Replace these placeholders with your own screenshots/GIFs*
+
+| Chat Interface | Agent Graph View | Debug Panel |
+|---------------|-----------------|-------------|
+| `![chat](docs/screenshots/chat.png)` | `![graph](docs/screenshots/graph.png)` | `![debug](docs/screenshots/debug.png)` |
+| ChatGPT-quality UI with real-time streaming | Interactive pipeline canvas (Analyze → Plan → Code → Review → Execute) | Live logs, metrics, and error history |
+
+### 🎥 Demo Workflow
+
+```
+User prompt         Code Agent         Review Agent        Fix Agent         Execution
+───────►  ┌─────────────────────────────────────────────────────────────────────►  ✅
+"Create a   │  Generates code    │  Detects bugs     │  Improves code     │  Runs & validates
+weather    │  with Python       │  & security issues │  until all checks  │
+API"      └─────────────────────────────────────────────────────────────────────┘
+                                    ↺ Auto-fix loop (up to 3 attempts)
+```
+
+---
+
+## 🚀 Why UI-Pro?
+
+| | UI-Pro | GitHub Copilot | Flowise / LangFlow | Claude Code |
+|---|---|---|---|---|
+| **🧠 Visual workflows** | ✅ Interactive graph | ❌ Black box | ✅ DAG builder | ❌ CLI-only |
+| **🔁 Self-improving loops** | ✅ Auto-fix on failure | ❌ | ❌ | ❌ |
+| **🏠 Self-hosted** | ✅ 100% local | ❌ Cloud | ✅ | ❌ Cloud |
+| **🔌 Any LLM** | Ollama, LM Studio, llama.cpp, Lemonade | GPT-4 only | Multi-backend | Claude only |
+| **🛡️ Sandbox execution** | ✅ Docker-isolated | ❌ | ❌ | ❌ |
+| **💲 Cost** | Free + your GPU | $10–39/mo | Free | $20/mo + API |
+
+**In one sentence:** Let an autonomous agent analyze, plan, code, review, and execute — locally, transparently, with full visibility.
 
 ---
 
@@ -56,23 +72,83 @@
 - **Distributed tracing** via LangSmith
 - **Configurable timeouts** via Settings UI
 
+## 🧠 Agent Pipeline
+
+```
+User Prompt
+     │
+     ▼
+┌──────────────┐
+│  1. Analyze  │  ← Classifies task, picks model strategy
+└──────┬───────┘
+       │
+       ▼
+┌──────────────┐
+│  2. Plan     │  ← Creates structured implementation plan
+└──────┬───────┘
+       │
+       ▼
+┌──────────────┐
+│  3. Code     │  ← Generates code with Pydantic validation
+└──────┬───────┘
+       │
+       ▼
+┌──────────────┐
+│  4. Review   │  ← Static analysis + security check
+└──────┬───────┘
+       │
+       ▼
+┌──────────────┐     ┌──────────────────┐
+│  5. Execute  │ ──► │  6. Should fix?  │
+└──────────────┘     └────────┬─────────┘
+                         yes │     │ no
+                     ┌───────┘     ▼
+                     │           ✅ DONE
+                     ▼
+               ┌──────────────┐
+               │  7. Fix Code │  ← max 3 attempts
+               └──────┬───────┘
+                      │
+                      └──► back to step 3
+```
+
+| Step | Node | What it does |
+|------|------|-------------|
+| **1** | `analyzing_node` | Classifies task type (code/reasoning/general), selects LLM strategy |
+| **2** | `planning_node` | Builds a structured plan (files, steps, approach) |
+| **3** | `coding_node` | Generates Python code with Pydantic extraction |
+| **4** | `reviewing_node` | Auto code review + static security analysis |
+| **5** | `executing_node` | Runs code in Docker sandbox (configurable timeout) |
+| **6** | `should_fix_code` | Conditional edge: if review fails & attempts < 3 → loop to step 3 |
+| **7** | Fix + Re-execute | Automatic correction iteration (up to 3 attempts) |
+
+> **Checkpointing**: SQLite-backed (`AsyncSqliteSaver`) — resume any session after restart.
+
+---
+
 ## 🏗️ Architecture
 
 ```
-┌─────────────────────┐
-│   Next.js UI (3000) │ ← Beautiful frontend with streaming
-└──────────┬──────────┘
-            │
-            ▼ WebSocket / SSE
-┌──────────▼──────────┐
-│   FastAPI (8000)    │ ← LangGraph Orchestrator + API
-└──────────┬──────────┘
-            │
-            ▼
-┌───────▼───────┐
-│ LLM Backends  │ ← Ollama / LM Studio / llama.cpp / Lemonade
-└───────────────┘
+┌─────────────────────────────────────────┐
+│           Next.js UI (:3000)            │
+│  Chat  •  Graph View  •  Debug Panel    │
+└────────────────┬────────────────────────┘
+                 │  WebSocket / SSE
+                 ▼
+┌─────────────────────────────────────────┐
+│        FastAPI Backend (:8000)          │
+│  LangGraph Orchestrator  •  API Layer   │
+│  Code Sandbox (Docker)  •  FAISS Memory │
+└────────────────┬────────────────────────┘
+                 │
+    ┌────────────┼────────────┬────────────┐
+    ▼            ▼            ▼            ▼
+┌───────┐  ┌──────────┐  ┌────────┐  ┌──────────┐
+│Ollama │  │LM Studio │  │llama.cpp│  │ Lemonade  │
+└───────┘  └──────────┘  └────────┘  └──────────┘
 ```
+
+---
 
 ## ✨ Key Features
 
@@ -86,40 +162,6 @@
 - **Distributed Tracing** — LangSmith integration for debugging and monitoring
 - **i18n Support** — English + French
 - **Settings Dashboard** — live backend metrics, model selection, timeout config
-
-### Agent Pipeline (7-step)
-
-The orchestrator runs a LangGraph pipeline with 5 main nodes + an auto-fix loop:
-
-```
-┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
-│  1. Analyze  │ → │  2. Plan  │ → │  3. Code  │ → │ 4. Review │ → │ 5. Execute │
-└──────────┘    └──────────┘    └──────────┘    └──────────┘    └─────┬────┘
-                                                                       │
-                                                          ┌────────────▼────────────┐
-                                                          │  6. should_fix_code ?    │
-                                                          │  (conditional edge)      │
-                                                          └────────────┬────────────┘
-                                                               pass ▼         ▼ fail
-                                                               ┌───┐    ┌──────────┐
-                                                               │END│    │7. Re-code │
-                                                               └───┘    └─────┬────┘
-                                                                         (loop to 3)
-```
-
-| Step | Node | Rôle |
-|------|------|------|
-| **1** | `analyzing_node` | Classifie la tâche (code/reasoning/general) et sélectionne la stratégie LLM |
-| **2** | `planning_node` | Crée un plan d'implémentation structuré (fichiers, étapes, approche) |
-| **3** | `coding_node` | Génère le code Python via LLM avec extraction et validation Pydantic |
-| **4** | `reviewing_node` | Revue de code automatique + vérification de sécurité statique |
-| **5** | `executing_node` | Exécute le code dans le sandbox Docker isolé (timeout configurable) |
-| **6** | `should_fix_code` | **Edge conditionnel** : si la review échoue et `attempt < max_attempts` → retour étape 3 |
-| **7** | Re-code + Re-execute | Itération de correction automatique (jusqu'à `max_attempts=3` tentatives) |
-
-- **Fichier source** : `backend/domain/core/orchestrator_async.py` (orchestrateur) + `backend/domain/core/langgraph/nodes/` (nœuds)
-- **Sources d'état** : `backend/domain/core/langgraph/state.py` (modèles `AgentState`, `PlanData`, `CodeData`, etc.)
-- **Checkpointing** : SQLite via `AsyncSqliteSaver` — reprise de session après redémarrage
 
 ## 🛠️ Tech Stack
 
