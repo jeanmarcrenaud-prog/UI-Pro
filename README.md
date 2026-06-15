@@ -1,13 +1,47 @@
-# UI-Pro - AI Agent Orchestration System
+# UI-Pro — L'agent qui montre son travail
 
 ![UI-Pro Banner](https://github.com/user-attachments/assets/6d3f5ad0-1dee-4d03-80d3-da7281f66ebc)
 
-> **Modern self-hosted AI Agent system** with a beautiful ChatGPT-like interface.
+> **Un agent IA autonome open-source, auto-hébergé, avec une UI ChatGPT-quality et un pipeline visible de bout en bout.**
 
 ![Status](https://img.shields.io/badge/status-beta-orange)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-green)
 ![Next.js](https://img.shields.io/badge/Next.js-16-blue)
+
+---
+
+## 💡 Pourquoi UI-Pro ?
+
+| Critère | UI-Pro | GitHub Copilot | Flowise / LangFlow | Claude Code |
+|---------|--------|----------------|-------------------|-------------|
+| **Hébergement** | 100% local, aucun cloud | Cloud Microsoft | Local ou cloud | Cloud Anthropic |
+| **Pipeline visible** | ✅ Graph interactif temps réel | ❌ Boîte noire | ✅ oui | ❌ Boîte noire |
+| **LLM au choix** | Ollama, LM Studio, llama.cpp, Lemonade | Modèles OpenAI uniquement | Multi-backend | Claude uniquement |
+| **Sandbox execution** | ✅ Isolation Docker | ❌ | ❌ | ❌ |
+| **Checkpointing** | ✅ Reprise après redémarrage | ❌ | ❌ | ❌ |
+| **Prix** | Gratuit + votre GPU | $10–39/mois | Gratuit | $20/mois + API |
+| **UI** | ChatGPT-quality + canvas agent | Intégration IDE | Basique | Terminal |
+| **Multi-session** | ✅ Persistant SQLite | ❌ | ✅ | ❌ |
+
+**En une phrase :** Laissez un agent autonome analyser, planifier, coder, revoir et exécuter — localement, en toute transparence, avec une visibilité totale.
+
+---
+
+## 🖼️ Aperçu
+
+> *🎥 GIFs et captures d'écran à venir (PR bienvenues !)*
+
+![Chat UI](https://github.com/user-attachments/assets/6d3f5ad0-1dee-4d03-80d3-da7281f66ebc)
+
+| Interface | Description |
+|-----------|-------------|
+| 💬 **Chat** | Interface ChatGPT-like avec streaming token par token |
+| 🕸️ **Graph View** | Canvas interactif du pipeline agent (Analyse → Plan → Code → Review → Execute) |
+| 🐛 **Debug Panel** | Logs, métriques, états et historique des erreurs en temps réel (Ctrl+Shift+D) |
+| ⚙️ **Settings** | Dashboard de configuration live (timeouts, modèles, logs, backends) |
+
+---
 
 ## 🚀 Overview
 
