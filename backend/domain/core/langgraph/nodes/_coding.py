@@ -200,6 +200,23 @@ async def coding_node(state: AgentState) -> dict[str, Any]:
 
     state["code"] = extract_code_dict(full_response)
 
+    # Language enforcement: rename files with wrong extension to match
+    # the detected language. Small models often ignore the format
+    # instruction and output TypeScript/JavaScript when Python was
+    # requested, which breaks the executor chain.
+    code_files = state["code"].get("files", {})
+    wrong_ext = (".ts", ".js", ".jsx", ".tsx", ".java", ".cpp", ".c", ".h", ".rs", ".go")
+    renamed: dict[str, str] = {}
+    for fname in list(code_files.keys()):
+        if fname.endswith(wrong_ext) and not fname.endswith(ext):
+            new_fname = fname.rsplit(".", 1)[0] + "." + ext
+            code_files[new_fname] = code_files.pop(fname)
+            renamed[fname] = new_fname
+            logger.info("[coding_node] Renamed %s → %s (language enforcement)", fname, new_fname)
+    if renamed:
+        state["code"]["files"] = code_files
+        state["code"]["_renamed"] = renamed
+
     # Runtime safety net: Python-specific stdlib shim injection.
     # Detects `requests`/`httpx` imports and prepends urllib-backed shims.
     if language == "python":
