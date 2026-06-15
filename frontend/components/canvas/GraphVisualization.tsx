@@ -9,9 +9,11 @@ import ReactFlow, {
   MiniMap,
   NodeProps,
   MarkerType,
+  Handle,
+  Position,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { Play, CheckCircle, XCircle, Clock, AlertCircle } from 'lucide-react';
+import { Play, CheckCircle, XCircle, Clock } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 import { CanvasStep, useAgentCanvasStore } from '@/lib/stores/agentCanvasStore';
@@ -21,6 +23,59 @@ const nodeTypes = { agentStep: AgentStepNode };
 interface GraphVisualizationProps {
   steps: CanvasStep[];
   onNodeClick?: (nodeId: string) => void;
+}
+
+function AgentStepNode({ data, selected }: NodeProps) {
+  const step = data as CanvasStep;
+  const isActive = step.status === 'running';
+
+  return (
+    <motion.div
+      initial={{ scale: 0.88, opacity: 0, y: 20 }}
+      animate={{ scale: 1, opacity: 1, y: 0 }}
+      whileHover={{ scale: 1.04, y: -8 }}
+      transition={{ type: "spring", stiffness: 400, damping: 25 }}
+      className={`relative px-6 py-5 rounded-3xl border-2 shadow-2xl min-w-[275px] backdrop-blur-md overflow-hidden
+        ${isActive ? 'border-blue-500 shadow-blue-500/50' : ''}
+        ${step.status === 'done' ? 'border-emerald-500' : ''}
+        ${step.status === 'error' ? 'border-red-500' : ''}
+        ${step.status === 'awaiting_approval' ? 'border-amber-500 shadow-amber-500/40' : ''}
+        ${selected ? 'ring-2 ring-offset-2 ring-offset-[#0a0e14] ring-white/70' : ''}
+      `}
+    >
+      <Handle type="target" position={Position.Top} className="!bg-transparent !border-0" />
+
+      {isActive && (
+        <motion.div 
+          className="absolute -inset-3 bg-blue-500/30 rounded-3xl -z-10 blur-3xl"
+          animate={{ opacity: [0.3, 0.6, 0.3] }}
+          transition={{ duration: 2.5, repeat: Infinity }}
+        />
+      )}
+
+      <div className="flex items-start gap-4">
+        <motion.div
+          animate={isActive ? { rotate: 360 } : {}}
+          transition={{ duration: 1.4, repeat: Infinity, ease: "linear" }}
+        >
+          {getStatusIcon(step.status)}
+        </motion.div>
+
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold text-lg text-white tracking-tight">{step.name}</div>
+          {step.modelUsed && (
+            <div className="text-xs text-gray-400 font-mono mt-1">{step.modelUsed}</div>
+          )}
+          <div className="mt-3 flex gap-4 text-xs text-gray-400 font-mono">
+            {step.durationMs && <span>⏱ {Math.round(step.durationMs)}ms</span>}
+            {step.tokens && <span>🔤 {step.tokens}</span>}
+          </div>
+        </div>
+      </div>
+
+      <Handle type="source" position={Position.Bottom} className="!bg-transparent !border-0" />
+    </motion.div>
+  );
 }
 
 function getStatusIcon(status: string) {
@@ -33,91 +88,41 @@ function getStatusIcon(status: string) {
   }
 }
 
-function AgentStepNode({ data, selected }: NodeProps) {
-  const step = data as CanvasStep;
-  const isActive = step.status === 'running';
-
-  return (
-    <motion.div
-      whileHover={{ scale: 1.03, y: -4 }}
-      transition={{ type: "spring", stiffness: 400, damping: 25 }}
-      className={`relative px-6 py-5 rounded-3xl border-2 shadow-2xl min-w-[270px] backdrop-blur-md transition-all
-        ${step.status === 'running' ? 'border-blue-500 shadow-blue-500/40' : ''}
-        ${step.status === 'done' ? 'border-emerald-500 shadow-emerald-500/20' : ''}
-        ${step.status === 'error' ? 'border-red-500 shadow-red-500/30' : ''}
-        ${step.status === 'awaiting_approval' ? 'border-amber-500 shadow-amber-500/30' : ''}
-        ${selected ? 'ring-2 ring-white/60' : ''}
-      `}
-    >
-      {isActive && (
-        <div className="absolute -inset-1 bg-blue-500/20 rounded-3xl -z-10 blur-2xl" />
-      )}
-
-      <div className="flex items-start gap-4">
-        <motion.div
-          animate={isActive ? { rotate: 360 } : {}}
-          transition={{ duration: 1.4, repeat: Infinity, ease: "linear" }}
-          className="mt-0.5"
-        >
-          {getStatusIcon(step.status)}
-        </motion.div>
-
-        <div className="flex-1 min-w-0">
-          <div className="font-semibold text-lg text-white tracking-tight">{step.name}</div>
-          
-          {step.modelUsed && (
-            <div className="text-xs text-gray-400 font-mono mt-1 truncate">{step.modelUsed}</div>
-          )}
-
-          <div className="flex gap-4 mt-4 text-xs text-gray-400 font-mono">
-            {step.durationMs && <span>⏱ {Math.round(step.durationMs)}ms</span>}
-            {step.tokens && <span>🔤 {step.tokens}</span>}
-          </div>
-        </div>
-      </div>
-
-      {/* Status badge */}
-      <div className="absolute top-4 right-4 px-3 py-1 text-[10px] font-mono rounded-full border border-gray-700 bg-gray-950/80">
-        {step.status.toUpperCase()}
-      </div>
-    </motion.div>
-  );
-}
-
 export default function GraphVisualization({ steps, onNodeClick }: GraphVisualizationProps) {
   const { selectedNodeId, setSelectedNode } = useAgentCanvasStore();
 
-  const nodes: Node[] = useMemo(() => {
+  const nodes = useMemo(() => {
     return steps.map((step, index) => ({
       id: step.name,
       type: 'agentStep',
-      position: { x: 100, y: index * 160 },
+      position: { x: 140, y: index * 175 },
       data: step,
       selected: selectedNodeId === step.name,
     }));
   }, [steps, selectedNodeId]);
 
-  const edges: Edge[] = useMemo(() => {
-    return steps.slice(1).map((_, index) => {
-      const source = steps[index];
-      const target = steps[index + 1];
-      const isActive = source.status === 'running' || target.status === 'running';
+  const edges = useMemo(() => {
+    return steps.slice(1).map((_, i) => {
+      const sourceStep = steps[i];
+      const targetStep = steps[i + 1];
+      const isFlowing = sourceStep.status === 'running';
 
       return {
-        id: `e${source.name}-${target.name}`,
-        source: source.name,
-        target: target.name,
+        id: `e${sourceStep.name}-${targetStep.name}`,
+        source: sourceStep.name,
+        target: targetStep.name,
         type: 'smoothstep',
-        animated: isActive,
+        animated: isFlowing,
         style: { 
-          stroke: isActive ? '#60a5fa' : '#475569', 
-          strokeWidth: 3.5 
+          stroke: isFlowing ? '#60a5fa' : '#475569', 
+          strokeWidth: 4,
+          strokeDasharray: targetStep.status === 'pending' ? '10 5' : 'none'
         },
         markerEnd: {
           type: MarkerType.ArrowClosed,
-          width: 22,
-          height: 22,
-          color: isActive ? '#60a5fa' : '#475569'
+          width: 26,
+          height: 26,
+          color: isFlowing ? '#60a5fa' : '#475569'
         },
       };
     });
@@ -129,7 +134,7 @@ export default function GraphVisualization({ steps, onNodeClick }: GraphVisualiz
   }, [setSelectedNode, onNodeClick]);
 
   return (
-    <div className="w-full h-full bg-[#0a0e14]">
+    <div className="w-full h-full bg-[#0a0e14] relative">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -138,14 +143,20 @@ export default function GraphVisualization({ steps, onNodeClick }: GraphVisualiz
         fitView
         fitViewOptions={{ padding: 0.25 }}
         nodesDraggable={false}
-        nodesConnectable={false}
+        proOptions={{ hideAttribution: true }}
       >
         <Background color="#1e2937" gap={28} />
         <Controls position="bottom-right" className="bg-gray-900 border border-gray-700" />
         <MiniMap 
           position="bottom-left" 
           className="bg-gray-900 border border-gray-700"
-          nodeColor={() => '#334155'}
+          nodeColor={(node) => {
+            const step = steps.find(s => s.name === node.id);
+            if (step?.status === 'running') return '#3b82f6';
+            if (step?.status === 'done') return '#10b981';
+            if (step?.status === 'error') return '#ef4444';
+            return '#64748b';
+          }}
         />
       </ReactFlow>
     </div>
