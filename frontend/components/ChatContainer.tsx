@@ -201,7 +201,7 @@ export function ChatContainer({
 
   const [inputValue, setInputValue] = useState('')
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
-  const [canvasView, setCanvasView] = useState(false)
+  const [canvasView, setCanvasView] = useState(true)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Priority: props > hook (useful for modal/preview modes)
