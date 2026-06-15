@@ -44,6 +44,7 @@ function AgentStepNode({ data, selected }: NodeProps) {
       `}
     >
       <Handle type="target" position={Position.Top} className="!bg-transparent !border-0" />
+      <Handle type="target" position={Position.Right} id="right" className="!bg-transparent !border-0" />
 
       {isActive && (
         <motion.div 
@@ -74,6 +75,7 @@ function AgentStepNode({ data, selected }: NodeProps) {
       </div>
 
       <Handle type="source" position={Position.Bottom} className="!bg-transparent !border-0" />
+      <Handle type="source" position={Position.Right} id="right" className="!bg-transparent !border-0" />
     </motion.div>
   );
 }
@@ -102,7 +104,7 @@ export default function GraphVisualization({ steps, onNodeClick }: GraphVisualiz
   }, [steps, selectedNodeId]);
 
   const edges = useMemo(() => {
-    return steps.slice(1).map((_, i) => {
+    const result: Edge[] = steps.slice(1).map((_, i) => {
       const sourceStep = steps[i];
       const targetStep = steps[i + 1];
       const isFlowing = sourceStep.status === 'running';
@@ -126,6 +128,33 @@ export default function GraphVisualization({ steps, onNodeClick }: GraphVisualiz
         },
       };
     });
+
+    // Fix loop edge: Fix Code → Code (right-side loop)
+    const fixStep = steps.find(s => s.name === 'Fix Code');
+    if (fixStep) {
+      result.push({
+        id: 'eFixLoop-Code',
+        source: 'Fix Code',
+        sourceHandle: 'right',
+        target: 'Code',
+        targetHandle: 'right',
+        type: 'smoothstep',
+        animated: fixStep.status === 'running',
+        style: {
+          stroke: '#f59e0b',
+          strokeWidth: 4,
+          strokeDasharray: '8 4',
+        },
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          width: 26,
+          height: 26,
+          color: '#f59e0b',
+        },
+      });
+    }
+
+    return result;
   }, [steps]);
 
   const handleNodeClick = useCallback((_: any, node: Node) => {
