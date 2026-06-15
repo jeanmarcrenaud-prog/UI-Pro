@@ -208,7 +208,6 @@ async def stream_agent(
             initial_state,
             config={"configurable": {"thread_id": session_id}},
             stream_mode="values",
-            interrupt_before=["execute"],
         ):
             # Drain detailed sub-step events from nodes.py
             # (emitted during node execution via _emit_step → event bus)
@@ -564,7 +563,6 @@ async def _resume_correct(
             modified_state,
             config={"configurable": {"thread_id": f"{session_id}_correct"}},
             stream_mode="values",
-            interrupt_before=["execute"],
         ):
             code_val = event.get("code")
             if code_val and "code" not in _state_emitted:
