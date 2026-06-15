@@ -353,11 +353,38 @@ async def reviewing_node(state: AgentState) -> dict[str, Any]:
         "Réponds UNIQUEMENT avec l'objet JSON, rien d'autre."
     )
 
-    full_response = await _llm_run_node(llm, prompt, "reviewing", model_type="reasoning")
-    logger.info(
-        "[reviewing_node] LLM response: %s",
-        full_response[:200] if full_response else "EMPTY",
-    )
+    try:
+        full_response = await _llm_run_node(
+            llm, prompt, "reviewing", model_type="reasoning",
+        )
+        logger.info(
+            "[reviewing_node] LLM response: %s",
+            full_response[:200] if full_response else "EMPTY",
+        )
+    except (asyncio.TimeoutError, TimeoutError) as exc:
+        logger.warning(
+            "[reviewing_node] LLM call failed after %ss — fallback review",
+            settings.llm_timeout,
+        )
+        _emit_step("reviewing", f"⏱️ LLM timeout — fallback review")
+        fallback: ReviewData = {
+            "passed": False,
+            "score": 0.0,
+            "issues": [
+                f"LLM review timed out after {settings.llm_timeout}s. "
+                "The code was not reviewed."
+            ],
+            "suggestions": [
+                "Try a faster model",
+                "Increase LLM_TIMEOUT in Settings",
+                "Simplify the generated code",
+            ],
+            "issue_severities": ["medium"],
+        }
+        state["review"] = fallback
+        return _step_done(state, "reviewing", status="error") | {
+            "review": state.get("review"),
+        }
 
     _REVIEW_FALLBACK: ReviewData = {
         "passed": False,
