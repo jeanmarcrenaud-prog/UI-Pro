@@ -6,6 +6,7 @@ prompt construction, code extraction, and stdlib-shim logic.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
@@ -185,15 +186,42 @@ async def coding_node(state: AgentState) -> dict[str, Any]:
 
     prompt = "\n\n".join(prompt_parts)
     retry_temperature = 0.25 if is_fix_attempt else 0.3
-    full_response = await _llm_run_node(
-        llm, prompt, "coding", model_type="fast", temperature=retry_temperature,
-    )
+    try:
+        full_response = await _llm_run_node(
+            llm, prompt, "coding", model_type="fast", temperature=retry_temperature,
+        )
+    except (asyncio.TimeoutError, TimeoutError) as exc:
+        logger.warning("[coding_node] LLM call timed out after %ss — empty fallback", settings.llm_timeout)
+        _emit_step("coding", f"⏱️ LLM timeout ({settings.llm_timeout}s)")
+        state["code"] = {"files": {}}
+        state["error"] = f"LLM code generation timed out after {settings.llm_timeout}s"
+        return _step_done(state, "coding", status="error") | {
+            "code": state.get("code"),
+            "error": state.get("error"),
+        }
 
     _emit_step("coding", "Extraction et validation du code...")
     from ..code_extractor import extract_code_dict
     from ..code_sanitizer import sanitize_files
 
     state["code"] = extract_code_dict(full_response)
+
+    # Language enforcement: rename files with wrong extension to match
+    # the detected language. Small models often ignore the format
+    # instruction and output TypeScript/JavaScript when Python was
+    # requested, which breaks the executor chain.
+    code_files = state["code"].get("files", {})
+    wrong_ext = (".ts", ".js", ".jsx", ".tsx", ".java", ".cpp", ".c", ".h", ".rs", ".go")
+    renamed: dict[str, str] = {}
+    for fname in list(code_files.keys()):
+        if fname.endswith(wrong_ext) and not fname.endswith(ext):
+            new_fname = fname.rsplit(".", 1)[0] + "." + ext
+            code_files[new_fname] = code_files.pop(fname)
+            renamed[fname] = new_fname
+            logger.info("[coding_node] Renamed %s → %s (language enforcement)", fname, new_fname)
+    if renamed:
+        state["code"]["files"] = code_files
+        state["code"]["_renamed"] = renamed
 
     # Runtime safety net: Python-specific stdlib shim injection.
     # Detects `requests`/`httpx` imports and prepends urllib-backed shims.

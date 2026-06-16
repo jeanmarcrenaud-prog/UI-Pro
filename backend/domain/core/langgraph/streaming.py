@@ -29,6 +29,11 @@ _last_message_length: dict[str, int] = {}
 # Without this, a short new message after a long plan would be silently
 # dropped because the length-tracker only emits `len(content) > last_len`.
 _last_msg_idx: dict[str, int] = {}
+# Track code content hash per session so the fix loop can re-emit
+# regenerated code to the frontend (the first get("code") returns {}).
+# Uses hash(frozenset(files.items())) so identical re-emission is
+# silently deduplicated.
+_last_code_hash: dict[str, str] = {}
 
 
 def _emit_step(phase: str, message: str, data: dict | None = None):
@@ -208,7 +213,6 @@ async def stream_agent(
             initial_state,
             config={"configurable": {"thread_id": session_id}},
             stream_mode="values",
-            interrupt_before=["execute"],
         ):
             # Drain detailed sub-step events from nodes.py
             # (emitted during node execution via _emit_step → event bus)
@@ -235,14 +239,16 @@ async def stream_agent(
                 yield f"[STEP]planning:Plan created ({steps_count} étapes)"
 
             code_val = event.get("code")
-            if code_val and "code" not in _state_emitted:
-                _state_emitted.add("code")
+            if code_val:
                 files = code_val.get("files", {})
-                yield f"[STEP]coding:Code generation completed ({len(files)} fichiers)"
-                code_lang = event.get("language") or (_lang_for_file(list(files.keys())[0]) if files else "python")
-                for filename, source in files.items():
-                    file_lang = _lang_for_file(filename, code_lang)
-                    yield f"[TOKEN]\n\n**{filename}**\n```{file_lang}\n{source}\n```\n\n"
+                code_hash = str(hash(frozenset(files.items())))
+                if code_hash != _last_code_hash.get(session_id):
+                    _last_code_hash[session_id] = code_hash
+                    yield f"[STEP]coding:Code generation completed ({len(files)} fichiers)"
+                    code_lang = event.get("language") or (_lang_for_file(list(files.keys())[0]) if files else "python")
+                    for filename, source in files.items():
+                        file_lang = _lang_for_file(filename, code_lang)
+                        yield f"[TOKEN]\n\n**{filename}**\n```{file_lang}\n{source}\n```\n\n"
 
             review_val = event.get("review")
             if review_val and "review" not in _state_emitted:
@@ -564,7 +570,6 @@ async def _resume_correct(
             modified_state,
             config={"configurable": {"thread_id": f"{session_id}_correct"}},
             stream_mode="values",
-            interrupt_before=["execute"],
         ):
             code_val = event.get("code")
             if code_val and "code" not in _state_emitted:

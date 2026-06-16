@@ -48,6 +48,8 @@ class StreamEvent:
             "content": lambda e: e.content,
             "duration": lambda e: e.data.get("duration", 0),
             "token_count": lambda e: e.data.get("tokens", 0) or e.data.get("token_count", 0),
+            "attempt": lambda e: e.data.get("attempt", 0),
+            "max_attempts": lambda e: e.data.get("max_attempts", 0),
         },
         "token": {
             "content": lambda e: e.content,

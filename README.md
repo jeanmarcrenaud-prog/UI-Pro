@@ -1,13 +1,63 @@
-# UI-Pro - AI Agent Orchestration System
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/6d3f5ad0-1dee-4d03-80d3-da7281f66ebc" alt="UI-Pro Banner" width="600"/>
+</p>
 
-![UI-Pro Banner](https://github.com/user-attachments/assets/6d3f5ad0-1dee-4d03-80d3-da7281f66ebc)
+<h1 align="center">UI-Pro</h1>
+<p align="center"><strong>Visual AI Agent Orchestration for Autonomous Coding</strong></p>
+<p align="center"><em>Build, review, and refine code automatically — with full visibility into every step.</em></p>
 
-> **Modern self-hosted AI Agent system** with a beautiful ChatGPT-like interface.
+<p align="center">
+  <img src="https://img.shields.io/badge/status-beta-orange" alt="Status"/>
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="License"/>
+  <img src="https://img.shields.io/badge/python-3.10+-green" alt="Python"/>
+  <img src="https://img.shields.io/badge/Next.js-16-blue" alt="Next.js"/>
+</p>
 
-![Status](https://img.shields.io/badge/status-beta-orange)
-![License](https://img.shields.io/badge/license-MIT-blue)
-![Python](https://img.shields.io/badge/python-3.10+-green)
-![Next.js](https://img.shields.io/badge/Next.js-16-blue)
+---
+
+## 🎯 The Problem
+
+AI coding tools today are **black boxes** — you type, they generate, you hope it works.  
+UI-Pro changes that: **every decision is visible, every step can be reviewed, and failures trigger automatic fixes.**
+
+---
+
+## 🖼️ See It In Action
+
+> *Replace these placeholders with your own screenshots/GIFs*
+
+| Chat Interface | Agent Graph View | Debug Panel |
+|---------------|-----------------|-------------|
+| `![chat](docs/screenshots/chat.png)` | `![graph](docs/screenshots/graph.png)` | `![debug](docs/screenshots/debug.png)` |
+| ChatGPT-quality UI with real-time streaming | Interactive pipeline canvas (Analyze → Plan → Code → Review → Execute) | Live logs, metrics, and error history |
+
+### 🎥 Demo Workflow
+
+```
+User prompt         Code Agent         Review Agent        Fix Agent         Execution
+───────►  ┌─────────────────────────────────────────────────────────────────────►  ✅
+"Create a   │  Generates code    │  Detects bugs     │  Improves code     │  Runs & validates
+weather    │  with Python       │  & security issues │  until all checks  │
+API"      └─────────────────────────────────────────────────────────────────────┘
+                                    ↺ Auto-fix loop (up to 3 attempts)
+```
+
+---
+
+## 🚀 Why UI-Pro?
+
+| | UI-Pro | GitHub Copilot | Flowise / LangFlow | Claude Code |
+|---|---|---|---|---|
+| **🧠 Visual workflows** | ✅ Interactive graph | ❌ Black box | ✅ DAG builder | ❌ CLI-only |
+| **🔁 Self-improving loops** | ✅ Auto-fix on failure | ❌ | ❌ | ❌ |
+| **🏠 Self-hosted** | ✅ 100% local | ❌ Cloud | ✅ | ❌ Cloud |
+| **🔌 Any LLM** | Ollama, LM Studio, llama.cpp, Lemonade | GPT-4 only | Multi-backend | Claude only |
+| **🛡️ Sandbox execution** | ✅ Docker-isolated | ❌ | ❌ | ❌ |
+| **💲 Cost** | Free + your GPU | $10–39/mo | Free | $20/mo + API |
+
+**In one sentence:** Let an autonomous agent analyze, plan, code, review, and execute — locally, transparently, with full visibility.
+
+---
 
 ## 🚀 Overview
 
@@ -22,23 +72,83 @@
 - **Distributed tracing** via LangSmith
 - **Configurable timeouts** via Settings UI
 
+## 🧠 Agent Pipeline
+
+```
+User Prompt
+     │
+     ▼
+┌──────────────┐
+│  1. Analyze  │  ← Classifies task, picks model strategy
+└──────┬───────┘
+       │
+       ▼
+┌──────────────┐
+│  2. Plan     │  ← Creates structured implementation plan
+└──────┬───────┘
+       │
+       ▼
+┌──────────────┐
+│  3. Code     │  ← Generates code with Pydantic validation
+└──────┬───────┘
+       │
+       ▼
+┌──────────────┐
+│  4. Review   │  ← Static analysis + security check
+└──────┬───────┘
+       │
+       ▼
+┌──────────────┐     ┌──────────────────┐
+│  5. Execute  │ ──► │  6. Should fix?  │
+└──────────────┘     └────────┬─────────┘
+                         yes │     │ no
+                     ┌───────┘     ▼
+                     │           ✅ DONE
+                     ▼
+               ┌──────────────┐
+               │  7. Fix Code │  ← max 3 attempts
+               └──────┬───────┘
+                      │
+                      └──► back to step 3
+```
+
+| Step | Node | What it does |
+|------|------|-------------|
+| **1** | `analyzing_node` | Classifies task type (code/reasoning/general), selects LLM strategy |
+| **2** | `planning_node` | Builds a structured plan (files, steps, approach) |
+| **3** | `coding_node` | Generates Python code with Pydantic extraction |
+| **4** | `reviewing_node` | Auto code review + static security analysis |
+| **5** | `executing_node` | Runs code in Docker sandbox (configurable timeout) |
+| **6** | `should_fix_code` | Conditional edge: if review fails & attempts < 3 → loop to step 3 |
+| **7** | Fix + Re-execute | Automatic correction iteration (up to 3 attempts) |
+
+> **Checkpointing**: SQLite-backed (`AsyncSqliteSaver`) — resume any session after restart.
+
+---
+
 ## 🏗️ Architecture
 
 ```
-┌─────────────────────┐
-│   Next.js UI (3000) │ ← Beautiful frontend with streaming
-└──────────┬──────────┘
-            │
-            ▼ WebSocket / SSE
-┌──────────▼──────────┐
-│   FastAPI (8000)    │ ← LangGraph Orchestrator + API
-└──────────┬──────────┘
-            │
-            ▼
-┌───────▼───────┐
-│ LLM Backends  │ ← Ollama / LM Studio / llama.cpp / Lemonade
-└───────────────┘
+┌─────────────────────────────────────────┐
+│           Next.js UI (:3000)            │
+│  Chat  •  Graph View  •  Debug Panel    │
+└────────────────┬────────────────────────┘
+                 │  WebSocket / SSE
+                 ▼
+┌─────────────────────────────────────────┐
+│        FastAPI Backend (:8000)          │
+│  LangGraph Orchestrator  •  API Layer   │
+│  Code Sandbox (Docker)  •  FAISS Memory │
+└────────────────┬────────────────────────┘
+                 │
+    ┌────────────┼────────────┬────────────┐
+    ▼            ▼            ▼            ▼
+┌───────┐  ┌──────────┐  ┌────────┐  ┌──────────┐
+│Ollama │  │LM Studio │  │llama.cpp│  │ Lemonade  │
+└───────┘  └──────────┘  └────────┘  └──────────┘
 ```
+
+---
 
 ## ✨ Key Features
 
@@ -52,40 +162,6 @@
 - **Distributed Tracing** — LangSmith integration for debugging and monitoring
 - **i18n Support** — English + French
 - **Settings Dashboard** — live backend metrics, model selection, timeout config
-
-### Agent Pipeline (7-step)
-
-The orchestrator runs a LangGraph pipeline with 5 main nodes + an auto-fix loop:
-
-```
-┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
-│  1. Analyze  │ → │  2. Plan  │ → │  3. Code  │ → │ 4. Review │ → │ 5. Execute │
-└──────────┘    └──────────┘    └──────────┘    └──────────┘    └─────┬────┘
-                                                                       │
-                                                          ┌────────────▼────────────┐
-                                                          │  6. should_fix_code ?    │
-                                                          │  (conditional edge)      │
-                                                          └────────────┬────────────┘
-                                                               pass ▼         ▼ fail
-                                                               ┌───┐    ┌──────────┐
-                                                               │END│    │7. Re-code │
-                                                               └───┘    └─────┬────┘
-                                                                         (loop to 3)
-```
-
-| Step | Node | Rôle |
-|------|------|------|
-| **1** | `analyzing_node` | Classifie la tâche (code/reasoning/general) et sélectionne la stratégie LLM |
-| **2** | `planning_node` | Crée un plan d'implémentation structuré (fichiers, étapes, approche) |
-| **3** | `coding_node` | Génère le code Python via LLM avec extraction et validation Pydantic |
-| **4** | `reviewing_node` | Revue de code automatique + vérification de sécurité statique |
-| **5** | `executing_node` | Exécute le code dans le sandbox Docker isolé (timeout configurable) |
-| **6** | `should_fix_code` | **Edge conditionnel** : si la review échoue et `attempt < max_attempts` → retour étape 3 |
-| **7** | Re-code + Re-execute | Itération de correction automatique (jusqu'à `max_attempts=3` tentatives) |
-
-- **Fichier source** : `backend/domain/core/orchestrator_async.py` (orchestrateur) + `backend/domain/core/langgraph/nodes/` (nœuds)
-- **Sources d'état** : `backend/domain/core/langgraph/state.py` (modèles `AgentState`, `PlanData`, `CodeData`, etc.)
-- **Checkpointing** : SQLite via `AsyncSqliteSaver` — reprise de session après redémarrage
 
 ## 🛠️ Tech Stack
 
@@ -166,79 +242,129 @@ LANGSMITH_PROJECT=ui-pro-production
 | `python setup.py`     | Auto-setup environment        |
 | `python setup.py --yes` | Non-interactive setup      |
 
-## 📁 Project Structure (2026-05)
+## 📁 Project Structure
 
 > **NOTE**: `backend/domain/settings.py` is the single source of truth for configuration using pydantic-settings.
 
 ```
-ui-pro/                    # Project root
+ui-pro/
 ├── run.py                    # Main launcher
 ├── setup.py                  # Automated setup
-├── settings.py               # Config wrapper (backward compat)
+├── pyproject.toml            # Python project config
 ├── requirements.txt
+├── Dockerfile                # Container build
+├── Makefile                  # Dev commands
 ├── .env.example
-├── config.yaml.example      # YAML configuration template
-├── data/                     # Checkpoint DB (gitignored)
-│   └── checkpoints.db
+├── config.yaml.example
 │
-├── backend/                  # SOURCE OF TRUTH
-│   ├── domain/
-│   │   ├── settings.py      # Unified config (pydantic-settings)
-│   │   │   └── cache.py     # Generic TTL cache utility
-│   │   └── core/            # Business logic
-│   │       ├── langgraph_orchestrator.py  # Agent pipeline
-│   │       ├── orchestrator_async.py      # Async orchestrator
-│   │       ├── code_review.py            # Static analysis
-│   │       ├── events.py                 # Event bus
-│   │       └── langgraph/               # LangGraph nodes
-│   ├── infrastructure/       # Services
-│   │   ├── llm_router.py    # LLM routing + streaming
-│   │   ├── legacy_llm_router.py  # Legacy Ollama client
-│   │   ├── model_discovery.py  # Model discovery + presets
-│   │   ├── streaming_unified.py  # Unified SSE/WS protocol
-│   │   ├── streaming.py     # ⚠️ Deprecated shim
-│   │   ├── code_execution.py # Sandbox execution
-│   │   ├── memory.py        # FAISS vector store
-│   │   ├── cache.py         # TTL cache utility
-│   │   ├── checkpointer.py  # LangGraph checkpoint mgmt
-│   │   └── adapters/        # External integrations
-│   │       └── faiss.py     # FAISS memory adapter
-│   └── transport/           # API layer
-│       ├── views_api.py     # FastAPI app
-│       └── routers/        # API endpoints
-│           ├── ws.py        # WebSocket
-│           ├── stream.py    # SSE
-│           ├── logs.py      # Log management
-│           └── health.py    # Health + settings
+├── backend/                  # Python backend (FastAPI)
+│   ├── domain/               # Business logic
+│   │   ├── settings.py       # Unified config (pydantic-settings)
+│   │   ├── errors.py         # Domain error types
+│   │   └── core/             # LangGraph orchestrator
+│   │       ├── orchestrator_async.py
+│   │       ├── code_review.py
+│   │       ├── events.py     # Event bus
+│   │       └── langgraph/    # Pipeline nodes
+│   ├── infrastructure/       # Services & backends
+│   │   ├── llm/              # LLM clients (Ollama, LM Studio, etc.)
+│   │   ├── streaming/        # SSE/WebSocket streaming
+│   │   ├── executors/        # Code execution (Docker sandbox)
+│   │   ├── monitoring/       # Tracing & metrics
+│   │   ├── adapters/         # FAISS memory adapter
+│   │   ├── tools/            # Tool calling
+│   │   ├── llm_router.py
+│   │   ├── model_discovery.py
+│   │   ├── memory.py
+│   │   ├── checkpointer.py
+│   │   └── rate_limit.py
+│   ├── transport/            # API layer
+│   │   ├── main.py           # FastAPI app entry
+│   │   ├── views_api.py      # REST routes
+│   │   └── routers/          # WebSocket, SSE, health, logs
+│   └── application/          # App-level wiring
+│       └── websocket.py
 │
-├── models/                   # Data models (re-exports backend/)
-│   └── settings.py
+├── frontend/                 # Next.js 16 (React 18)
+│   ├── app/                  # App router pages
+│   │   ├── page.tsx          # Main dashboard
+│   │   ├── layout.tsx        # Root layout (debug panel, theme)
+│   │   └── globals.css
+│   ├── components/           # UI components
+│   │   ├── agent/            # AgentCanvas (graph view)
+│   │   ├── chat/             # Chat messages, streaming, steps
+│   │   ├── settings/         # Settings dashboard
+│   │   ├── sidebar/          # Navigation sidebar
+│   │   ├── markdown/         # Markdown rendering
+│   │   ├── ui/               # Primitive UI kit
+│   │   ├── ChatContainer.tsx
+│   │   ├── DebugPanel.tsx
+│   │   ├── Sidebar.tsx
+│   │   ├── HistoryView.tsx
+│   │   ├── SettingsView.tsx
+│   │   ├── ThemeProvider.tsx
+│   │   └── CommandPalette.tsx
+│   ├── features/             # Feature modules
+│   │   └── chat/             # Chat feature
+│   ├── hooks/                # Custom React hooks
+│   │   ├── useChat.ts        # Chat logic + streaming
+│   │   ├── useWebSocket.ts
+│   │   ├── useStream.ts
+│   │   └── useMessageHandler.ts
+│   ├── services/             # API clients
+│   │   ├── chatService.ts
+│   │   ├── streamService.ts
+│   │   ├── WebSocketManager.ts
+│   │   ├── MessageHandler.ts
+│   │   ├── modelDiscovery.ts
+│   │   └── providers/        # LLM provider adapters
+│   ├── infrastructure/       # Framework config
+│   │   ├── config/           # Env-specific config
+│   │   ├── events/           # Event bus
+│   │   ├── persistence/      # Local storage
+│   │   └── services/         # Service registry
+│   ├── domain/               # Frontend domain
+│   │   ├── entities/         # Domain entities
+│   │   ├── events/           # Domain events
+│   │   └── config/           # App configuration
+│   ├── lib/                  # Shared utilities
+│   │   ├── stores/           # Zustand stores
+│   │   ├── hooks/            # Shared hooks
+│   │   ├── debug/            # Debug logger
+│   │   ├── i18n.ts           # EN + FR translations
+│   │   ├── events.ts         # Pub/sub event bus
+│   │   └── types.ts
+│   ├── styles/
+│   │   └── tokens.ts         # Design tokens
+│   └── public/
+│       └── logo.png
 │
-├── llm/                      # ⚠️ Legacy shim (moved to backend/)
-│   └── router.py
+├── scripts/                  # Dev tooling
+│   └── launcher/             # CLI launcher (cli.py, services.py, etc.)
 │
-├── adapters/                 # ⚠️ Legacy shim (moved to backend/)
-│   └── memory/faiss.py
+├── tests/                    # Python tests
+│   ├── conftest.py
+│   ├── test_pipeline_nodes.py
+│   ├── test_llm.py
+│   ├── test_settings.py
+│   └── ...
 │
-└── frontend/                # Next.js frontend
-    ├── components/
-    │   ├── settings/        # Modular settings components
-    │   │   ├── SettingsView.tsx
-    │   │   ├── LanguageSelector.tsx
-    │   │   ├── TimeoutSettings.tsx
-    │   │   ├── LogLevelSettings.tsx
-    │   │   ├── ModelSelector.tsx
-    │   │   ├── BackendStatusGrid.tsx
-    │   │   └── hooks/       # Custom hooks
-    │   ├── chat/
-    │   │   ├── AgentSteps.tsx   # Thinking Process display
-    │   │   └── StepProgress.tsx
-    │   └── SystemStats.tsx   # Live metrics
-    ├── services/
-    │   └── modelDiscovery.ts
-    └── lib/
-        ├── i18n.ts          # EN + FR translations
-        └── stores/          # Zustand state
+├── docs/                     # Documentation
+│   ├── api/API.md
+│   ├── architecture/
+│   │   ├── ARCHITECTURE.md
+│   │   ├── AGENTS.md
+│   │   └── REVIEW.md
+│   └── monitoring/
+│
+├── data/                     # Runtime data (gitignored)
+│   ├── checkpoints.db        # LangGraph sessions
+│   ├── memory.index          # FAISS index
+│   └── memory_docs.pkl
+│
+└── logs/                     # Application logs
+    ├── app.log
+    └── api.log
 ```
 
 ## ⚙️ Configuration
