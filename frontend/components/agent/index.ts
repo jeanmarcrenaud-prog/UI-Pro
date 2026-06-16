@@ -3,7 +3,7 @@
 
 export { StepItem } from './StepItem'
 export { AgentCanvas } from './AgentCanvas'
-export { GraphVisualization } from './GraphVisualization'
+// GraphVisualization removed — use canvas/GraphVisualization (default export) instead
 export { CanvasControls } from './CanvasControls'
 export { ExecutionTimeline } from './ExecutionTimeline'
 export { NodeDetailPanel } from './NodeDetailPanel'
