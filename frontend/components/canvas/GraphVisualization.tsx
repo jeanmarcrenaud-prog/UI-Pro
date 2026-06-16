@@ -40,98 +40,98 @@ const nodeVariants = {
   },
 };
 
+// AgentStepNode at module scope — const arrow function gives a STABLE reference
+// across module re-evaluations (Turbopack HMR). Unlike function declarations,
+// const arrow functions are NOT re-created on each module evaluation.
+function AgentStepNode({ data, selected }: NodeProps) {
+  const { status, name, modelUsed, durationMs, tokens } = data as CanvasStep;
+
+  const getStatusIcon = () => {
+    switch (status) {
+      case 'running':
+        return <Play className="w-5 h-5 text-blue-500 animate-pulse" />;
+      case 'done':
+        return <CheckCircle className="w-5 h-5 text-green-500" />;
+      case 'error':
+        return <XCircle className="w-5 h-5 text-red-500" />;
+      case 'awaiting_approval':
+        return <Clock className="w-5 h-5 text-amber-500" />;
+      default:
+        return <Clock className="w-5 h-5 text-gray-400" />;
+    }
+  };
+
+  const getStatusColor = () => {
+    switch (status) {
+      case 'running': return 'border-blue-500 bg-blue-950/60';
+      case 'done': return 'border-green-500 bg-green-950/40';
+      case 'error': return 'border-red-500 bg-red-950/40';
+      case 'awaiting_approval': return 'border-amber-500 bg-amber-950/40';
+      default: return 'border-gray-700 bg-gray-900/80';
+    }
+  };
+
+  return (
+    <motion.div
+      className={`px-5 py-4 rounded-2xl border-2 shadow-2xl min-w-[240px] backdrop-blur-sm ${getStatusColor()} ${
+        selected ? 'ring-2 ring-white/70 shadow-blue-500/30' : ''
+      }`}
+      variants={nodeVariants}
+      initial="hidden"
+      animate="visible"
+      whileHover={{ scale: 1.02, transition: { duration: 0.2 } }}
+      whileTap={{ scale: 0.98 }}
+    >
+      <Handle
+        type="target"
+        position={Position.Left}
+        className="!w-3 !h-3 !border-2 !border-gray-600 !bg-gray-900"
+      />
+      <Handle
+        type="source"
+        position={Position.Right}
+        className="!w-3 !h-3 !border-2 !border-gray-600 !bg-gray-900"
+      />
+
+      <div className="flex items-center gap-3">
+        <motion.div
+          animate={status === 'running' ? { rotate: 360 } : {}}
+          transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
+        >
+          {getStatusIcon()}
+        </motion.div>
+
+        <div className="flex-1">
+          <div className="font-semibold text-white text-base tracking-tight">{name}</div>
+          {modelUsed && (
+            <div className="text-xs text-gray-400 mt-0.5 font-mono">{modelUsed}</div>
+          )}
+        </div>
+      </div>
+
+      {(durationMs || tokens) && (
+        <motion.div
+          className="mt-3 text-xs text-gray-400 flex gap-4 font-mono"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+        >
+          {durationMs && <span>⏱ {Math.round(durationMs)}ms</span>}
+          {tokens && <span>🔤 {tokens} tokens</span>}
+        </motion.div>
+      )}
+    </motion.div>
+  );
+}
+
+// nodeTypes at module scope — created ONCE at module load time.
+// This is the ONLY pattern that survives StrictMode double-mount
+// AND Turbopack module re-evaluation without triggering the warning.
+const nodeTypes = {
+  agentStep: AgentStepNode,
+};
+
 export default function GraphVisualization({ steps, onNodeClick }: GraphVisualizationProps) {
   const { selectedNodeId, setSelectedNode } = useAgentCanvasStore();
-
-  // AgentStepNode defined INSIDE the component with useCallback — stable function
-  // reference across module re-evaluations (Turbopack HMR) and StrictMode remounts.
-  const AgentStepNode = useCallback(({ data, selected }: NodeProps) => {
-    const { status, name, modelUsed, durationMs, tokens } = data as CanvasStep;
-
-    const getStatusIcon = () => {
-      switch (status) {
-        case 'running':
-          return <Play className="w-5 h-5 text-blue-500 animate-pulse" />;
-        case 'done':
-          return <CheckCircle className="w-5 h-5 text-green-500" />;
-        case 'error':
-          return <XCircle className="w-5 h-5 text-red-500" />;
-        case 'awaiting_approval':
-          return <Clock className="w-5 h-5 text-amber-500" />;
-        default:
-          return <Clock className="w-5 h-5 text-gray-400" />;
-      }
-    };
-
-    const getStatusColor = () => {
-      switch (status) {
-        case 'running': return 'border-blue-500 bg-blue-950/60';
-        case 'done': return 'border-green-500 bg-green-950/40';
-        case 'error': return 'border-red-500 bg-red-950/40';
-        case 'awaiting_approval': return 'border-amber-500 bg-amber-950/40';
-        default: return 'border-gray-700 bg-gray-900/80';
-      }
-    };
-
-    return (
-      <motion.div
-        className={`px-5 py-4 rounded-2xl border-2 shadow-2xl min-w-[240px] backdrop-blur-sm ${getStatusColor()} ${
-          selected ? 'ring-2 ring-white/70 shadow-blue-500/30' : ''
-        }`}
-        variants={nodeVariants}
-        initial="hidden"
-        animate="visible"
-        whileHover={{ scale: 1.02, transition: { duration: 0.2 } }}
-        whileTap={{ scale: 0.98 }}
-      >
-        <Handle
-          type="target"
-          position={Position.Left}
-          className="!w-3 !h-3 !border-2 !border-gray-600 !bg-gray-900"
-        />
-        <Handle
-          type="source"
-          position={Position.Right}
-          className="!w-3 !h-3 !border-2 !border-gray-600 !bg-gray-900"
-        />
-
-        <div className="flex items-center gap-3">
-          <motion.div
-            animate={status === 'running' ? { rotate: 360 } : {}}
-            transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
-          >
-            {getStatusIcon()}
-          </motion.div>
-
-          <div className="flex-1">
-            <div className="font-semibold text-white text-base tracking-tight">{name}</div>
-            {modelUsed && (
-              <div className="text-xs text-gray-400 mt-0.5 font-mono">{modelUsed}</div>
-            )}
-          </div>
-        </div>
-
-        {(durationMs || tokens) && (
-          <motion.div
-            className="mt-3 text-xs text-gray-400 flex gap-4 font-mono"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-          >
-            {durationMs && <span>⏱ {Math.round(durationMs)}ms</span>}
-            {tokens && <span>🔤 {tokens} tokens</span>}
-          </motion.div>
-        )}
-      </motion.div>
-    );
-  }, []);
-
-  // Stable nodeTypes reference — useMemo with [] deps means the object is
-  // created ONCE and cached. AgentStepNode is stable via useCallback above.
-  // This eliminates the React Flow "new nodeTypes object" warning.
-  const nodeTypes = useMemo(
-    () => ({ agentStep: AgentStepNode }),
-    [AgentStepNode],
-  );
 
   const nodes: Node[] = useMemo(() => {
     return steps.map((step) => ({
