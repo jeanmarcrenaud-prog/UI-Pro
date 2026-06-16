@@ -9,6 +9,8 @@ export interface CanvasStep {
   modelUsed?: string
   durationMs?: number
   tokens?: number
+  attempt?: number
+  maxAttempts?: number
 }
 
 interface AgentCanvasStore {

@@ -31,6 +31,8 @@ export interface AgentStep {
   status: AgentStepStatus
   duration?: number  // Node execution duration in seconds (from backend metrics)
   tokens?: number    // Approximate token count used by this node
+  attempt?: number   // Current fix attempt (1-based)
+  maxAttempts?: number  // Maximum fix attempts allowed
 }
 
 // UseChat hook return type

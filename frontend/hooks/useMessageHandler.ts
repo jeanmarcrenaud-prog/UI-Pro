@@ -72,7 +72,7 @@ export const useMessageHandler = ({
       debugLogger.log('step', normalized.content || normalized.status, { step: stepName, duration: normalized.duration })
       // If duration is present, this is a node-completion event from @_timed_node
       const status = normalized.duration ? 'done' : (normalized.status === 'done' ? 'done' : 'active')
-      updateStep(normalized.stepId, status, normalized.content, normalized.duration, normalized.tokenCount)
+      updateStep(normalized.stepId, status, normalized.content, normalized.duration, normalized.tokenCount, normalized.attempt, normalized.maxAttempts)
       return
     }
 

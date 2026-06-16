@@ -16,6 +16,8 @@ export interface NormalizedMessage {
   duration?: number  // Node execution duration in seconds
   code?: string
   title?: string
+  attempt?: number
+  maxAttempts?: number
 }
 
 /**
@@ -41,6 +43,8 @@ export function normalizeMessage(raw: any): NormalizedMessage {
   const duration = raw.duration
   const code = raw.code
   const title = raw.title || raw.step_title
+  const attempt = raw.attempt
+  const maxAttempts = raw.max_attempts
 
   return {
     type,
@@ -52,6 +56,8 @@ export function normalizeMessage(raw: any): NormalizedMessage {
     duration,
     code,
     title,
+    attempt,
+    maxAttempts,
   }
 }
 

@@ -638,12 +638,13 @@ def should_continue(state: AgentState) -> Literal["fix_code", "end"]:
             _emit_step(
                 "fixing",
                 f"Auto-fix execution ({attempt + 1}/{max_attempts}): {error_msg[:60]}",
+                data={"attempt": attempt + 1, "max_attempts": max_attempts},
             )
             return "fix_code"
 
     # Priority 4: max attempts reached → stop
     if attempt >= max_attempts:
-        _emit_step("max_attempts_reached", f"Max attempts ({max_attempts}) reached")
+        _emit_step("max_attempts_reached", f"Max attempts ({max_attempts}) reached", data={"attempt": attempt, "max_attempts": max_attempts})
         return "end"
 
     # Priority 5: reviewing_node detected empty code (re-check)
@@ -657,5 +658,5 @@ def should_continue(state: AgentState) -> Literal["fix_code", "end"]:
             return "end"
 
     # Default: auto-fix
-    _emit_step("fixing", f"Auto-fix attempt {attempt + 1}/{max_attempts}")
+    _emit_step("fixing", f"Auto-fix attempt {attempt + 1}/{max_attempts}", data={"attempt": attempt + 1, "max_attempts": max_attempts})
     return "fix_code"

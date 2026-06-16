@@ -57,6 +57,8 @@ export function AgentCanvas({ className = '' }: AgentCanvasProps) {
         status: isActive ? 'running' : 'done',
         durationMs: fixStep?.duration ? fixStep.duration * 1000 : undefined,
         tokens: fixStep?.tokens,
+        attempt: fixStep?.attempt,
+        maxAttempts: fixStep?.maxAttempts,
       })
     }
 
