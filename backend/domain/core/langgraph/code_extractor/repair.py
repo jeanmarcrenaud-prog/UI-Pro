@@ -4,6 +4,8 @@ code_extractor/repair.py — Utilitaires de réparation pour les erreurs de synt
 Les LLM produisent parfois du code avec :
 - Des parenthèses/crochets/accolades en excès ou manquants
 - Une indentation inconsistante (mélange tabulations/espaces, lignes désalignées)
+- Des caractères Unicode invalides ou des symboles spéciaux (♦, ●, →, ⇒, guillemets
+  typographiques, caractères de contrôle) qui cassent la syntaxe Python
 
 Ce module fournit deux fonctions correctives utilisées par la chaîne de
 validation d'``ExtractedFile`` et par la phase de salvage dans ``_finalize``.
@@ -13,6 +15,7 @@ from __future__ import annotations
 
 import io
 import logging
+import re
 import textwrap
 import tokenize
 
@@ -21,15 +24,31 @@ logger = logging.getLogger(__name__)
 _PAIRS: dict[str, str] = {"(": ")", "[": "]", "{": "}"}
 _CLOSING = frozenset(_PAIRS.values())
 
+# Caractères Unicode problématiques fréquents dans le code généré par LLM
+_INVALID_CHAR_REPLACEMENTS: dict[str, str] = {
+    "♦": "",
+    "●": "",
+    "→": "->",
+    "⇒": "=>",
+    "\u0080": "",
+    "\u0099": "'",
+    "\u2018": "'",
+    "\u2019": "'",
+    "\u201c": '"',
+    "\u201d": '"',
+}
+
 
 def fix_syntax_errors(code: str) -> str:
-    """Tente une réparation basique de la syntaxe pour les erreurs LLM courantes.
+    """Répare les erreurs de syntaxe LLM : brackets + caractères invalides.
 
-    Utilise ``tokenize`` (stdlib) pour ignorer les délimiteurs contenus dans
-    les chaînes de caractères et les commentaires — contrairement à une
-    approche naïve caractère par caractère.
+    Stratégie (3 phases) :
 
-    Stratégie (2 phases) :
+    Phase 0 — Nettoyage Unicode
+        Supprime les caractères de contrôle et remplace les symboles
+        problématiques (♦, ●, →, ⇒, guillemets typographiques) par des
+        équivalents sûrs. Cette phase est appliquée en premier car ces
+        caractères peuvent empêcher le tokenize de fonctionner correctement.
 
     Phase 1 — Tokenize
         Parcourt les tokens valides, ne conserve que les ``OP`` (opérateurs)
@@ -51,50 +70,45 @@ def fix_syntax_errors(code: str) -> str:
     if not stripped:
         return code
 
+    # Phase 0 — Nettoyage Unicode (appliqué AVANT tout)
+    cleaned = _remove_invalid_characters(stripped)
+    if cleaned != stripped:
+        logger.info("fix_syntax_errors: removed invalid unicode characters")
+
     # Quick check : déjà valide ?
     try:
-        compile(stripped, "<string>", "exec")
-        return code
+        compile(cleaned, "<string>", "exec")
+        return cleaned
     except SyntaxError:
         pass
 
-    # ── Phase 1 : tokenize-aware ──────────────────────────────────────
-    candidate = _repair_with_tokenize(stripped)
+    # Phase 1 : tokenize-aware
+    candidate = _repair_with_tokenize(cleaned)
     if candidate is not None:
         return candidate
 
-    # ── Phase 2 : fallback caractère par caractère ────────────────────
-    _stripped = stripped
-    for _ in range(3):
-        stack: list[str] = []
-        cleaned: list[str] = []
-        for ch in _stripped:
-            if ch in _PAIRS:
-                stack.append(ch)
-                cleaned.append(ch)
-            elif ch in _CLOSING:
-                if stack and _PAIRS.get(stack[-1]) == ch:
-                    stack.pop()
-                    cleaned.append(ch)
-                # else: extra closer → retiré (on tente un salvage)
-            else:
-                cleaned.append(ch)
+    # Phase 2 : fallback caractère par caractère
+    return _repair_with_char_fallback(cleaned)
 
-        candidate_str = "".join(cleaned)
-        if candidate_str == _stripped and stack:
-            extra = "".join(_PAIRS[o] for o in reversed(stack))
-            candidate_str = _stripped + extra
 
-        try:
-            compile(candidate_str, "<string>", "exec")
-            if candidate_str != code:
-                logger.info("fix_syntax_errors (fallback): code réparé")
-            return candidate_str
-        except SyntaxError:
-            _stripped = candidate_str
-            continue
+def _remove_invalid_characters(code: str) -> str:
+    """Supprime les caractères de contrôle et symboles non-ASCII problématiques.
 
-    return code  # Toutes les tentatives ont échoué
+    Les LLM génèrent souvent du code avec des caractères invisibles ou des
+    symboles (♦, ●, →, ⇒, guillemets courbes, caractères de contrôle) qui
+    causent des ``SyntaxError`` même si le reste du code est correct.
+
+    Exemple réel ::
+        print(f"Temp: {weather.temperature} ♦C")   # ♦ invalide en Python
+    """
+    # Remplacement des symboles problématiques fréquents
+    for old, new in _INVALID_CHAR_REPLACEMENTS.items():
+        code = code.replace(old, new)
+
+    # Supprimer tout caractère de contrôle restant (sauf \n \t \r)
+    code = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]", "", code)
+
+    return code
 
 
 def _repair_with_tokenize(stripped: str) -> str | None:
@@ -112,8 +126,6 @@ def _repair_with_tokenize(stripped: str) -> str | None:
         return None  # Input trop garbled → fallback
 
     stack: list[str] = []
-    # Position du dernier token OP qui a ouvert un bracket non fermé
-    # (ligne, colonne) — pour insérer le fermant au plus près du défaut
     last_unmatched_lineno: int | None = None
     last_unmatched_col: int | None = None
 
@@ -126,7 +138,6 @@ def _repair_with_tokenize(stripped: str) -> str | None:
                 elif tok_str in _CLOSING:
                     if stack and _PAIRS.get(stack[-1]) == tok_str:
                         stack.pop()
-                        # Restaurer la position du nouveau dernier non fermé
                         if stack:
                             pass  # On garde la dernière position connue
                         else:
@@ -192,6 +203,46 @@ def _repair_with_tokenize(stripped: str) -> str | None:
     return None
 
 
+def _repair_with_char_fallback(stripped: str) -> str:
+    """Phase 2 : fallback caractère par caractère (résilient).
+
+    Parcourt le code caractère par caractère en maintenant un stack de
+    brackets ouverts. Retire les fermants surnuméraires (salvage) et ajoute
+    les fermants manquants. Valide avec ``compile()`` à chaque itération.
+    """
+    _stripped = stripped
+    for _ in range(3):
+        stack: list[str] = []
+        cleaned: list[str] = []
+        for ch in _stripped:
+            if ch in _PAIRS:
+                stack.append(ch)
+                cleaned.append(ch)
+            elif ch in _CLOSING:
+                if stack and _PAIRS.get(stack[-1]) == ch:
+                    stack.pop()
+                    cleaned.append(ch)
+                # else: extra closer → retiré (on tente un salvage)
+            else:
+                cleaned.append(ch)
+
+        candidate_str = "".join(cleaned)
+        if candidate_str == _stripped and stack:
+            extra = "".join(_PAIRS[o] for o in reversed(stack))
+            candidate_str = _stripped + extra
+
+        try:
+            compile(candidate_str, "<string>", "exec")
+            if candidate_str != stripped:
+                logger.info("fix_syntax_errors (fallback): code réparé")
+            return candidate_str
+        except SyntaxError:
+            _stripped = candidate_str
+            continue
+
+    return stripped  # Toutes les tentatives ont échoué
+
+
 def _insert_at_line_end(
     text: str, closer: str, lineno: int, col: int
 ) -> str:
@@ -200,7 +251,7 @@ def _insert_at_line_end(
     Cas classique ::
 
         x = [1, 2,         ← ligne 1
-            print(")")]    ← la ligne 2 a déjà son propre ``]``
+            print(")"]    ← la ligne 2 a déjà son propre ``]``
                             → on insère à la fin de la ligne 1
 
     Si ``lineno`` dépasse le nombre de lignes, on append à la fin.

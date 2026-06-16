@@ -500,6 +500,61 @@ class TestFixSyntaxErrors:
         assert fix_syntax_errors("") == ""
         assert fix_syntax_errors("   ") == "   "
 
+    # ── Unicode cleaning ───────────────────────────────────────────────
+
+    def test_diamond_character_removed(self):
+        """Le caractère ♦ (U+0080 ou similaire) généré par LLM est supprimé."""
+        code = 'print(f"Temp: {t} ♦C")'
+        result = fix_syntax_errors(code)
+        assert "♦" not in result
+        assert compile(result, "<test>", "exec")
+
+    def test_bullet_character_removed(self):
+        """Le caractère ● est supprimé."""
+        code = "items = [●1, 2, 3]"
+        result = fix_syntax_errors(code)
+        assert "●" not in result
+        assert compile(result, "<test>", "exec")
+
+    def test_arrow_replaced_by_dash_arrow(self):
+        """Le caractère → est remplacé par -> (annotation de fonction)."""
+        code = "def f(x) → int:\n    return x"
+        result = fix_syntax_errors(code)
+        assert "→" not in result
+        assert "->" in result
+        assert compile(result, "<test>", "exec")
+
+    def test_double_arrow_replaced(self):
+        """Le caractère ⇒ est remplacé par => (dans une chaîne)."""
+        code = 'x = "use ⇒ here"'
+        result = fix_syntax_errors(code)
+        assert "⇒" not in result
+        assert "=>" in result
+        assert compile(result, "<test>", "exec")
+
+    def test_typographic_quotes_replaced(self):
+        """Les guillemets typographiques sont remplacés par des quotes ASCII."""
+        # Note: \" et \" (U+201C, U+201D) sont des guillemets courbes
+        code = 'print(\u201chello\u201d)'
+        result = fix_syntax_errors(code)
+        assert "\u201c" not in result
+        assert "\u201d" not in result
+        assert compile(result, "<test>", "exec")
+
+    def test_control_characters_removed(self):
+        """Les caractères de contrôle (\x00-\x08, \x0E-\x1F) sont supprimés."""
+        code = "x = 1\x00 + 2"
+        result = fix_syntax_errors(code)
+        assert "\x00" not in result
+        assert compile(result, "<test>", "exec")
+
+    def test_unicode_invalid_combined_with_bracket_error(self):
+        """Caractère invalide + bracket manquant = les deux sont réparés."""
+        code = 'print(f"Temp: {t} ♦C")\nx = [1, 2'
+        result = fix_syntax_errors(code)
+        assert "♦" not in result
+        assert compile(result, "<test>", "exec")
+
 
 # ====================== fix_indentation ======================
 
