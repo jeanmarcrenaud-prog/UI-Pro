@@ -45,8 +45,12 @@ class SecureCodeExecutor:
         self.timeout = timeout
         self.memory_limit_mb = memory_limit_mb
 
-    def _check_dangerous_code(self, code: str) -> tuple[bool, str]:
-        """Analyse AST pour détecter des patterns dangereux"""
+    def _check_dangerous_code(self, code: str, filename: str = "main.py") -> tuple[bool, str]:
+        """Analyse AST pour détecter des patterns dangereux (Python uniquement)."""
+        ext = Path(filename).suffix.lower()
+        if ext not in (".py", ".pyw"):
+            return True, "Non-Python code, skipping AST analysis"
+
         try:
             tree = ast.parse(code)
 

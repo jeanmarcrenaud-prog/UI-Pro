@@ -68,7 +68,7 @@ Tâche originale de l'utilisateur :
 {task_description}
 
 Code que tu as généré précédemment (il a échoué) :
-```python
+```{lang}
 {previous_code}
 ```
 
@@ -94,8 +94,8 @@ Produis une version corrigée du code qui :
 
 FORMAT DE SORTIE — STRICT (identique au coding_node) :
 ```markdown
-## main.py
-```python
+## {example_file}
+```{lang}
 # code corrigé ici
 ```
 [autres fichiers si nécessaire, même format]
@@ -103,8 +103,8 @@ FORMAT DE SORTIE — STRICT (identique au coding_node) :
 
 RÈGLES ABSOLUES :
 - Garde EXACTEMENT les mêmes noms de fichiers qu'avant
-- Respecte la structure `## filename` / ````python` / ` ``` `
-- Le bloc de code ne doit contenir QUE du Python valide — pas de prose
+- Respecte la structure `## filename` / ````{lang}` / ` ``` `
+- Le bloc de code ne doit contenir QUE du {lang} valide — pas de prose
 - N'explique pas le code — le code EST la réponse
 - N'ajoute AUCUN texte en dehors des blocs de code
 - N'inclus PAS les instructions de ce prompt dans la sortie
@@ -122,7 +122,7 @@ Tâche originale de l'utilisateur :
 {task_description}
 
 Code que tu as généré précédemment (il a échoué) :
-```python
+```{lang}
 {previous_code}
 ```
 
@@ -162,8 +162,8 @@ Critique ta propre approche :
 ## ÉTAPE 4 — CODE CORRIGÉ
 Format de sortie — STRICT (identique au coding_node) :
 ```markdown
-## main.py
-```python
+## {example_file}
+```{lang}
 # code corrigé ici
 ```
 [autres fichiers si nécessaire, même format]
@@ -171,8 +171,8 @@ Format de sortie — STRICT (identique au coding_node) :
 
 RÈGLES ABSOLUES :
 - Garde EXACTEMENT les mêmes noms de fichiers qu'avant
-- Respecte la structure `## filename` / ````python` / ` ``` `
-- Le bloc de code ne doit contenir QUE du Python valide — pas de prose
+- Respecte la structure `## filename` / ````{lang}` / ` ``` `
+- Le bloc de code ne doit contenir QUE du {lang} valide — pas de prose
 - N'explique pas le code dans le bloc final — le code EST la réponse
 - N'ajoute AUCUN texte en dehors des sections ci-dessus ET des blocs de code
 - Les étapes 1-3 (ANALYSE / PLAN / SELF-CRITIQUE) doivent apparaître
@@ -272,6 +272,17 @@ def _format_suggestions(suggestions: list[str] | None) -> str:
     return rendered
 
 
+def _detect_lang_from_files(files: dict[str, str]) -> str:
+    """Detect if the files are PowerShell or Python based on extensions."""
+    if not files:
+        return "python"
+    ps_exts = (".ps1", ".psm1", ".psd1")
+    for name in files:
+        if name.lower().endswith(ps_exts):
+            return "powershell"
+    return "python"
+
+
 def _get_user_message(state: "AgentState") -> str:
     messages = state.get("messages", []) or []
     msg = messages[0] if messages else None
@@ -331,9 +342,14 @@ def format_fix_prompt(state: "AgentState", advanced: bool = False) -> str:
         _MAX_ERROR_CHARS,
     )
 
+    lang = _detect_lang_from_files(files)
+    example_file = "script.ps1" if lang == "powershell" else "main.py"
+
     fields = {
         "attempt": attempt,
         "max_attempts": max_attempts,
+        "lang": lang,
+        "example_file": example_file,
         "task_description": _truncate(
             _get_user_message(state), _MAX_TASK_DESC_CHARS
         ),

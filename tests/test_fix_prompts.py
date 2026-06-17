@@ -241,6 +241,8 @@ class TestPromptConstants:
         sample_kwargs = {
             "attempt": 1,
             "max_attempts": 3,
+            "lang": "python",
+            "example_file": "main.py",
             "task_description": "x",
             "previous_code": "x",
             "previous_error": "x",

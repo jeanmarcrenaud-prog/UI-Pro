@@ -12,12 +12,31 @@ Provides stronger isolation than SubprocessExecutor:
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from backend.infrastructure.docker_sandbox import DockerSandbox, get_docker_sandbox
 
 from .base import BaseExecutor, ExecutionResult
 
 logger = logging.getLogger(__name__)
+
+# Map file extensions to sandbox language identifiers
+_EXT_TO_LANG = {
+    ".ps1": "powershell",
+    ".psm1": "powershell",
+    ".psd1": "powershell",
+    ".sh": "bash",
+    ".bash": "bash",
+    ".js": "javascript",
+    ".mjs": "javascript",
+    ".ts": "typescript",
+    ".bat": "batch",
+    ".cmd": "batch",
+}
+
+
+def _detect_lang(filename: str) -> str:
+    return _EXT_TO_LANG.get(Path(filename).suffix.lower(), "python")
 
 
 class DockerExecutor(BaseExecutor):
@@ -136,7 +155,8 @@ class DockerExecutor(BaseExecutor):
             )
 
         try:
-            result = await sandbox.execute(code, "python")
+            lang = _detect_lang(filename)
+            result = await sandbox.execute(code, lang)
 
             return ExecutionResult(
                 success=result.success,

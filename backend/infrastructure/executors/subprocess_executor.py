@@ -1,7 +1,8 @@
 """
-SubprocessExecutor: executes Python code in an isolated child process.
+SubprocessExecutor: executes code in an isolated child process.
 
-The code is written to a temp file and executed via sys.executable.
+Supports Python, PowerShell, Node.js, and Bash via filename extension detection.
+The code is written to a temp file and executed via the appropriate interpreter.
 stdout/stderr are captured through pipes.
 The subprocess is killed on timeout.
 
@@ -20,6 +21,7 @@ import sys
 import tempfile
 import time
 from collections.abc import Callable
+from pathlib import Path
 
 from .base import BaseExecutor, ExecutionResult
 
@@ -28,12 +30,77 @@ logger = logging.getLogger(__name__)
 # Type alias: callback(line_content, channel)
 OutputCallback = Callable[[str, str], None]
 
+# Language detection by filename extension
+_LANG_MAP: dict[str, dict] = {
+    ".ps1": {
+        "interpreter": "powershell",
+        "args": ["-ExecutionPolicy", "Bypass", "-File"],
+        "suffix": ".ps1",
+    },
+    ".psm1": {
+        "interpreter": "powershell",
+        "args": ["-ExecutionPolicy", "Bypass", "-File"],
+        "suffix": ".ps1",
+    },
+    ".psd1": {
+        "interpreter": "powershell",
+        "args": ["-ExecutionPolicy", "Bypass", "-File"],
+        "suffix": ".ps1",
+    },
+    ".sh": {
+        "interpreter": "bash",
+        "args": [],
+        "suffix": ".sh",
+    },
+    ".bash": {
+        "interpreter": "bash",
+        "args": [],
+        "suffix": ".sh",
+    },
+    ".js": {
+        "interpreter": "node",
+        "args": [],
+        "suffix": ".js",
+    },
+    ".mjs": {
+        "interpreter": "node",
+        "args": [],
+        "suffix": ".mjs",
+    },
+    ".ts": {
+        "interpreter": "node",
+        "args": [],
+        "suffix": ".js",
+    },
+    ".bat": {
+        "interpreter": "cmd",
+        "args": ["/c"],
+        "suffix": ".bat",
+    },
+    ".cmd": {
+        "interpreter": "cmd",
+        "args": ["/c"],
+        "suffix": ".cmd",
+    },
+}
+
+_DEFAULT_LANG = {
+    "interpreter": sys.executable,
+    "args": ["-u"],
+    "suffix": ".py",
+}
+
+
+def _get_lang_config(filename: str) -> dict:
+    ext = Path(filename).suffix.lower()
+    return _LANG_MAP.get(ext, _DEFAULT_LANG)
+
 
 class SubprocessExecutor(BaseExecutor):
     """Execute code in an isolated subprocess via create_subprocess_exec.
 
     True process-level isolation:
-    - Runs in a separate Python process (can't access app memory)
+    - Runs in a separate process (can't access app memory)
     - stdout/stderr captured via pipes
     - Temp file cleaned up after execution
     - Timeout kills the subprocess
@@ -51,16 +118,17 @@ class SubprocessExecutor(BaseExecutor):
         fd = None
         path = None
         try:
-            fd, path = tempfile.mkstemp(suffix=".py", prefix="sandbox_")
+            lang_cfg = _get_lang_config(filename)
+            suffix = lang_cfg["suffix"]
+            fd, path = tempfile.mkstemp(suffix=suffix, prefix="sandbox_")
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write(code)
             fd = None
 
             start = time.perf_counter()
+            cmd = [lang_cfg["interpreter"]] + lang_cfg["args"] + [path]
             proc = await asyncio.create_subprocess_exec(
-                sys.executable,
-                "-u",
-                path,
+                *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )

@@ -31,6 +31,7 @@ const LANGUAGE_EXTENSIONS: Record<string, string> = {
   powershell: 'ps1',
   pwsh: 'ps1',
   posh: 'ps1',
+  ps1: 'ps1',
   batch: 'bat',
   cmd: 'bat',
   sql: 'sql',

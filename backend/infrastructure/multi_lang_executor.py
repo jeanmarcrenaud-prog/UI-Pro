@@ -50,6 +50,12 @@ class MultiLangExecutor:
             "command": ["bash"],
             "timeout": 15,
         },
+        "powershell": {
+            "name": "powershell",
+            "extension": ".ps1",
+            "command": ["powershell", "-ExecutionPolicy", "Bypass", "-File"],
+            "timeout": 30,
+        },
         "html": {
             "name": "html",
             "extension": ".html",
@@ -73,6 +79,8 @@ class MultiLangExecutor:
                 lang_name = lexer.name.lower()
                 if "python" in lang_name:
                     return "python"
+                if "powershell" in lang_name or "posh" in lang_name:
+                    return "powershell"
                 if "javascript" in lang_name or "js" in lang_name:
                     return "javascript"
                 if "typescript" in lang_name:
@@ -91,6 +99,9 @@ class MultiLangExecutor:
 
             mapping = {
                 "python": "python",
+                "powershell": "powershell",
+                "posh": "powershell",
+                "ps1": "powershell",
                 "javascript": "javascript",
                 "typescript": "typescript",
                 "bash": "bash",
@@ -141,6 +152,8 @@ class MultiLangExecutor:
             final_code = code
             if lang in ["bash", "shell"] and not code.startswith("#!"):
                 final_code = f"#!/bin/bash\n\n{code}"
+            if lang == "powershell" and not code.startswith("#!"):
+                final_code = f"#!/usr/bin/env pwsh\n\n{code}"
 
             script_path.write_text(final_code, encoding="utf-8")
             script_path.chmod(0o755)
