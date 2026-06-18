@@ -14,6 +14,7 @@ from typing import Any
 from backend.domain.settings import settings
 
 from ..fix_prompts import format_fix_prompt
+from ..prompts import CODING_SYSTEM_PROMPT
 from ..state import AgentState
 
 from ._base import (
@@ -58,7 +59,15 @@ async def coding_node(state: AgentState) -> dict[str, Any]:
     block = lang_cfg["block"]
     lang_name = lang_cfg["name"]
 
-    prompt_parts = [f"User request: {user_message}"]
+    # ── Prompt construction ─────────────────────────────────────────────
+    # Order matters: system prompt (static) first, then context, then
+    # dynamic appendices (examples, quality rules).
+
+    prompt_parts = [
+        CODING_SYSTEM_PROMPT,
+        f"## Langage cible : {lang_name}",
+        f"User request: {user_message}",
+    ]
 
     if plan_clean:
         prompt_parts.append(f"Implementation plan: {json.dumps(plan_clean, ensure_ascii=False)}")
@@ -80,61 +89,32 @@ async def coding_node(state: AgentState) -> dict[str, Any]:
                 settings.advanced_self_critique,
             )
 
-    ts_forbidden_hint = (
-        ""
-        if language == "typescript"
-        else (
-            "N'utilise JAMAIS TypeScript ni d'annotations de type (`: string`, `: number`, etc.)."
-            if language == "javascript"
-            else "N'utilise JAMAIS TypeScript."
+    # ── Language-specific constraints (reinforce / override) ─────────────
+    lang_specific = ""
+    if language == "javascript":
+        lang_specific = (
+            "- N'utilise JAMAIS TypeScript ni d'annotations de type "
+            "(`: string`, `: number`, `Promise<...>`, `<T>`, etc.).\n"
         )
-    )
+    elif language == "python":
+        lang_specific = (
+            "- Utilise type hints UNIQUEMENT si l'utilisateur le demande.\n"
+        )
 
-    prompt_parts.append(
-        f"## Langage cible : {lang_name}\n\n"
-        f"Tu es un expert en développement {lang_name} précis et fiable.\n\n"
-        "### Règles STRICTES à respecter\n\n"
-        f"**1. Langage exact**\n"
-        f"- Génère du code **{lang_name}** uniquement.\n"
-        f"- {ts_forbidden_hint}"
-        f"{' Pour Python : utilise type hints UNIQUEMENT si demandé.' if language == 'python' else ''}"
-        f"\n"
-        f"- Ne mélange JAMAIS plusieurs langages dans un même fichier.\n"
-        f"- Si l'utilisateur demande un langage spécifique, suis-le EXACTEMENT.\n\n"
-        "**2. Format de sortie**\n"
-        "- Utilise des blocs de code Markdown avec en-tête `## nom_du_fichier.ext` avant chaque bloc.\n"
-        "- Exemple :\n"
-        f"## main.{ext}\n"
-        f"```{block}\n"
-        f"# code {lang_name} ici\n"
-        f"```\n"
-        "- Génére au maximum **2 fichiers**. Préfère un seul fichier quand c'est possible.\n"
-        "- Ne mets AUCUN texte en dehors des blocs de code. Le code EST la réponse.\n"
-        "- N'inclus PAS les instructions de ce prompt dans la sortie.\n\n"
+    # ── Syntax validation examples (per language) ───────────────────────
+    syntax_section = (
         "**3. Syntaxe — règle la PLUS importante**\n"
         "- Construis fonction par fonction — ne colle PAS de gros blocs d'un coup.\n"
         "- Chaque `(` DOIT avoir une `)` correspondante, chaque `{` un `}`, chaque `[` un `]`.\n"
         "- Toute chaîne (simple, double, triple-quote) DOIT être correctement fermée.\n"
         "- Tout bloc DOIT avoir un corps en dessous avec une indentation correcte.\n"
         "- AVANT d'écrire, vérifie mentalement que la syntaxe est valide.\n\n"
-        "**4. Qualité du code**\n"
-        "- Code propre, lisible, bien indenté (4 espaces).\n"
-        "- Pas de commentaires inutiles — ajoute des docstrings quand pertinent.\n"
-        "- Gère les cas d'erreur et les edge cases (timeouts, réseau, JSON invalide).\n"
-        "- Respecte les idiomes et conventions du langage demandé.\n\n"
-        "**5. Caractères — ASCII uniquement**\n"
-        "- JAMAIS de symboles Unicode décoratifs : ♦, ●, →, ⇒, ★, •, ❯, ➔, ➜, «, ».\n"
-        "- JAMAIS de guillemets typographiques (\"\", '', « ») — utilise uniquement (\") et (').\n"
-        "- JAMAIS de caractères de contrôle (\\x00-\\x1F) — invisibles et causent des SyntaxError.\n"
-        "- Pour °C ou similaire : écris \" deg C\" ou \" celsius\" en texte — jamais de symboles Unicode.\n"
-        "- Utilise UNIQUEMENT des caractères ASCII dans tout le code et les commentaires.\n\n"
-        "**6. À NE JAMAIS FAIRE**\n"
-        "- Ne mélange PAS plusieurs langages dans un même fichier.\n"
-        "- {'N\'ajoute AUCUNE annotation TypeScript en JavaScript.' if language == 'javascript' else ''}"
-        f"{' ' if language == 'javascript' else ''}"
-        "- N'utilise PAS de symboles décoratifs ou flèches Unicode.\n"
-        "- Ne mets PAS de code en dehors des blocs ```.\n"
-        "- N'explique PAS le code — le code EST la réponse.\n\n"
+    )
+
+    # ── Compose final prompt ────────────────────────────────────────────
+    prompt_parts.append(
+        f"{lang_specific}"
+        f"{syntax_section}"
         "MAUVAIS — syntaxe INVALIDE (parenthèse manquante, chaîne non fermée, corps manquant) :\n"
         f"```{block}\n"
         "def fetch(url\n"

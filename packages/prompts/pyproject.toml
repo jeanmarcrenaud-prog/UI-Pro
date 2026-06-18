@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ui-pro-prompts"
+version = "0.1.0"
+description = "System prompts for the UI-Pro LangGraph pipeline"
+readme = "README.md"
+license = "MIT"
+keywords = ["prompts", "llm", "langgraph", "system-prompt"]
+authors = [
+    {name = "Jean-Marc Renaud"},
+]
+requires-python = ">=3.10"
+
+[project.urls]
+Homepage = "https://github.com/jeanmarcrenaud-prog/UI-Pro"
+Source = "https://github.com/jeanmarcrenaud-prog/UI-Pro"
+Tracker = "https://github.com/jeanmarcrenaud-prog/UI-Pro/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["ui_pro_prompts*"]
