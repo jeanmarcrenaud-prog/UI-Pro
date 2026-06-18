@@ -205,8 +205,9 @@ _LANG_KEYWORDS: dict[str, set[str]] = {
     "bash": {"bash", "shell script", "sh ", ".sh"},
     "batch": {".bat", ".cmd", "batch"},
     "javascript": {"javascript", "js ", ".js", "nodejs", "node.js"},
-    "typescript": {"typescript", ".ts"},
-}
+    "typescript": {"typescript"},   # deliberately narrower: ".ts" alone is too
+}                                   # prone to false positives (e.g. "config.ts"
+                                    # in a JS context). Only "typescript" wins.
 
 _LANG_CONFIG: dict[str, dict[str, str]] = {
     "python": {"ext": "py", "block": "python", "name": "Python"},
@@ -226,12 +227,28 @@ def _detect_language(user_message: str) -> str:
     Uses keyword matching on the lowercased user message. Returns
     the language key (e.g. 'python', 'powershell', 'bash') or
     the default 'python' when no explicit language is mentioned.
+
+    **Preference logic**: when both ``javascript`` and ``typescript``
+    keywords match (e.g. a message that contains both "node.js" and
+    "typescript"), JavaScript wins — small models frequently default
+    to TypeScript when JavaScript was intended, and TypeScript's
+    narrower keyword set (just ``"typescript"``) reduces false hits.
     """
     msg_lower = user_message.lower()
+    matched: list[str] = []
     for lang, keywords in _LANG_KEYWORDS.items():
         if any(kw in msg_lower for kw in keywords):
-            return lang
-    return _DEFAULT_LANG
+            matched.append(lang)
+
+    if not matched:
+        return _DEFAULT_LANG
+
+    # When both JS and TS are plausible, prefer JavaScript (the model's
+    # default output when it sees "ES6+" is often TypeScript otherwise).
+    if "typescript" in matched and "javascript" in matched:
+        matched.remove("typescript")
+
+    return matched[0]
 
 
 def _get_lang_config(language: str) -> dict[str, str]:
@@ -240,82 +257,99 @@ def _get_lang_config(language: str) -> dict[str, str]:
 
 
 def _build_code_quality_section(language: str) -> str:
-    """Build language-specific code quality rules for the coding prompt."""
+    """Build language-specific code quality rules for the coding prompt.
+
+    Returns a formatted block that appends after the syntax example in
+    the coding prompt.  Every language follows the same heading format
+    ``CODE QUALITY — {Language}:`` for consistency.
+    """
     cfg = _get_lang_config(language)
     lang_name = cfg["name"]
 
+    base = (
+        f"CODE QUALITY \u2014 {lang_name}:\n"
+        "- Follow idiomatic {lang} conventions\n"
+        "- Set explicit timeouts on ALL network/HTTP calls (or timeout equivalent)\n"
+        "- Handle errors with typed exceptions / structured error output \u2014 "
+        "never silent failures\n"
+        "- Do NOT invent API keys \u2014 free/public APIs (Open-Meteo, wttr.in, "
+        "ipapi.co, \u2026) require none\n"
+    )
+
     if language == "python":
-        return (
-            "CODE QUALITY (apply unless the user explicitly opts out):\n"
-            "- Entry-point file MUST use `if __name__ == '__main__':` guard so it can be safely imported without side effects\n"
-            "- All HTTP calls MUST have an explicit `timeout` argument (e.g. `timeout=10`). Never call `urlopen()` without a timeout\n"
-            "- Wrap network, HTTP-status, and parse failures in a single `try/except` with three distinct branches:\n"
-            "    except urllib.error.URLError as e:   # network / DNS / connection refused\n"
-            "    except urllib.error.HTTPError as e:  # server returned 4xx / 5xx\n"
-            "    except json.JSONDecodeError:         # response was not valid JSON\n"
-            "  Each branch MUST print a different, human-readable message so the failure mode is obvious\n"
-            "- Use `with urllib.request.urlopen(...) as resp:` for auto-cleanup of the HTTP connection\n"
-            "- Do NOT invent API keys. Free public APIs (Open-Meteo, wttr.in, ipapi.co, CoinGecko, etc.) require no key. If you receive 401/403, the URL or parameter is wrong, not the key\n"
-            "- When the user specifies an output format (table, list, JSON, CSV, \u2026), follow it EXACTLY \u2014 don't downgrade to bare `print()` calls\n"
-            "- Raise `ValueError` for bad inputs, `RuntimeError` for runtime failures. Do NOT `print('error:', e); sys.exit(1)` \u2014 callers and the auto-fix loop need to see the exception"
+        return base.format(lang="Python") + (
+            "- Entry-point file MUST use `if __name__ == '__main__':` guard\n"
+            "- Wrap HTTP calls in three distinct `except` branches: "
+            "`URLError` (network), `HTTPError` (4xx/5xx), "
+            "`JSONDecodeError` (parse)\n"
+            "- Raise `ValueError` for bad inputs, `RuntimeError` for runtime "
+            "failures \u2014 do NOT `print(); sys.exit(1)` (hides errors "
+            "from the auto-fix loop)\n"
+            "- Match output format EXACTLY (JSON, CSV, table, \u2026) \u2014 "
+            "the user's format constraint is stricter than bare `print()`"
         )
     elif language == "powershell":
-        return (
-            f"{lang_name} CODE QUALITY:\n"
-            "- Begin EVERY script with `#Requires -Version 5.1` (or `#Requires -Modules ...`) for explicit dependency declaration\n"
-            "- Use `[CmdletBinding()]` + `param()` block for ALL advanced functions and scripts — never rely on `$args` positional magic\n"
-            "- Prefer `Write-Output` for data (goes to pipeline), `Write-Host` ONLY for host UI (cannot be captured), "
-            "`Write-Verbose`/`Write-Debug` for diagnostics, `Write-Error` or `throw` for errors\n"
-            "- Use `try { } catch { } finally { }` generously — never leave a fallible operation unprotected\n"
-            "- Set `$ErrorActionPreference = 'Stop'` at the script start so errors are terminating by default; "
-            "use `-ErrorAction SilentlyContinue` ONLY on intentionally ignored failures\n"
-            "- When calling external APIs with `Invoke-RestMethod`, ALWAYS set `-TimeoutSec` (e.g. `30`) and wrap in `try/catch` for network, HTTP status, and JSON parse failures\n"
-            "- Check `$LASTEXITCODE` immediately after calling native EXEs (e.g. `if ($LASTEXITCODE -ne 0) { throw \"...\" }`)\n"
-            "- Use splatting (`@Params`) for cmdlets with 3+ arguments — keeps lines under 120 chars and improves readability\n"
-            "- Structure advanced functions with `begin { }` / `process { }` / `end { }` blocks for correct pipeline behavior\n"
-            "- Emit structured data via `[PSCustomObject]@{ ... }` instead of concatenated strings — enables further pipeline processing\n"
-            "- Do NOT invent API keys \u2014 use free/public APIs where possible\n"
-            "- For modular code, prefer `.psm1` modules with a `.psd1` manifest over monolithic `.ps1` scripts"
+        return base.format(lang="PowerShell") + (
+            "- Begin scripts with `#Requires -Version 5.1` for dependency "
+            "declaration\n"
+            "- Use `[CmdletBinding()]` + `param()` for ALL advanced functions "
+            "\u2014 never `$args` positional magic\n"
+            "- Set `$ErrorActionPreference = 'Stop'` top-of-script; "
+            "`-ErrorAction SilentlyContinue` only on intentionally ignored "
+            "calls\n"
+            "- Use `$PSCustomObject @{ ... }` for structured output (pipeline-ready) "
+            "over concatenated strings\n"
+            "- Check `$LASTEXITCODE` right after native EXE calls\n"
+            "- Structure pipeline functions via `begin {}` / `process {}` / `end {}`"
         )
     elif language in ("bash", "shell"):
-        return (
-            "CODE QUALITY:\n"
-            "- Start with `#!/usr/bin/env bash` shebang\n"
-            "- Use `set -euo pipefail` for strict error handling\n"
-            "- Check exit codes and handle errors gracefully\n"
-            "- Use `curl -fsSL` with `--connect-timeout` and `--max-time` for HTTP calls\n"
-            "- Add meaningful error messages: `echo \"Error: ...\" >&2; exit 1`\n"
-            "- Quote all variable expansions: `\"$var\"` instead of `$var`\n"
-            "- Do NOT invent API keys \u2014 use free/public APIs where possible"
+        return base.format(lang="Bash") + (
+            "- Start with `#!/usr/bin/env bash` + `set -euo pipefail`\n"
+            "- Use `curl -fsSL` with `--connect-timeout` + `--max-time` for HTTP\n"
+            "- Emit errors to stderr: `echo \"...\" >&2; return 1`\n"
+            "- Quote ALL variable expansions: `\"$var\"` never `$var`\n"
+            "- Parse JSON with `jq` when the output path expects structured data"
         )
     else:
-        return (
-            f"CODE QUALITY \u2014 {lang_name}:\n"
-            "- Follow idiomatic {lang_name} conventions\n"
-            "- Handle errors gracefully with try/catch or equivalent\n"
-            "- Set explicit timeouts on all network calls\n"
-            "- Do NOT invent API keys\n"
-            "- Include a proper entry-point / main function"
-        ).format(lang_name=lang_name)
+        return base.format(lang=lang_name) + (
+            "- Include a proper entry-point / main function\n"
+            "- Use try/catch (or the language's error-handling idiom)"
+        )
 
 
 def _build_syntax_example(language: str) -> str:
-    """Build a language-appropriate syntax example for the coding prompt."""
+    """Build a language-appropriate syntax example for the coding prompt.
+
+    Each example demonstrates ~8-12 lines of correct, idiomatic code for
+    the target language — balanced parens/braces/brackets, closed strings,
+    proper indentation, and a realistic error-handling pattern.
+    """
     if language in ("javascript", "typescript", "jsx", "tsx"):
         return (
             "async function fetchData(url, timeout = 10) {\n"
-            "  const response = await fetch(url, { signal: AbortSignal.timeout(timeout * 1000) });\n"
-            "  if (!response.ok) throw new Error(`HTTP ${response.status}`);\n"
-            "  return response.json();\n"
+            "  const controller = new AbortController();\n"
+            "  const id = setTimeout(() => controller.abort(), timeout * 1000);\n"
+            "  try {\n"
+            "    const resp = await fetch(url, { signal: controller.signal });\n"
+            "    if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);\n"
+            "    return await resp.json();\n"
+            "  } finally {\n"
+            "    clearTimeout(id);\n"
+            "  }\n"
             "}\n"
         )
     elif language == "powershell":
         return (
             "function Get-Data {\n"
-            "    param([string]$Url, [int]$Timeout = 30)\n"
+            "    [CmdletBinding()]\n"
+            "    param(\n"
+            "        [Parameter(Mandatory)]\n"
+            "        [string]$Url,\n"
+            "        [int]$TimeoutSec = 30\n"
+            "    )\n"
             "    try {\n"
-            "        $resp = Invoke-RestMethod -Uri $Url -TimeoutSec $Timeout -ErrorAction Stop\n"
-            "        return $resp\n"
+            "        $resp = Invoke-RestMethod -Uri $Url -TimeoutSec $TimeoutSec -ErrorAction Stop\n"
+            "        return [PSCustomObject]@{ status = 'ok'; data = $resp }\n"
             "    } catch {\n"
             "        Write-Error $_.Exception.Message\n"
             "        throw\n"
@@ -324,17 +358,35 @@ def _build_syntax_example(language: str) -> str:
         )
     elif language in ("bash", "shell"):
         return (
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            "\n"
             "fetch_data() {\n"
             "  local url=\"$1\"\n"
             "  local timeout=\"${2:-10}\"\n"
-            "  curl -fsSL --connect-timeout \"$timeout\" --max-time \"$((timeout * 2))\" \"$url\"\n"
+            "  curl -fsSL --connect-timeout \"$timeout\" --max-time \"$((timeout * 2))\" \"$url\" || {\n"
+            "    echo \"Error: fetch failed\" >&2\n"
+            "    return 1\n"
+            "  }\n"
             "}\n"
         )
     # Default Python example
     return (
-        "def fetch(url: str, timeout: int = 10) -> str:\n"
+        "import json\n"
+        "import sys\n"
+        "import urllib.request\n"
+        "\n"
+        "def fetch_data(url: str, timeout: int = 10) -> dict:\n"
         "    with urllib.request.urlopen(url, timeout=timeout) as resp:\n"
-        "        return resp.read().decode('utf-8')\n"
+        "        return json.loads(resp.read().decode('utf-8'))\n"
+        "\n"
+        "def process(items: list[dict]) -> list[str]:\n"
+        "    return [i.get('name', '?') for i in items if i.get('active')]\n"
+        "\n"
+        "if __name__ == '__main__':\n"
+        "    data = fetch_data('https://api.example.com/data')\n"
+        "    names = process(data.get('items', []))\n"
+        "    print('\\n'.join(names))\n"
     )
 
 
