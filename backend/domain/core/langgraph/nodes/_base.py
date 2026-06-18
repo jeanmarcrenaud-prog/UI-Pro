@@ -200,11 +200,12 @@ def _emit_step(phase: str, message: str, data: dict | None = None):
 # ========================================
 
 _LANG_KEYWORDS: dict[str, set[str]] = {
+    "python": {"python"},
     "powershell": {"powershell", "pwsh", "ps1", "posh", "microsoft teams"},
     "bash": {"bash", "shell script", "sh ", ".sh"},
     "batch": {".bat", ".cmd", "batch"},
     "javascript": {"javascript", "js ", ".js", "nodejs", "node.js"},
-    "typescript": {"typescript", "ts ", ".ts"},
+    "typescript": {"typescript", ".ts"},
 }
 
 _LANG_CONFIG: dict[str, dict[str, str]] = {
