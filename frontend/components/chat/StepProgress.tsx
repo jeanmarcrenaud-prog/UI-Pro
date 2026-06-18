@@ -38,7 +38,7 @@ interface StepBadge {
 function collectExtraBadges(steps: AgentStep[]): Map<string, StepBadge[]> {
   const badges = new Map<string, StepBadge[]>();
   for (const s of steps) {
-    if (PIPELINE_SET.has(s.id)) continue;
+    if (PIPELINE_SET.has(s.id as typeof PIPELINE_STEP_IDS[number])) continue;
     if (!s.detail) continue;
 
     if (s.id === 'step-fixing' || s.id === 'step-execution_failed') {
@@ -157,7 +157,7 @@ export function StepProgress({
   const pipelineSteps = useMemo(() => {
     const byId = new Map<string, AgentStep>();
     for (const s of steps) {
-      if (PIPELINE_SET.has(s.id)) byId.set(s.id, s);
+      if (PIPELINE_SET.has(s.id as typeof PIPELINE_STEP_IDS[number])) byId.set(s.id, s);
     }
     return PIPELINE_STEP_IDS.map((id) => byId.get(id)).filter(Boolean) as AgentStep[];
   }, [steps]);

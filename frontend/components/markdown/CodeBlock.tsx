@@ -13,7 +13,9 @@ import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism'
 // plain text (the user's "coloration syntaxique" issue).
 // @ts-expect-error - react-syntax-highlighter has no type declarations for deep CJS paths
 import bash from 'react-syntax-highlighter/dist/cjs/languages/prism/bash'
+// @ts-expect-error - react-syntax-highlighter has no type declarations for deep CJS paths
 import batch from 'react-syntax-highlighter/dist/cjs/languages/prism/batch'
+// @ts-expect-error - react-syntax-highlighter has no type declarations for deep CJS paths
 import cpp from 'react-syntax-highlighter/dist/cjs/languages/prism/cpp'
 // @ts-expect-error - react-syntax-highlighter has no type declarations for deep CJS paths
 import css from 'react-syntax-highlighter/dist/cjs/languages/prism/css'
@@ -27,7 +29,9 @@ import json from 'react-syntax-highlighter/dist/cjs/languages/prism/json'
 import markdown from 'react-syntax-highlighter/dist/cjs/languages/prism/markdown'
 // @ts-expect-error - react-syntax-highlighter has no type declarations for deep CJS paths
 import markup from 'react-syntax-highlighter/dist/cjs/languages/prism/markup'
+// @ts-expect-error - react-syntax-highlighter has no type declarations for deep CJS paths
 import powershell from 'react-syntax-highlighter/dist/cjs/languages/prism/powershell'
+// @ts-expect-error - react-syntax-highlighter has no type declarations for deep CJS paths
 import python from 'react-syntax-highlighter/dist/cjs/languages/prism/python'
 // @ts-expect-error - react-syntax-highlighter has no type declarations for deep CJS paths
 import sql from 'react-syntax-highlighter/dist/cjs/languages/prism/sql'

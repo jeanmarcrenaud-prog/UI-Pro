@@ -424,6 +424,13 @@ def _strategy_generic_blocks(text: str) -> dict[str, Any] | None:
         fname = _extract_filename_from_header(text, block_start)
         if not fname:
             ext = LANG_EXTENSIONS.get(lang, f".{lang}")
+            # Détection TS/JSX explicite
+            if lang in ("typescript", "ts", "mts"):
+                ext = ".ts"
+            elif lang in ("tsx",):
+                ext = ".tsx"
+            elif lang in ("jsx",):
+                ext = ".jsx"
             fname = f"script{ext}"
         fname = _dedup_filename(fname, seen_names)
 
@@ -515,10 +522,9 @@ def _finalize(code_dict: dict[str, Any]) -> dict[str, Any]:
     Si le dictionnaire complet échoue la validation, on tente 3 palliatifs
     dans l'ordre :
 
-    1. Supprimer les fichiers dont l'extension est invalide (ex: ``.typed``
-       n'est pas dans la liste blanche) et revalider le reste.
-    2. Corriger l'indentation des fichiers Python via ``fix_indentation``.
-    3. Réparer la syntaxe Python via ``fix_syntax_errors``.
+    1. Supprimer les fichiers dont l'extension est invalide.
+    2. Appliquer ``fix_code_by_language()`` à chaque fichier selon son extension.
+    3. Réparations par langage (bracket balancing générique).
 
     Si tout échoue, on retourne le dictionnaire brut pour que l'appelant
     décide — plutôt que de tout jeter.
@@ -530,10 +536,6 @@ def _finalize(code_dict: dict[str, Any]) -> dict[str, Any]:
         logger.warning("Final validation failed: %s — attempting salvage...", e)
 
         if "files" in code_dict:
-            # Rebuild with only validly-named files first (content may still
-            # fail, but at least the filename check passes). This handles
-            # unsupported extensions like `.typed` without dropping
-            # everything downstream.
             valid_names: dict[str, str] = {}
             invalid_names: list[str] = []
             for fname, fcontent in code_dict["files"].items():
@@ -561,29 +563,20 @@ def _finalize(code_dict: dict[str, Any]) -> dict[str, Any]:
                     except ValueError:
                         pass
 
-            # Salvage 1: fix indentation on Python files only
-            # (fix_indentation uses compile() internally — not safe for .ps1, .sh, etc.)
-            salvaged: dict[str, str] = {}
-            for fname, fcontent in code_dict["files"].items():
-                if isinstance(fcontent, str) and fname.endswith(tuple(_PYTHON_EXTENSIONS)):
-                    salvaged[fname] = fix_indentation(fcontent)
-            if salvaged:
-                try:
-                    extracted = ExtractedCode.model_validate({"files": salvaged})
-                    logger.info("Salvaged via indentation fix: %d files", len(salvaged))
-                    return extracted.to_dict()
-                except ValueError:
-                    pass
+            # Salvage: apply fix_code_by_language() to every file based on extension
+            from .repair import fix_code_by_language as _fix_by_lang
 
-            # Salvage 2: syntax repair — Python files only (uses compile() internally)
-            repaired_salvage: dict[str, str] = {}
+            salvage_all: dict[str, str] = {}
             for fname, fcontent in code_dict["files"].items():
-                if isinstance(fcontent, str) and fname.endswith(tuple(_PYTHON_EXTENSIONS)):
-                    repaired_salvage[fname] = fix_syntax_errors(fcontent)
-            if repaired_salvage:
+                if isinstance(fcontent, str):
+                    salvage_all[fname] = _fix_by_lang(fname, fcontent)
+            if salvage_all:
                 try:
-                    extracted = ExtractedCode.model_validate({"files": repaired_salvage})
-                    logger.info("Salvaged via syntax repair: %d files", len(repaired_salvage))
+                    extracted = ExtractedCode.model_validate({"files": salvage_all})
+                    logger.info(
+                        "Salvaged via fix_code_by_language: %d files",
+                        len(salvage_all),
+                    )
                     return extracted.to_dict()
                 except ValueError:
                     pass

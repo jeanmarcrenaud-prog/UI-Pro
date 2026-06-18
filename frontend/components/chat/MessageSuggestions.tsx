@@ -1,9 +1,10 @@
 // MessageSuggestions.tsx
-// Role: Contextual action buttons below AI responses
+// Role: Contextual action buttons below AI responses — grouped by priority
 
 'use client'
 
-import { Wand2, FileCode, Zap, Shield, Package } from 'lucide-react'
+import { useState } from 'react'
+import { Wand2, FileCode, Zap, Shield, Package, ChevronDown, ChevronUp } from 'lucide-react'
 import { useI18n } from '@/lib/i18n'
 
 interface MessageSuggestionsProps {
@@ -12,8 +13,9 @@ interface MessageSuggestionsProps {
 
 export function MessageSuggestions({ onSuggestion }: MessageSuggestionsProps) {
   const { t } = useI18n()
+  const [showAll, setShowAll] = useState(false)
   
-  const suggestionPresets = [
+  const primaryActions = [
     {
       icon: Wand2,
       key: 'improveCode' as const,
@@ -28,6 +30,9 @@ export function MessageSuggestions({ onSuggestion }: MessageSuggestionsProps) {
 
 {code}`,
     },
+  ]
+
+  const advancedTools = [
     {
       icon: Zap,
       key: 'fastapiVersion' as const,
@@ -53,7 +58,29 @@ export function MessageSuggestions({ onSuggestion }: MessageSuggestionsProps) {
 
   return (
     <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-slate-800">
-      {suggestionPresets.map((s) => (
+      {/* Primary actions */}
+      {primaryActions.map((s) => (
+        <button
+          key={s.key}
+          onClick={() => onSuggestion(s.prompt)}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-violet-900/30 hover:bg-violet-800/40 border border-violet-700/40 hover:border-violet-600/60 rounded-lg text-violet-300 hover:text-violet-200 transition-colors font-medium"
+        >
+          <s.icon className="w-3.5 h-3.5" />
+          {t.suggestions[s.key]}
+        </button>
+      ))}
+
+      {/* Advanced tools toggle */}
+      <button
+        onClick={() => setShowAll(!showAll)}
+        className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 rounded-lg text-slate-500 hover:text-slate-300 transition-colors"
+      >
+        {showAll ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+        {showAll ? 'Less' : 'More'}
+      </button>
+
+      {/* Advanced tools (collapsible) */}
+      {showAll && advancedTools.map((s) => (
         <button
           key={s.key}
           onClick={() => onSuggestion(s.prompt)}

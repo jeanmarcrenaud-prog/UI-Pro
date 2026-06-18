@@ -372,7 +372,7 @@ export function DebugPanel() {
                                 <Badge variant="secondary" className="text-[10px] ml-auto">{step.duration.toFixed(1)}s</Badge>
                               )}
                               {step.tokens !== undefined && step.tokens > 0 && (
-                                <Badge variant="outline" className="text-[10px] bg-slate-800/50">{step.tokens} tok</Badge>
+                                <Badge variant="default" className="text-[10px] bg-slate-800/50">{step.tokens} tok</Badge>
                               )}
                             </div>
                             {step.detail && (

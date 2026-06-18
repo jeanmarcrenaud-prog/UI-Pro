@@ -298,6 +298,45 @@ def _build_code_quality_section(language: str) -> str:
         ).format(lang_name=lang_name)
 
 
+def _build_syntax_example(language: str) -> str:
+    """Build a language-appropriate syntax example for the coding prompt."""
+    if language in ("javascript", "typescript", "jsx", "tsx"):
+        return (
+            "async function fetchData(url, timeout = 10) {\n"
+            "  const response = await fetch(url, { signal: AbortSignal.timeout(timeout * 1000) });\n"
+            "  if (!response.ok) throw new Error(`HTTP ${response.status}`);\n"
+            "  return response.json();\n"
+            "}\n"
+        )
+    elif language == "powershell":
+        return (
+            "function Get-Data {\n"
+            "    param([string]$Url, [int]$Timeout = 30)\n"
+            "    try {\n"
+            "        $resp = Invoke-RestMethod -Uri $Url -TimeoutSec $Timeout -ErrorAction Stop\n"
+            "        return $resp\n"
+            "    } catch {\n"
+            "        Write-Error $_.Exception.Message\n"
+            "        throw\n"
+            "    }\n"
+            "}\n"
+        )
+    elif language in ("bash", "shell"):
+        return (
+            "fetch_data() {\n"
+            "  local url=\"$1\"\n"
+            "  local timeout=\"${2:-10}\"\n"
+            "  curl -fsSL --connect-timeout \"$timeout\" --max-time \"$((timeout * 2))\" \"$url\"\n"
+            "}\n"
+        )
+    # Default Python example
+    return (
+        "def fetch(url: str, timeout: int = 10) -> str:\n"
+        "    with urllib.request.urlopen(url, timeout=timeout) as resp:\n"
+        "        return resp.read().decode('utf-8')\n"
+    )
+
+
 # Heuristics used by the reviewing_node to surface severity and a
 # coarse quality score from a free-text review. Both run in
 # microseconds and never block on the LLM — the LLM is asked for a

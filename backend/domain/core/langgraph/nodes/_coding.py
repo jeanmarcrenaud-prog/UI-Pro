@@ -19,6 +19,7 @@ from ..state import AgentState
 from ._base import (
     _build_code_quality_section,
     _build_llm,
+    _build_syntax_example,
     _clean_plan,
     _detect_language,
     _emit_step,
@@ -117,9 +118,7 @@ async def coding_node(state: AgentState) -> dict[str, Any]:
         f"```\n\n"
         "GOOD:\n"
         f"```{block}\n"
-        "def fetch(url: str, timeout: int = 10) -> str:\n"
-        "    with urllib.request.urlopen(url, timeout=timeout) as resp:\n"
-        "        return resp.read().decode('utf-8')\n"
+        f"{_build_syntax_example(language)}\n"
         f"```\n\n"
         f"{_build_code_quality_section(language)}"
     )

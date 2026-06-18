@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { Terminal, Send, Edit3, XCircle, AlertTriangle } from 'lucide-react'
 import { chatService } from '@/services/chatService'
 import { events } from '@/lib/events'
 
@@ -75,15 +76,36 @@ export function ExecutionApproval() {
           exit={{ opacity: 0, y: -10 }}
           className="w-full"
         >
-          <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-amber-500/30 rounded-2xl p-5 shadow-lg shadow-amber-500/10">
-            {/* Header */}
-            <div className="flex items-center gap-3 mb-4">
-              <span className="text-xl">👀</span>
-              <div>
-                <div className="text-sm font-medium text-amber-300">
-                  Code ready — execute or adjust?
+          <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-amber-500/40 rounded-2xl p-5 shadow-lg shadow-amber-500/15">
+            {/* Header with pulsing badge */}
+            <div className="flex items-center gap-4 mb-4">
+              <motion.div
+                className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center shrink-0"
+                animate={{ 
+                  boxShadow: [
+                    '0 0 0 0 rgba(245,158,11,0.3)',
+                    '0 0 0 12px rgba(245,158,11,0)',
+                    '0 0 0 0 rgba(245,158,11,0)',
+                  ]
+                }}
+                transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+              >
+                <AlertTriangle className="w-5 h-5 text-amber-400" />
+              </motion.div>
+              <div className="flex-1">
+                <div className="flex items-center gap-3">
+                  <span className="text-base font-semibold text-amber-300">
+                    Code ready — execute or adjust?
+                  </span>
+                  <motion.span 
+                    className="text-[10px] font-bold uppercase tracking-widest text-amber-400 bg-amber-500/15 px-2.5 py-1 rounded-full border border-amber-500/40"
+                    animate={{ opacity: [0.6, 1, 0.6] }}
+                    transition={{ duration: 1.8, repeat: Infinity }}
+                  >
+                    Awaiting approval
+                  </motion.span>
                 </div>
-                <div className="text-xs text-slate-500">
+                <div className="text-xs text-slate-500 mt-0.5">
                   Review the generated code before running it
                 </div>
               </div>
@@ -91,7 +113,7 @@ export function ExecutionApproval() {
 
             {/* Code preview (truncated) */}
             {approval.code_preview && (
-              <pre className="text-xs font-mono text-slate-300 bg-slate-950/80 rounded-xl p-4 mb-4 max-h-48 overflow-auto border border-slate-700/50 whitespace-pre-wrap">
+              <pre className="text-xs font-mono text-slate-300 bg-slate-950/80 rounded-xl p-4 mb-4 max-h-64 overflow-auto border border-slate-700/50 whitespace-pre-wrap">
                 {approval.code_preview.length > 2000
                   ? approval.code_preview.slice(0, 2000) + '\n... (truncated)'
                   : approval.code_preview}
@@ -135,7 +157,7 @@ export function ExecutionApproval() {
                 whileTap={{ scale: 0.98 }}
                 className="px-6 py-2.5 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 rounded-xl font-semibold text-sm text-white transition-all shadow-lg shadow-emerald-500/20 flex items-center gap-2"
               >
-                <span>▶</span>
+                <Send className="w-4 h-4" />
                 Execute
               </motion.button>
 
@@ -149,7 +171,7 @@ export function ExecutionApproval() {
                     : 'bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30'
                 }`}
               >
-                <span>✏</span>
+                <Edit3 className="w-4 h-4" />
                 {showFeedbackInput ? 'Send correction' : 'Correct'}
               </motion.button>
 
@@ -159,7 +181,7 @@ export function ExecutionApproval() {
                 whileTap={{ scale: 0.98 }}
                 className="px-6 py-2.5 bg-slate-800 hover:bg-slate-700 rounded-xl font-semibold text-sm text-slate-400 transition-all border border-slate-700/50 flex items-center gap-2"
               >
-                <span>✕</span>
+                <XCircle className="w-4 h-4" />
                 Cancel
               </motion.button>
             </div>

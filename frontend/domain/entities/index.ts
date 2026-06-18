@@ -6,6 +6,7 @@ export type {
   AssistantMessage,
   AgentMessage,
   ChatHistoryItem,
+  ChatState,
 } from './Message'
 // Re-exported from lib/types for consistency
 export type { ChatState } from '@/lib/types'

@@ -6,9 +6,11 @@ Les LLM produisent parfois du code avec :
 - Une indentation inconsistante (mélange tabulations/espaces, lignes désalignées)
 - Des caractères Unicode invalides ou des symboles spéciaux (♦, ●, →, ⇒, guillemets
   typographiques, caractères de contrôle) qui cassent la syntaxe Python
+- Des annotations de type TypeScript exécutées comme du JavaScript pur
+- Du shell mélangé avec d'autres langages
 
-Ce module fournit deux fonctions correctives utilisées par la chaîne de
-validation d'``ExtractedFile`` et par la phase de salvage dans ``_finalize``.
+Ce module fournit des réparateurs spécialisés par langage, dispatchés
+automatiquement via ``fix_code_by_language()``.
 """
 
 from __future__ import annotations
@@ -37,6 +39,284 @@ _INVALID_CHAR_REPLACEMENTS: dict[str, str] = {
     "\u201c": '"',
     "\u201d": '"',
 }
+
+
+# ── Dispatcher ────────────────────────────────────────────────────────────
+
+
+def fix_code_by_language(name: str, content: str) -> str:
+    """Route vers le bon réparateur selon l'extension du fichier.
+
+    Arguments
+    ---------
+    name
+        Nom du fichier (ex: ``main.py``, ``script.ts``, ``install.sh``).
+    content
+        Contenu brut du fichier à réparer.
+
+    Returns
+    -------
+    str
+        Contenu réparé (meilleur effort). Si aucune réparation spécifique
+        n'est disponible, retourne ``fix_generic_content()``.
+    """
+    ext = name.lower().split(".")[-1] if "." in name else ""
+
+    if ext in ("py", "pyw"):
+        return fix_python_syntax(content)
+    elif ext in ("js", "mjs", "cjs"):
+        return fix_javascript_syntax(content)
+    elif ext in ("ts", "mts", "cts"):
+        return fix_typescript_syntax(content)
+    elif ext in ("jsx", "tsx"):
+        return fix_javascript_syntax(content)
+    elif ext in ("sh", "bash", "zsh"):
+        return fix_shell_syntax(content)
+    elif ext in ("bat", "cmd"):
+        return _fix_bracket_balance(content)
+    elif ext in ("ps1", "psm1", "psd1"):
+        return _fix_bracket_balance(content)
+    else:
+        return fix_generic_content(content)
+
+
+# ── Réparateur Python (existant) ─────────────────────────────────────────
+
+
+def fix_python_syntax(code: str) -> str:
+    """Répare la syntaxe Python via indent + bracket balancing + compile().
+
+    Enchaîne ``fix_indentation()`` puis ``fix_syntax_errors()``.
+    """
+    indented = fix_indentation(code)
+    return fix_syntax_errors(indented)
+
+
+# ── Réparateur JavaScript/JSX ────────────────────────────────────────────
+
+
+def fix_javascript_syntax(code: str) -> str:
+    """Répare les erreurs courantes en JavaScript/JSX.
+
+    Supprime les annotations de type TypeScript qui cassent Node.js :
+    - ``city: string`` dans les paramètres de fonction → ``city``
+    - ``): Promise<string>`` → ``)``
+    - ``(x: number): string =>`` → ``(x) =>``
+    - ``const x: string =`` → ``const x =``
+
+    Préserve les propriétés d'objets (``{ signal: AbortSignal }``) et
+    les alias de destructuring (``const { x: alias }``).
+    """
+    lines = code.split("\n")
+    fixed: list[str] = []
+    in_comment = False
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Skip comments
+        if stripped.startswith("//") or stripped.startswith("#"):
+            fixed.append(line)
+            continue
+        if "/*" in stripped:
+            in_comment = True
+        if in_comment:
+            fixed.append(line)
+            if "*/" in stripped:
+                in_comment = False
+            continue
+
+        original = line
+
+        # 1. Remove generic type params on functions: function foo<T>( → function foo(
+        line = re.sub(r"(function\s+\w+)\s*<[^>]+>\s*\(", r"\1(", line)
+
+        # 2. Remove type annotations INSIDE parens (function params).
+        #    Order matters: match complex types (array[]) before simple keywords.
+        #
+        #    2a. Array types: items: string[] → items
+        line = re.sub(
+            r"(?<=[(,])\s*(\w+)\s*:\s*\w+(?:<[^>]*>)?\[\]",
+            r" \1",
+            line,
+        )
+
+        #    2b. Simple keyword types: city: string, timeout: number
+        line = re.sub(
+            r"(?<=[(,])\s*(\w+)\s*:\s*(string|number|boolean|any|void|never"
+            r"|unknown|null|undefined|bigint|symbol)\b",
+            r" \1",
+            line,
+        )
+
+        #    2c. Complex types inside parens: callback: (item) => void → callback
+        #        callback?: (item) => void → callback?
+        line = re.sub(
+            r"(?<=[(,])\s*(\w+\??)\s*:\s*\([^)]*\)\s*(?:=>|:)\s*\w+(?:<[^>]*>)?",
+            r" \1",
+            line,
+        )
+
+        #    2d. Optional param with type + default: name?: string = 'hello' → name? = 'hello'
+        line = re.sub(
+            r"(?<=[(,])\s*(\w+\?)\s*:\s*\w+(?:\[\])?\s*(=)",
+            r" \1 \2",
+            line,
+        )
+
+        #    2e. Optional param with type + comma: name?: string, → name?,
+        line = re.sub(
+            r"(?<=[(,])\s*(\w+\?)\s*:\s*\w+(?:\[\])?(\s*[,)])",
+            r" \1\2",
+            line,
+        )
+
+        # 3. Remove return type between ) and { or ) and => or ) and :
+        #    ): Promise<string> { → ) {
+        line = re.sub(
+            r"(\))\s*:\s*(string|number|boolean|any|void|never|unknown|null"
+            r"|undefined|bigint|symbol|Promise\s*<[^>]+>"
+            r"|Array\s*<[^>]+>|Record\s*<[^>]+,\s*[^>]+>)\s*",
+            r"\1 ",
+            line,
+        )
+
+        # 4. Arrow return type: (x) => Promise<string> → (x) =>
+        line = re.sub(
+            r"(\))\s*:\s*(string|number|boolean|any|void|never|unknown|null"
+            r"|undefined|bigint|symbol)\s*(=>)",
+            r"\1 \3",
+            line,
+        )
+
+        # 5. Const/let/var type annotations (keep value if present):
+        #    const x: string = "hello" → const x = "hello"
+        #    But NOT object properties: { signal: AbortSignal }
+        #    Strategy: only match after const/let/var on the same line
+        line = re.sub(
+            r"\b(const|let|var)\s+(\w+)\s*:\s*(string|number|boolean|any|void"
+            r"|never|unknown|null|undefined|bigint|symbol"
+            r"|Promise\s*<[^>]+>)\s*(=)",
+            r"\1 \2 \4",
+            line,
+        )
+
+        # 6. Class property type annotations: propertyName: string;
+        #    But NOT object literal keys: key: value
+        #    Conservative: only after visibility modifiers or at line start
+        line = re.sub(
+            r"^\s*(public|private|protected|readonly|static)\s+(\w+)\s*:\s*"
+            r"(string|number|boolean|any|void|never|unknown|null|undefined"
+            r"|bigint|symbol)",
+            r"\1 \2",
+            line,
+        )
+
+        if line != original:
+            logger.debug("fix_js: %s → %s", original.strip(), line.strip())
+        fixed.append(line)
+
+    result = "\n".join(fixed)
+    balance_fixed = _fix_bracket_balance(result)
+    return balance_fixed.strip()
+
+
+def fix_typescript_syntax(code: str) -> str:
+    """Répare les erreurs courantes en TypeScript.
+
+    Les TS étant déjà valide JS dans la plupart des cas, on conserve
+    les annotations. La réparation se concentre sur :
+    - L'équilibrage des parenthèses / crochets
+    - La dé-dentation
+    """
+    dedented = textwrap.dedent(code)
+    return _fix_bracket_balance(dedented).strip()
+
+
+# ── Réparateur Shell ─────────────────────────────────────────────────────
+
+
+def fix_shell_syntax(code: str) -> str:
+    """Répare les erreurs courantes en Shell/Bash.
+
+    - Supprime les backticks Python/JS qui entourent le code
+    - Nettoie les sauts de ligne excédentaires
+    - Supprime les annotations type Python en début de ligne
+    """
+    # Remove surrounding language backticks
+    code = re.sub(r"^```\w*\s*", "", code)
+    code = re.sub(r"\s*```$", "", code)
+    # Remove stray Python-like annotations (def, class, import, print)
+    code = re.sub(r"^\s*(def |class |import |from |print\s*\().*$", "", code, flags=re.MULTILINE)
+    # Collapse multiple blank lines
+    code = re.sub(r"\n{3,}", "\n\n", code)
+    return code.strip()
+
+
+# ── Réparateur générique ─────────────────────────────────────────────────
+
+
+def fix_generic_content(code: str) -> str:
+    """Réparation de base pour tout autre langage.
+
+    - Dé-dentation
+    - Équilibrage parenthèses/crochets/accolades
+    - Suppression des lignes vides multiples
+    """
+    dedented = textwrap.dedent(code)
+    balanced = _fix_bracket_balance(dedented)
+    # Collapse multiple blank lines
+    balanced = re.sub(r"\n{3,}", "\n\n", balanced)
+    return balanced.strip()
+
+
+# ── Bracket balancer générique (indépendant du langage) ────────────────
+
+
+def _fix_bracket_balance(code: str) -> str:
+    """Équilibre les parenthèses/crochets/accolades sans utiliser ``compile()``.
+
+    Version purement syntaxique (indépendante du langage) — contrairement
+    à ``fix_syntax_errors`` qui utilise ``tokenize`` + ``compile()`` (Python).
+    """
+    stack: list[str] = []
+    cleaned: list[str] = []
+
+    in_single_quote = False
+    in_double_quote = False
+    in_backtick = False
+    i = 0
+    while i < len(code):
+        ch = code[i]
+        prev_ch = code[i - 1] if i > 0 else ""
+
+        # Toggle string state (respect escapes)
+        if ch == "'" and not in_double_quote and not in_backtick and prev_ch != "\\":
+            in_single_quote = not in_single_quote
+        elif ch == '"' and not in_single_quote and not in_backtick and prev_ch != "\\":
+            in_double_quote = not in_double_quote
+        elif ch == "`" and not in_single_quote and not in_double_quote and prev_ch != "\\":
+            in_backtick = not in_backtick
+
+        if not in_single_quote and not in_double_quote and not in_backtick:
+            if ch in _PAIRS:
+                stack.append(ch)
+                cleaned.append(ch)
+            elif ch in _CLOSING:
+                if stack and _PAIRS.get(stack[-1]) == ch:
+                    stack.pop()
+                    cleaned.append(ch)
+                # else: extra closer → ignoré
+            else:
+                cleaned.append(ch)
+        else:
+            cleaned.append(ch)
+        i += 1
+
+    result = "".join(cleaned)
+    if stack:
+        result += "".join(_PAIRS[o] for o in reversed(stack))
+    return result
 
 
 def fix_syntax_errors(code: str) -> str:

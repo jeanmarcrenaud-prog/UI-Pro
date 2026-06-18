@@ -28,6 +28,13 @@ MAX_FILE_SIZE = 500_000
 # Extensions pour lesquelles on tente une validation compile()
 _PYTHON_EXTENSIONS = {".py", ".pyw"}
 
+# Extensions pour lesquelles on tente une validation syntaxique de base
+_VALIDATABLE_EXTENSIONS = _PYTHON_EXTENSIONS | {
+    ".js", ".mjs", ".cjs",
+    ".ts", ".mts", ".cts",
+    ".jsx", ".tsx",
+}
+
 # Extensions autorisées — tout fichier en dehors de cette liste est rejeté
 _VALID_EXTENSIONS = _PYTHON_EXTENSIONS | {
     ".ps1", ".psm1", ".psd1",        # PowerShell
@@ -98,18 +105,16 @@ def log_dangerous_patterns(code: str, context: str = "") -> list[str]:
 
 
 class ExtractedFile(BaseModel):
-    """Fichier unique validé : nom, contenu, et compilation Python si applicable.
+    """Fichier unique validé : nom, contenu, langage, et réparation par langage.
 
-    Le validateur ``content`` exécute une chaîne de réparation progressive :
-      1. ``textwrap.dedent()``
-      2. ``fix_indentation()``   → normalise les indentations inconsistantes
-      3. ``fix_syntax_errors()`` → équilibre parenthèses/crochets manquants
-    Si tout échoue, une ``ValueError`` remonte pour que l'extracteur passe
-    à la stratégie suivante.
+    Le validateur ``content`` applique ``fix_code_by_language()`` qui dispatche
+    vers le bon réparateur (Python → compile(), JS → strip types, etc.).
+    Le champ ``language`` est déduit automatiquement de l'extension.
     """
 
     name: str = Field(..., description="Nom du fichier avec extension")
     content: str = Field(..., description="Contenu du fichier")
+    language: str = Field(default="", description="Langage détecté (python, javascript, …)")
 
     @field_validator("name")
     @classmethod
@@ -130,8 +135,33 @@ class ExtractedFile(BaseModel):
         return v
 
     @model_validator(mode="after")
+    def infer_language(self) -> ExtractedFile:
+        """Déduit le langage à partir de l'extension du fichier."""
+        ext = self.name.lower().split(".")[-1] if "." in self.name else ""
+        lang_map = {
+            "py": "python", "pyw": "python",
+            "js": "javascript", "mjs": "javascript", "cjs": "javascript",
+            "ts": "typescript", "mts": "typescript", "cts": "typescript",
+            "jsx": "jsx", "tsx": "tsx",
+            "sh": "shell", "bash": "shell", "zsh": "shell",
+            "ps1": "powershell", "psm1": "powershell", "psd1": "powershell",
+            "bat": "batch", "cmd": "batch",
+            "rs": "rust", "go": "go", "java": "java",
+            "rb": "ruby", "php": "php", "swift": "swift",
+            "kt": "kotlin", "scala": "scala",
+            "c": "c", "cpp": "cpp", "h": "c", "hpp": "cpp",
+            "cs": "csharp", "fs": "fsharp",
+            "r": "r", "lua": "lua", "pl": "perl",
+            "sql": "sql", "html": "html", "css": "css",
+            "json": "json", "yaml": "yaml", "yml": "yaml",
+            "toml": "toml", "xml": "xml", "md": "markdown",
+        }
+        self.language = lang_map.get(ext, ext)
+        return self
+
+    @model_validator(mode="after")
     def validate_content(self) -> ExtractedFile:
-        """Validate content — Python files get compiled, others pass through."""
+        """Validate content — apply ``fix_code_by_language()`` for all languages."""
         v = self.content
         if len(v) > MAX_FILE_SIZE:
             raise ValueError(
@@ -144,44 +174,26 @@ class ExtractedFile(BaseModel):
         # Soft security check (warning only)
         log_dangerous_patterns(stripped, context=self.name)
 
-        # Skip Python compilation for non-Python files
-        if not any(self.name.endswith(ext) for ext in _PYTHON_EXTENSIONS):
-            return self
+        from .repair import fix_code_by_language as _fix_by_lang
 
-        # Try to compile as Python
-        try:
-            compile(stripped, self.name, "exec")
-        except SyntaxError as e:
-            # Try with dedented content
-            dedented = textwrap.dedent(stripped)
+        # Apply language-specific repair
+        repaired = _fix_by_lang(self.name, stripped)
+
+        # For Python, re-validate with compile() after repair
+        if any(self.name.endswith(ext) for ext in _PYTHON_EXTENSIONS):
             try:
-                compile(dedented, self.name, "exec")
-                self.content = dedented
+                compile(repaired, self.name, "exec")
+                self.content = repaired
                 return self
-            except SyntaxError:
-                from .repair import fix_indentation as _fix_indent
-                from .repair import fix_syntax_errors as _fix_syntax
+            except SyntaxError as e:
+                logger.warning(
+                    "Syntax error in generated code: %s at line %s",
+                    e.msg,
+                    e.lineno,
+                )
+                raise ValueError(f"Invalid Python syntax in '{self.name}': {e}")
 
-                # Aggressive fix: re-indent all lines based on the majority indent
-                fixed = _fix_indent(stripped)
-                try:
-                    compile(fixed, self.name, "exec")
-                    self.content = fixed
-                    return self
-                except SyntaxError:
-                    # Try basic syntax repair (balance parens/brackets)
-                    repaired = _fix_syntax(fixed)
-                    try:
-                        compile(repaired, self.name, "exec")
-                        self.content = repaired
-                        return self
-                    except SyntaxError:
-                        logger.warning(
-                            "Syntax error in generated code: %s at line %s",
-                            e.msg,
-                            e.lineno,
-                        )
-                        raise ValueError(f"Invalid Python syntax in '{self.name}': {e}")
+        self.content = repaired
         return self
 
 
