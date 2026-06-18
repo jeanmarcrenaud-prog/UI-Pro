@@ -65,6 +65,21 @@ def check_services():
         print_warning("npm - Non installé")
 
 
+def _resolve_python() -> str:
+    """Return the project's .venv Python, falling back to ``sys.executable``.
+
+    The launcher (``run.py``) is often invoked with the **system** Python
+    (``#!/usr/bin/env python3``).  Packages installed inside ``.venv/``
+    (e.g. ``ui-pro-prompts``) are invisible to the system interpreter, so
+    we explicitly resolve the venv path here.
+    """
+    project_root = Path(__file__).parent.parent.parent
+    venv_python = project_root / ".venv" / "Scripts" / "python.exe"
+    if venv_python.exists():
+        return str(venv_python)
+    return sys.executable
+
+
 def start_api(block: bool = True):
     """Lance FastAPI."""
     if check_port(8000):
@@ -75,11 +90,11 @@ def start_api(block: bool = True):
     print(f"{Colors.GREEN}→ http://localhost:{API_PORT}{Colors.RESET}")
     print(f"{Colors.GREEN}→ http://localhost:{API_PORT}/docs{Colors.RESET}")
 
-    # Launch via uvicorn using venv Python
-    venv_python = sys.executable
+    # Launch via uvicorn — use .venv Python (see _resolve_python)
+    python_exe = _resolve_python()
     subprocess.run(
         [
-            venv_python,
+            python_exe,
             "-m",
             "uvicorn",
             "backend.transport.views_api:app",
@@ -197,7 +212,7 @@ def run_tests():
     print_header("Lancement des tests")
 
     result = subprocess.run(
-        [sys.executable, "-m", "pytest", "tests/", "-v", "--tb=short"],
+        [_resolve_python(), "-m", "pytest", "tests/", "-v", "--tb=short"],
         cwd=Path(__file__).parent.parent.parent,
     )
 
