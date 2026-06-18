@@ -519,16 +519,27 @@ def _strategy_pure_python(text: str) -> dict[str, Any] | None:
 def _finalize(code_dict: dict[str, Any]) -> dict[str, Any]:
     """Validation finale avec chaîne de réparation (salvage).
 
-    Si le dictionnaire complet échoue la validation, on tente 3 palliatifs
-    dans l'ordre :
+    Avant la validation Pydantic, on applique ``fix_code_by_language()``
+    à chaque fichier selon son extension. Cela maximise les chances que
+    ``ExtractedCode.model_validate()`` réussisse dès le premier passage.
 
+    Si la validation complète échoue, on tente 3 palliatifs dans l'ordre :
     1. Supprimer les fichiers dont l'extension est invalide.
-    2. Appliquer ``fix_code_by_language()`` à chaque fichier selon son extension.
+    2. Appliquer ``fix_code_by_language()`` à chaque fichier (nouvel essai
+       après nettoyage des noms invalides).
     3. Réparations par langage (bracket balancing générique).
 
     Si tout échoue, on retourne le dictionnaire brut pour que l'appelant
     décide — plutôt que de tout jeter.
     """
+    # Pre-processing: réparer chaque fichier AVANT validation Pydantic
+    from .repair import fix_code_by_language as _fix_by_lang
+
+    for fname in list(code_dict.get("files", {}).keys()):
+        fcontent = code_dict["files"][fname]
+        if isinstance(fcontent, str):
+            code_dict["files"][fname] = _fix_by_lang(fname, fcontent)
+
     try:
         extracted = ExtractedCode.model_validate(code_dict)
         return extracted.to_dict()

@@ -98,8 +98,11 @@ def fix_code_by_language(name: str, content: str) -> str:
         lang = f"{ext} (generic)"
         result = fix_generic_content(content)
 
-    if result != content:
-        logger.debug("fix_code_by_language(%s): %d → %d chars (%s)", name, len(content), len(result), lang)
+    if result != content and len(content) > 50:
+        logger.info(
+            "fix_code_by_language: %s (%s) — %d → %d chars",
+            name, lang, len(content), len(result),
+        )
 
     return result
 
@@ -197,6 +200,16 @@ def fix_javascript_syntax(code: str) -> str:
             r"^\s*(public|private|protected|readonly|static)\s+(\w+)\s*:\s*"
             r"[^;=]+(?=\s*[;{])",
             r"\1 \2",
+            line,
+        )
+
+        # 6. Supprime les types génériques TypeScript inline:
+        #    { data: Record<string, any> } → { data }
+        #    (ces syntaxes sont TS uniquement et cassent Node)
+        line = re.sub(
+            r":\s*(Record|Array|Promise|Map|Set|WeakMap|WeakSet|Partial|"
+            r"Required|Readonly|Pick|Omit|Exclude|Extract|NonNullable)\s*<[^>]+>",
+            "",
             line,
         )
 
