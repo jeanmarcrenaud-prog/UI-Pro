@@ -71,23 +71,37 @@ def fix_code_by_language(name: str, content: str) -> str:
         n'est disponible, retourne ``fix_generic_content()``.
     """
     ext = name.lower().split(".")[-1] if "." in name else ""
+    lang = ext
 
     if ext in ("py", "pyw"):
-        return fix_python_syntax(content)
+        lang = "python"
+        result = fix_python_syntax(content)
     elif ext in ("js", "mjs", "cjs"):
-        return fix_javascript_syntax(content)
+        lang = "javascript"
+        result = fix_javascript_syntax(content)
     elif ext in ("ts", "mts", "cts"):
-        return fix_typescript_syntax(content)
+        lang = "typescript"
+        result = fix_typescript_syntax(content)
     elif ext in ("jsx", "tsx"):
-        return fix_javascript_syntax(content)
+        lang = "jsx/tsx"
+        result = fix_javascript_syntax(content)
     elif ext in ("sh", "bash", "zsh"):
-        return fix_shell_syntax(content)
+        lang = "shell"
+        result = fix_shell_syntax(content)
     elif ext in ("bat", "cmd"):
-        return _fix_bracket_balance(content)
+        lang = "batch"
+        result = _fix_bracket_balance(content)
     elif ext in ("ps1", "psm1", "psd1"):
-        return _fix_bracket_balance(content)
+        lang = "powershell"
+        result = _fix_bracket_balance(content)
     else:
-        return fix_generic_content(content)
+        lang = f"{ext} (generic)"
+        result = fix_generic_content(content)
+
+    if result != content:
+        logger.debug("fix_code_by_language(%s): %d → %d chars (%s)", name, len(content), len(result), lang)
+
+    return result
 
 
 # ── Réparateur Python (existant) ─────────────────────────────────────────
@@ -106,7 +120,7 @@ def fix_python_syntax(code: str) -> str:
 
 
 def fix_javascript_syntax(code: str) -> str:
-    """Répare les erreurs courantes en JavaScript/JSX.
+    """Répare les erreurs courantes en JavaScript/JSX/TSX (exécuté comme JS).
 
     Supprime les annotations de type TypeScript qui cassent Node.js :
     - ``city: string`` dans les paramètres de fonction → ``city``
@@ -119,111 +133,75 @@ def fix_javascript_syntax(code: str) -> str:
     """
     lines = code.split("\n")
     fixed: list[str] = []
-    in_comment = False
+    in_block_comment = False
 
     for line in lines:
         stripped = line.strip()
 
-        # Skip comments
-        if stripped.startswith("//") or stripped.startswith("#"):
-            fixed.append(line)
-            continue
-        if "/*" in stripped:
-            in_comment = True
-        if in_comment:
+        # Block comment en cours
+        if in_block_comment:
             fixed.append(line)
             if "*/" in stripped:
-                in_comment = False
+                in_block_comment = False
+            continue
+
+        # Ligne vide, commentaire // ou # → sauter
+        if not stripped or stripped.startswith(("//", "#")):
+            fixed.append(line)
+            continue
+
+        # Début de bloc commentaire /* */
+        if "/*" in stripped:
+            in_block_comment = True
+            fixed.append(line)
             continue
 
         original = line
 
-        # 1. Remove generic type params on functions: function foo<T>( → function foo(
+        # 1. Supprime les generics <T> sur fonctions: function foo<T>( → function foo(
         line = re.sub(r"(function\s+\w+)\s*<[^>]+>\s*\(", r"\1(", line)
 
-        # 2. Remove type annotations INSIDE parens (function params).
-        #    Order matters: match complex types (array[]) before simple keywords.
-        #
-        #    2a. Array types: items: string[] → items
+        # 2. Supprime les annotations de type dans les paramètres de fonction.
+        #    2a. D'abord les optionnels avec valeur par défaut (pour préserver le =)
+        #        name?: string = 'hello' → name? = 'hello'
         line = re.sub(
-            r"(?<=[(,])\s*(\w+)\s*:\s*\w+(?:<[^>]*>)?\[\]",
-            r" \1",
+            r"([(,])\s*(\w+\?)\s*:\s*\w+(?:\[\])?\s*(=)",
+            r"\1\2 \3",
+            line,
+        )
+        #    2b. Tous les autres types de paramètres: name: Type → name
+        #        Gère aussi les types complexes: callback: (item) => void → callback
+        line = re.sub(
+            r"([(,])\s*(\w+\??)\s*:\s*(?:[^,()]|\([^)]*\))+\s*(?=[,)])",
+            r"\1\2",
             line,
         )
 
-        #    2b. Simple keyword types: city: string, timeout: number
+        # 3. Supprime les annotations de type de retour: ): Type { → ) {
+        #    Gère aussi ): Type => → ) => et ): Type, → ),
+        line = re.sub(r"(\))\s*:\s*[^){]+(\s*[{=])", r"\1\2", line)
+
+        # 4. Supprime les annotations de type const/let/var:
+        #    const x: Type = "hello" → const x = "hello"
+        #    Ne touche PAS aux propriétés d'objets: { signal: AbortSignal }
         line = re.sub(
-            r"(?<=[(,])\s*(\w+)\s*:\s*(string|number|boolean|any|void|never"
-            r"|unknown|null|undefined|bigint|symbol)\b",
-            r" \1",
+            r"\b(const|let|var)\s+(\w+)\s*:\s*[^=]+(\s*=)",
+            r"\1 \2\3",
             line,
         )
 
-        #    2c. Complex types inside parens: callback: (item) => void → callback
-        #        callback?: (item) => void → callback?
-        line = re.sub(
-            r"(?<=[(,])\s*(\w+\??)\s*:\s*\([^)]*\)\s*(?:=>|:)\s*\w+(?:<[^>]*>)?",
-            r" \1",
-            line,
-        )
-
-        #    2d. Optional param with type + default: name?: string = 'hello' → name? = 'hello'
-        line = re.sub(
-            r"(?<=[(,])\s*(\w+\?)\s*:\s*\w+(?:\[\])?\s*(=)",
-            r" \1 \2",
-            line,
-        )
-
-        #    2e. Optional param with type + comma: name?: string, → name?,
-        line = re.sub(
-            r"(?<=[(,])\s*(\w+\?)\s*:\s*\w+(?:\[\])?(\s*[,)])",
-            r" \1\2",
-            line,
-        )
-
-        # 3. Remove return type between ) and { or ) and => or ) and :
-        #    ): Promise<string> { → ) {
-        line = re.sub(
-            r"(\))\s*:\s*(string|number|boolean|any|void|never|unknown|null"
-            r"|undefined|bigint|symbol|Promise\s*<[^>]+>"
-            r"|Array\s*<[^>]+>|Record\s*<[^>]+,\s*[^>]+>)\s*",
-            r"\1 ",
-            line,
-        )
-
-        # 4. Arrow return type: (x) => Promise<string> → (x) =>
-        line = re.sub(
-            r"(\))\s*:\s*(string|number|boolean|any|void|never|unknown|null"
-            r"|undefined|bigint|symbol)\s*(=>)",
-            r"\1 \3",
-            line,
-        )
-
-        # 5. Const/let/var type annotations (keep value if present):
-        #    const x: string = "hello" → const x = "hello"
-        #    But NOT object properties: { signal: AbortSignal }
-        #    Strategy: only match after const/let/var on the same line
-        line = re.sub(
-            r"\b(const|let|var)\s+(\w+)\s*:\s*(string|number|boolean|any|void"
-            r"|never|unknown|null|undefined|bigint|symbol"
-            r"|Promise\s*<[^>]+>)\s*(=)",
-            r"\1 \2 \4",
-            line,
-        )
-
-        # 6. Class property type annotations: propertyName: string;
-        #    But NOT object literal keys: key: value
-        #    Conservative: only after visibility modifiers or at line start
+        # 5. Supprime les annotations de type sur les propriétés de classe:
+        #    public name: string; → public name;
+        #    Uniquement après modificateur de visibilité
         line = re.sub(
             r"^\s*(public|private|protected|readonly|static)\s+(\w+)\s*:\s*"
-            r"(string|number|boolean|any|void|never|unknown|null|undefined"
-            r"|bigint|symbol)",
+            r"[^;=]+(?=\s*[;{])",
             r"\1 \2",
             line,
         )
 
         if line != original:
-            logger.debug("fix_js: %s → %s", original.strip(), line.strip())
+            logger.debug("fix_js: %s → %s", original.strip()[:80], line.strip()[:80])
         fixed.append(line)
 
     result = "\n".join(fixed)
@@ -234,13 +212,15 @@ def fix_javascript_syntax(code: str) -> str:
 def fix_typescript_syntax(code: str) -> str:
     """Répare les erreurs courantes en TypeScript.
 
-    Les TS étant déjà valide JS dans la plupart des cas, on conserve
-    les annotations. La réparation se concentre sur :
-    - L'équilibrage des parenthèses / crochets
-    - La dé-dentation
+    TypeScript est un sur-ensemble de JavaScript : on réutilise le réparateur
+    JS (qui supprime les annotations de type pour l'exécution Node), puis on
+    complète avec bracket balancing.
     """
-    dedented = textwrap.dedent(code)
-    return _fix_bracket_balance(dedented).strip()
+    # Nettoyage Unicode → JS repair (type stripping) → bracket balance
+    cleaned = _remove_invalid_characters(code)
+    dedented = textwrap.dedent(cleaned)
+    js_fixed = fix_javascript_syntax(dedented)
+    return _fix_bracket_balance(js_fixed).strip()
 
 
 # ── Réparateur Shell ─────────────────────────────────────────────────────
