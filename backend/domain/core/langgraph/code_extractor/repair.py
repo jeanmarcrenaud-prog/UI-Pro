@@ -28,16 +28,26 @@ _CLOSING = frozenset(_PAIRS.values())
 
 # Caractères Unicode problématiques fréquents dans le code généré par LLM
 _INVALID_CHAR_REPLACEMENTS: dict[str, str] = {
+    # Symboles décoratifs (LLM aiment les puces et flèches Unicode)
     "♦": "",
     "●": "",
+    "•": "",
     "→": "->",
+    "➔": "->",
     "⇒": "=>",
+    "➜": "->",
+    "❯": "->",
+    # Caractères de contrôle / invisibles
     "\u0080": "",
     "\u0099": "'",
+    # Guillemets typographiques courbes → ASCII
     "\u2018": "'",
     "\u2019": "'",
     "\u201c": '"',
     "\u201d": '"',
+    # Guillemets typographiques français
+    "\u00ab": '"',
+    "\u00bb": '"',
 }
 
 
@@ -419,7 +429,10 @@ def _repair_with_tokenize(stripped: str) -> str | None:
                     if stack and _PAIRS.get(stack[-1]) == tok_str:
                         stack.pop()
                         if stack:
-                            pass  # On garde la dernière position connue
+                            # Après le pop, le dernier unmatched est le fermant
+                            # qu'on vient de traiter — on met à jour pour que
+                            # les fermants restants soient insérés au bon endroit
+                            last_unmatched_lineno, last_unmatched_col = end
                         else:
                             last_unmatched_lineno = None
                             last_unmatched_col = None
@@ -487,40 +500,45 @@ def _repair_with_char_fallback(stripped: str) -> str:
     """Phase 2 : fallback caractère par caractère (résilient).
 
     Parcourt le code caractère par caractère en maintenant un stack de
-    brackets ouverts. Retire les fermants surnuméraires (salvage) et ajoute
-    les fermants manquants. Valide avec ``compile()`` à chaque itération.
+    brackets ouverts. Retire les fermants surnuméraires et ajoute les
+    fermants manquants. Valide avec ``compile()`` en une seule passe.
+
+    Contrairement à ``_repair_with_tokenize``, cette version :
+    - Ne dépend pas du tokenizer Python (résiste au garbled)
+    - Supprime les fermants surnuméraires (``algo(]`` → ``algo()``)
+    - Ne tente pas de position intelligente pour les insertions
     """
-    _stripped = stripped
-    for _ in range(3):
-        stack: list[str] = []
-        cleaned: list[str] = []
-        for ch in _stripped:
-            if ch in _PAIRS:
-                stack.append(ch)
+    stack: list[str] = []
+    cleaned: list[str] = []
+    for ch in stripped:
+        if ch in _PAIRS:
+            stack.append(ch)
+            cleaned.append(ch)
+        elif ch in _CLOSING:
+            if stack and _PAIRS.get(stack[-1]) == ch:
+                stack.pop()
                 cleaned.append(ch)
-            elif ch in _CLOSING:
-                if stack and _PAIRS.get(stack[-1]) == ch:
-                    stack.pop()
-                    cleaned.append(ch)
-                # else: extra closer → retiré (on tente un salvage)
-            else:
-                cleaned.append(ch)
+            # else: fermant surnuméraire → supprimé
+        else:
+            cleaned.append(ch)
 
-        candidate_str = "".join(cleaned)
-        if candidate_str == _stripped and stack:
-            extra = "".join(_PAIRS[o] for o in reversed(stack))
-            candidate_str = _stripped + extra
+    result = "".join(cleaned)
 
+    # Ajouter les fermants manquants
+    if stack:
+        extra = "".join(_PAIRS[o] for o in reversed(stack))
+        result += extra
+
+    # Validation unique
+    if result != stripped:
         try:
-            compile(candidate_str, "<string>", "exec")
-            if candidate_str != stripped:
-                logger.info("fix_syntax_errors (fallback): code réparé")
-            return candidate_str
+            compile(result, "<string>", "exec")
+            logger.info("fix_syntax_errors (fallback): code réparé")
+            return result
         except SyntaxError:
-            _stripped = candidate_str
-            continue
+            pass
 
-    return stripped  # Toutes les tentatives ont échoué
+    return stripped  # Échec — on rend l'original inchangé
 
 
 def _insert_at_line_end(
