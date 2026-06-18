@@ -99,9 +99,10 @@ def fix_code_by_language(name: str, content: str) -> str:
         result = fix_generic_content(content)
 
     if result != content and len(content) > 50:
+        delta = len(result) - len(content)
         logger.info(
-            "fix_code_by_language: %s (%s) — %d → %d chars",
-            name, lang, len(content), len(result),
+            "fix_code_by_language: %s (%s) — %d → %d chars (%+d)",
+            name, lang, len(content), len(result), delta,
         )
 
     return result
@@ -207,10 +208,12 @@ def fix_javascript_syntax(code: str) -> str:
         #    { data: Record<string, any> } → { data }
         #    (ces syntaxes sont TS uniquement et cassent Node)
         line = re.sub(
-            r":\s*(Record|Array|Promise|Map|Set|WeakMap|WeakSet|Partial|"
-            r"Required|Readonly|Pick|Omit|Exclude|Extract|NonNullable)\s*<[^>]+>",
+            r":\s*(Record|Array|Promise|Map|Set|WeakMap|WeakSet|"
+            r"Partial|Required|Readonly|Pick|Omit|Exclude|Extract|"
+            r"NonNullable|Parameters|ReturnType)\s*<[^>]+>",
             "",
             line,
+            flags=re.IGNORECASE,
         )
 
         if line != original:
