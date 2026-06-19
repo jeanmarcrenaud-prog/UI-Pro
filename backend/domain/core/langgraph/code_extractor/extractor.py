@@ -324,12 +324,18 @@ def _strategy_python_blocks(text: str) -> dict[str, Any] | None:
         python_spans.append((m.start(), m.end()))
         blocks.append((m.start(), m.group(1)))
 
-    # Also match bare ``` blocks — skip any overlapping with python blocks
-    # (this avoids matching closing ``` fences of python blocks as bare openings)
-    for m in re.finditer(r"^```[ \t]*\n([\s\S]*?)```", text, re.MULTILINE):
-        start = m.start()
-        if not any(ps <= start < pe for ps, pe in python_spans):
-            blocks.append((start, m.group(1)))
+    # Search bare ``` blocks only in regions OUTSIDE python blocks.
+    # This prevents matching the closing ``` of a python block as a bare opening,
+    # which would consume the real bare block's opening ``` in its greedy match.
+    pos = 0
+    for ps, pe in sorted(python_spans):
+        if pos < ps:
+            for m in re.finditer(r"^```[ \t]*\n([\s\S]*?)```", text[pos:ps], re.MULTILINE):
+                blocks.append((pos + m.start(), m.group(1)))
+        pos = pe
+    if pos < len(text):
+        for m in re.finditer(r"^```[ \t]*\n([\s\S]*?)```", text[pos:], re.MULTILINE):
+            blocks.append((pos + m.start(), m.group(1)))
 
     if not blocks:
         return None
