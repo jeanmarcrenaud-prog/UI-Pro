@@ -302,12 +302,23 @@ class OrchestratorAsync:
 
             workflow = StateGraph(AgentState)
 
-            # Add nodes
-            workflow.add_node("analyzing", lambda s: asyncio.run(analyzing_node(s, self.llm)))  # type: ignore[arg-type]
-            workflow.add_node("planning", lambda s: asyncio.run(planning_node(s, self.llm)))  # type: ignore[arg-type]
-            workflow.add_node("coding", lambda s: asyncio.run(coding_node(s, self.llm)))  # type: ignore[arg-type]
-            workflow.add_node("reviewing", lambda s: asyncio.run(review_node(s, self.llm)))  # type: ignore[arg-type]
-            workflow.add_node("executing", lambda s: asyncio.run(execute_node(s, self.executor)))  # type: ignore[arg-type]
+            # Add nodes (async wrappers - LangGraph awaits these natively)
+            async def _run_analyzing(state):
+                return await analyzing_node(state, self.llm)
+            async def _run_planning(state):
+                return await planning_node(state, self.llm)
+            async def _run_coding(state):
+                return await coding_node(state, self.llm)
+            async def _run_reviewing(state):
+                return await review_node(state, self.llm)
+            async def _run_executing(state):
+                return await execute_node(state, self.executor)
+
+            workflow.add_node("analyzing", _run_analyzing)
+            workflow.add_node("planning", _run_planning)
+            workflow.add_node("coding", _run_coding)
+            workflow.add_node("reviewing", _run_reviewing)
+            workflow.add_node("executing", _run_executing)
 
             # Main flow
             workflow.add_edge(START, "analyzing")
