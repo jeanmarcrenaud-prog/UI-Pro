@@ -22,8 +22,11 @@ import textwrap
 from typing import Any
 
 from .models import ExtractedCode, ExtractedFile, _PYTHON_EXTENSIONS
-from .repair import fix_indentation, fix_syntax_errors
-
+from .repair import fix_code_by_language as _fix_by_lang
+from .utils import dedup_filename, normalize_block_indent
+# Re-export for backward compatibility (tests import these from extractor)
+_dedup_filename = dedup_filename
+_normalize_block_indent = normalize_block_indent
 logger = logging.getLogger(__name__)
 
 # Mapping langage → extension pour les blocs de code génériques (stratégie 2)
@@ -180,51 +183,6 @@ def _find_json_objects(text: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def _normalize_block_indent(block: str) -> str:
-    """Supprime l'indentation commune d'un bloc de code.
-
-    Les lignes vides sont conservées (pas supprimées) pour que le nombre
-    de lignes corresponde à l'entrée. Les lignes non vides sont dé-dentées
-    à l'indentation minimale. Les tabulations sont converties en 4 espaces
-    avant le calcul, comme le font les renderers de blocs de code.
-
-    Retourne une chaîne vide si le bloc n'a aucun contenu non vide.
-    """
-    lines = block.expandtabs(4).split("\n")
-    non_empty = [line for line in lines if line.strip()]
-    if not non_empty:
-        return ""
-    min_indent = min(len(line) - len(line.lstrip()) for line in non_empty)
-    fixed_lines: list[str] = []
-    for line in lines:
-        if line.strip():
-            fixed_lines.append(line[min_indent:])
-        else:
-            fixed_lines.append("")
-    return "\n".join(fixed_lines).strip()
-
-
-def _dedup_filename(fname: str, seen: dict[str, int]) -> str:
-    """Génère un nom de fichier unique en cas de collision.
-
-    La première occurrence de ``fname`` est retournée inchangée. Les
-    occurrences suivantes reçoivent ``_2``, ``_3``... avant la dernière
-    extension (``foo.py`` → ``foo_2.py``). Les noms sans extension
-    reçoivent le suffixe en fin de chaîne (``Makefile`` → ``Makefile_2``).
-
-    Le dict ``seen`` est muté sur place — compteur initialisé à 1
-    à la première occurrence, incrémenté à chaque collision.
-    """
-    if fname in seen:
-        seen[fname] += 1
-        dot_idx = fname.rfind(".")
-        if dot_idx != -1:
-            return f"{fname[:dot_idx]}_{seen[fname]}{fname[dot_idx:]}"
-        return f"{fname}_{seen[fname]}"
-    seen[fname] = 1
-    return fname
-
-
 def _validate_block(name: str, content: str, strict: bool = False) -> str:
     """Valide un bloc via ``ExtractedFile`` ; retourne le meilleur contenu possible.
 
@@ -357,11 +315,21 @@ def _extract_filename_from_header(text: str, block_start: int) -> str | None:
 
 
 def _strategy_python_blocks(text: str) -> dict[str, Any] | None:
-    """Stratégie 1 : Extrait les blocs ```python avec nom de fichier."""
-    # Find all ```python blocks with their positions
-    blocks: list[tuple[int, str]] = []
+    """Stratégie 1 : Extrait les blocs ```python et ``` nus avec nom de fichier."""
+    # Find all ```python blocks and record their spans (for overlap detection)
+    python_spans: list[tuple[int, int]] = []
+    blocks: list[tuple[int, str]] = [];
+
     for m in re.finditer(r"```python\s*([\s\S]*?)```", text):
+        python_spans.append((m.start(), m.end()))
         blocks.append((m.start(), m.group(1)))
+
+    # Also match bare ``` blocks — skip any overlapping with python blocks
+    # (this avoids matching closing ``` fences of python blocks as bare openings)
+    for m in re.finditer(r"^```[ \t]*\n([\s\S]*?)```", text, re.MULTILINE):
+        start = m.start()
+        if not any(ps <= start < pe for ps, pe in python_spans):
+            blocks.append((start, m.group(1)))
 
     if not blocks:
         return None
@@ -378,9 +346,9 @@ def _strategy_python_blocks(text: str) -> dict[str, Any] | None:
         fname = _extract_filename_from_header(text, block_start)
         if not fname:
             fname = f"file_{len(files) + 1}.py"
-        fname = _dedup_filename(fname, seen_names)
+        fname = dedup_filename(fname, seen_names)
 
-        normalized = _normalize_block_indent(block_content)
+        normalized = normalize_block_indent(block_content)
         if not normalized:
             continue
         normalized = _validate_block(fname, normalized, strict=True)
@@ -432,9 +400,9 @@ def _strategy_generic_blocks(text: str) -> dict[str, Any] | None:
             elif lang in ("jsx",):
                 ext = ".jsx"
             fname = f"script{ext}"
-        fname = _dedup_filename(fname, seen_names)
+        fname = dedup_filename(fname, seen_names)
 
-        normalized = _normalize_block_indent(block_content)
+        normalized = normalize_block_indent(block_content)
         if not normalized:
             continue
         normalized = _validate_block(fname, normalized)
@@ -533,7 +501,6 @@ def _finalize(code_dict: dict[str, Any]) -> dict[str, Any]:
     décide — plutôt que de tout jeter.
     """
     # Pre-processing: réparer chaque fichier AVANT validation Pydantic
-    from .repair import fix_code_by_language as _fix_by_lang
 
     for fname in list(code_dict.get("files", {}).keys()):
         fcontent = code_dict["files"][fname]
@@ -575,7 +542,6 @@ def _finalize(code_dict: dict[str, Any]) -> dict[str, Any]:
                         pass
 
             # Salvage: apply fix_code_by_language() to every file based on extension
-            from .repair import fix_code_by_language as _fix_by_lang
 
             salvage_all: dict[str, str] = {}
             for fname, fcontent in code_dict["files"].items():

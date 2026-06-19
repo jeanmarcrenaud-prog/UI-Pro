@@ -21,34 +21,15 @@ import re
 import textwrap
 import tokenize
 
+from .utils import (
+    _CLOSING,
+    _INVALID_CHAR_REPLACEMENTS,
+    _PAIRS,
+    fix_bracket_balance,
+    remove_invalid_characters,
+)
+
 logger = logging.getLogger(__name__)
-
-_PAIRS: dict[str, str] = {"(": ")", "[": "]", "{": "}"}
-_CLOSING = frozenset(_PAIRS.values())
-
-# Caractères Unicode problématiques fréquents dans le code généré par LLM
-_INVALID_CHAR_REPLACEMENTS: dict[str, str] = {
-    # Symboles décoratifs (LLM aiment les puces et flèches Unicode)
-    "♦": "",
-    "●": "",
-    "•": "",
-    "→": "->",
-    "➔": "->",
-    "⇒": "=>",
-    "➜": "->",
-    "❯": "->",
-    # Caractères de contrôle / invisibles
-    "\u0080": "",
-    "\u0099": "'",
-    # Guillemets typographiques courbes → ASCII
-    "\u2018": "'",
-    "\u2019": "'",
-    "\u201c": '"',
-    "\u201d": '"',
-    # Guillemets typographiques français
-    "\u00ab": '"',
-    "\u00bb": '"',
-}
 
 
 # ── Dispatcher ────────────────────────────────────────────────────────────
@@ -90,10 +71,10 @@ def fix_code_by_language(name: str, content: str) -> str:
         result = fix_shell_syntax(content)
     elif ext in ("bat", "cmd"):
         lang = "batch"
-        result = _fix_bracket_balance(content)
+        result = fix_bracket_balance(content)
     elif ext in ("ps1", "psm1", "psd1"):
         lang = "powershell"
-        result = _fix_bracket_balance(content)
+        result = fix_bracket_balance(content)
     else:
         lang = f"{ext} (generic)"
         result = fix_generic_content(content)
@@ -221,7 +202,7 @@ def fix_javascript_syntax(code: str) -> str:
         fixed.append(line)
 
     result = "\n".join(fixed)
-    balance_fixed = _fix_bracket_balance(result)
+    balance_fixed = fix_bracket_balance(result)
     return balance_fixed.strip()
 
 
@@ -233,10 +214,10 @@ def fix_typescript_syntax(code: str) -> str:
     complète avec bracket balancing.
     """
     # Nettoyage Unicode → JS repair (type stripping) → bracket balance
-    cleaned = _remove_invalid_characters(code)
+    cleaned = remove_invalid_characters(code)
     dedented = textwrap.dedent(cleaned)
     js_fixed = fix_javascript_syntax(dedented)
-    return _fix_bracket_balance(js_fixed).strip()
+    return fix_bracket_balance(js_fixed).strip()
 
 
 # ── Réparateur Shell ─────────────────────────────────────────────────────
@@ -270,59 +251,10 @@ def fix_generic_content(code: str) -> str:
     - Suppression des lignes vides multiples
     """
     dedented = textwrap.dedent(code)
-    balanced = _fix_bracket_balance(dedented)
+    balanced = fix_bracket_balance(dedented)
     # Collapse multiple blank lines
     balanced = re.sub(r"\n{3,}", "\n\n", balanced)
     return balanced.strip()
-
-
-# ── Bracket balancer générique (indépendant du langage) ────────────────
-
-
-def _fix_bracket_balance(code: str) -> str:
-    """Équilibre les parenthèses/crochets/accolades sans utiliser ``compile()``.
-
-    Version purement syntaxique (indépendante du langage) — contrairement
-    à ``fix_syntax_errors`` qui utilise ``tokenize`` + ``compile()`` (Python).
-    """
-    stack: list[str] = []
-    cleaned: list[str] = []
-
-    in_single_quote = False
-    in_double_quote = False
-    in_backtick = False
-    i = 0
-    while i < len(code):
-        ch = code[i]
-        prev_ch = code[i - 1] if i > 0 else ""
-
-        # Toggle string state (respect escapes)
-        if ch == "'" and not in_double_quote and not in_backtick and prev_ch != "\\":
-            in_single_quote = not in_single_quote
-        elif ch == '"' and not in_single_quote and not in_backtick and prev_ch != "\\":
-            in_double_quote = not in_double_quote
-        elif ch == "`" and not in_single_quote and not in_double_quote and prev_ch != "\\":
-            in_backtick = not in_backtick
-
-        if not in_single_quote and not in_double_quote and not in_backtick:
-            if ch in _PAIRS:
-                stack.append(ch)
-                cleaned.append(ch)
-            elif ch in _CLOSING:
-                if stack and _PAIRS.get(stack[-1]) == ch:
-                    stack.pop()
-                    cleaned.append(ch)
-                # else: extra closer → ignoré
-            else:
-                cleaned.append(ch)
-        else:
-            cleaned.append(ch)
-        i += 1
-
-    result = "".join(cleaned)
-    if stack:
-        result += "".join(_PAIRS[o] for o in reversed(stack))
-    return result
 
 
 def fix_syntax_errors(code: str) -> str:
@@ -357,7 +289,7 @@ def fix_syntax_errors(code: str) -> str:
         return code
 
     # Phase 0 — Nettoyage Unicode (appliqué AVANT tout)
-    cleaned = _remove_invalid_characters(stripped)
+    cleaned = remove_invalid_characters(stripped)
     if cleaned != stripped:
         logger.info("fix_syntax_errors: removed invalid unicode characters")
 
@@ -375,26 +307,6 @@ def fix_syntax_errors(code: str) -> str:
 
     # Phase 2 : fallback caractère par caractère
     return _repair_with_char_fallback(cleaned)
-
-
-def _remove_invalid_characters(code: str) -> str:
-    """Supprime les caractères de contrôle et symboles non-ASCII problématiques.
-
-    Les LLM génèrent souvent du code avec des caractères invisibles ou des
-    symboles (♦, ●, →, ⇒, guillemets courbes, caractères de contrôle) qui
-    causent des ``SyntaxError`` même si le reste du code est correct.
-
-    Exemple réel ::
-        print(f"Temp: {weather.temperature} ♦C")   # ♦ invalide en Python
-    """
-    # Remplacement des symboles problématiques fréquents
-    for old, new in _INVALID_CHAR_REPLACEMENTS.items():
-        code = code.replace(old, new)
-
-    # Supprimer tout caractère de contrôle restant (sauf \n \t \r)
-    code = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]", "", code)
-
-    return code
 
 
 def _repair_with_tokenize(stripped: str) -> str | None:
