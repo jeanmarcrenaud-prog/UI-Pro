@@ -180,8 +180,8 @@ class ChatService {
     this.emit({ id, role: 'assistant', content, delta: content, status: done ? 'done' : 'streaming' })
   }
 
-  private handleStep(stepId: string, status: string, content?: string): void {
-    events.emit('agentStep', { stepId, status: status as 'pending' | 'active' | 'done', content })
+  private handleStep(stepId: string, status: string, content?: string, duration?: number, tokenCount?: number): void {
+    events.emit('agentStep', { stepId, status: status as 'pending' | 'active' | 'done', content, duration, tokenCount })
   }
 
   private handleError(message: string): void {

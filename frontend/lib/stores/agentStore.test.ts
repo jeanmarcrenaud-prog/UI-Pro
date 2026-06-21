@@ -47,14 +47,14 @@ describe('agentStore', () => {
       expect(step.status).toBe('done')
     })
 
-    it('should prevent status regression from done to active', () => {
+    it('should allow reactivation from done to active (fix loop)', () => {
       const store = useAgentStore.getState()
       store.updateStep('step-coding', 'active')
       store.updateStep('step-coding', 'done')
-      store.updateStep('step-coding', 'active') // Should be ignored
+      store.updateStep('step-coding', 'active') // Now allowed for fix loop
 
       const step = useAgentStore.getState().steps[0]
-      expect(step.status).toBe('done')
+      expect(step.status).toBe('active') // Fix loop re-enters code node
     })
 
     it('should allow done to done transition', () => {

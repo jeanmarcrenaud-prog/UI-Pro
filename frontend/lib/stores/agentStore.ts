@@ -33,11 +33,9 @@ export const useAgentStore = create<AgentStore>((set, _get) => ({
     set((state) => {
       const stepIdx = state.steps.findIndex(s => s.id === id)
       const currentStep = state.steps[stepIdx]
-      
-      // Don't allow status to go backwards (done -> active)
-      if (currentStep && currentStep.status === 'done' && status !== 'done') {
-        return state
-      }
+
+
+      // Allow reactivation: fix loop re-enters code/review/execute nodes
       
       // If step doesn't exist, add it
       if (stepIdx === -1) {

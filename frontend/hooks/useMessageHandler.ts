@@ -9,6 +9,7 @@ import { events } from '@/lib/events'
 import { normalizeMessage } from '@/lib/messageAdapter'
 import { debugLogger } from '@/lib/debug/logger'
 import type { AgentStep, Message, MessageStatus } from '@/lib/types'
+import { useAgentStore } from '@/lib/stores/agentStore'
 
 interface UseMessageHandlerProps {
   assistantMessageIdRef: React.MutableRefObject<string>
@@ -170,20 +171,41 @@ export const useMessageHandler = ({
     initialSteps,
   ])
 
-  // Handler pour les événements globaux agentStep
-  const handleAgentStep = useCallback((data: { stepId: string; status: string; content?: string }) => {
+  // Tracks the last step that was activated (not cleared on completion)
+  // so we can detect stale state-based events that arrive after @_timed_node
+  // completion events (which would incorrectly reactivate a done step).
+  const lastActiveStepRef = useRef<string | null>(null)
+
+  const handleAgentStep = useCallback((data: { stepId: string; status: string; content?: string; duration?: number; tokenCount?: number }) => {
     if (!isStreamActiveRef.current) return
 
-    // Quand un nouveau step devient actif, marquer le précédent comme done
-    // NOTE: ne PAS passer data.content ici — ça écraserait le detail du step précédent
-    if (data.status === 'active') {
-      const currentIdx = STEP_ORDER.indexOf(data.stepId as typeof STEP_ORDER[number])
-      if (currentIdx > 0) {
-        updateStep(STEP_ORDER[currentIdx - 1], 'done')
-      }
-    }
+    // If duration is present, this is a node-completion event from @_timed_node
+    // → mark as done. Otherwise use the event status.
+    const stepStatus: 'done' | 'active' = data.duration ? 'done' : (data.status === 'done' ? 'done' : 'active')
 
-    updateStep(data.stepId, data.status === 'done' ? 'done' : 'active', data.content)
+    if (stepStatus === 'active') {
+      // If this step was the last one activated and is already done in the store,
+      // the event is a stale state-based emission after @_timed_node completion.
+      // Update the detail/content but don't revert status.
+      if (lastActiveStepRef.current === data.stepId) {
+        const store = useAgentStore.getState()
+        const existingStep = store.steps.find(s => s.id === data.stepId)
+        if (existingStep?.status === 'done') {
+          // Stale state-based event — update detail only, keep status as done
+          updateStep(data.stepId, 'done', data.content)
+          return
+        }
+      }
+
+      // Genuine activation: auto-complete the previously active step
+      if (lastActiveStepRef.current && lastActiveStepRef.current !== data.stepId) {
+        updateStep(lastActiveStepRef.current, 'done')
+      }
+      lastActiveStepRef.current = data.stepId
+    }
+    // Don't clear lastActiveStepRef on completion — keep it for stale detection above
+
+    updateStep(data.stepId, stepStatus, data.content, data.duration, data.tokenCount)
   }, [updateStep, isStreamActiveRef])
 
   // Configuration des listeners
