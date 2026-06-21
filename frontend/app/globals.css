@@ -265,3 +265,177 @@ pre[class*="language-"] {
   margin: 0 !important;
   overflow-x: auto !important;
 }
+
+/* ====================== AGENT CANVAS — PREMIUM GLASS + FIX Z-INDEX ====================== */
+
+.agent-canvas {
+  background: #0a0f1c;
+  background-image: 
+    radial-gradient(circle at 35% 25%, rgba(103, 232, 249, 0.09) 0%, transparent 60%),
+    linear-gradient(rgba(30, 41, 55, 0.65) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(30, 41, 55, 0.65) 1px, transparent 1px);
+  background-size: 48px 48px;
+  position: relative;
+  overflow: hidden;
+}
+
+.agent-canvas::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 30% 70%, rgba(165, 243, 252, 0.06) 0%, transparent 40%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Nœuds - Glass effet premium */
+.canvas-node {
+  @apply px-7 py-5 rounded-3xl border border-white/10 shadow-2xl transition-all duration-500 backdrop-blur-2xl min-w-[190px] text-sm font-medium;
+  background: rgba(15, 23, 42, 0.72);
+  box-shadow: 
+    0 12px 40px -10px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255,255,255,0.09),
+    inset 0 -1px 0 rgba(0,0,0,0.4);
+  z-index: 2 !important;
+}
+
+.canvas-node:hover {
+  background: rgba(15, 23, 42, 0.85);
+  border-color: rgba(255,255,255,0.16);
+  transform: translateY(-4px) scale(1.02);
+}
+
+/* États des nœuds */
+.node-analyzing   { background: rgba(59, 130, 246, 0.12); border-color: rgba(59, 130, 246, 0.35); }
+.node-planning    { background: rgba(139, 92, 246, 0.12); border-color: rgba(139, 92, 246, 0.35); }
+.node-coding      { background: rgba(16, 185, 129, 0.12); border-color: rgba(16, 185, 129, 0.35); }
+.node-reviewing   { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.35); }
+.node-executing   { background: rgba(244, 63, 94, 0.12);  border-color: rgba(244, 63, 94, 0.35);  }
+.node-error       { background: rgba(239, 68, 68, 0.15);  border-color: rgba(239, 68, 68, 0.4);   }
+.node-waiting     { background: rgba(100, 116, 139, 0.12); border-color: rgba(100, 116, 139, 0.3); }
+.node-cancelled   { background: rgba(100, 116, 139, 0.12); border-color: rgba(100, 116, 139, 0.3); opacity: 0.5; }
+
+.node-completed,
+.node-success {
+  border-color: #4ade80;
+  background: rgba(16, 185, 129, 0.18);
+  box-shadow: 0 0 32px -8px rgba(74, 222, 128, 0.6);
+  z-index: 3 !important;
+}
+
+.node-active {
+  border-color: #67e8f9;
+  background: rgba(14, 165, 233, 0.20);
+  box-shadow: 0 0 40px -5px rgba(103, 232, 249, 0.75);
+  animation: activeNodeGlow 2.4s ease-in-out infinite;
+  z-index: 10 !important;
+}
+
+.node-step-progress {
+  z-index: 8 !important;
+  box-shadow: 0 0 35px -6px rgba(74, 222, 128, 0.5);
+}
+
+.node-fix {
+  background: rgba(234, 179, 8, 0.12);
+  border-color: rgba(234, 179, 8, 0.35);
+  z-index: 4 !important;
+}
+
+.node-fix.node-active {
+  animation: fixPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes activeNodeGlow {
+  0%, 100% { box-shadow: 0 0 40px -5px rgba(103, 232, 249, 0.75); }
+  50% { box-shadow: 0 0 55px 8px rgba(103, 232, 249, 0.55); }
+}
+
+@keyframes fixPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.4); }
+  70% { box-shadow: 0 0 0 12px rgba(234, 179, 8, 0); }
+}
+
+/* Flèches */
+.react-flow__edge path {
+  stroke: #475569;
+  stroke-width: 4.2px;
+  stroke-linecap: round;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.4));
+}
+
+.react-flow__edge.success path {
+  stroke: #4ade80;
+  stroke-width: 4.8px;
+}
+
+.react-flow__edge.animated path {
+  stroke: #67e8f9;
+  stroke-dasharray: 15 7;
+  animation: edgeFlow 1.6s linear infinite;
+}
+
+.react-flow__edge.edge-fix-loop path {
+  stroke: #eab308;
+  stroke-width: 4px;
+  stroke-dasharray: 8 4;
+  stroke-linecap: round;
+}
+
+.react-flow__edge.edge-fix-loop.animated path {
+  stroke: #fbbf24;
+  animation: fixLoopFlow 1.2s linear infinite;
+}
+
+@keyframes edgeFlow {
+  to { stroke-dashoffset: -44; }
+}
+
+@keyframes fixLoopFlow {
+  to { stroke-dashoffset: -24; }
+}
+
+/* Métriques et labels */
+.canvas-node .node-label {
+  @apply text-white font-semibold tracking-tight;
+}
+
+.canvas-node .node-status {
+  @apply text-xs mt-1.5 opacity-75 font-mono;
+}
+
+.canvas-node .node-metrics {
+  @apply text-xs font-mono mt-3 flex gap-4 text-white/75;
+}
+
+.canvas-node .node-duration {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.canvas-node .node-tokens {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* Timeline et progression */
+.timeline-panel {
+  @apply bg-slate-950/80 border-l border-slate-700 backdrop-blur-md;
+}
+
+.canvas-progress {
+  @apply h-1.5 bg-slate-800 rounded-full overflow-hidden;
+}
+
+.canvas-progress-bar {
+  @apply h-full bg-gradient-to-r from-emerald-400 to-cyan-400 transition-all duration-500;
+}
+
+/* Correction globale React Flow z-index */
+.react-flow__node {
+  z-index: 2 !important;
+  transition: z-index 0.2s ease;
+}
+
+.react-flow__node.selected,
+.react-flow__node.node-active {
+  z-index: 15 !important;
+}

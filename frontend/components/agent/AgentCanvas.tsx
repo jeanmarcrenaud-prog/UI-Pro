@@ -14,6 +14,8 @@ import { NodeDetailPanel } from './NodeDetailPanel'
 import { NodePalette } from './NodePalette'
 import { useI18n } from '@/lib/i18n'
 import { events } from '@/lib/events'
+import CanvasParticles from './CanvasParticles'
+import SuccessConfetti from './SuccessConfetti'
 
 // ── Pipeline metadata (for detail panel) ──────────────────────────────
 
@@ -23,8 +25,8 @@ const PIPELINE_DEFS = [
   { id: 'step-coding',    label: 'Code',        description: 'Generate Python code' },
   { id: 'step-reviewing', label: 'Review',      description: 'Static & LLM review' },
   { id: 'step-executing', label: 'Execute',     description: 'Sandboxed code execution' },
+  { id: 'step-fixing',    label: 'Fix',        description: 'Auto-fix correction loop' },
 ]
-
 // ── Props ─────────────────────────────────────────────────────────────
 
 interface AgentCanvasProps {
@@ -154,9 +156,11 @@ export function AgentCanvas({
   }, [])
 
   const hasSteps = agentSteps.length > 0
+  const isActive = agentSteps.some((s) => s.status === 'active')
+  const showSuccess = agentSteps.some((s) => s.status === 'done')
 
   return (
-    <div className={`flex flex-col h-full bg-[#0b0f14] ${className} relative`}>
+    <div className={`flex flex-col h-full agent-canvas ${className} relative`}>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-700/50">
         <div className="flex items-center gap-2">
@@ -214,6 +218,8 @@ export function AgentCanvas({
         <NodePalette isOpen={paletteOpen} onClose={() => setPaletteOpen(false)} />
         {/* Graph area */}
         <div ref={reactFlowWrapper} className="flex-1 relative">
+          <CanvasParticles isActive={isActive} />
+          <SuccessConfetti trigger={showSuccess} intensity="medium" />
           {hasSteps ? (
             <GraphVisualization steps={canvasSteps} onNodeClick={handleNodeClick} />
           ) : (

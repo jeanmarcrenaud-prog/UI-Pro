@@ -31,7 +31,7 @@ const nodeVariants = {
     transition: {
       delay: i * 0.08,
       duration: 0.4,
-      ease: [0.23, 1.0, 0.32, 1.0],
+      ease: [0.23, 1.0, 0.32, 1.0] as const,
     },
   }),
   statusChange: {
@@ -40,10 +40,38 @@ const nodeVariants = {
   },
 };
 
+// Horizontal layout positions per step type
+const STEP_POSITIONS: Record<string, { x: number; y: number }> = {
+  'step-analyzing':            { x: 40,  y: 120 },
+  'step-planning':             { x: 320, y: 120 },
+  'step-coding':               { x: 600, y: 120 },
+  'step-reviewing':            { x: 880, y: 120 },
+  'step-executing':            { x: 1160, y: 120 },
+  'step-fixing':               { x: 880, y: 380 },
+  'step-execution_success':    { x: 1440, y: 120 },
+  'step-max_attempts_reached': { x: 1440, y: 380 },
+  'step-execution_failed':     { x: 1440, y: 380 },
+  'step-no_code_short_circuit':{ x: 1440, y: 380 },
+};
+
+// Edge definitions: [source, target, isLoopBack]
+const EDGE_DEFS: Array<[string, string, boolean]> = [
+  ['step-analyzing', 'step-planning', false],
+  ['step-planning', 'step-coding', false],
+  ['step-coding', 'step-reviewing', false],
+  ['step-reviewing', 'step-executing', false],
+  ['step-executing', 'step-execution_success', false],
+  ['step-executing', 'step-fixing', false],
+  ['step-fixing', 'step-coding', true],
+  ['step-fixing', 'step-execution_success', false],
+  ['step-fixing', 'step-max_attempts_reached', false],
+  ['step-fixing', 'step-execution_failed', false],
+  ['step-fixing', 'step-no_code_short_circuit', false],
+];
 // AgentStepNode at module scope — const arrow function gives a STABLE reference
 // across module re-evaluations (Turbopack HMR). Unlike function declarations,
 // const arrow functions are NOT re-created on each module evaluation.
-function AgentStepNode({ data, selected }: NodeProps) {
+function AgentStepNode({ data, selected, id }: NodeProps) {
   const { status, name, modelUsed, durationMs, tokens } = data as CanvasStep;
 
   const getStatusIcon = () => {
@@ -61,20 +89,35 @@ function AgentStepNode({ data, selected }: NodeProps) {
     }
   };
 
-  const getStatusColor = () => {
-    switch (status) {
-      case 'running': return 'border-blue-500 bg-blue-950/60';
-      case 'done': return 'border-green-500 bg-green-950/40';
-      case 'error': return 'border-red-500 bg-red-950/40';
-      case 'awaiting_approval': return 'border-amber-500 bg-amber-950/40';
-      default: return 'border-gray-700 bg-gray-900/80';
-    }
-  };
+  const getNodeClasses = () => {
+    const typeMap: Record<string, string> = {
+      'step-analyzing': 'node-analyzing',
+      'step-planning': 'node-planning',
+      'step-coding': 'node-coding',
+      'step-reviewing': 'node-reviewing',
+      'step-executing': 'node-executing',
+      'step-fixing': 'node-fix',
+    };
 
+    let cls = 'canvas-node';
+    cls += ' ' + (typeMap[name] || '');
+
+    if (status === 'done') cls += ' node-completed node-success';
+    else if (status === 'error') cls += ' node-error';
+    else if (status === 'pending') cls += ' node-waiting';
+
+    if (status === 'running') cls += ' node-active';
+
+    if (id?.includes('progress') || id?.includes('orchestrator')) {
+      cls += ' node-step-progress';
+    }
+
+    return cls;
+  };
   return (
     <motion.div
-      className={`px-5 py-4 rounded-2xl border-2 shadow-2xl min-w-[240px] backdrop-blur-sm ${getStatusColor()} ${
-        selected ? 'ring-2 ring-white/70 shadow-blue-500/30' : ''
+      className={`${getNodeClasses()} ${
+        selected ? 'ring-2 ring-white/70' : ''
       }`}
       variants={nodeVariants}
       initial="hidden"
@@ -134,27 +177,35 @@ export default function GraphVisualization({ steps, onNodeClick }: GraphVisualiz
   const { selectedNodeId, setSelectedNode } = useAgentCanvasStore();
 
   const nodes: Node[] = useMemo(() => {
-    return steps.map((step) => ({
-      id: step.name,
-      type: 'agentStep',
-      position: { x: 80, y: 0 },
-      data: step,
-      selected: selectedNodeId === step.name,
-    }));
+    return steps.map((step, index) => {
+      const pos = STEP_POSITIONS[step.name] || { x: 80, y: 120 + (index % 2) * 80 };
+      return {
+        id: step.name,
+        type: 'agentStep',
+        position: pos,
+        data: step,
+        selected: selectedNodeId === step.name,
+      };
+    });
   }, [steps, selectedNodeId]);
 
   const edges: Edge[] = useMemo(() => {
-    return steps.slice(1).map((_, index) => ({
-      id: `e${steps[index].name}-${steps[index + 1].name}`,
-      source: steps[index].name,
-      target: steps[index + 1].name,
-      type: 'smoothstep',
-      animated: steps[index].status === 'running' || steps[index + 1].status === 'running',
-      style: {
-        stroke: steps[index].status === 'running' ? '#60a5fa' : '#4b5563',
-        strokeWidth: 2.5,
-      },
-    }));
+    const stepNames = steps.map(s => s.name);
+    const isRunning = (name: string) => {
+      const step = steps.find(s => s.name === name);
+      return step?.status === 'running';
+    };
+    return EDGE_DEFS
+      .filter(([source, target]) => stepNames.includes(source) && stepNames.includes(target))
+      .map(([source, target, isLoopBack]) => ({
+        id: `e${source}-${target}`,
+        source,
+        target,
+        type: isLoopBack ? 'default' : 'smoothstep',
+        animated: isRunning(source) || isRunning(target),
+        className: isLoopBack ? 'edge-fix-loop' : undefined,
+        style: { zIndex: isLoopBack ? 10 : 1 },
+      }));
   }, [steps]);
 
   const handleNodeClick = useCallback(
@@ -166,7 +217,7 @@ export default function GraphVisualization({ steps, onNodeClick }: GraphVisualiz
   );
 
   return (
-    <div className="w-full h-full bg-[#0a0e14] relative">
+    <div className="agent-canvas w-full h-full relative">
       <ReactFlow
         nodes={nodes}
         edges={edges}
