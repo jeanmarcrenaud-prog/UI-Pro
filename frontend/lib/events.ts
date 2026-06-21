@@ -24,7 +24,7 @@ interface EventMap {
   status: { status: 'idle' | 'connecting' | 'streaming' | 'error' | 'reconnecting' | 'retrying' }
   
   // Agent events
-  agentStep: { stepId: string; status: 'pending' | 'active' | 'done'; content?: string }
+  agentStep: { stepId: string; status: 'pending' | 'active' | 'done' | 'running' | 'error'; content?: string; duration?: number; tokenCount?: number }
   agentPlan: { steps: string[] }
   
   // Human-in-the-loop execution approval

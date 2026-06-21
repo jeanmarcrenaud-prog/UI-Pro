@@ -137,6 +137,9 @@ export interface Translations {
     duration: string
     tokens: string
     detail: string
+    approvalPending: string
+    approve: string
+    reject: string
   }
 }
 
@@ -319,6 +322,9 @@ Output the typed file plus any new interfaces/types at the top.
     duration: 'Duration',
     tokens: 'Tokens',
     detail: 'Detail',
+    approvalPending: 'Awaiting approval...',
+    approve: 'Approve',
+    reject: 'Reject',
   },
 }
 
@@ -501,6 +507,9 @@ Sors le fichier typé plus les nouvelles interfaces/types en haut.
     duration: 'Durée',
     tokens: 'Tokens',
     detail: 'Détail',
+    approvalPending: 'En attente d\'approbation...',
+    approve: 'Approuver',
+    reject: 'Rejeter',
   },
 }
 
