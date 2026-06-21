@@ -421,7 +421,14 @@ async def _resume_execution(app: Any, session_id: str) -> AsyncIterator[str]:
     def _on_agent_event(event: Any) -> None:
         try:
             if hasattr(event, "step") and hasattr(event, "message"):
-                output_queue.put_nowait(("step", f"{event.step}:{event.message}"))
+                meta = getattr(event, "data", None) or {}
+                if meta:
+                    import json
+                    output_queue.put_nowait(
+                        ("step", f"{event.step}:{event.message}||{json.dumps(meta, default=str)}")
+                    )
+                else:
+                    output_queue.put_nowait(("step", f"{event.step}:{event.message}"))
         except Exception:
             pass
 
@@ -439,6 +446,7 @@ async def _resume_execution(app: Any, session_id: str) -> AsyncIterator[str]:
 
     # ── Consumer loop ────────────────────────────────────────────────
     _state_emitted: set[str] = set()
+    _last_exec_hash: str | None = None  # hash-based dedup for fix loop iterations
     token_buffer: list[str] = []
     _last_message_length[session_id] = 0
 
@@ -470,14 +478,16 @@ async def _resume_execution(app: Any, session_id: str) -> AsyncIterator[str]:
                 event = payload
 
                 exec_val = event.get("execution_result")
-                if exec_val and "execution_result" not in _state_emitted:
-                    _state_emitted.add("execution_result")
-                    success = (
-                        exec_val.get("success", False)
-                        if isinstance(exec_val, dict)
-                        else False
-                    )
-                    yield f"[STEP]executing:Execution {'OK' if success else 'FAILED'}"
+                if exec_val:
+                    exec_hash = str(hash(str(exec_val)))
+                    if exec_hash != _last_exec_hash:
+                        _last_exec_hash = exec_hash
+                        success = (
+                            exec_val.get("success", False)
+                            if isinstance(exec_val, dict)
+                            else False
+                        )
+                        yield f"[STEP]executing:Execution {'OK' if success else 'FAILED'}"
 
                 # Token streaming from latest assistant message
                 if event.get("messages"):
