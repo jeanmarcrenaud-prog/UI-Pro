@@ -184,17 +184,15 @@ export const useMessageHandler = ({
     const stepStatus: 'done' | 'active' = data.duration ? 'done' : (data.status === 'done' ? 'done' : 'active')
 
     if (stepStatus === 'active') {
-      // If this step was the last one activated and is already done in the store,
-      // the event is a stale state-based emission after @_timed_node completion.
-      // Update the detail/content but don't revert status.
-      if (lastActiveStepRef.current === data.stepId) {
-        const store = useAgentStore.getState()
-        const existingStep = store.steps.find(s => s.id === data.stepId)
-        if (existingStep?.status === 'done') {
-          // Stale state-based event — update detail only, keep status as done
-          updateStep(data.stepId, 'done', data.content)
-          return
-        }
+      // Stale event detection: if the target step is already 'done' in the store,
+      // this is a stale state-based emission that arrived after the step was
+      // auto-completed. Update the content but DO NOT revert status or
+      // auto-complete the currently active step.
+      const store = useAgentStore.getState()
+      const existingStep = store.steps.find(s => s.id === data.stepId)
+      if (existingStep?.status === 'done') {
+        updateStep(data.stepId, 'done', data.content)
+        return
       }
 
       // Genuine activation: auto-complete the previously active step
@@ -203,6 +201,7 @@ export const useMessageHandler = ({
       }
       lastActiveStepRef.current = data.stepId
     }
+
     // Don't clear lastActiveStepRef on completion — keep it for stale detection above
 
     updateStep(data.stepId, stepStatus, data.content, data.duration, data.tokenCount)
