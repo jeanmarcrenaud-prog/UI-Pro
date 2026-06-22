@@ -27,6 +27,7 @@ tiktoken>=0.8.0
 ## Async & Utils
 aiofiles>=23.2.0
 psutil>=6.0.0
+pygments>=2.18.0
 watchdog>=4.0.0
 
 ## Local packages (editable)
