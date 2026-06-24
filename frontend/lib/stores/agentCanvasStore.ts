@@ -2,6 +2,8 @@
 // Zustand store for Agent Canvas — graph steps, selection, approval, run metadata
 import { create } from 'zustand'
 import { devtools, persist } from 'zustand/middleware'
+import { useAgentStore } from './agentStore'
+import type { AgentStep } from '@/lib/types'
 // sendCanvasMessage imported lazily inside sendApprovalDecision to avoid circular dep
 
 export type StepStatus = 'pending' | 'running' | 'done' | 'error' | 'awaiting_approval'
@@ -140,3 +142,33 @@ export const useAgentCanvasStore = create<CanvasState>()(
     { name: 'AgentCanvasStore' },
   ),
 )
+
+// ── Auto-sync: agentStore steps → canvasStore steps ────────────────
+// Replaces the old useEffect-based sync in AgentCanvas.tsx.
+// By subscribing at the store level, ALL consumers get updates without manual sync.
+
+function syncStepsFromAgent(agentSteps: AgentStep[]) {
+  useAgentCanvasStore.getState().setSteps(
+    agentSteps.map((s) => ({
+      name: s.id,
+      status: s.status === 'active' ? 'running' : (s.status as StepStatus),
+      durationMs: s.duration ? s.duration * 1000 : undefined,
+      tokens: s.tokens,
+      startedAt: undefined,
+      error: s.detail,
+    })),
+  )
+}
+
+// Subscribe to future agentStore changes and sync to canvasStore
+// agentStore uses plain create() without subscribeWithSelector, so we use (state) => void form
+useAgentStore.subscribe((state) => {
+  syncStepsFromAgent(state.steps)
+})
+
+// Initial sync (agentStore may already have steps at module load time)
+const initialSteps = useAgentStore.getState().steps
+if (initialSteps.length > 0) {
+  syncStepsFromAgent(initialSteps)
+}
+

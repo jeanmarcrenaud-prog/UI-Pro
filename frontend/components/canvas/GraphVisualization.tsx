@@ -21,17 +21,17 @@ interface GraphVisualizationProps {
 
 // Horizontal layout positions per step type
 const STEP_POSITIONS: Record<string, { x: number; y: number }> = {
-  'step-analyzing':            { x: 40,  y: 120 },
-  'step-planning':             { x: 320, y: 120 },
-  'step-coding':               { x: 600, y: 120 },
-  'step-reviewing':            { x: 880, y: 120 },
-  'step-executing':            { x: 1160, y: 120 },
-  'step-fixing':               { x: 880, y: 380 },
-  'step-execution_success':    { x: 1440, y: 120 },
-  'step-max_attempts_reached': { x: 1440, y: 380 },
-  'step-execution_failed':     { x: 1440, y: 380 },
-  'step-no_code_short_circuit':{ x: 1440, y: 380 },
-};
+  'step-analyzing':            { x: 40,  y: 100 },
+  'step-planning':             { x: 320, y: 100 },
+  'step-coding':               { x: 600, y: 100 },
+  'step-reviewing':            { x: 880, y: 100 },
+  'step-executing':            { x: 1160, y: 100 },
+  'step-execution_success':    { x: 1440, y: 100 },
+  'step-fixing':               { x: 880, y: 360 },
+  'step-execution_failed':     { x: 1440, y: 360 },
+  'step-max_attempts_reached': { x: 1360, y: 440 },
+  'step-no_code_short_circuit':{ x: 1360, y: 520 },
+}
 
 // Edge definitions: [source, target, isLoopBack]
 const EDGE_DEFS: Array<[string, string, boolean]> = [
@@ -58,16 +58,29 @@ export default function GraphVisualization({ steps, onNodeClick }: GraphVisualiz
   const { selectedNodeId, setSelectedNode } = useAgentCanvasStore();
 
   const nodes: Node[] = useMemo(() => {
-    return steps.map((step, index) => {
-      const pos = STEP_POSITIONS[step.name] || { x: 80, y: 120 + (index % 2) * 80 };
+    let fallbackIndex = 0
+    return steps.map((step) => {
+      const pos = STEP_POSITIONS[step.name]
+      if (!pos) {
+        // Unknown step name: stack vertically with 80px spacing
+        const fy = 100 + fallbackIndex * 80
+        fallbackIndex++
+        return {
+          id: step.name,
+          type: 'agentStep' as const,
+          position: { x: 80, y: fy },
+          data: step,
+          selected: selectedNodeId === step.name,
+        }
+      }
       return {
         id: step.name,
-        type: 'agentStep',
+        type: 'agentStep' as const,
         position: pos,
         data: step,
         selected: selectedNodeId === step.name,
-      };
-    });
+      }
+    })
   }, [steps, selectedNodeId]);
 
   const edges: Edge[] = useMemo(() => {

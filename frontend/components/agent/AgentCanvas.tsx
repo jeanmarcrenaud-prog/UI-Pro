@@ -47,27 +47,14 @@ export function AgentCanvas({
   const { t } = useI18n()
   const agentSteps = useAgentStore((s) => s.steps)
 
-  // Canvas store — UI state, approval status, session
+  // Canvas store — UI state, selection, approval, session
   const selectedNodeId = useAgentCanvasStore((s) => s.selectedNodeId)
   const approvalStatus = useAgentCanvasStore((s) => s.approvalStatus)
-  const canvasSessionId = useAgentCanvasStore((s) => s.sessionId)
-  const canvasIsRunning = useAgentCanvasStore((s) => s.isRunning)
+  const isRunning = useAgentCanvasStore((s) => s.isRunning)
   const canvasSteps = useAgentCanvasStore((s) => s.steps)
+  const setApprovalStatus = useAgentCanvasStore((s) => s.setApprovalStatus)
+  const setSelectedNode = useAgentCanvasStore((s) => s.setSelectedNode)
 
-  // Sync agentStore steps into canvas store so both stay in sync
-  const { setSteps, setApprovalStatus } = useAgentCanvasStore()
-  useEffect(() => {
-    setSteps(
-      agentSteps.map((s) => ({
-        name: s.id,
-        status: s.status === 'active' ? 'running' : (s.status as 'pending' | 'running' | 'done' | 'error'),
-        durationMs: s.duration ? s.duration * 1000 : undefined,
-        tokens: s.tokens,
-        startedAt: undefined,
-        error: s.detail,
-      })),
-    )
-  }, [agentSteps, setSteps])
 
   // Subscribe to awaitingApproval event from chatService/MessageHandler
   // This is the bridge: backend emits AWAITING_APPROVAL → MessageHandler calls
@@ -148,12 +135,12 @@ export function AgentCanvas({
   }, [agentSteps])
 
   const handleNodeClick = useCallback((nodeId: string) => {
-    useAgentCanvasStore.getState().setSelectedNode(nodeId)
-  }, [])
+    setSelectedNode(nodeId)
+  }, [setSelectedNode])
 
   const handleCloseDetail = useCallback(() => {
-    useAgentCanvasStore.getState().setSelectedNode(null)
-  }, [])
+    setSelectedNode(null)
+  }, [setSelectedNode])
 
   const hasSteps = agentSteps.length > 0
   const isActive = agentSteps.some((s) => s.status === 'active')
@@ -167,7 +154,7 @@ export function AgentCanvas({
           <span className="text-sm font-semibold text-white">
             {t.canvas?.title || 'Agent Canvas'}
           </span>
-          {canvasIsRunning && (
+          {isRunning && ( // was canvasIsRunning
             <motion.span
               animate={{ opacity: [1, 0.3, 1] }}
               transition={{ repeat: Infinity, duration: 1.2 }}

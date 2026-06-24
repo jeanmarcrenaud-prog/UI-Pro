@@ -1,6 +1,7 @@
 // services/canvasWebSocket.ts
 // WebSocket service for real-time Agent Canvas sync — step updates, approval, run completion
 import { useAgentCanvasStore } from '@/lib/stores/agentCanvasStore'
+import { API_CONFIG } from '@/lib/config'
 import { useCanvasActions } from '@/lib/stores/useCanvasActions'
 
 let socket: WebSocket | null = null
@@ -20,7 +21,7 @@ export function connectCanvasWebSocket(sessionId?: string): WebSocket {
   if (socket?.readyState === WebSocket.OPEN) return socket
 
   const params = sessionId ? `?session_id=${sessionId}` : ''
-  const wsUrl = `ws://localhost:8000/ws${params}`
+  const wsUrl = `${API_CONFIG.canvasWsUrl}/ws${params}`
 
   socket = new WebSocket(wsUrl)
 
