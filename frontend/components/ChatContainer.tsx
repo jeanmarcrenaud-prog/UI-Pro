@@ -191,11 +191,6 @@ export function ChatContainer({
   } = useChat()
 
   const { t, locale } = useI18n()
-  // Cosmetic indicator on the send button — a small brain emoji when
-  // thinking-mode is OFF reminds the operator that the model will
-  // jump straight to the answer (no internal chain-of-thought).
-  // Hidden when thinking is ON to keep the button focused on the
-  // primary action.
   const { enabled: thinkingEnabled } = useEnableThinking()
   const thinkingOff = !thinkingEnabled
 
@@ -234,11 +229,9 @@ export function ChatContainer({
   }, [sendMessage])
 
   const handleSuggestion = useCallback((messageId: string, prompt: string) => {
-    // Prepend the suggestion prompt to the existing message content
     const message = messages.find(m => m.id === messageId)
     if (!message?.content) return
     
-    // Prepend to input for review instead of sending immediately
     const enhancedPrompt = prompt + message.content
     setInputValue(enhancedPrompt)
   }, [messages])
@@ -248,7 +241,6 @@ export function ChatContainer({
     if (!message) return
     setEditingMessageId(messageId)
     setInputValue(message.content)
-    // Focus and scroll to textarea after state update
     setTimeout(() => {
       textareaRef.current?.focus()
       textareaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -300,6 +292,48 @@ export function ChatContainer({
 
   return (
     <div className="flex flex-col h-full">
+      {/* Step Progress / Agent Canvas (toggle) - NOW ABOVE MESSAGES */}
+      <AnimatePresence mode="wait">
+        {agentSteps.length > 0 && (
+          <motion.div
+            key={canvasView ? 'canvas' : 'list'}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
+          >
+            {/* View toggle */}
+            <div className="flex items-center justify-end gap-1 mb-1.5">
+              <span className="text-[10px] text-slate-600 mr-auto font-mono">
+                {canvasView ? 'Agent Canvas' : 'Step Progress'}
+              </span>
+              <button
+                onClick={() => setCanvasView(false)}
+                data-active={!canvasView}
+                className="p-1 rounded-md transition-colors data-[active=true]:bg-violet-500/20 data-[active=true]:text-violet-300 text-slate-600 hover:text-slate-300"
+                title="List view"
+              >
+                <LayoutList size={14} />
+              </button>
+              <button
+                onClick={() => setCanvasView(true)}
+                data-active={canvasView}
+                className="p-1 rounded-md transition-colors data-[active=true]:bg-violet-500/20 data-[active=true]:text-violet-300 text-slate-600 hover:text-slate-300"
+                title="Graph view"
+              >
+                <GitBranch size={14} />
+              </button>
+            </div>
+
+            {canvasView ? (
+              <AgentCanvas />
+            ) : (
+              <StepProgress steps={agentSteps} locale={locale} />
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto px-6 py-8 space-y-6 scrollbar-thin scrollbar-thumb-slate-700">
         <AnimatePresence mode="wait">
@@ -314,55 +348,13 @@ export function ChatContainer({
           )}
         </AnimatePresence>
 
-        {/* Step Progress / Agent Canvas (toggle) */}
-        <AnimatePresence mode="wait">
-          {agentSteps.length > 0 && (
-            <motion.div
-              key={canvasView ? 'canvas' : 'list'}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-            >
-              {/* View toggle */}
-              <div className="flex items-center justify-end gap-1 mb-1.5">
-                <span className="text-[10px] text-slate-600 mr-auto font-mono">
-                  {canvasView ? 'Agent Canvas' : 'Step Progress'}
-                </span>
-                <button
-                  onClick={() => setCanvasView(false)}
-                  data-active={!canvasView}
-                  className="p-1 rounded-md transition-colors data-[active=true]:bg-violet-500/20 data-[active=true]:text-violet-300 text-slate-600 hover:text-slate-300"
-                  title="List view"
-                >
-                  <LayoutList size={14} />
-                </button>
-                <button
-                  onClick={() => setCanvasView(true)}
-                  data-active={canvasView}
-                  className="p-1 rounded-md transition-colors data-[active=true]:bg-violet-500/20 data-[active=true]:text-violet-300 text-slate-600 hover:text-slate-300"
-                  title="Graph view"
-                >
-                  <GitBranch size={14} />
-                </button>
-              </div>
-
-              {canvasView ? (
-                <AgentCanvas />
-              ) : (
-                <StepProgress steps={agentSteps} locale={locale} />
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-
         {/* Loading / Streaming Indicators */}
         <AnimatePresence>
-          {isLoading && !showStreamingIndicator && (
+          {isLoading && !showStreamingIndicator && agentSteps.length === 0 && (
             <LoadingIndicator label={t.loading?.dots || 'Thinking...'} />
           )}
 
-          {showStreamingIndicator && (
+          {showStreamingIndicator && agentSteps.length === 0 && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -474,3 +466,5 @@ export function ChatContainer({
     </div>
   )
 }
+
+ChatContainer.displayName = 'ChatContainer'

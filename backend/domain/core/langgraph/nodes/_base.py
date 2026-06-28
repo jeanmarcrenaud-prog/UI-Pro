@@ -206,8 +206,9 @@ _LANG_KEYWORDS: dict[str, set[str]] = {
     "batch": {".bat", ".cmd", "batch"},
     "javascript": {"javascript", "js ", ".js", "nodejs", "node.js"},
     "typescript": {"typescript"},   # deliberately narrower: ".ts" alone is too
-}                                   # prone to false positives (e.g. "config.ts"
-                                    # in a JS context). Only "typescript" wins.
+    "html": {"html", "htm", ".html", "page web", "page html"},
+    "css": {"css", ".css", "feuille de style", "stylesheet"},
+}
 
 _LANG_CONFIG: dict[str, dict[str, str]] = {
     "python": {"ext": "py", "block": "python", "name": "Python"},
@@ -216,6 +217,8 @@ _LANG_CONFIG: dict[str, dict[str, str]] = {
     "batch": {"ext": "bat", "block": "batch", "name": "Batch"},
     "javascript": {"ext": "js", "block": "javascript", "name": "JavaScript"},
     "typescript": {"ext": "ts", "block": "typescript", "name": "TypeScript"},
+    "html": {"ext": "html", "block": "html", "name": "HTML"},
+    "css": {"ext": "css", "block": "css", "name": "CSS"},
 }
 
 _DEFAULT_LANG = "python"
@@ -368,6 +371,45 @@ def _build_syntax_example(language: str) -> str:
             "    echo \"Error: fetch failed\" >&2\n"
             "    return 1\n"
             "  }\n"
+            "}\n"
+        )
+    elif language == "html":
+        return (
+            "<!DOCTYPE html>\n"
+            "<html lang=\"fr\">\n"
+            "<head>\n"
+            "  <meta charset=\"UTF-8\">\n"
+            "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n"
+            "  <title>Page exemple</title>\n"
+            "  <link rel=\"stylesheet\" href=\"style.css\">\n"
+            "</head>\n"
+            "<body>\n"
+            "  <h1>Bienvenue</h1>\n"
+            "  <p>Ceci est un paragraphe d\u2019exemple avec du texte.</p>\n"
+            "  <script src=\"app.js\"></script>\n"
+            "</body>\n"
+            "</html>\n"
+        )
+    elif language == "css":
+        return (
+            "/* Reset de base */\n"
+            "*, *::before, *::after {\n"
+            "  box-sizing: border-box;\n"
+            "  margin: 0;\n"
+            "  padding: 0;\n"
+            "}\n"
+            "\n"
+            ".container {\n"
+            "  max-width: 1200px;\n"
+            "  margin-inline: auto;\n"
+            "  padding: 1rem;\n"
+            "}\n"
+            "\n"
+            ".card {\n"
+            "  border: 1px solid #ddd;\n"
+            "  border-radius: 8px;\n"
+            "  padding: 1.5rem;\n"
+            "  box-shadow: 0 2px 4px rgba(0,0,0,0.1);\n"
             "}\n"
         )
     # Default Python example

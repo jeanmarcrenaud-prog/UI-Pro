@@ -25,6 +25,21 @@ export default function CustomNode({ id, data, selected }: NodeProps<CanvasStep>
   const colorClass = getStatusColor(status || 'pending')
   const classes = getNodeClasses(id, name, status || 'pending')
 
+  const DISPLAY_NAMES: Record<string, string> = {
+    'step-orchestrator': 'Orchestrator',
+    'step-analyzing': 'Analyze',
+    'step-planning': 'Plan',
+    'step-coding': 'Code',
+    'step-reviewing': 'Review',
+    'step-executing': 'Execute',
+    'step-fixing': 'Fix',
+    'step-execution_success': 'Completed',
+    'step-execution_failed': 'Failed',
+    'step-max_attempts_reached': 'Max Attempts',
+    'step-no_code_short_circuit': 'No Code',
+  }
+  const displayName = DISPLAY_NAMES[name] || name.replace(/^step-/, '').replace(/_/g, ' ')
+
   return (
     <motion.div
       className={`${classes} ${selected ? 'ring-2 ring-white/70' : ''}`}
@@ -59,7 +74,7 @@ export default function CustomNode({ id, data, selected }: NodeProps<CanvasStep>
         <div className="flex-1 min-w-0">
           {/* Label */}
           <div className="font-semibold text-white tracking-tight text-base">
-            {name}
+            {displayName}
           </div>
 
           {/* Model */}

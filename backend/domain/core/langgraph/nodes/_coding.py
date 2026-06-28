@@ -58,6 +58,7 @@ async def coding_node(state: AgentState) -> dict[str, Any]:
     ext = lang_cfg["ext"]
     block = lang_cfg["block"]
     lang_name = lang_cfg["name"]
+    logger.info("[coding_node] Langue detectee: %s (ext=.%s, block=%s)", language, ext, block)
 
     # ── Prompt construction ─────────────────────────────────────────────
     # Order matters: system prompt (static) first, then context, then

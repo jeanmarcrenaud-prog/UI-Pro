@@ -20,6 +20,7 @@ import SuccessConfetti from './SuccessConfetti'
 // ── Pipeline metadata (for detail panel) ──────────────────────────────
 
 const PIPELINE_DEFS = [
+  { id: 'step-orchestrator', label: 'Orchestrator', description: 'Pipeline coordinator' },
   { id: 'step-analyzing', label: 'Analyze',     description: 'Classify & route task' },
   { id: 'step-planning',  label: 'Plan',        description: 'Structured implementation plan' },
   { id: 'step-coding',    label: 'Code',        description: 'Generate Python code' },
@@ -240,18 +241,27 @@ export function AgentCanvas({
           {PIPELINE_DEFS.map((nodeDef) => {
             const step = agentSteps.find((s) => s.id === nodeDef.id)
             const status = step?.status || 'pending'
-            const statusColors: Record<string, string> = {
-              done: 'bg-emerald-500',
-              active: 'bg-violet-500',
-              error: 'bg-red-500',
+          const statusColors: Record<string, string> = {
+              done: 'bg-emerald-500 shadow-emerald-500/50',
+              active: 'bg-violet-500 shadow-violet-500/50',
+              error: 'bg-red-500 shadow-red-500/50',
               pending: 'bg-slate-600',
             }
+            const isActive = status === 'active'
+            const isCompleted = status === 'done'
             return (
               <div
                 key={nodeDef.id}
-                className="flex items-center gap-1.5 text-[10px] font-mono px-2 py-1 rounded-md bg-slate-800/50"
+                className={`flex items-center gap-1.5 text-[10px] font-mono px-2.5 py-1.5 rounded-lg transition-all duration-300 ${
+                  isActive
+                    ? 'bg-violet-500/15 border border-violet-500/30 shadow-sm shadow-violet-500/20'
+                    : isCompleted
+                    ? 'bg-emerald-500/10 border border-emerald-500/20'
+                    : 'bg-slate-800/40 border border-slate-700/30 hover:bg-slate-700/50'
+                }`}
+                title={nodeDef.description}
               >
-                <span className={`w-2 h-2 rounded-full ${statusColors[status] || 'bg-slate-600'}`} />
+                <span className={`w-2 h-2 rounded-full ${statusColors[status] || 'bg-slate-600'} ${isActive ? 'animate-pulse' : ''}`} />
                 <span className="text-slate-400">{nodeDef.label}</span>
               </div>
             )

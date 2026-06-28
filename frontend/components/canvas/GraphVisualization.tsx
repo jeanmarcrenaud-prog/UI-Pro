@@ -6,6 +6,7 @@ import ReactFlow, {
   Edge,
   Controls,
   Background,
+  BackgroundVariant,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 import { CanvasStep, useAgentCanvasStore } from '@/lib/stores/agentCanvasStore'
@@ -21,20 +22,22 @@ interface GraphVisualizationProps {
 
 // Horizontal layout positions per step type
 const STEP_POSITIONS: Record<string, { x: number; y: number }> = {
-  'step-analyzing':            { x: 40,  y: 100 },
-  'step-planning':             { x: 320, y: 100 },
-  'step-coding':               { x: 600, y: 100 },
-  'step-reviewing':            { x: 880, y: 100 },
-  'step-executing':            { x: 1160, y: 100 },
-  'step-execution_success':    { x: 1440, y: 100 },
-  'step-fixing':               { x: 880, y: 360 },
-  'step-execution_failed':     { x: 1440, y: 360 },
-  'step-max_attempts_reached': { x: 1360, y: 440 },
-  'step-no_code_short_circuit':{ x: 1360, y: 520 },
+  'step-orchestrator':         { x: -100, y: 100 },
+  'step-analyzing':            { x: 100, y: 100 },
+  'step-planning':             { x: 300, y: 100 },
+  'step-coding':               { x: 500, y: 100 },
+  'step-reviewing':            { x: 700, y: 100 },
+  'step-executing':            { x: 900, y: 100 },
+  'step-execution_success':    { x: 1100, y: 100 },
+  'step-fixing':               { x: 700, y: 320 },
+  'step-execution_failed':     { x: 1100, y: 320 },
+  'step-max_attempts_reached': { x: 1020, y: 420 },
+  'step-no_code_short_circuit':{ x: 1020, y: 500 },
 }
 
 // Edge definitions: [source, target, isLoopBack]
 const EDGE_DEFS: Array<[string, string, boolean]> = [
+  ['step-orchestrator', 'step-analyzing', false],
   ['step-analyzing', 'step-planning', false],
   ['step-planning', 'step-coding', false],
   ['step-coding', 'step-reviewing', false],
@@ -111,7 +114,7 @@ export default function GraphVisualization({ steps, onNodeClick }: GraphVisualiz
   );
 
   return (
-    <div className="agent-canvas w-full h-full relative">
+    <div className="agent-canvas w-full h-full relative bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -122,7 +125,7 @@ export default function GraphVisualization({ steps, onNodeClick }: GraphVisualiz
         nodesDraggable={false}
         nodesConnectable={false}
       >
-        <Background color="#1f2937" gap={24} />
+        <Background variant={BackgroundVariant.Dots} color="#334155" gap={24} />
         <Controls
           position="bottom-right"
           className="bg-gray-900/95 border border-gray-700 rounded-xl shadow-xl"

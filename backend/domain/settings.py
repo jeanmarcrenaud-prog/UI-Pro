@@ -259,6 +259,10 @@ class Settings(BaseSettings):
         from copy import deepcopy
 
         self.backends = deepcopy(self.backends_template)
+        # Sync per-backend timeouts with llm_timeout so the HTTP client
+        # doesn't kill the stream before the outer LLM deadline fires.
+        for cfg in self.backends.values():
+            cfg["timeout"] = self.llm_timeout
 
         if self.llm_timeout < 120:
             logger.warning(
@@ -340,6 +344,10 @@ class Settings(BaseSettings):
         # writing a value the next Settings() reload would reject.
         self.llm_timeout = max(30, min(1800, llm))
         self.executor_timeout = max(5, min(600, executor))
+        # Sync per-backend timeouts so the HTTP client doesn't
+        # kill the stream before the outer LLM deadline fires.
+        for cfg in self.backends.values():
+            cfg["timeout"] = self.llm_timeout
         self._save_to_env(
             {
                 "LLM_TIMEOUT": str(self.llm_timeout),

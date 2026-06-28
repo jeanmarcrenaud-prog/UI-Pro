@@ -306,11 +306,14 @@ pre[class*="language-"] {
 }
 
 /* États des nœuds */
+.node-orchestrator { background: rgba(167, 139, 250, 0.12); border-color: rgba(167, 139, 250, 0.35); }
 .node-analyzing   { background: rgba(59, 130, 246, 0.12); border-color: rgba(59, 130, 246, 0.35); }
 .node-planning    { background: rgba(139, 92, 246, 0.12); border-color: rgba(139, 92, 246, 0.35); }
 .node-coding      { background: rgba(16, 185, 129, 0.12); border-color: rgba(16, 185, 129, 0.35); }
 .node-reviewing   { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.35); }
 .node-executing   { background: rgba(244, 63, 94, 0.12);  border-color: rgba(244, 63, 94, 0.35);  }
+.node-failed      { background: rgba(239, 68, 68, 0.15);  border-color: rgba(239, 68, 68, 0.4);   }
+.node-skip        { background: rgba(100, 116, 139, 0.12); border-color: rgba(100, 116, 139, 0.3); }
 .node-error       { background: rgba(239, 68, 68, 0.15);  border-color: rgba(239, 68, 68, 0.4);   }
 .node-waiting     { background: rgba(100, 116, 139, 0.12); border-color: rgba(100, 116, 139, 0.3); }
 .node-cancelled   { background: rgba(100, 116, 139, 0.12); border-color: rgba(100, 116, 139, 0.3); opacity: 0.5; }

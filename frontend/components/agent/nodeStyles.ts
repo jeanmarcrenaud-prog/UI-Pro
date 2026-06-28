@@ -29,6 +29,8 @@ export const iconMap: Record<string, LucideIcon> = {
   max_attempts_reached: XCircle,
   execution_failed: XCircle,
   no_code_short_circuit: AlertCircle,
+  cancelled: XCircle,
+  error: XCircle,
 }
 
 /** Resolve the icon for a step given its name/id */
@@ -58,12 +60,18 @@ export function getStatusColor(status: string): string {
 /** Build the full CSS class string for a node, matching globals.css definitions */
 export function getNodeClasses(id: string, name: string, status: string): string {
   const typeMap: Record<string, string> = {
+    'step-orchestrator': 'node-orchestrator',
     'step-analyzing': 'node-analyzing',
     'step-planning': 'node-planning',
     'step-coding': 'node-coding',
     'step-reviewing': 'node-reviewing',
     'step-executing': 'node-executing',
+    'step-execution_success': 'node-success',
+    'step-execution_failed': 'node-failed',
+    'step-max_attempts_reached': 'node-failed',
+    'step-no_code_short_circuit': 'node-skip',
     'step-fixing': 'node-fix',
+    'step-cancelled': 'node-cancelled',
   }
 
   let cls = 'canvas-node'
