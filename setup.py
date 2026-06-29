@@ -113,8 +113,37 @@ def check_python_version() -> bool:
     return True
 
 
+def check_git() -> bool:
+    """Check git is available."""
+    git_path = shutil.which("git")
+    if not git_path:
+        print_warning("git not found. Please install from https://git-scm.com")
+        return False
+    try:
+        result = subprocess.run([git_path, "--version"], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            print_success(f"Git {result.stdout.strip()}")
+            return True
+    except Exception:
+        pass
+    print_warning("git not found")
+    return False
+
+
+def _parse_node_version(version_str: str) -> tuple[int, int, int] | None:
+    """Parse 'v18.17.1' into (18, 17, 1)."""
+    v = version_str.lstrip("v")
+    parts = v.split(".")
+    if len(parts) >= 2:
+        try:
+            return (int(parts[0]), int(parts[1]), int(parts[2]) if len(parts) > 2 else 0)
+        except ValueError:
+            pass
+    return None
+
+
 def check_node() -> bool:
-    """Check Node.js and npm availability."""
+    """Check Node.js >= 18.17 and npm availability."""
     node_path = shutil.which("node")
     npm_path = shutil.which("npm")
 
@@ -127,13 +156,24 @@ def check_node() -> bool:
             [node_path, "--version"], capture_output=True, text=True, timeout=5
         )
         if result.returncode == 0:
-            print_success(f"Node.js {result.stdout.strip()}")
+            version_str = result.stdout.strip()
+            parsed = _parse_node_version(version_str)
+            if parsed is None:
+                print_warning(f"Node.js {version_str} - could not parse version")
+            elif parsed < (18, 17, 0):
+                print_error(
+                    f"Node.js 18.17+ required. Found {version_str}. "
+                    "Please upgrade from https://nodejs.org"
+                )
+                return False
+            else:
+                print_success(f"Node.js {version_str}")
     except Exception:
-        print_error("Node.js not found")
+        print_error("Node.js check failed")
         return False
 
     if not npm_path:
-        print_warning("npm not found - skipping frontend setup")
+        print_warning("npm not found — skipping frontend setup")
         return False
 
     try:
@@ -146,9 +186,8 @@ def check_node() -> bool:
     except Exception:
         pass
 
-    print_warning("npm not found - skipping frontend setup")
+    print_warning("npm not found — skipping frontend setup")
     return False
-
 
 def check_services(skip_prompts: bool = False) -> bool:
     """Check if LLM backends are running."""
@@ -229,7 +268,7 @@ def setup_venv(project_root: Path) -> bool:
 
 
 def setup_frontend(project_root: Path) -> bool:
-    """Install frontend dependencies."""
+    """Install frontend dependencies with npm ci/install."""
     ui_path = project_root / "frontend"
     if not ui_path.exists():
         print_warning("Frontend directory not found - skipping")
@@ -240,15 +279,62 @@ def setup_frontend(project_root: Path) -> bool:
         print_warning("npm not found - skipping frontend setup")
         return True
 
+    # Prefer npm ci (deterministic) when lockfile exists
+    lockfile = ui_path / "package-lock.json"
+    has_lockfile = lockfile.exists()
+
+    # Decide: install or ci?
+    node_modules = ui_path / "node_modules"
+    should_install = not node_modules.exists()
+
+    # Also reinstall if package.json is newer than node_modules
+    pkg_json = ui_path / "package.json"
+    if not should_install and pkg_json.exists() and node_modules.exists():
+        try:
+            pkg_mtime = pkg_json.stat().st_mtime
+            nm_mtime = node_modules.stat().st_mtime
+            if pkg_mtime > nm_mtime:
+                print_step("package.json changed - reinstalling...")
+                should_install = True
+        except OSError:
+            pass
+
+    if not should_install:
+        print_success("node_modules already up to date")
+        return True
+
     print_step("Installing frontend dependencies...")
-    if not (ui_path / "node_modules").exists():
-        result = run_command([npm_path, "install"], cwd=ui_path, check=False)
-        if result.returncode != 0:
-            print_warning("Failed to install npm packages (continuing)")
+
+    if has_lockfile:
+        cmd = [str(npm_path), "ci"]
+        label = "npm ci"
+    else:
+        cmd = [str(npm_path), "install"]
+        label = "npm install"
+
+    try:
+        process = subprocess.run(
+            cmd,
+            cwd=str(ui_path),
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        # Print output for debugging
+        if process.stdout:
+            for line in process.stdout.splitlines():
+                print(f"  {line}")
+        if process.returncode != 0:
+            if process.stderr:
+                for line in process.stderr.splitlines():
+                    print(f"  {Colors.RED}{line}{Colors.END}")
+            print_warning(f"{label} failed (continuing)")
         else:
             print_success("Frontend dependencies installed")
-    else:
-        print_success("node_modules already exists")
+    except subprocess.TimeoutExpired:
+        print_warning(f"{label} timed out after 180s (continuing)")
+    except Exception as e:
+        print_warning(f"{label} failed: {e} (continuing)")
 
     return True
 
@@ -384,8 +470,16 @@ def main():
     print_step("Checking prerequisites...")
     if not check_python_version():
         sys.exit(1)
+    check_git()
     if not check_node():
         print_warning("Continuing without Node.js...")
+
+    # Clean up orphan root package-lock.json (artifact, no package.json at root)
+    root_lock = project_root / "package-lock.json"
+    root_pkg = project_root / "package.json"
+    if root_lock.exists() and not root_pkg.exists():
+        root_lock.unlink()
+        print_success("Removed orphan root package-lock.json")
 
     # Setup
     setup_venv(project_root)
