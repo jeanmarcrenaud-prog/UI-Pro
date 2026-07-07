@@ -72,7 +72,8 @@ interface UIState {
   setLocale: (locale: 'en' | 'fr') => void
 
   // Theme
-  theme: 'dark' | 'light' | 'purple-rain'
+  theme: 'dark' | 'light' | 'purple-rain' | 'pro'
+  setTheme: (theme: 'dark' | 'light' | 'purple-rain' | 'pro') => void
   setTheme: (theme: 'dark' | 'light' | 'purple-rain') => void
   toggleTheme: () => void
 
@@ -121,6 +122,10 @@ export const useUIStore = create<UIState>()(
         document.documentElement.className = theme
       },
       toggleTheme: () => set((state) => {
+        const next = state.theme === 'dark' ? 'light' : state.theme === 'light' ? 'purple-rain' : state.theme === 'purple-rain' ? 'pro' : 'dark'
+        document.documentElement.className = next
+        return { theme: next }
+      })
         const next = state.theme === 'dark' ? 'light' : state.theme === 'light' ? 'purple-rain' : 'dark'
         document.documentElement.className = next
         return { theme: next }

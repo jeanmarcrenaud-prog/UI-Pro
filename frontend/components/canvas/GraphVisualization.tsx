@@ -7,6 +7,7 @@ import ReactFlow, {
   Controls,
   Background,
   BackgroundVariant,
+  MiniMap,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 import { CanvasStep, useAgentCanvasStore } from '@/lib/stores/agentCanvasStore'
@@ -124,11 +125,23 @@ export default function GraphVisualization({ steps, onNodeClick }: GraphVisualiz
         fitViewOptions={{ padding: 0.2 }}
         nodesDraggable={false}
         nodesConnectable={false}
+        panOnScroll
+        zoomOnScroll
+        zoomOnDoubleClick={false}
+        minZoom={0.1}
+        maxZoom={2.0}
       >
         <Background variant={BackgroundVariant.Dots} color="#334155" gap={24} />
+        <MiniMap
+          position="bottom-left"
+          className="!bg-gray-900/80 !border !border-gray-700 !rounded-lg"
+          nodeColor={(n) => n.selected ? '#06b6d4' : '#1e293b'}
+          maskColor="rgba(0,0,0,0.3)"
+          style={{ width: 140, height: 100 }}
+        />
         <Controls
           position="bottom-right"
-          className="bg-gray-900/95 border border-gray-700 rounded-xl shadow-xl"
+          className="!bg-gray-900/95 !border !border-gray-700 !rounded-xl !shadow-xl [&_button]:!border-gray-600 [&_button]:hover:!bg-gray-700"
         />
       </ReactFlow>
     </div>

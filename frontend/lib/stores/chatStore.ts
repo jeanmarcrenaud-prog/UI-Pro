@@ -283,6 +283,23 @@ export const useChatStore = create<ChatStore>()(
         })
       },
 
+      forkChat: (id: string) => {
+        const chat = get().history.find(c => c.id === id)
+        if (!chat) return
+        const now = new Date().toISOString()
+        const forked = {
+          ...chat,
+          id: `chat-${Date.now()}` as string,
+          title: `${chat.title} (fork)`,
+          messages: [...(chat.messages || [])],
+          createdAt: now,
+          updatedAt: now,
+          isPinned: false,
+          archived: false,
+        }
+        set({ history: [forked, ...get().history] })
+      },
+
       addMessage: (message) =>
         set((state) => {
           // Keep circular buffer for messages (200 max to prevent memory bloat)

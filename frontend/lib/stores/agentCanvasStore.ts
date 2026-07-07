@@ -25,6 +25,8 @@ interface CanvasState {
   steps: CanvasStep[]
   currentStep: string | null
   selectedNodeId: string | null
+  collapsedNodes: string[]
+  isRunning: boolean
   isRunning: boolean
 
   // Approval status
@@ -41,6 +43,12 @@ interface CanvasState {
   addStep: (step: CanvasStep) => void
   setCurrentStep: (stepName: string | null) => void
   setSelectedNode: (nodeId: string | null) => void
+  toggleCollapse: (nodeId: string) => void
+  setRunning: (isRunning: boolean) => void
+  setApprovalStatus: (status: 'PENDING' | 'APPROVED' | 'REJECTED', reason?: string) => void
+  resetCanvas: () => void
+  set: (partial: Partial<Omit<CanvasState, 'set' | 'setSteps' | 'updateStep' | 'addStep' | 'setCurrentStep' | 'setSelectedNode' | 'toggleCollapse' | 'setRunning' | 'setApprovalStatus' | 'resetCanvas' | 'markStepRunning' | 'markStepDone' | 'markStepError' | 'sendApprovalDecision'>>) => void
+  setRunning: (isRunning: boolean) => void
   setRunning: (isRunning: boolean) => void
   setApprovalStatus: (status: 'PENDING' | 'APPROVED' | 'REJECTED', reason?: string) => void
   resetCanvas: () => void
@@ -60,6 +68,8 @@ export const useAgentCanvasStore = create<CanvasState>()(
         steps: [],
         currentStep: null,
         selectedNodeId: null,
+        collapsedNodes: [],
+        isRunning: false,
         isRunning: false,
         approvalStatus: null,
         approvalReason: undefined,
@@ -83,6 +93,13 @@ export const useAgentCanvasStore = create<CanvasState>()(
         setCurrentStep: (stepName) => set({ currentStep: stepName }),
 
         setSelectedNode: (nodeId) => set({ selectedNodeId: nodeId }),
+        toggleCollapse: (nodeId) =>
+          set((state) => ({
+            collapsedNodes: state.collapsedNodes.includes(nodeId)
+              ? state.collapsedNodes.filter((id) => id !== nodeId)
+              : [...state.collapsedNodes, nodeId],
+          })),
+        setRunning: (isRunning) => set({ isRunning }),
 
         setRunning: (isRunning) => set({ isRunning }),
 
@@ -123,6 +140,9 @@ export const useAgentCanvasStore = create<CanvasState>()(
             steps: [],
             currentStep: null,
             selectedNodeId: null,
+            collapsedNodes: [],
+            isRunning: false,
+            isRunning: false,
             isRunning: false,
             approvalStatus: null,
             approvalReason: undefined,

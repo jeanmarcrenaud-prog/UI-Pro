@@ -25,6 +25,15 @@ if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
   import('@/lib/stores/agentStore').then(m => {
     (window as any).__TEST_AGENT_STORE__ = m.useAgentStore
   })
+  import('@/lib/stores/chatStore').then(m => {
+    (window as any).__TEST_CHAT_STORE__ = m.useChatStore
+  })
+  import('@/services/chatService').then(m => {
+    (window as any).__TEST_CHAT_SERVICE__ = m.chatService
+  })
+  import('@/lib/events').then(m => {
+    (window as any).__TEST_EVENTS__ = m.events
+  })
 }
 
 type TabType = 'chat' | 'history' | 'settings' | 'canvas'

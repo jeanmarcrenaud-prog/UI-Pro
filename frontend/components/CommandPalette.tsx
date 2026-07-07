@@ -84,7 +84,8 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
         label: theme === 'dark' ? 'Switch to Light Mode' : theme === 'light' ? 'Switch to Purple Rain' : 'Switch to Dark Mode',
         icon: theme === 'dark' ? <Sun className="w-4 h-4" /> : theme === 'light' ? <Sparkles className="w-4 h-4" /> : <Moon className="w-4 h-4" />,
         action: () => {
-          const next = theme === 'dark' ? 'light' : theme === 'light' ? 'purple-rain' : 'dark'
+        const next = theme === 'dark' ? 'light' : theme === 'light' ? 'purple-rain' : theme === 'purple-rain' ? 'pro' : 'dark'
+        setTheme(next as 'dark' | 'light' | 'purple-rain' | 'pro')
           setTheme(next as 'dark' | 'light' | 'purple-rain')
           onClose()
         },

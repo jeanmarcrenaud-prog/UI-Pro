@@ -3,12 +3,13 @@
 
 import { useUIStore } from '@/lib/stores/uiStore'
 import { useI18n } from '@/lib/i18n'
-import { Monitor, Sun, Moon, Sparkles } from 'lucide-react'
+import { Monitor, Sun, Moon, Sparkles, Palette } from 'lucide-react'
 
 const THEMES = [
   { id: 'dark' as const, label: 'Sombre', icon: Moon, desc: 'Dark mode classique' },
   { id: 'light' as const, label: 'Clair', icon: Sun, desc: 'Mode jour epure' },
   { id: 'purple-rain' as const, label: 'Purple Rain', icon: Sparkles, desc: 'Theme premium violet' },
+  { id: 'pro' as const, label: 'Pro', icon: Palette, desc: 'Cursor/Windsurf style cyan' },
 ]
 
 export function ThemeSelector() {

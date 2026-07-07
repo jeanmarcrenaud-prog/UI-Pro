@@ -47,7 +47,7 @@ interface HistoryViewProps {
 
 export function HistoryView({ onSelectChat, onClose }: HistoryViewProps) {
   const { 
-    history, loadChat, deleteChat, renameChat, archiveChat, unarchiveChat, 
+    togglePinChat, addTagToChat, removeTagFromChat, forkChat
     togglePinChat, addTagToChat, removeTagFromChat 
   } = useChatStore()
   const { selectedModel } = useUIStore()
@@ -203,6 +203,9 @@ export function HistoryView({ onSelectChat, onClose }: HistoryViewProps) {
   const handlePin = useCallback((chatId: string) => {
     togglePinChat(chatId)
   }, [togglePinChat])
+  const handleFork = useCallback((chatId: string) => {
+    forkChat(chatId)
+  }, [forkChat])
 
   const handleExport = useCallback((chatId: string) => {
     const chat = history.find(c => c.id === chatId)
@@ -308,7 +311,9 @@ return (
                       onArchive={() => handleArchive(chat.id)}
                       onPin={() => handlePin(chat.id)}
                       onExport={() => handleExport(chat.id)}
-                      onDelete={() => handleDelete(chat.id)}
+                      WP|                      onDelete={() => handleDelete(chat.id)}
+                      onFork={() => handleFork(chat.id)}
+TK|                      onSetFilterTag={setFilterTag}
                       onSetFilterTag={setFilterTag}
                     />
                   ))}

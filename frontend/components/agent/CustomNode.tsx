@@ -4,8 +4,11 @@
 'use client'
 
 import { Handle, Position, type NodeProps } from 'reactflow'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import type { CanvasStep } from '@/lib/stores/agentCanvasStore'
+import { useAgentCanvasStore } from '@/lib/stores/agentCanvasStore'
+import { getIcon, getStatusColor, getNodeClasses } from './nodeStyles'
+import type { CanvasStep, useAgentCanvasStore } from '@/lib/stores/agentCanvasStore'
 import { getIcon, getStatusColor, getNodeClasses } from './nodeStyles'
 
 /** Module-level animation variants (stable ref, survives HMR) */
@@ -72,11 +75,32 @@ export default function CustomNode({ id, data, selected }: NodeProps<CanvasStep>
 
         {/* Content */}
         <div className="flex-1 min-w-0">
-          {/* Label */}
-          <div className="font-semibold text-white tracking-tight text-base">
-            {displayName}
+          {/* Label + collapse toggle */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="font-semibold text-white tracking-tight text-base">
+              {displayName}
+            </div>
+            <button
+              onClick={(e) => { e.stopPropagation(); toggleCollapse(id) }}
+              className="text-slate-500 hover:text-white transition-colors p-0.5 rounded"
+            >
+              <svg
+                className={`w-3.5 h-3.5 transition-transform duration-200 ${isCollapsed ? '-rotate-90' : 'rotate-0'}`}
+                viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+              >
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </button>
           </div>
 
+        <AnimatePresence>
+        {!isCollapsed && (
+        <motion.div
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: 'auto', opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={{ duration: 0.2, ease: 'easeInOut' }}
+        >
           {/* Model */}
           {modelUsed && (
             <div className="text-xs text-slate-400 mt-0.5 font-mono">{modelUsed}</div>
@@ -112,6 +136,9 @@ export default function CustomNode({ id, data, selected }: NodeProps<CanvasStep>
               ⏳ En attente d&apos;approbation
             </div>
           )}
+        </motion.div>
+        )}
+        </AnimatePresence>
         </div>
       </div>
 

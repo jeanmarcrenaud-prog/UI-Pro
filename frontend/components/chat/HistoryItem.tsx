@@ -4,7 +4,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { Pin, Archive, Clock, Check, X, Download, Edit2 } from 'lucide-react'
+import { Pin, Archive, Clock, Check, X, Download, Edit2, GitFork } from 'lucide-react'
 import type { ChatHistoryItem } from '@/lib/types'
 
 interface HistoryItemProps {
@@ -23,6 +23,13 @@ interface HistoryItemProps {
   onPin: () => void
   onExport: () => void
   onDelete: () => void
+  onFork: () => void
+  onSetFilterTag: (tag: string) => void
+}
+  onDelete: () => void
+  onFork: () => void
+  onSetFilterTag: (tag: string) => void
+  onDelete: () => void
   onSetFilterTag: (tag: string) => void
 }
 
@@ -40,7 +47,9 @@ export function HistoryItem({
   onCancelEdit,
   onArchive,
   onPin,
-  onExport,
+  BB|  onExport,
+  onFork,
+  onDelete,
   onDelete,
   onSetFilterTag,
 }: HistoryItemProps) {
@@ -147,6 +156,9 @@ export function HistoryItem({
           </button>
           <button onClick={(e) => { e.stopPropagation(); onExport() }} className="p-2 text-slate-600 hover:text-white hover:bg-slate-700 rounded opacity-0 group-hover:opacity-100" title="Export MD">
             <Download className="w-4 h-4" />
+          </button>
+          <button onClick={(e) => { e.stopPropagation(); onFork() }} className="p-2 text-slate-600 hover:text-violet-400 opacity-0 group-hover:opacity-100" title="Fork session">
+            <GitFork className="w-4 h-4" />
           </button>
           <button onClick={(e) => { e.stopPropagation(); onDelete() }} className="p-2 text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100" title="Delete">
             <X className="w-4 h-4" />

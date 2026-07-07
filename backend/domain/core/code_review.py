@@ -11,18 +11,32 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
 
-logger = logging.getLogger(__name__)
 
+# Weighted scoring: security (3x) > performance (2x) > readability (1x)
+SEVERITY_WEIGHTS = {
+    "high": 3.0,
+    "medium": 2.0,
+    "low": 1.0,
+}
+MAX_SCORE_PER_ISSUE = 5  # Max penalty points per issue
+logger = logging.getLogger(__name__)
 
 @dataclass
 class ReviewResult:
-    """Result of code review"""
+    """Result of a code review scan."""
+    success: bool
+    issues: list[dict[str, Any]]
+    tool: str
+    summary: str
+    raw_output: str = ""
+    weighted_score: float = 0.0  # 0-100, higher is better
 
     success: bool
     issues: list[dict[str, Any]]
     tool: str
     summary: str
     raw_output: str = ""
+    weighted_score: float = 0.0  # 0-100, higher is better
 
 
 class CodeReviewer:
@@ -65,12 +79,16 @@ class CodeReviewer:
             issue.get("severity", "").lower() in self.fail_on for issue in all_issues
         )
 
+        # Calculate weighted score
+        weighted = self.calculate_weighted_score(all_issues)
+
         return ReviewResult(
             success=not has_critical_issues,
             issues=all_issues,
             tool=", ".join(self.tools),
-            summary=f"Found {len(all_issues)} issue(s)",
+            summary=f"Found {len(all_issues)} issue(s) | Score: {weighted:.0f}/100",
             raw_output="",
+            weighted_score=weighted,
         )
 
     def _run_bandit(self, filepath: str) -> list[dict[str, Any]]:
@@ -166,6 +184,31 @@ class CodeReviewer:
             logger.error(f"Unexpected error running pylint: {e}")
 
         return issues
+    def calculate_weighted_score(self, issues: list[dict[str, Any]]) -> float:
+        """Calculate weighted score 0-100. Higher is better.
+
+        Security issues (HIGH severity from Bandit) = 3x weight
+        Performance issues (MEDIUM) = 2x weight
+        Readability issues (LOW) = 1x weight
+        """
+        if not issues:
+            return 100.0
+
+        total_penalty = 0.0
+        max_possible_penalty = 0.0
+
+        for issue in issues:
+            severity = issue.get("severity", "low").lower()
+            weight = SEVERITY_WEIGHTS.get(severity, 1.0)
+            penalty = weight * MAX_SCORE_PER_ISSUE
+            total_penalty += penalty
+            max_possible_penalty += penalty * 5  # Assume up to 5 issues per severity level
+
+        if max_possible_penalty == 0:
+            return 100.0
+
+        score = max(0.0, 100.0 - (total_penalty / max_possible_penalty * 100))
+        return round(score, 1)
 
 
 # ====================== Singleton ======================
