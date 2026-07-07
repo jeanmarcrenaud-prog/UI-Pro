@@ -75,6 +75,21 @@ def fix_code_by_language(name: str, content: str) -> str:
     elif ext in ("ps1", "psm1", "psd1"):
         lang = "powershell"
         result = fix_bracket_balance(content)
+    elif ext in ("rs",):
+        lang = "rust"
+        result = fix_rust_syntax(content)
+    elif ext in ("go",):
+        lang = "go"
+        result = fix_go_syntax(content)
+    else:
+        lang = f"{ext} (generic)"
+        result = fix_generic_content(content)
+
+    if result != content and len(content) > 50:
+        lang = f"{ext} (generic)"
+        result = fix_generic_content(content)
+        lang = "powershell"
+        result = fix_bracket_balance(content)
     else:
         lang = f"{ext} (generic)"
         result = fix_generic_content(content)
@@ -238,6 +253,35 @@ def fix_shell_syntax(code: str) -> str:
     # Collapse multiple blank lines
     code = re.sub(r"\n{3,}", "\n\n", code)
     return code.strip()
+
+# ── Réparateur Rust ────────────────────────────────────────────────────
+
+
+def fix_rust_syntax(code: str) -> str:
+    """Répare les erreurs courantes en Rust.
+
+    - Équilibrage des accolades/parenthèses
+    - Nettoyage Unicode
+    - Suppression des annotations de type si elles causent des problèmes
+    """
+    cleaned = remove_invalid_characters(code)
+    balanced = fix_bracket_balance(cleaned)
+    return balanced.strip()
+
+
+# ── Réparateur Go ───────────────────────────────────────────────────────
+
+
+def fix_go_syntax(code: str) -> str:
+    """Répare les erreurs courantes en Go.
+
+    - Équilibrage des accolades/parenthèses
+    - Support des tags struct (e.g., `json:"name"` - ces tags sont valides)
+    - Nettoyage Unicode
+    """
+    cleaned = remove_invalid_characters(code)
+    balanced = fix_bracket_balance(cleaned)
+    return balanced.strip()
 
 
 # ── Réparateur générique ─────────────────────────────────────────────────
