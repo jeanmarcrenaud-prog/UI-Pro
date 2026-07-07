@@ -16,6 +16,13 @@ from backend.infrastructure.monitoring.llm_metrics import (
     set_active_requests,
 )
 
+
+
+def _exponential_backoff(attempt: int, base_delay: float = 1.0, max_delay: float = 32.0) -> float:
+    """Calculate exponential backoff delay with jitter cap."""
+    delay = min(base_delay * (2 ** attempt), max_delay)
+    return delay
+
 logger = logging.getLogger(__name__)
 
 
@@ -140,6 +147,17 @@ class LLMWrapper:
                 last_exc = e
                 inc_llm_error(provider, "timeout")
                 if attempt < max_retries:
+                    delay = _exponential_backoff(attempt)
+                    logger.warning(
+                        "LLM generate timed out after %ss (model_type=%s, attempt %d/%d) — retrying in %.1fs",
+                        timeout,
+                        model_type,
+                        attempt + 1,
+                        max_retries + 1,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
                     logger.warning(
                         "LLM generate timed out after %ss (model_type=%s, attempt %d/%d) — retrying",
                         timeout,
@@ -259,6 +277,17 @@ class LLMWrapper:
                 last_exc = e
                 inc_llm_error(provider, "timeout")
                 if attempt < max_retries:
+                    delay = _exponential_backoff(attempt)
+                    logger.warning(
+                        "LLM call timed out after %ss (model_type=%s, attempt %d/%d) — retrying in %.1fs",
+                        timeout,
+                        model_type,
+                        attempt + 1,
+                        max_retries + 1,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
                     logger.warning(
                         "LLM call timed out after %ss (model_type=%s, attempt %d/%d) — retrying",
                         timeout,
