@@ -146,6 +146,8 @@ class AgentState(TypedDict, total=False):
     # Human-in-the-loop approval (execute / correct / cancel)
     approval_status: Literal["PENDING", "APPROVED", "REJECTED", None]
     approval_reason: str | None
+    # ISO-8601 timestamp set when approval is requested (for timeout)
+    approval_requested_at: str | None  # e.g. "2026-07-07T12:00:00+00:00"
 
     # Language detected from user request (e.g. "python", "powershell", "bash")
     language: str | None

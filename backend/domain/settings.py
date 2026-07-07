@@ -31,36 +31,18 @@ class ModelPreset(BaseSettings):
     recommended_for: list[str] = Field(default_factory=list)
 
 
+# DEFAULT_PRESETS is a minimal fallback when model discovery is unavailable.
+# The actual presets are generated dynamically by ModelDiscovery.
 DEFAULT_PRESETS: dict[str, ModelPreset] = {
-    "light": ModelPreset(
-        id="light",
-        name="Light",
-        description="Rapide et léger",
-        model_fast="qwen3.5:0.8b",
-        model_reasoning="qwen3.5:0.8b",
-        model_code="qwen3.5:0.8b",
+    "default": ModelPreset(
+        id="default",
+        name="Default",
+        description="Fallback preset",
+        model_fast="",
+        model_reasoning="",
+        model_code="",
         max_context=4096,
-        recommended_for=["quick", "simple"],
-    ),
-    "balanced": ModelPreset(
-        id="balanced",
-        name="Balanced",
-        description="Bon équilibre",
-        model_fast="qwen3.5:9b",
-        model_reasoning="qwen3.5:9b",
-        model_code="qwen3.5:9b",
-        max_context=8192,
-        recommended_for=["general", "coding"],
-    ),
-    "heavy": ModelPreset(
-        id="heavy",
-        name="Heavy",
-        description="Maximum puissance",
-        model_fast="qwen3.6:latest",
-        model_reasoning="qwen3.6:latest",
-        model_code="qwen3.6:latest",
-        max_context=16384,
-        recommended_for=["complex", "large_codebase"],
+        recommended_for=["general"],
     ),
 }
 
@@ -180,7 +162,7 @@ class Settings(BaseSettings):
     memory_enabled: bool = True
     memory_limit_mb: int = Field(default=512, ge=100, le=4096)
 
-    active_preset: str = Field(default="balanced", pattern="^(light|balanced|heavy)$")
+    active_preset: str = Field(default="balanced")
 
     # Per-node model routing: when True (default), each pipeline node
     # (analyzing/plan/code/review) uses the preset tier (fast/reasoning)
@@ -204,6 +186,10 @@ class Settings(BaseSettings):
     checkpoint_max_per_thread: int = Field(default=100, ge=10, le=1000)
     checkpoint_prune_age_days: int = Field(default=30, ge=1, le=365)
     use_postgres_checkpointer: bool = False
+
+    # Approval timeout
+    approval_timeout_minutes: int = Field(default=10, ge=1, le=60,
+        description="Max minutes to wait for human approval before auto-cancelling")
     postgres_db_url: str | None = None
 
     # State management
@@ -286,22 +272,10 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def apply_preset_and_overrides(self) -> "Settings":
-        """Applique le preset et les overrides runtime"""
-        if self.active_preset in DEFAULT_PRESETS:
-            preset = DEFAULT_PRESETS[self.active_preset]
-            # Respecte les variables d'environnement (déjà chargées dans les champs)
-            if not self.model_fast:
-                self.model_fast = preset.model_fast
-            if not self.model_reasoning:
-                self.model_reasoning = preset.model_reasoning
-            if not self.model_code:
-                self.model_code = preset.model_code
-
-        # Applique overrides runtime (UI)
+        """Applique les overrides runtime"""
         for k, v in self.runtime_overrides.items():
             if hasattr(self, k):
                 setattr(self, k, v)
-
         return self
 
     # ========================
@@ -315,24 +289,43 @@ class Settings(BaseSettings):
             return self.model_reasoning
         if t == "code":
             return self.model_code
-        return self.model_fast or "qwen3.5:9b"
+        return self.model_fast or ""
 
-    def get_preset(self) -> ModelPreset:
-        """Get the active model preset."""
-        return DEFAULT_PRESETS.get(self.active_preset, DEFAULT_PRESETS["balanced"])
+    def get_preset(self) -> ModelPreset | None:
+        """Get the active model preset (fallback)."""
+        return DEFAULT_PRESETS.get(self.active_preset)
 
     def get_all_presets(self) -> dict[str, ModelPreset]:
-        """Get all available presets."""
+        """Get all available presets (fallback)."""
         return DEFAULT_PRESETS.copy()
 
     def auto_select_preset(self) -> str:
-        """Auto-select the best preset based on available models and backends."""
-        # Fallback: keep current preset (async model discovery removed preset logic)
+        """Auto-select the best preset based on available models.
+        Uses ModelDiscovery to find the most capable model and
+        returns the preset name that uses it.
+        """
+        try:
+            from backend.infrastructure.model_discovery import (
+                get_model_discovery, generate_dynamic_presets,
+            )
+            import asyncio
+            discovery = get_model_discovery()
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                models = loop.run_until_complete(discovery.discover_all())
+                presets = generate_dynamic_presets(models)
+                # Prefer heavy if available, then balanced, then fast
+                for preferred in ("heavy", "balanced", "fast"):
+                    if preferred in presets:
+                        return preferred
+            finally:
+                loop.close()
+        except Exception as e:
+            logger.debug("auto_select_preset discovery failed: %s", e)
         return self.active_preset
 
     def set_preset(self, preset_id: str) -> None:
-        if preset_id not in DEFAULT_PRESETS:
-            raise ValueError(f"Preset invalide: {preset_id}")
         self.active_preset = preset_id
         logger.info(f"Preset activé : {preset_id}")
 

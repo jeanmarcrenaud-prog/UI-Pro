@@ -8,7 +8,7 @@ import asyncio
 import logging
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -111,6 +111,44 @@ def _lang_for_file(filename: str, fallback_lang: str = "python") -> str:
     return _EXT_TO_LANG.get(ext, fallback_lang)
 
 
+async def _update_approval_timestamp(app: Any, session_id: str) -> None:
+    """Set approval_requested_at in the checkpoint state."""
+    now_ts = datetime.now(timezone.utc).isoformat()
+    try:
+        await app.update_state(
+            config={"configurable": {"thread_id": session_id}},
+            values={"approval_requested_at": now_ts},
+        )
+    except Exception:
+        logger.debug("[stream] Failed to update approval_requested_at", exc_info=True)
+
+
+async def _check_approval_timeout(app: Any, session_id: str) -> bool:
+    """Check if approval timeout has expired. Returns True if timed out."""
+    from backend.domain.settings import settings
+
+    timeout_minutes = settings.approval_timeout_minutes
+    try:
+        state_snapshot = await app.aget_state(
+            config={"configurable": {"thread_id": session_id}}
+        )
+        if state_snapshot and state_snapshot.values:
+            requested_at = state_snapshot.values.get("approval_requested_at")
+            if requested_at:
+                dt = datetime.fromisoformat(requested_at)
+                now = datetime.now(timezone.utc)
+                elapsed = (now - dt).total_seconds() / 60
+                if elapsed >= timeout_minutes:
+                    logger.info(
+                        f"[stream] Approval timed out for session {session_id}: "
+                        f"{elapsed:.1f}min elapsed, limit {timeout_minutes}min"
+                    )
+                    return True
+    except Exception as exc:
+        logger.debug(f"[stream] Timeout check error: {exc}")
+    return False
+
+
 async def stream_agent(
     message: str = "",
     session_id: str = "default",
@@ -144,6 +182,11 @@ async def stream_agent(
 
     # ── Phase 2: handle user decision ──────────────────────────
     if decision is not None:
+        # Check approval timeout before processing any Phase 2 decision
+        if await _check_approval_timeout(app, session_id):
+            yield "[STEP]orchestrator:Approval timed out — execution cancelled automatically"
+            yield "[DONE]"
+            return
         async for raw in _handle_decision(app, session_id, decision, feedback):
             yield raw
         return
@@ -161,9 +204,9 @@ async def stream_agent(
         "code": None,
         "review": None,
         "execution_result": None,
-        "error": None,
         "approval_status": None,
         "approval_reason": None,
+        "approval_requested_at": None,
         "attempt": 0,
         "max_attempts": max_attempts,
         "session_id": session_id,
@@ -196,6 +239,7 @@ async def stream_agent(
                     meta = getattr(event, "data", None) or {}
                     if meta:
                         import json
+
                         step_queue.put_nowait(
                             f"{event.step}:{event.message}||{json.dumps(meta, default=str)}"
                         )
@@ -335,6 +379,8 @@ async def stream_agent(
                 f"[stream] Phase 1 complete — yielding AWAITING_APPROVAL "
                 f"(stream_id={stream_id})"
             )
+            # Record approval_requested_at in checkpoint for timeout tracking
+            await _update_approval_timestamp(app, session_id)
             yield f"[AWAITING_APPROVAL]stream_id:{stream_id}"
         else:
             yield "[STEP]completed:Task completed successfully"
@@ -424,6 +470,7 @@ async def _resume_execution(app: Any, session_id: str) -> AsyncIterator[str]:
                 meta = getattr(event, "data", None) or {}
                 if meta:
                     import json
+
                     output_queue.put_nowait(
                         ("step", f"{event.step}:{event.message}||{json.dumps(meta, default=str)}")
                     )
@@ -561,6 +608,7 @@ async def _resume_correct(
         "error": None,
         "approval_status": None,
         "approval_reason": None,
+        "approval_requested_at": None,
         "attempt": base_state.get("attempt", 0) + 1,
         "max_attempts": base_state.get("max_attempts", 3),
         "session_id": f"{session_id}_correct",
@@ -624,7 +672,8 @@ async def _resume_correct(
         if token_buffer:
             yield f"[TOKEN]{''.join(token_buffer)}"
 
-    # After correction, yield AWAITING_APPROVAL again
+    # After correction, record approval timestamp and yield AWAITING_APPROVAL again
+    await _update_approval_timestamp(app, session_id)
     yield f"[AWAITING_APPROVAL]stream_id:{base_state.get('stream_id', 'unknown')}"
     yield "[DONE]"
 
