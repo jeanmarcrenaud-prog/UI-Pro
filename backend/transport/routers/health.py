@@ -462,13 +462,30 @@ class FullSettingsRequest(BaseModel):
 
 @router.get("/api/settings")
 async def get_all_settings():
-    """Get all settings for UI sync"""
-    from backend.domain.settings import DEFAULT_PRESETS
+    """Get all settings for UI sync.
+    Model presets are generated dynamically from discovered models.
+    """
+    # Try to generate dynamic presets from discovered models
+    dynamic_presets = {}
+    try:
+        from backend.infrastructure.model_discovery import (
+            get_model_discovery, generate_dynamic_presets,
+        )
+        discovery = get_model_discovery()
+        models = await discovery.discover_all()
+        dynamic_presets = generate_dynamic_presets(models)
+    except Exception as e:
+        logger.debug("Dynamic presets generation failed: %s", e)
+
+    # Fallback to DEFAULT_PRESETS if dynamic generation failed
+    if not dynamic_presets:
+        from backend.domain.settings import DEFAULT_PRESETS
+        dynamic_presets = dict(DEFAULT_PRESETS)
 
     return {
-        "model_fast": _get_setting("model_fast", "qwen3.5:0.8b"),
-        "model_reasoning": _get_setting("model_reasoning", "qwen3.5:0.8b"),
-        "model_code": _get_setting("model_code", "qwen3.5:0.8b"),
+        "model_fast": _get_setting("model_fast", ""),
+        "model_reasoning": _get_setting("model_reasoning", ""),
+        "model_code": _get_setting("model_code", ""),
         "active_preset": _get_setting("active_preset", "balanced"),
         "llm_timeout": _get_setting("llm_timeout", 300),
         "executor_timeout": _get_setting("executor_timeout", 60),
@@ -485,7 +502,7 @@ async def get_all_settings():
                 "model_reasoning": preset.model_reasoning,
                 "model_code": preset.model_code,
             }
-            for preset_id, preset in DEFAULT_PRESETS.items()
+            for preset_id, preset in dynamic_presets.items()
         },
     }
 

@@ -504,3 +504,209 @@ def get_model_discovery() -> ModelDiscovery:
     if _discovery_instance is None:
         _discovery_instance = ModelDiscovery(timeout=3.0)
     return _discovery_instance
+
+
+
+# ==================== Dynamic Presets ====================
+
+
+def _parse_param_size(param_size: str | None) -> float:
+    '''Parse parameter size string to a float (in billions).'''
+    if not param_size:
+        return 0
+    import re
+    match = re.search(r'(\d+(?:\.\d+)?)', param_size)
+    if not match:
+        return 0
+    val = float(match.group(1))
+    low = param_size.lower()
+    if 'm' in low:
+        return val / 1000  # MB -> billions
+    if 'k' in low:
+        return 0
+    if 'b' in low:
+        return val
+    # Fallback: try to extract from name
+    return val
+
+# ==================== Dynamic Presets ====================
+
+
+def _model_sort_key(m: 'DiscoveredModel') -> tuple:
+    speed_rank = {'very_fast': 0, 'fast': 1, 'medium': 2, 'slow': 3}
+    sz = _parse_param_size(m.parameter_size)
+    import re
+    if sz == 0:
+        name_match = re.search(r'(\d+)(?:b|B)', m.name)
+        if name_match:
+            sz = float(name_match.group(1))
+    return (speed_rank.get(m.speed_tier, 99), -sz if sz > 0 else 0, m.name)
+
+
+def _extract_size_from_name(name: str) -> float:
+    import re
+    match = re.search(r'(\d+(?:\.\d+)?)\s*[bB]', name)
+    if match:
+        return float(match.group(1))
+    return 0
+
+
+def generate_dynamic_presets(all_models: list['DiscoveredModel']) -> dict:
+    '''Generate model presets dynamically from discovered models.'''
+    from backend.domain.settings import ModelPreset
+
+    if not all_models:
+        return {}
+
+    non_embedding = [m for m in all_models if 'embed' not in m.name.lower()]
+    if not non_embedding:
+        non_embedding = all_models
+
+    sorted_models = sorted(non_embedding, key=_model_sort_key)
+
+    presets: dict = {}
+    fast_model = None
+    balanced_model = None
+    heavy_model = None
+    code_model = None
+    reasoning_model = None
+
+    fast_tier = [m for m in sorted_models if m.speed_tier in ('very_fast', 'fast')]
+    medium_tier = [m for m in sorted_models if m.speed_tier == 'medium']
+
+    reasoning_models = sorted(
+        [m for m in non_embedding if m.is_reasoning], key=_model_sort_key)
+    coder_models = sorted(
+        [m for m in non_embedding if m.is_coder], key=_model_sort_key)
+
+    # Fast preset: fastest + smallest
+    if fast_tier:
+        fast_model = fast_tier[0]
+    elif medium_tier:
+        fast_model = medium_tier[0]
+    else:
+        fast_model = sorted_models[0] if sorted_models else None
+
+    # Balanced preset: mid-range reasoning (5B-20B)
+    for m in sorted_models:
+        if not m.is_reasoning:
+            continue
+        sz = _parse_param_size(m.parameter_size) or _extract_size_from_name(m.name)
+        if 5 <= sz <= 20:
+            balanced_model = m
+            break
+    if not balanced_model and reasoning_models:
+        balanced_model = reasoning_models[0]
+    if not balanced_model:
+        for m in sorted_models:
+            sz = _parse_param_size(m.parameter_size) or _extract_size_from_name(m.name)
+            if sz >= 3:
+                balanced_model = m
+                break
+    if not balanced_model:
+        balanced_model = fast_model
+
+    # Heavy preset: largest model
+    def size_key(m):
+        sz = _parse_param_size(m.parameter_size)
+        if sz == 0:
+            sz = _extract_size_from_name(m.name)
+        return -sz
+    capable = sorted(non_embedding, key=size_key)
+    heavy_model = capable[0] if capable else fast_model
+
+    # Code preset: best coder
+    if coder_models:
+        code_model = coder_models[-1]
+    elif heavy_model:
+        code_model = heavy_model
+    else:
+        code_model = fast_model
+
+    # Reasoning preset: best reasoner
+    if reasoning_models:
+        reasoning_model = reasoning_models[-1]
+    else:
+        reasoning_model = heavy_model
+
+    # Build presets
+    if fast_model:
+        presets['fast'] = ModelPreset(
+            id='fast', name='Fast', description='Rapide (petit modele rapide)',
+            model_fast=fast_model.name,
+            model_reasoning=fast_model.name,
+            model_code=fast_model.name,
+            max_context=fast_model.max_context,
+            recommended_for=['quick', 'simple'],
+        )
+
+    if balanced_model:
+        presets['balanced'] = ModelPreset(
+            id='balanced', name='Balanced',
+            description='Bon equilibre performances',
+            model_fast=balanced_model.name,
+            model_reasoning=balanced_model.name,
+            model_code=balanced_model.name,
+            max_context=balanced_model.max_context,
+            recommended_for=['general', 'coding'],
+        )
+
+    if heavy_model:
+        presets['heavy'] = ModelPreset(
+            id='heavy', name='Heavy',
+            description='Maximum puissance (gros modele)',
+            model_fast=heavy_model.name,
+            model_reasoning=heavy_model.name,
+            model_code=heavy_model.name,
+            max_context=heavy_model.max_context,
+            recommended_for=['complex', 'large_codebase'],
+        )
+
+    if code_model and code_model not in (fast_model, balanced_model, heavy_model):
+        presets['code'] = ModelPreset(
+            id='code', name='Code', description='Optimise pour le code',
+            model_fast=code_model.name,
+            model_reasoning=code_model.name,
+            model_code=code_model.name,
+            max_context=code_model.max_context,
+            recommended_for=['coding', 'programming'],
+        )
+
+    if reasoning_model and reasoning_model not in (
+            fast_model, balanced_model, heavy_model, code_model):
+        presets['reasoning'] = ModelPreset(
+            id='reasoning', name='Reasoning',
+            description='Raisonnement avance',
+            model_fast=reasoning_model.name,
+            model_reasoning=reasoning_model.name,
+            model_code=reasoning_model.name,
+            max_context=reasoning_model.max_context,
+            recommended_for=['reasoning', 'analysis'],
+        )
+
+    if not presets and all_models:
+        m = all_models[0]
+        presets['default'] = ModelPreset(
+            id='default', name='Default', description='Fallback preset',
+            model_fast=m.name, model_reasoning=m.name, model_code=m.name,
+            max_context=m.max_context,
+        )
+
+    return presets
+
+
+def get_dynamic_presets() -> dict:
+    '''Discover all models and generate presets.'''
+    try:
+        discovery = get_model_discovery()
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            models = loop.run_until_complete(discovery.discover_all())
+            return generate_dynamic_presets(models)
+        finally:
+            loop.close()
+    except Exception as e:
+        logger.warning('Failed to generate dynamic presets: %s', e)
+        return {}
