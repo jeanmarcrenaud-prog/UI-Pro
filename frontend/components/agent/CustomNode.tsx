@@ -8,8 +8,6 @@ import { motion, AnimatePresence } from 'framer-motion'
 import type { CanvasStep } from '@/lib/stores/agentCanvasStore'
 import { useAgentCanvasStore } from '@/lib/stores/agentCanvasStore'
 import { getIcon, getStatusColor, getNodeClasses } from './nodeStyles'
-import type { CanvasStep, useAgentCanvasStore } from '@/lib/stores/agentCanvasStore'
-import { getIcon, getStatusColor, getNodeClasses } from './nodeStyles'
 
 /** Module-level animation variants (stable ref, survives HMR) */
 const nodeVariants = {
@@ -24,6 +22,9 @@ const nodeVariants = {
 
 export default function CustomNode({ id, data, selected }: NodeProps<CanvasStep>) {
   const { status, name, modelUsed, durationMs, tokens } = data
+  const collapsedNodes = useAgentCanvasStore((s) => s.collapsedNodes)
+  const toggleCollapse = useAgentCanvasStore((s) => s.toggleCollapse)
+  const isCollapsed = collapsedNodes.includes(id)
   const Icon = getIcon(name)
   const colorClass = getStatusColor(status || 'pending')
   const classes = getNodeClasses(id, name, status || 'pending')
