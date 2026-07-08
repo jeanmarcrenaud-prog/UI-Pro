@@ -26,12 +26,6 @@ interface HistoryItemProps {
   onFork: () => void
   onSetFilterTag: (tag: string) => void
 }
-  onDelete: () => void
-  onFork: () => void
-  onSetFilterTag: (tag: string) => void
-  onDelete: () => void
-  onSetFilterTag: (tag: string) => void
-}
 
 export function HistoryItem({
   chat,
@@ -47,9 +41,8 @@ export function HistoryItem({
   onCancelEdit,
   onArchive,
   onPin,
-  BB|  onExport,
+  onExport,
   onFork,
-  onDelete,
   onDelete,
   onSetFilterTag,
 }: HistoryItemProps) {

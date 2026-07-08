@@ -125,10 +125,6 @@ export const useUIStore = create<UIState>()(
         const next = state.theme === 'dark' ? 'light' : state.theme === 'light' ? 'purple-rain' : state.theme === 'purple-rain' ? 'pro' : 'dark'
         document.documentElement.className = next
         return { theme: next }
-      })
-        const next = state.theme === 'dark' ? 'light' : state.theme === 'light' ? 'purple-rain' : 'dark'
-        document.documentElement.className = next
-        return { theme: next }
       }),
 
       focusMode: false,
