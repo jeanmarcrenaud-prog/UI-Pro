@@ -74,7 +74,6 @@ interface UIState {
   // Theme
   theme: 'dark' | 'light' | 'purple-rain' | 'pro'
   setTheme: (theme: 'dark' | 'light' | 'purple-rain' | 'pro') => void
-  setTheme: (theme: 'dark' | 'light' | 'purple-rain') => void
   toggleTheme: () => void
 
   // Focus mode
@@ -95,6 +94,10 @@ interface UIState {
   toggleSidebar: () => void
   setActiveTab: (tab: 'chat' | 'history' | 'settings' | 'canvas') => void
   toggleCompactMode: () => void
+
+  // Canvas view
+  canvasView: boolean
+  setCanvasView: (view: boolean) => void
 }
 
 export const useUIStore = create<UIState>()(
@@ -163,6 +166,10 @@ export const useUIStore = create<UIState>()(
       toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
       setActiveTab: (tab) => set({ activeTab: tab }),
       toggleCompactMode: () => set((state) => ({ compactMode: !state.compactMode })),
+
+      // Canvas view
+      canvasView: true,
+      setCanvasView: (view) => set({ canvasView: view }),
     }),
 
     {
@@ -175,6 +182,7 @@ export const useUIStore = create<UIState>()(
         selectedModel: state.selectedModel,
         locale: state.locale,
         theme: state.theme,
+        canvasView: state.canvasView,
       }),
     }
   )

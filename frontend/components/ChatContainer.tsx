@@ -16,7 +16,7 @@ import { useI18n } from '@/lib/i18n'
 import { useEnableThinking } from './settings/hooks/useEnableThinking'
 import { events } from '@/lib/events'
 import { AgentCanvas } from '@/components/agent/AgentCanvas'
-import { LayoutList, GitBranch } from 'lucide-react'
+import { useUIStore } from '@/lib/stores/uiStore'
 
 const DEFAULT_EXAMPLES = [
   {
@@ -196,7 +196,7 @@ export function ChatContainer({
 
   const [inputValue, setInputValue] = useState('')
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
-  const [canvasView, setCanvasView] = useState(true)
+  const canvasView = useUIStore((s) => s.canvasView)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Priority: props > hook (useful for modal/preview modes)
@@ -303,26 +303,41 @@ export function ChatContainer({
             transition={{ duration: 0.2 }}
           >
             {/* View toggle */}
-            <div className="flex items-center justify-end gap-1 mb-1.5">
+            {/* View toggle — segmented control */}
+            <div className="flex items-center gap-1 mb-1.5">
               <span className="text-[10px] text-slate-600 mr-auto font-mono">
                 {canvasView ? 'Agent Canvas' : 'Step Progress'}
               </span>
-              <button
-                onClick={() => setCanvasView(false)}
-                data-active={!canvasView}
-                className="p-1 rounded-md transition-colors data-[active=true]:bg-violet-500/20 data-[active=true]:text-violet-300 text-slate-600 hover:text-slate-300"
-                title="List view"
-              >
-                <LayoutList size={14} />
-              </button>
-              <button
-                onClick={() => setCanvasView(true)}
-                data-active={canvasView}
-                className="p-1 rounded-md transition-colors data-[active=true]:bg-violet-500/20 data-[active=true]:text-violet-300 text-slate-600 hover:text-slate-300"
-                title="Graph view"
-              >
-                <GitBranch size={14} />
-              </button>
+              <div className="flex bg-slate-800/60 rounded-lg p-0.5 border border-slate-700/50">
+                <button
+                  onClick={() => useUIStore.getState().setCanvasView(false)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all duration-150 ${
+                    !canvasView
+                      ? 'bg-violet-500/20 text-violet-300 shadow-sm shadow-violet-500/10'
+                      : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                  title="List view"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
+                  </svg>
+                  Liste
+                </button>
+                <button
+                  onClick={() => useUIStore.getState().setCanvasView(true)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all duration-150 ${
+                    canvasView
+                      ? 'bg-violet-500/20 text-violet-300 shadow-sm shadow-violet-500/10'
+                      : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                  title="Graph view"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                  </svg>
+                  Graphe
+                </button>
+              </div>
             </div>
 
             {canvasView ? (
