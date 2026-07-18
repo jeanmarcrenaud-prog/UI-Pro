@@ -47,9 +47,15 @@ def get_backend(provider: str, config: ModelConfig | None = None) -> LLMBackend:
             "lmstudio": settings.lmstudio_url,
             "lemonade": settings.lemonade_url,
             "llamacpp": settings.llamacpp_url,
+            "opendesign": settings.opendesign_url,
         }
         base_url = url_map.get(provider, settings.ollama_url)
-        endpoint = "/api/generate" if provider == "ollama" else "/v1/chat/completions"
+        endpoint = (
+            "/api/generate"
+            if provider == "ollama"
+            else "" if provider == "opendesign"
+            else "/v1/chat/completions"
+        )
 
         # Per-provider timeout (fallback to global llm_timeout)
         backend_cfg = settings.backends.get(provider, {})
@@ -97,6 +103,12 @@ def _auto_register() -> None:
         register_backend("llamacpp", LlamaCppBackend)
     except ImportError as e:
         logger.debug("llama.cpp backend not available: %s", e)
+
+    try:
+        from backend.infrastructure.llm.opendesign import OpenDesignBackend
+        register_backend("opendesign", OpenDesignBackend)
+    except ImportError as e:
+        logger.debug("OpenDesign backend not available: %s", e)
 
 
 _auto_register()
