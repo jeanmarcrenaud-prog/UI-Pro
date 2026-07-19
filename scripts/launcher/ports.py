@@ -68,3 +68,22 @@ def wait_for_port(port: int, host: str = "localhost", timeout: int = 30, interva
             time.sleep(interval)
 
     return False
+
+
+def find_free_port(preferred: int, max_attempts: int = 100) -> int:
+    """Find a free port starting from preferred.
+
+    Increments port number until an available port is found.
+    Raises RuntimeError if no port is free within max_attempts.
+    """
+    for port in range(preferred, preferred + max_attempts):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(0.3)
+                s.connect(("localhost", port))
+        except (TimeoutError, ConnectionRefusedError, OSError):
+            return port
+    raise RuntimeError(
+        f"No free port found after {max_attempts} attempts "
+        f"(checked {preferred}-{preferred + max_attempts - 1})"
+    )

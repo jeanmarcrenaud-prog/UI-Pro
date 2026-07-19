@@ -15,7 +15,7 @@ from scripts.launcher.console import (
     print_success,
     print_warning,
 )
-from scripts.launcher.ports import check_port, wait_for_port
+from scripts.launcher.ports import check_port, find_free_port, wait_for_port
 from scripts.launcher.tools import (
     check_backends,
     check_npm_available,
@@ -32,16 +32,16 @@ def check_services():
     print_header("Status des services")
 
     # FastAPI
-    if check_port(8000):
-        print_success("FastAPI (8000) - En cours d'exécution")
+    if check_port(API_PORT):
+        print_success(f"FastAPI ({API_PORT}) - En cours d'exécution")
     else:
-        print_warning("FastAPI (8000) - Non lancé")
+        print_warning(f"FastAPI ({API_PORT}) - Non lancé")
 
     # Next.js
-    if check_port(3000):
-        print_success("Next.js UI (3000) - En cours d'exécution")
+    if check_port(UI_PORT):
+        print_success(f"Next.js UI ({UI_PORT}) - En cours d'exécution")
     else:
-        print_warning("Next.js UI (3000) - Non lancé")
+        print_warning(f"Next.js UI ({UI_PORT}) - Non lancé")
 
     # LLM Backends (Ollama, LM Studio, Lemonade)
     backends = check_backends()
@@ -81,10 +81,13 @@ def _resolve_python() -> str:
 
 
 def start_api(block: bool = True):
-    """Lance FastAPI."""
-    if check_port(8000):
-        print_warning("FastAPI already running on port 8000")
-        return
+    """Lance FastAPI avec auto-détection du port."""
+    global API_PORT
+    API_PORT = find_free_port(8000)
+    original = 8000
+
+    if API_PORT != original:
+        print_warning(f"Port {original} déjà utilisé — API sur le port {API_PORT}")
 
     print_header("Lancement FastAPI")
     print(f"{Colors.GREEN}→ http://localhost:{API_PORT}{Colors.RESET}")
@@ -107,10 +110,13 @@ def start_api(block: bool = True):
 
 
 def start_ui():
-    """Lance Next.js UI."""
-    if check_port(UI_PORT):
-        print_warning(f"Next.js UI already running on port {UI_PORT}")
-        return
+    """Lance Next.js UI avec auto-détection du port."""
+    global UI_PORT
+    UI_PORT = find_free_port(3000)
+    original = 3000
+
+    if UI_PORT != original:
+        print_warning(f"Port {original} déjà utilisé — UI sur le port {UI_PORT}")
 
     if not check_npm_available():
         print_error("npm not found. Install Node.js to run UI.")
@@ -126,20 +132,28 @@ def start_ui():
         print_error("frontend directory not found")
         return
 
-    # Start npm dev - use full path from shutil.which
     npm_path = shutil.which("npm")
     if not npm_path:
         print_error("npm not found. Install Node.js to run UI.")
         return
 
-    # Start npm dev in background (non-blocking)
-    subprocess.Popen([npm_path, "run", "dev"], cwd=str(ui_dir))
-
+    subprocess.Popen(
+        [npm_path, "exec", "--", "next", "dev", "-p", str(UI_PORT)],
+        cwd=str(ui_dir),
+    )
 
 def start_all(auto_open: bool = True):
     """Lance tous les services."""
+    global API_PORT, UI_PORT
     print_header("Lancement de tous les services")
 
+    # Auto-détection des ports libres
+    API_PORT = find_free_port(8000)
+    UI_PORT = find_free_port(3000)
+    if API_PORT != 8000:
+        print_warning(f"Port 8000 déjà utilisé — API sur le port {API_PORT}")
+    if UI_PORT != 3000:
+        print_warning(f"Port 3000 déjà utilisé — UI sur le port {UI_PORT}")
     # LangSmith Tracing
     try:
         from backend.infrastructure.tracing import setup_langsmith_tracing
@@ -170,29 +184,28 @@ def start_all(auto_open: bool = True):
     # Timeout generous car FAISS + sentence_transformers peuvent prendre
     # ~50s à charger en mémoire (même en arrière-plan).
     print_info("Attente du backend FastAPI (jusqu'à 120s)...")
-    if not wait_for_port(8000, timeout=120):
-        print_error("FastAPI n'a pas démarré dans les 30s - abandon")
+    if not wait_for_port(API_PORT, timeout=120):
+        print_error(f"FastAPI n'a pas démarré sur le port {API_PORT} dans les 120s")
         return
     print_success("FastAPI prêt")
 
     # Start Next.js UI
     print_info("Démarrage Next.js UI...")
     ui_thread = threading.Thread(target=start_ui, daemon=True)
-    ui_thread.start()
 
     # Give UI a moment to announce
     time.sleep(1)
 
     # Summary
     print_header("Services démarrés")
-    print(f"{Colors.GREEN}FastAPI:  http://localhost:8000{Colors.RESET}")
-    print(f"{Colors.GREEN}API Docs: http://localhost:8000/docs{Colors.RESET}")
-    print(f"{Colors.GREEN}Next.js:  http://localhost:3000{Colors.RESET}")
+    print(f"{Colors.GREEN}FastAPI:  http://localhost:{API_PORT}{Colors.RESET}")
+    print(f"{Colors.GREEN}API Docs: http://localhost:{API_PORT}/docs{Colors.RESET}")
+    print(f"{Colors.GREEN}Next.js:  http://localhost:{UI_PORT}{Colors.RESET}")
 
     if auto_open:
-        print("\nOuvrir http://localhost:3000 dans le navigateur...")
+        print(f"\nOuvrir http://localhost:{UI_PORT} dans le navigateur...")
         time.sleep(1)
-        webbrowser.open("http://localhost:3000")
+        webbrowser.open(f"http://localhost:{UI_PORT}")
 
     # Keep the main thread alive — join on FastAPI thread.
     # When user presses Ctrl+C, api_thread (blocked on subprocess.run)
