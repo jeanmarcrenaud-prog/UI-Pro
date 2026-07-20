@@ -74,13 +74,13 @@ export function BackendStatusGrid({ className = '' }: BackendStatusGridProps) {
             {/* Metrics Grid */}
             <div className="grid grid-cols-2 gap-2 text-[10px]">
               <div>
-                <span className="text-slate-500">Latence</span>
+                <span className="text-slate-500">{t.settings.metricsLatency}</span>
                 <p className="text-slate-300 font-mono">
                   {backend.responseTime ? `${backend.responseTime}ms` : '—'}
                 </p>
               </div>
               <div>
-                <span className="text-slate-500">Modèles</span>
+                <span className="text-slate-500">{t.settings.metricsModels}</span>
                 <p className="text-cyan-400 font-mono">
                   {backend.modelCount ?? '—'}
                 </p>

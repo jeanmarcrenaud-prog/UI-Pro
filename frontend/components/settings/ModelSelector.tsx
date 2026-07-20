@@ -149,7 +149,7 @@ export function ModelSelector({ className = '' }: ModelSelectorProps) {
               </div>
             </div>
           ) : (
-            <p className="text-xs text-slate-500">{description || 'Large language model'}</p>
+            <p className="text-xs text-slate-500">{description || t.settings.modelFallbackDesc}</p>
           )}
         </div>
       )}

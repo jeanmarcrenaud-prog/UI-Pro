@@ -7,25 +7,26 @@
 'use client'
 
 import { useNodeRouting } from './hooks/useNodeRouting'
+import { useI18n } from '@/lib/i18n'
 
 export function NodeRoutingSettings() {
+  const { t } = useI18n()
   const { enabled, routing, models, isLoading, isSaving, message, toggle } = useNodeRouting()
-
   return (
     <section className="glass-panel rounded-xl p-4 hover:border-violet-500/30 transition-all duration-200 hover:shadow-[0_0_20px_rgba(168,85,247,0.1)]">
       <h3 className="text-[11px] uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
-        🧭 Per-Node Routing
+        {t.settings.nodeRouting}
       </h3>
 
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <p className="text-xs text-slate-300 leading-relaxed">
-            Route each pipeline node to its preset tier instead of the chat model.
+            {t.settings.nodeRoutingDesc}
           </p>
           <p className="text-[10px] text-slate-500 mt-1">
             {enabled
-              ? 'A 1.2B model handles classification; plan/code/review use the reasoning slot.'
-              : 'Every node uses the chat model (legacy). Small models will struggle with code gen.'}
+              ? t.settings.nodeRoutingEnabledHelp
+              : t.settings.nodeRoutingDisabledHelp}
           </p>
         </div>
 
@@ -34,7 +35,7 @@ export function NodeRoutingSettings() {
           disabled={isLoading}
           role="switch"
           aria-checked={enabled}
-          aria-label="Toggle per-node model routing"
+          aria-label={t.settings.nodeRoutingToggleAria}
           className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-violet-500/50 ${
             enabled ? 'bg-violet-600' : 'bg-slate-600'
           } ${isLoading ? 'opacity-50 cursor-wait' : 'cursor-pointer'}`}
@@ -51,25 +52,25 @@ export function NodeRoutingSettings() {
       {enabled && !isLoading && (
         <div className="mt-3 pt-3 border-t border-slate-700/40 space-y-1.5">
           <RoutingRow
-            label="Analyze"
+            label={t.settings.routingLabelAnalyze}
             tier="fast"
             model={models.fast}
             current={routing.analyzing_node}
           />
           <RoutingRow
-            label="Plan"
+            label={t.settings.routingLabelPlan}
             tier="reasoning"
             model={models.reasoning}
             current={routing.planning_node}
           />
           <RoutingRow
-            label="Code"
+            label={t.settings.routingLabelCode}
             tier="reasoning"
             model={models.reasoning}
             current={routing.coding_node}
           />
           <RoutingRow
-            label="Review"
+            label={t.settings.routingLabelReview}
             tier="reasoning"
             model={models.reasoning}
             current={routing.reviewing_node}
@@ -80,7 +81,7 @@ export function NodeRoutingSettings() {
       {/* Status line */}
       <div className="mt-2 flex items-center gap-2 min-h-[16px]">
         {isSaving && (
-          <span className="text-[10px] text-slate-500">⏳ saving...</span>
+          <span className="text-[10px] text-slate-500">⏳ {t.settings.saving}</span>
         )}
         {message && (
           <p
@@ -121,8 +122,8 @@ function RoutingRow({
           {current}
         </span>
       </div>
-      <span className="text-slate-500 font-mono truncate text-right" title={model || '(unset)'}>
-        {model || '(unset)'}
+      <span className="text-slate-500 font-mono truncate text-right" title={model || t.settings.routingUnset}>
+        {model || t.settings.routingUnset}
       </span>
     </div>
   )

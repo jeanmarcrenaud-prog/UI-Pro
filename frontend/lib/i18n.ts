@@ -55,6 +55,50 @@ export interface Translations {
     reloadFailed: string
     reloading: string
     seconds: string
+    save: string
+    saving: string
+    logLevel: string
+    currentLevel: string
+    levelDebug: string
+    levelInfo: string
+    levelWarning: string
+    levelError: string
+    levelCritical: string
+    levelDescDebug: string
+    levelDescInfo: string
+    levelDescWarning: string
+    levelDescError: string
+    levelDescCritical: string
+    aboutVersion: string
+    thinkingMode: string
+    thinkingModeDesc: string
+    thinkingModeEnabledHelp: string
+    thinkingModeDisabledHelp: string
+    thinkingToggleAria: string
+    nodeRouting: string
+    nodeRoutingDesc: string
+    nodeRoutingEnabledHelp: string
+    nodeRoutingDisabledHelp: string
+    nodeRoutingToggleAria: string
+    routingLabelAnalyze: string
+    routingLabelPlan: string
+    routingLabelCode: string
+    routingLabelReview: string
+    routingUnset: string
+    themeSelector: string
+    themeLabelDark: string
+    themeLabelLight: string
+    themeLabelPurpleRain: string
+    themeLabelPro: string
+    themeDescDark: string
+    themeDescLight: string
+    themeDescPurpleRain: string
+    themeDescPro: string
+    modelCountHeading: string
+    modelCountAvailable: string
+    metricsLatency: string
+    metricsModels: string
+    modelFallbackDesc: string
   }
   debug: {
     title: string
@@ -120,7 +164,7 @@ export interface Translations {
     settings: string
     history: string
     canvas: string
-  }
+    mario: string
   canvas: {
     title: string
     pipeline: string
@@ -194,6 +238,50 @@ const en: Translations = {
     reloadFailed: 'Reload failed',
     reloading: 'Reloading...',
     seconds: 's',
+    save: 'Save',
+    saving: 'Saving...',
+    logLevel: '📋 Log Level',
+    currentLevel: 'Current Level',
+    levelDebug: 'DEBUG',
+    levelInfo: 'INFO',
+    levelWarning: 'WARNING',
+    levelError: 'ERROR',
+    levelCritical: 'CRITICAL',
+    levelDescDebug: 'Detailed debugging information',
+    levelDescInfo: 'General informational messages',
+    levelDescWarning: 'Warning messages for issues',
+    levelDescError: 'Error messages only',
+    levelDescCritical: 'Critical errors only',
+    aboutVersion: 'v1.0.0 • Next.js + Ollama',
+    thinkingMode: '🧠 LLM Thinking Mode',
+    thinkingModeDesc: 'Allow the model to spend tokens on internal chain-of-thought before producing the visible answer.',
+    thinkingModeEnabledHelp: 'Recommended for o1 / o3 / DeepSeek-R1. May leave Qwen3.5 with 0 visible tokens.',
+    thinkingModeDisabledHelp: 'Recommended for Qwen3.5 / thinking-mode models. Model jumps straight to the answer.',
+    thinkingToggleAria: 'Toggle LLM thinking mode',
+    nodeRouting: '🧭 Per-Node Routing',
+    nodeRoutingDesc: 'Route each pipeline node to its preset tier instead of the chat model.',
+    nodeRoutingEnabledHelp: 'A 1.2B model handles classification; plan/code/review use the reasoning slot.',
+    nodeRoutingDisabledHelp: 'Every node uses the chat model (legacy). Small models will struggle with code gen.',
+    nodeRoutingToggleAria: 'Toggle per-node model routing',
+    routingLabelAnalyze: 'Analyze',
+    routingLabelPlan: 'Plan',
+    routingLabelCode: 'Code',
+    routingLabelReview: 'Review',
+    routingUnset: '(unset)',
+    themeSelector: 'Theme',
+    themeLabelDark: 'Dark',
+    themeLabelLight: 'Light',
+    themeLabelPurpleRain: 'Purple Rain',
+    themeLabelPro: 'Pro',
+    themeDescDark: 'Dark mode',
+    themeDescLight: 'Light mode',
+    themeDescPurpleRain: 'Premium purple theme',
+    themeDescPro: 'Cursor/Windsurf style cyan',
+    modelCountHeading: '📊 Models',
+    modelCountAvailable: 'available',
+    metricsLatency: 'Latency',
+    metricsModels: 'Models',
+    modelFallbackDesc: 'Large language model',
   },
   debug: {
     title: 'Debug Panel',
@@ -305,7 +393,7 @@ Output the typed file plus any new interfaces/types at the top.
     settings: 'Settings',
     history: 'History',
     canvas: 'Canvas',
-  },
+    mario: 'Mario',
   canvas: {
     title: 'Agent Canvas',
     pipeline: 'Pipeline',
@@ -379,6 +467,50 @@ const fr: Translations = {
     reloadFailed: 'Échec du rechargement',
     reloading: 'Rechargement...',
     seconds: 's',
+    save: 'Enregistrer',
+    saving: 'Enregistrement...',
+    logLevel: '📋 Niveau de Log',
+    currentLevel: 'Niveau actuel',
+    levelDebug: 'DEBUG',
+    levelInfo: 'INFO',
+    levelWarning: 'ATTENTION',
+    levelError: 'ERREUR',
+    levelCritical: 'CRITIQUE',
+    levelDescDebug: 'Informations de débogage détaillées',
+    levelDescInfo: "Messages d'information généraux",
+    levelDescWarning: "Messages d'avertissement",
+    levelDescError: "Messages d'erreur uniquement",
+    levelDescCritical: 'Erreurs critiques uniquement',
+    aboutVersion: 'v1.0.0 • Next.js + Ollama',
+    thinkingMode: '🧠 Mode Pensée LLM',
+    thinkingModeDesc: 'Permettre au modèle de dépenser des tokens en raisonnement interne avant de produire la réponse visible.',
+    thinkingModeEnabledHelp: 'Recommandé pour o1 / o3 / DeepSeek-R1. Peut laisser Qwen3.5 avec 0 token visible.',
+    thinkingModeDisabledHelp: 'Recommandé pour Qwen3.5 / modes pensée. Le modèle répond directement.',
+    thinkingToggleAria: 'Activer/désactiver le mode pensée LLM',
+    nodeRouting: '🧭 Routage Par Nœud',
+    nodeRoutingDesc: 'Router chaque nœud du pipeline vers son palier prédéfini au lieu du modèle de discussion.',
+    nodeRoutingEnabledHelp: 'Un modèle 1.2B gère la classification; plan/code/review utilisent le slot raisonnement.',
+    nodeRoutingDisabledHelp: 'Chaque nœud utilise le modèle de discussion (legacy). Les petits modèles auront du mal avec le code.',
+    nodeRoutingToggleAria: 'Activer/désactiver le routage par nœud',
+    routingLabelAnalyze: 'Analyser',
+    routingLabelPlan: 'Planifier',
+    routingLabelCode: 'Coder',
+    routingLabelReview: 'Vérifier',
+    routingUnset: '(non défini)',
+    themeSelector: 'Thème',
+    themeLabelDark: 'Sombre',
+    themeLabelLight: 'Clair',
+    themeLabelPurpleRain: 'Purple Rain',
+    themeLabelPro: 'Pro',
+    themeDescDark: 'Mode sombre',
+    themeDescLight: 'Mode clair',
+    themeDescPurpleRain: 'Thème violet premium',
+    themeDescPro: 'Style cyan Cursor/Windsurf',
+    modelCountHeading: '📊 Modèles',
+    modelCountAvailable: 'disponibles',
+    metricsLatency: 'Latence',
+    metricsModels: 'Modèles',
+    modelFallbackDesc: 'Grand modèle de langage',
   },
   debug: {
     title: 'Panneau Debug',
@@ -490,7 +622,7 @@ Sors le fichier typé plus les nouvelles interfaces/types en haut.
     settings: 'Paramètres',
     history: 'Historique',
     canvas: 'Canvas',
-  },
+    mario: 'Mario',
   canvas: {
     title: 'Agent Canvas',
     pipeline: 'Pipeline',

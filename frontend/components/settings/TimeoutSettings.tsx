@@ -64,7 +64,7 @@ export function TimeoutSettings() {
           className="flex-1 px-3 py-1.5 bg-violet-600 hover:bg-violet-700 disabled:bg-violet-800/70 disabled:cursor-wait text-white text-xs font-medium rounded-lg transition-all flex items-center justify-center gap-1.5"
         >
           {isSaving ? '...' : '💾'}
-          {isSaving ? 'Saving...' : 'Save'}
+          {isSaving ? t.settings.saving : t.settings.save}
         </button>
         <button
           onClick={() => reloadFromEnv(t)}

@@ -4,7 +4,7 @@
 import { useI18n, type Locale } from '@/lib/i18n'
 
 export function LanguageSelector() {
-  const { locale, setLocale } = useI18n()
+  const { t, locale, setLocale } = useI18n()
 
   const handleChange = (newLocale: Locale) => {
     setLocale(newLocale)
@@ -13,7 +13,7 @@ export function LanguageSelector() {
   return (
     <section className="glass-panel rounded-xl p-4 hover:border-violet-500/30 transition-all duration-200 hover:shadow-[0_0_20px_rgba(168,85,247,0.1)]">
       <h3 className="text-[11px] uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
-        🌐 Language
+        🌐 {t.settings.language}
       </h3>
       <select
         value={locale}
