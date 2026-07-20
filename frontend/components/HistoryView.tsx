@@ -46,10 +46,10 @@ interface HistoryViewProps {
 }
 
 export function HistoryView({ onSelectChat, onClose }: HistoryViewProps) {
-  const { 
+  const {
+    history, loadChat, deleteChat, renameChat, archiveChat, unarchiveChat,
     togglePinChat, addTagToChat, removeTagFromChat, forkChat
   } = useChatStore()
-  const { selectedModel } = useUIStore()
   
   // Edit state
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
