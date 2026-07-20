@@ -1,0 +1,103 @@
+{
+  "version": "1.0.0",
+  "description": "Protocole de communication WebSocket entre Hermes et le Connecteur OpenCode pour le pilotage de VS Code.",
+  "messages": {
+    "editor_update": {
+      "description": "Envoyé par le connecteur vers Hermes pour signaler un changement dans l'éditeur.",
+      "fields": {
+        "active_file": {
+          "type": "object",
+          "description": "Le fichier actuellement en cours d'édition.",
+          "properties": {
+            "path": { "type": "string", "description": "Chemin absolu vers le fichier." },
+            "content": { "type": "string", "description": "Contenu textuel du fichier." }
+          }
+        },
+        "cursor": {
+          "type": "object",
+          "description": "Position précise du curseur.",
+          "properties": {
+            "line": { "type": "integer" },
+            "column": { "type": "integer" }
+          }
+        },
+        "selection": {
+          "type": "object",
+          "description": "Zone de texte sélectionnée par l'utilisateur.",
+          "properties": {
+            "start_line": { "type": "integer" },
+            "start_col": { "type": "integer" },
+            "end_line": { "type": "integer" },
+            "end_col": { "type": "integer" },
+            "text": { "type": "string" }
+          }
+        },
+        "diagnostics": {
+          "type": "array",
+          "description": "Liste des erreurs/avertissements du linter ou du compilateur.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "severity": { "type": "string", "enum": ["Error", "Warning", "Info"] },
+              "message": { "type": "string" },
+              "line": { "type": "integer" },
+              "col": { "type": "integer" },
+              "source": { "type": "string" }
+            }
+          }
+        },
+        "terminal": {
+          "type": "object",
+          "description": "Dernière sortie du terminal.",
+          "properties": {
+            "output": { "type": "string" },
+            "exit_code": { "type": "integer" }
+          }
+        },
+        "git": {
+          "type": "object",
+          "description": "Contexte Git actuel.",
+          "properties": {
+            "branch": { "type": "string" },
+            "is_dirty": { "type": "boolean" },
+            "modified_files": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "errors": {
+          "type": "array",
+          "description": "Erreurs d'interface utilisateur ou du plugin OpenCode.",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "hermes_action": {
+      "description": "Envoyé par Hermes vers le connecteur pour piloter l'éditeur.",
+      "fields": {
+        "action": {
+          "type": "string",
+          "enum": ["insert_code", "delete_selection", "move_cursor", "run_terminal_command", "open_file", "git_commit"],
+          "description": "L'action à exécuter."
+        },
+        "params": {
+          "type": "object",
+          "description": "Paramètres spécifiques à l'action (ex: contenu du code à insérer, chemin du fichier)."
+        }
+      }
+    },
+    "opencode_response": {
+      "description": "Réponse d'une opération complexe effectuée par OpenCode.",
+      "fields": {
+        "status": {
+          "type": "string",
+          "enum": ["success", "error", "pending"]
+        },
+        "data": {
+          "type": "object"
+        },
+        "error_message": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

@@ -54,6 +54,7 @@ class TestBackendFactory:
         assert "lmstudio" in backends
         assert "lemonade" in backends
         assert "llamacpp" in backends
+        assert "hermes" in backends
 
     def test_get_ollama(self, ollama_config):
         backend = get_backend("ollama", ollama_config)
