@@ -1,464 +1,152 @@
-# views/api.py - FastAPI Application
+# controllers/websocket.py - WebSocket Controller
 #
-# Role: Main entry point with app setup, middleware, and core endpoints
-# Routers handle: health, status, WebSocket, streaming
-
-import logging
-import time
-import traceback
-from collections.abc import Callable
-from contextlib import asynccontextmanager
-from functools import lru_cache
-from logging.handlers import RotatingFileHandler
+# Role: WebSocket connection lifecycle and message handling
+# Used by: views/api.py /ws endpoint
+# - Connection handling
+# - Message parsing and validation
+# - Streaming coordination
+# - Resume support
+#
+import asyncio
+import json
+import uuid
 from typing import Any
-
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
-from pydantic import BaseModel
-
-# ==================== LOGGING ====================
-
-
-def setup_logging():
-    """Configure structured logging with settings-aware levels."""
-    from backend.domain.settings import settings
-
-    # Get log level from settings (env variable)
-    log_level_str = getattr(settings, "log_level", "INFO").upper()
-    log_levels = {
-        "DEBUG": logging.DEBUG,
-        "INFO": logging.INFO,
-        "WARNING": logging.WARNING,
-        "ERROR": logging.ERROR,
-        "CRITICAL": logging.CRITICAL,
-    }
-    log_level = log_levels.get(log_level_str, logging.INFO)
-
-    logger = logging.getLogger("api")
-    logger.setLevel(log_level)
-
-    # Root logger
-    root_logger = logging.getLogger()
-    root_logger.setLevel(log_level)
-
-    # Clear existing handlers to avoid duplication
-    logger.handlers.clear()
-
-    # Console handler
-    console = logging.StreamHandler()
-    console.setLevel(log_level)
-    console.setFormatter(
-        logging.Formatter(
-            "%(asctime)s | %(levelname)-8s | %(message)s", datefmt="%H:%M:%S"
-        )
-    )
-    logger.addHandler(console)
-
-    # File handler with rotation
-    try:
-        file_handler = RotatingFileHandler(
-            "logs/api.log", maxBytes=5_000_000, backupCount=3
-        )
-        file_handler.setLevel(log_level)
-        file_handler.setFormatter(
-            logging.Formatter("%(asctime)s | %(levelname)-8s | %(name)s | %(message)s")
-        )
-        logger.addHandler(file_handler)
-    except Exception as e:
-        logger.warning(f"Could not set up file logging: {e}")
-
-    logger.info(f"Logging initialized at level: {log_level_str}")
-    return logger
-
-
-logger = setup_logging()
-
-
-# ==================== LIFESPAN ====================
-
-
-def _init_memory_background():
-    """Initialize memory manager in background thread (FAISS is slow to load)."""
-    import logging
-    try:
-        from backend.infrastructure.memory import get_memory_manager
-        mem = get_memory_manager()
-        logging.getLogger("api").info(
-            f"Memory manager initialized ({mem._vector_index.ntotal} vectors)"
-        )
-    except Exception as e:
-        logging.getLogger("api").warning(f"Memory manager init failed: {e}")
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Application lifespan - startup/shutdown."""
-    logger.info("Starting UI-Pro API...")
-
-    # Initialize services
-    try:
-        from backend.infrastructure.model_discovery import get_model_discovery
-
-        await get_model_discovery().discover_all()
-        logger.info("Model discovery initialized")
-    except Exception as e:
-        logger.warning(f"Model discovery init failed: {e}")
-
-    # Initialize GPU monitoring
-    try:
-        import pynvml
-
-        pynvml.nvmlInit()
-        logger.info("NVML initialized for GPU monitoring")
-    except Exception:
-        logger.info("GPU monitoring not available")
-
-    # Prune old checkpoints
-    try:
-        from backend.infrastructure.checkpointer import CheckpointManager
-        from backend.domain.settings import settings
-
-        checkpointer = CheckpointManager(settings)
-        deleted = await checkpointer.cleanup_old_checkpoints()
-        if deleted:
-            logger.info(f"Pruned {deleted} old checkpoints on startup")
-    except Exception as e:
-        logger.debug(f"Checkpoint cleanup on startup skipped: {e}")
-
-    # Pre-initialize memory manager in background thread (FAISS + sentence_transformers
-    # are heavy native libs that take ~30-50s to load). Don't await it so the server
-    # starts listening immediately — the health endpoint will naturally wait for it.
-    import asyncio
-
-    loop = asyncio.get_running_loop()
-    loop.run_in_executor(None, _init_memory_background)
-
-    yield
-
-    # Shutdown
-    try:
-        import pynvml
-
-        pynvml.nvmlShutdown()
-    except Exception:
-        pass
-    logger.info("UI-Pro API shutdown complete")
-
-
-# ==================== APP ====================
-
-app = FastAPI(
-    title="UI-Pro API",
-    description="AI Agent Orchestration Platform",
-    version="1.0.0",
-    lifespan=lifespan,
-)
-
-
-# ==================== CACHED GETTERS ====================
-
-
-@lru_cache(maxsize=1)
-def _get_settings_cached():
-    """Get settings with caching."""
-    try:
-        from backend.domain.settings import settings
-
-        return settings
-    except ImportError:
-        return None
-
-
-def _get_setting(attr: str, default: Any = None) -> Any:
-    """Get setting attribute safely."""
-    settings = _get_settings_cached()
-    if settings is None:
-        return default
-    return getattr(settings, attr, default) or default
-
-
-# ==================== EXCEPTION HANDLING ==================
-
-
-class RateLimitExceeded(Exception):
-    """Rate limit exception."""
-
-    pass
-
-
-async def custom_exceptions(request: Request, exc: Exception):
-    """Global exception handler."""
-    from slowapi import _rate_limit_exceeded_handler
-    from slowapi.errors import RateLimitExceeded as SlowAPIRateLimit
-
-    if isinstance(exc, SlowAPIRateLimit):
-        return await _rate_limit_exceeded_handler(request, exc)
-
-    logger.error(f"Unhandled exception: {exc}\n{traceback.format_exc()}")
-
-    return JSONResponse(
-        status_code=500, content={"error": "Internal server error", "detail": str(exc)}
-    )
-
-
-# ==================== MIDDLEWARE ====================
-
-app.add_exception_handler(Exception, custom_exceptions)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:4000",
-        "http://127.0.0.1:4000",
-    ],
-    allow_origin_regex=r"https?://localhost(:\d+)?",
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-@app.middleware("http")
-async def add_observability(request: Request, call_next: Callable):
-    """Request logging and tracing middleware."""
-    start_time = time.perf_counter()
-    request_id = request.headers.get("x-request-id", f"req-{int(time.time() * 1000)}")
-
-    logger.info(f"[{request_id}] {request.method} {request.url.path} - started")
-
-    try:
-        response = await call_next(request)
-        duration_ms = (time.perf_counter() - start_time) * 1000
-
-        logger.info(
-            f"[{request_id}] {request.method} {request.url.path} - "
-            f"status={response.status_code} duration={duration_ms:.2f}ms"
-        )
-
-        response.headers["x-request-id"] = request_id
-        response.headers["x-duration-ms"] = f"{duration_ms:.2f}"
-
-        return response
-    except Exception as e:
-        duration_ms = (time.perf_counter() - start_time) * 1000
-        logger.error(
-            f"[{request_id}] {request.method} {request.url.path} - "
-            f"error={type(e).__name__} duration={duration_ms:.2f}ms"
-        )
-        raise
-
-
-# ==================== SECURITY ====================
-
-API_KEY_HEADER = "x-api-key"
-
-
-def verify_api_key(request: Request) -> bool:
-    """Verify API key if configured."""
-    settings = _get_settings_cached()
-    if settings is None:
-        return True
-
-    api_key = getattr(settings, "api_key", "")
-
-    if not api_key:
-        return True
-
-    provided_key = request.headers.get(API_KEY_HEADER, "")
-
-    if provided_key != api_key:
-        raise HTTPException(status_code=401, detail="Invalid or missing API key")
-    return True
-
-
-# ==================== ROUTES ====================
-
-
-@app.get("/")
-def home(request: Request):
-    """Home page with API info."""
-    model_fast = _get_setting("model_fast", "N/A")
-    model_reasoning = _get_setting("model_reasoning", "N/A")
-    return HTMLResponse(
-        content=f"""
-<!DOCTYPE html>
-<html>
-<head><title>UI Pro</title></head>
-<body>
-    <h1>UI Pro - LLM Orchestration Platform</h1>
-    <p>[START] Agent Orchestration System Ready</p>
-    <p>Status: <strong>* Running</strong></p>
-    <p>Models: <code>{model_fast}</code> + <code>{model_reasoning}</code></p>
-    <p>⚡ Powered by <strong>Ollama</strong> + <strong>FastAPI</strong></p>
-    
-    <h2>Endpoints</h2>
-    <ul>
-        <li><code>GET /</code> - This page</li>
-        <li><code>GET /health</code> - Health check</li>
-        <li><code>GET /status</code> - Status (requires API key)</li>
-        <li><code>GET /api/stream</code> - SSE streaming</li>
-        <li><code>WebSocket /ws</code> - Real-time streaming</li>
-        <li><code>POST /api/chat</code> - REST chat</li>
-        <li><code>GET /api/version</code> - UI-Pro / FastAPI / capability info</li>
-    </ul>
-    
-    <p><a href="/docs">📚 API Documentation</a></p>
-</body>
-</html>
-"""
-    )
-
-
-# ==================== IMPORT ROUTERS ====================
-
-from backend.transport.routers.execute import router as execute_router
-from backend.transport.routers.health import router as health_router
-from backend.transport.routers.logs import router as logs_router
-from backend.transport.routers.node_metrics import router as node_metrics_router
-from backend.transport.routers.stream import router as stream_router
-from backend.transport.routers.ws import router as ws_router
-
-app.include_router(health_router)
-app.include_router(ws_router)
-app.include_router(stream_router)
-app.include_router(execute_router)
-app.include_router(logs_router)
-app.include_router(node_metrics_router)
-
-
-# ==================== VERSION ENDPOINT ====================
-
-
-@app.get("/api/version")
-def version_endpoint():
-    """Return UI-Pro and FastAPI version info.
-
-    Useful for diagnostics, deployment verification, and the frontend
-    "About" panel. Reports the pinned UI-Pro version, the running
-    FastAPI version, the Python version, and a per-component presence
-    map so the UI can show capabilities (e.g. "GPU monitoring: yes").
-    """
-    import platform
-    import sys
-
-    try:
-        import fastapi
-
-        fastapi_version = fastapi.__version__
-    except Exception:
-        fastapi_version = "unknown"
-
-    try:
-        import langgraph
-
-        langgraph_version = langgraph.__version__
-    except Exception:
-        langgraph_version = "unknown"
-
-    # Optional native deps — True/None per module, never raise.
-    capabilities: dict[str, bool] = {}
-    for mod in ("faiss", "aiosqlite", "pynvml", "sentence_transformers"):
+from backend.domain.core.logger import get_logger
+
+logger = get_logger(__name__)
+
+class WebSocketController:
+    """Controller for WebSocket streaming - handles all WS logic"""
+
+    def __init__(self):
+        # sessions: {session_id: {'tasks': []}}
+        self.sessions: dict[str, dict] = {}
+        # active_requests: {message_id: state}
+        self._active_requests: dict[str, dict[str, Any]] = {}
+        self._lock = asyncio.Lock()
+
+    async def handle_connection(self, ws, client_info: str):
+        """Handle new WebSocket connection"""
+        session_id = f"{client_info}-{len(self.sessions)}"
+        self.sessions[session_id] = {"tasks": []}
+        logger.info(f"WebSocket connected: {session_id}")
+        return session_id
+
+    async def handle_disconnect(self, session_id: str):
+        """Handle disconnection — cleans up session state."""
+        if session_id in self.sessions:
+            del self.sessions[session_id]
+        # Prune completed request state on disconnect
+        async with self._lock:
+            self._prune_completed_requests()
+        logger.info(f"WebSocket disconnected: {session_id}")
+
+    async def parse_message(self, data: str) -> dict[str, Any]:
+        """Parse incoming WebSocket message"""
         try:
-            __import__(mod)
-            capabilities[mod] = True
-        except Exception:
-            capabilities[mod] = False
+            return json.loads(data)
+        except json.JSONDecodeError:
+            return {"message": data}
 
-    return {
-        "ui_pro_version": app.version,
-        "fastapi_version": fastapi_version,
-        "langgraph_version": langgraph_version,
-        "python_version": sys.version.split()[0],
-        "platform": platform.platform(),
-        "capabilities": capabilities,
-    }
+    async def validate_request(
+        self, msg: dict[str, Any]
+    ) -> tuple[bool, str | None, dict[str, Any] | None]:
+        """
+        Validate incoming request.
+        Returns: (is_valid, error_message, parsed_request)
+        """
+        task = msg.get("message") or msg.get("prompt") or ""
+        model = msg.get("model")
+        provider = msg.get("provider")
+        message_id = msg.get("message_id") or str(uuid.uuid4())
+        last_chunk_index = int(msg.get("last_chunk_index", 0) or 0)
+        resume_stream_id = msg.get("resume_stream_id")
 
+        if not model:
+            return False, "Model is required", None
 
-# ==================== CHAT ENDPOINT ====================
+        request = {
+            "task": task,
+            "model": model,
+            "provider": provider,
+            "message_id": message_id,
+            "last_chunk_index": last_chunk_index,
+            "resume_stream_id": resume_stream_id,
+        }
 
+        return True, None, request
 
-class ChatRequest(BaseModel):
-    message: str
-    model: str | None = None
-    provider: str | None = "ollama"
+    async def register_request(
+        self, message_id: str, model: str, task: str
+    ) -> dict[str, Any]:
+        """Register or resume a request. Cleans up stale completed requests first."""
+        async with self._lock:
+            # Prune completed requests to prevent memory leak
+            self._prune_completed_requests()
 
+            if message_id not in self._active_requests:
+                self._active_requests[message_id] = {
+                    "model": model,
+                    "task": task,
+                    "chunk_index": 0,
+                    "is_complete": False,
+                }
 
-class ChatResponse(BaseModel):
-    response: str
-    done: bool
+            return self._active_requests[message_id]
 
+    def _prune_completed_requests(self) -> None:
+        """Remove completed requests from tracking (caller must hold _lock)."""
+        completed = [
+            msg_id
+            for msg_id, state in self._active_requests.items()
+            if state.get("is_complete", False)
+        ]
+        for msg_id in completed:
+            del self._active_requests[msg_id]
+        if completed:
+            logger.info(f"[PRUNE] Removed {len(completed)} completed request states")
 
-@app.post("/api/chat", response_model=ChatResponse)
-async def chat_endpoint(request: ChatRequest):
-    """REST chat endpoint (non-streaming)."""
-    try:
-        logger.debug(
-            f"[CHAT] Request: message={request.message[:50]}... model={request.model}"
-        )
+    async def update_request_state(
+        self, message_id: str, chunk_index: int, is_complete: bool = False
+    ):
+        """Update request state after processing chunk"""
+        async with self._lock:
+            if message_id in self._active_requests:
+                self._active_requests[message_id]["chunk_index"] = chunk_index
+                self._active_requests[message_id]["is_complete"] = is_complete
 
-        from backend.infrastructure.streaming import stream_chat
+    async def cancel_request(self, message_id: str) -> bool:
+        """Cancel a request"""
+        async with self._lock:
+            if message_id in self._active_requests:
+                del self._active_requests[message_id]
+                return True
+            return False
 
-        full_response = ""
-        chunk_count = 0
-        async for chunk in stream_chat(
-            prompt=request.message,
-            model=request.model or _get_setting("model_fast", "qwen3.5:0.8b"),
-            provider=request.provider or "ollama",
-        ):
-            if chunk.text:
-                full_response += chunk.text
-                chunk_count += 1
-            if chunk.status.value == "completed":
-                break
+    async def get_request_state(self, message_id: str) -> dict[str, Any] | None:
+        """Get request state for resume"""
+        async with self._lock:
+            return self._active_requests.get(message_id)
 
-        logger.info(
-            f"[CHAT] Response generated: {len(full_response)} chars in {chunk_count} chunks"
-        )
-        return ChatResponse(response=full_response, done=True)
+    async def cleanup_completed(self, max_age_seconds: int = 3600):
+        """Remove old completed requests"""
+        async with self._lock:
+            completed = [
+                msg_id
+                for msg_id, state in self._active_requests.items()
+                if state.get("is_complete", False)
+            ]
+            for msg_id in completed:
+                del self._active_requests[msg_id]
+            if completed:
+                logger.info(f"[CLEANUP] Removed {len(completed)} completed requests")
 
-    except Exception as e:
-        logger.error(f"[CHAT] Error: {type(e).__name__}: {e!s}")
-        raise
+# Singleton instance
+_websocket_controller: WebSocketController | None = None
 
-
-# ==================== EXECUTE ENDPOINT ====================
-
-
-class ExecuteRequest(BaseModel):
-    code: str
-    language: str = "python"
-
-
-class ExecuteResponse(BaseModel):
-    success: bool
-    output: str
-    error: str | None = None
-
-
-@app.post("/api/execute", response_model=ExecuteResponse)
-async def execute_endpoint(request: ExecuteRequest):
-    """Execute code in sandbox."""
-    from backend.domain.core.executor import CodeExecutor
-
-    executor = CodeExecutor()
-
-    try:
-        result = await executor.execute_async(
-            code=request.code, language=request.language
-        )
-
-        return ExecuteResponse(
-            success=result.get("success", False),
-            output=result.get("output", ""),
-            error=result.get("error"),
-        )
-    except Exception as e:
-        return ExecuteResponse(success=False, output="", error=str(e))
-
-
-# ==================== EXPORTS =====================
-
-__all__ = ["app"]
+def get_websocket_controller() -> WebSocketController:
+    """Get or create WebSocket controller singleton"""
+    global _websocket_controller
+    if _websocket_controller is None:
+        _websocket_controller = WebSocketController()
+    return _websocket_controller

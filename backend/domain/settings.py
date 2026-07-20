@@ -92,6 +92,7 @@ class Settings(BaseSettings):
     llamacpp_url: str = "http://localhost:8080"
     lmstudio_url: str = "http://localhost:1234"
     opendesign_url: str = "http://localhost:7456"
+    hermes_url: str = "http://localhost:7456"
 
     # Health check tuning for the /health/deep endpoint. The fast /health
     # probe intentionally does no I/O so Docker/k8s load balancers can
@@ -229,6 +230,12 @@ class Settings(BaseSettings):
                 "timeout": 900,
             },
             "opendesign": {
+                "url": "http://localhost:7456",
+                "enabled": True,
+                "models_endpoint": "/api/agents",
+                "timeout": 900,
+            },
+            "hermes": {
                 "url": "http://localhost:7456",
                 "enabled": True,
                 "models_endpoint": "/api/agents",

@@ -69,6 +69,17 @@ nvidia-ml-py>=12.0.0          # GPU monitoring (optional)
 ollama>=0.4.0                 # Direct Ollama client
 docker>=7.0.0                 # Docker sandbox for code execution
 
+## Mario Voice Assistant (optional)
+openai-whisper>=20231106     # STT: speech-to-text
+piper-tts>=1.2.0             # TTS: text-to-speech
+onnxruntime>=1.16.0          # ONNX runtime for Piper
+sounddevice>=0.5.2           # Audio I/O
+soundfile>=0.12.1            # Audio file I/O
+librosa>=0.9.0               # Audio processing
+scipy>=1.10.0                # Scientific computing
+webrtcvad>=2.0.10            # Voice activity detection
+vosk>=0.3.45                 # Wake word detection
+pyaudio>=0.2.11              # PortAudio audio interface
 # Platform-specific GPU support (uncomment if needed):
 # torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
