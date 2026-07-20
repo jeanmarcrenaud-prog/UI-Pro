@@ -48,12 +48,13 @@ def get_backend(provider: str, config: ModelConfig | None = None) -> LLMBackend:
             "lemonade": settings.lemonade_url,
             "llamacpp": settings.llamacpp_url,
             "opendesign": settings.opendesign_url,
+            "hermes": settings.hermes_url,
         }
         base_url = url_map.get(provider, settings.ollama_url)
         endpoint = (
             "/api/generate"
             if provider == "ollama"
-            else "" if provider == "opendesign"
+            else "" if provider in ("opendesign", "hermes")
             else "/v1/chat/completions"
         )
 
@@ -109,6 +110,12 @@ def _auto_register() -> None:
         register_backend("opendesign", OpenDesignBackend)
     except ImportError as e:
         logger.debug("OpenDesign backend not available: %s", e)
+
+    try:
+        from backend.infrastructure.llm.hermes import HermesBackend
+        register_backend("hermes", HermesBackend)
+    except ImportError as e:
+        logger.debug("Hermes backend not available: %s", e)
 
 
 _auto_register()

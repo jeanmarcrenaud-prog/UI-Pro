@@ -11,6 +11,7 @@ Structure:
   llamacpp.py   — llama.cpp client
   health.py     — Health check utilities
   fallback.py   — Auto-fallback between backends
+  hermes.py     — Hermes Agent client (via Open Design daemon)
 """
 
 from backend.infrastructure.llm.base import LLMBackend
@@ -32,6 +33,7 @@ from backend.infrastructure.llm.fallback import (
     generate_with_fallback,
     stream_with_fallback,
 )
+from backend.infrastructure.llm.hermes import HermesBackend
 
 __all__ = [
     "LLMAuthenticationError",
@@ -47,4 +49,5 @@ __all__ = [
     "list_available_backends",
     "register_backend",
     "stream_with_fallback",
+    "HermesBackend",
 ]

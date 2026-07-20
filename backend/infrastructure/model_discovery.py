@@ -30,7 +30,7 @@ class DiscoveredModel:
     """Représente un modèle découvert sur un backend, avec capacités enrichies."""
 
     name: str
-    backend: str  # "ollama", "llamacpp", "lmstudio", "lemonade"
+    backend: str  # "ollama", "llamacpp", "lmstudio", "lemonade", "hermes"
 
     # Métadonnées brutes
     size: str | None = None
