@@ -3,7 +3,7 @@ import logging
 from typing import List, Dict, Any, Optional
 from backend.domain.core.models import Action, EditorState, HermesAction, DelegateAction
 from backend.domain.core.action_executor import ActionExecutor
-from backend.infrastructure.opencode_connector.manager import OpenCodeConnectorManager, get_opencode_manager
+from backend.infrastructure.opencode_connector.manager import OpenCodeConnectorManager
 
 logger = logging.getLogger(__name__)
 
@@ -51,22 +51,39 @@ class IntelligenceService:
         return actions
 
     async def delegate_to_opencode(self, task: str, current_state: EditorState) -> List[Action]:
-        """Déléguer une tâche à OpenCode via le connector manager.
+        """
+        Déléguer une tâche à OpenCode via le connector manager.
         Retourne une Action contenant la réponse de l'agent.
         """
         logger.info(f"Delegating to OpenCode: {task}")
-        result = await self.connector_manager.run(task, self.project_path)
+        # Correction: utiliser send_task au lieu de run
+        success = await self.connector_manager.send_task(task)
 
         return [Action(
             action_type="opencode_delegate",
-            status="success" if result.get("success") else "failed",
+            status="success" if success else "failed",
             params={
                 "task": task,
                 "project": self.project_path,
-                "response": result.get("response", ""),
-                "session_id": result.get("session_id", ""),
-            }
+                "response": "Task submitted successfully" if success else "Failed to submit",
+                "session_id": "current_session" # À remplacer par le vrai ID si disponible
+            },
         )]
+
+    async def get_opencode_status(self) -> str:
+        """
+        Récupère un résumé des dernières actions d'OpenCode pour que l'agent
+        puisse savoir ce qui se passe en arrière-plan.
+        """
+        notifications = self.connector_manager.get_recent_notifications(limit=10)
+        if not notifications:
+            return "OpenCode n'a pas encore effectué d'action."
+        
+        summary = []
+        for n in notifications:
+            summary.append(f"[{n.get('type', 'info')}] {n.get('content', '')}")
+        
+        return "Dernières actions d'OpenCode :\n" + "\n".join(summary)
 
     async def process_voice_command(self, voice_text: str, current_state: EditorState) -> List[Action]:
         """
@@ -81,7 +98,7 @@ class IntelligenceService:
 # Singleton pour le service d'intelligence
 _intelligence_service: Optional[IntelligenceService] = None
 
-async def init_intelligence_service(planner, executor, connector_manager):
+def init_intelligence_service(planner, executor, connector_manager):
     global _intelligence_service
     _intelligence_service = IntelligenceService(planner, executor, connector_manager)
     return _intelligence_service

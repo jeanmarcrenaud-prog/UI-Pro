@@ -21,6 +21,8 @@ class OpenCodeConnectorManager:
         self.project_path: Optional[str] = None
         self._output_buffer = ""
         self._callbacks: List[Callable[[Dict], Awaitable[None]]] = []
+        self._notification_history: List[Dict] = []
+        self._max_history = 100
 
     async def start(self, project_path: str, model: str = "lmstudio/google/gemma-4-12b-qat"):
         """Démarre OpenCode sur un projet (mode interactif)."""
@@ -160,11 +162,17 @@ class OpenCodeConnectorManager:
         self._callbacks.append(callback)
 
     async def _notify(self, event: Dict):
+        self._notification_history.append(event)
+        if len(self._notification_history) > self._max_history:
+            self._notification_history.pop(0)
         for cb in self._callbacks:
             try:
                 await cb(event)
             except Exception as e:
                 logger.error(f"Erreur dans callback OpenCode: {e}")
+
+    def get_recent_notifications(self, limit: int = 10) -> List[Dict]:
+        return self._notification_history[-limit:]
 
     async def stop(self):
         """Arrête proprement OpenCode"""

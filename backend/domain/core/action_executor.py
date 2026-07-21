@@ -1,6 +1,8 @@
+import os
 from typing import Any, Dict, List, Optional
 from backend.domain.core.editor_state import EditorStateStore
 from backend.domain.core.editor_service import EditorService
+from backend.domain.core.filesystem_service import FilesystemService
 
 import logging
 logger = logging.getLogger(__name__)
@@ -10,8 +12,9 @@ class ActionExecutor:
     Service de domaine responsable de la transformation d'intentions
     en actions concrètes pilotant l'éditeur via le protocole OpenCode.
     """
-    def __init__(self, editor_service: EditorService):
+    def __init__(self, editor_service: EditorService, filesystem_service: FilesystemService):
         self.editor_service = editor_service
+        self.filesystem_service = filesystem_service
 
     def execute_action(self, action_type: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -101,9 +104,16 @@ class ActionExecutor:
         }
 
     def _handle_open_file(self, path: str, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Ouvre un fichier spécifique."""
+        """Ouvre un fichier spécifique via le FilesystemService."""
         if not path:
             return {"status": "error", "message": "Path is required"}
+        
+        file_data = self.filesystem_service.read_file(path)
+        if not file_data:
+            return {
+                "status": "error",
+                "message": f"File {path} not found"
+            }
             
         return {
             "status": "success",
@@ -112,20 +122,32 @@ class ActionExecutor:
         }
 
     def _handle_rename_file(self, params: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
-        """Renomme un fichier."""
+        """Renomme un fichier via le FilesystemService."""
         current_path = params.get("current_path")
         new_name = params.get("new_name")
         
         if not current_path or not new_name:
             return {"status": "error", "message": "current_path and new_name are required"}
-
-        # Pour l'instant, on simule la réussite de l'action
-        # Dans une implémentation réelle, on pourrait vérifier l'existence du fichier ici
-        return {
-            "status": "success",
-            "action": "rename_file",
-            "params": {
-                "current_path": current_path,
-                "new_name": new_name
+        
+        # Construction du nouveau chemin
+        if not current_path.startswith("./") and not current_path.startswith("/"):
+            current_path = "./" + current_path
+            
+        new_path = os.path.join(os.path.dirname(current_path), new_name)
+        
+        success = self.filesystem_service.rename_file(current_path, new_path)
+        
+        if success:
+            return {
+                "status": "success",
+                "action": "rename_file",
+                "params": {
+                    "current_path": current_path,
+                    "new_path": new_path
+                }
             }
-        }
+        else:
+            return {
+                "status": "error",
+                "message": "Failed to rename file"
+            }
