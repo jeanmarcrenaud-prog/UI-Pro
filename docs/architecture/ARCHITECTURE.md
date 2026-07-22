@@ -6,107 +6,125 @@
 
 ```
 ui-pro/                           # Racine projet
-├── run.py                        # Launcher principal
-├── settings.py                   # Settings standalone
-├── conftest.py                    # Pytest config
-├── README.md                     # Documentation
-├── ARCHITECTURE.md               # Ce fichier
-├── requirements.txt              # Dépendances
-├── pytest.ini                    # Config pytest
-│
-├── backend/                      # SOURCE DE VÉRITÉ
-│   ├── domain/                  # Business logic
-│   │   ├── core/                # Core modules
-│   │   │   ├── constants.py     # WSEvent, AgentStep
-│   │   │   ├── errors.py        # DomainError hierarchy
-│   │   │   ├── executor.py      # CodeExecutor (sandbox)
-│   │   │   ├── code_review.py   # Code review with bandit
-│   │   │   ├── events.py        # Event bus
-│   │   │   ├── logger.py        # Logging
-│   │   │   ├── metrics.py       # Métriques
-│   │   │   ├── orchestrator_async.py  # Async pipeline
-│   │   │   ├── prompts.py       # Prompts
-│   │   │   └── state_manager.py # État
-│   │   └── errors.py            # Domain errors
-│   │
-│   ├── infrastructure/           # Services layer
-│   │   ├── base.py              # Service base
-│   │   ├── code_execution.py    # Execution Python
-│   │   ├── error_handler.py     # Error handling
-│   │   ├── llm_router.py        # Advanced routing
-│   │   ├── memory.py            # FAISS wrapper
-│   │   ├── memory_service.py    # Service mémoire
-│   │   ├── model_discovery.py   # Model discovery
-│   │   ├── model_service.py     # Service modèle
-│   │   ├── service_api.py       # API service
-│   │   ├── streaming.py         # Legacy streaming
-│   │   ├── streaming_unified.py # Unified SSE/WS protocol
-│   │   └── tools.py              # Tools registry
-│   │
-│   ├── application/             # App layer
-│   │   ├── launcher.py          # Multi-service launcher
-│   │   └── websocket.py         # WebSocket handling
-│   │
-│   └── transport/               # API endpoints
-│       ├── main.py              # FastAPI entry point
-│       ├── views_api.py         # FastAPI app
-│       ├── dashboard.py         # Gradio dashboard
-│       ├── translations.py      # i18n
-│       └── routers/             # API routers
-│
-├── llm/                          # LLM clients (module séparé)
-│   ├── __init__.py
-│   └── router.py                # Multi-model routing (OllamaClient, LLMRouter)
-│
-├── models/                        # Types + Config
-│   ├── __init__.py
-│   ├── settings.py              # Settings (SOURCE UNIQUE)
-│   └── ...
-│
-├── tests/                         # Tests pytest
-│   ├── __init__.py
-│   └── ...
-│
-├── workspace/                   # Code généré
-│   ├── app.py
-│   ├── test_app.py
-│   ├── test_execution.py
-│   └── Dockerfile
-│
-├── logs/                         # Logs rotate
-│   └── app*.log
-│
-└── ui-pro-ui/                    # Frontend Next.js
-    ├── app/                     # Next.js app router
-    │   ├── page.tsx              # Page principale
-    │   ├── layout.tsx
-    │   └── api/                  # API routes
-    ├── components/               # Composants React
-    │   ├── CommandPalette.tsx
-    │   ├── HistoryView.tsx      # + chat/ subcomponents
-    │   ├── SettingsView.tsx
-    │   ├── Sidebar.tsx
-    │   ├── ChatContainer.tsx
-    │   ├── chat/                 # Composants chat
-    │   │   ├── ChatMessages.tsx
-    │   │   ├── HistoryBatchActions.tsx
-    │   │   ├── HistoryFilters.tsx
-    │   │   ├── HistoryItem.tsx
-    │   │   ├── MessageBubble.tsx
-    │   │   └── MessageSuggestions.tsx
-    │   └── markdown/              # Composants markdown
-    │       ├── CodeBlock.tsx
-    │       ├── CodeMinimap.tsx
-    │       └── MarkdownRenderer.tsx
-    ├── features/                 # Logique métier
-    ├── services/                # Services HTTP/WS
-    ├── stores/                  # Zustand stores
-    ├── lib/                     # Types, config
-    │   ├── types.ts
-    │   ├── stores/
-    │   ├── i18n.ts
-    │   └── constants.ts
-    └── styles/                  # Styles
++-- run.py                        # Launcher principal
++-- setup.py                      # Automated setup
++-- pyproject.toml                # Python project config
++-- requirements.txt              # Dependances
++-- Dockerfile                    # Container build
++-- Makefile                      # Dev commands
++-- conftest.py                   # Pytest config
++-- pytest.ini                    # Config pytest
++-- .env.example
+|
++-- backend/                      # SOURCE DE VERITE
+|   +-- domain/                  # Business logic
+|   |   +-- core/                # Core modules
+|   |   |   +-- action_executor.py   # Code actions (insert, delete, rename)
+|   |   |   +-- code_review.py       # Bandit code review
+|   |   |   +-- constants.py         # WSEvent, AgentStep
+|   |   |   +-- editor_service.py    # Editor orchestration
+|   |   |   +-- editor_state.py      # Editor state management
+|   |   |   +-- errors.py            # DomainError hierarchy
+|   |   |   +-- events.py            # Event bus
+|   |   |   +-- executor.py          # CodeExecutor (sandbox)
+|   |   |   +-- filesystem_service.py # Safe file I/O
+|   |   |   +-- langgraph/           # Pipeline nodes
+|   |   |   +-- logger.py            # Logging
+|   |   |   +-- metrics.py           # Metriques
+|   |   |   +-- models.py            # Domain models (EditorState, Action, etc.)
+|   |   |   +-- orchestrator_async.py # Async pipeline orchestrator
+|   |   |   +-- planner.py           # Local task planner
+|   |   |   +-- prompts.py           # LLM prompts
+|   |   |   +-- state_manager.py     # Etat pipeline
+|   |   +-- errors.py            # Domain errors
+|   |
+|   +-- infrastructure/           # Services layer
+|   |   +-- llm/                  # LLM clients (Ollama, LM Studio, etc.)
+|   |   |   +-- hermes.py         # Hermes LLM integration
+|   |   |   +-- ollama.py         # Ollama client
+|   |   |   +-- lmstudio.py       # LM Studio client
+|   |   |   +-- llamacpp.py       # llama.cpp client
+|   |   |   +-- lemonade.py       # Lemonade client
+|   |   +-- mcp/                  # MCP server (Hermes)
+|   |   |   +-- server.py         # FastMCP server with tools
+|   |   +-- opencode_connector/   # OpenCode headless integration
+|   |   |   +-- manager.py        # Subprocess lifecycle + JSON protocol
+|   |   |   +-- client.py         # OpenCode client
+|   |   |   +-- models.py         # Connector models
+|   |   +-- streaming/            # SSE/WebSocket streaming
+|   |   +-- executors/            # Code executors
+|   |   +-- voice/                # Voice services (STT/TTS/VAD)
+|   |   +-- terminal/             # Terminal emulation
+|   |   +-- tools/                # Tool registry & execution
+|   |   +-- monitoring/           # Tracing & metrics
+|   |   +-- adapters/             # FAISS memory adapter
+|   |   +-- llm_router.py         # Multi-model routing
+|   |   +-- model_discovery.py    # Model discovery
+|   |   +-- memory.py             # FAISS wrapper
+|   |   +-- checkpointer.py       # SQLite checkpointing
+|   |   +-- code_execution.py     # Python sandbox execution
+|   |   +-- rate_limit.py         # Rate limiting
+|   |
+|   +-- application/             # App layer
+|   |   +-- intelligence/         # Intent processing
+|   |   |   +-- intelligence_service.py # Intent to plan to delegate/execute
+|   |   |   +-- task_planner.py        # Plan generation
+|   |   +-- editor_manager.py     # Editor coordination
+|   |   +-- voice_manager.py      # Voice flow management
+|   |   +-- websocket.py          # WebSocket handling
+|   |
+|   +-- transport/               # API endpoints
+|       +-- main.py               # FastAPI entry point
+|       +-- views_api.py          # FastAPI app
+|       +-- websocket_manager.py  # WebSocket connection manager
+|       +-- routers/              # API routers
+|           +-- chat.py
+|           +-- ws.py
+|           +-- stream.py
+|           +-- execute.py
+|           +-- health.py
+|           +-- logs.py
+|           +-- mario.py           # Mario agent router
+|           +-- node_metrics.py
+|
++-- frontend/                    # Next.js frontend
+|   +-- app/                     # Next.js app router
+|   |   +-- page.tsx              # Page principale
+|   |   +-- layout.tsx
+|   |   +-- globals.css
+|   +-- components/               # Composants React
+|   |   +-- chat/                 # Composants chat
+|   |   |   +-- ChatMessages.tsx
+|   |   |   +-- HistoryBatchActions.tsx
+|   |   |   +-- HistoryFilters.tsx
+|   |   |   +-- HistoryItem.tsx
+|   |   |   +-- MessageBubble.tsx
+|   |   |   +-- MessageSuggestions.tsx
+|   |   +-- markdown/             # Composants markdown
+|   |   |   +-- CodeBlock.tsx
+|   |   |   +-- CodeMinimap.tsx
+|   |   |   +-- MarkdownRenderer.tsx
+|   |   +-- CommandPalette.tsx
+|   |   +-- HistoryView.tsx
+|   |   +-- SettingsView.tsx
+|   |   +-- Sidebar.tsx
+|   |   +-- ChatContainer.tsx
+|   +-- features/                 # Logique metier
+|   +-- services/                # Services HTTP/WS
+|   +-- lib/                     # Stores, i18n, types
+|   |   +-- stores/
+|   |   +-- i18n.ts
+|   |   +-- types.ts
+|   |   +-- constants.ts
+|   +-- styles/                  # Design tokens
+|   +-- public/
+|
++-- scripts/                     # Dev tooling
++-- tests/                        # Tests pytest
++-- docs/                         # Documentation
++-- data/                         # Runtime data (gitignored)
++-- logs/                         # Application logs
++-- workspace/                    # Code genere
 ```
 
 ## 🔄 Règles d'Import (Dependency Graph)
@@ -181,7 +199,7 @@ class AgentStep:
     REVIEWING = "reviewing"
 ```
 
-### Frontend (ui-pro-ui/lib/constants.ts)
+### Frontend (frontend/lib/constants.ts)
 ```typescript
 export const WS_EVENTS = {
   TOKEN: 'token',
@@ -234,9 +252,9 @@ async def llm_error_handler(request: Request, exc: LLMError):
 
 ## 📊 Configuration
 
-### models/settings.py (Pydantic BaseSettings)
+### Domain Models (backend/domain/core/models.py)
 
-> **settings.py** est la SOURCE UNIQUE de configuration. Les valeurs sont overridées via variables d'environnement (fichier `.env` gitignore).
+> **Settings** est la SOURCE UNIQUE de configuration dans `backend/domain/core/models.py`. Les valeurs sont overridées via variables d'environnement (fichier `.env` gitignore).
 
 ```
 .env (override) ──→ Settings class
@@ -272,7 +290,7 @@ class Settings(BaseSettings):
 pytest tests/ -v --cov=ui-pro --cov-report=html
 
 # Frontend  
-cd ui-pro-ui && npm run lint
+cd frontend && npm run lint
 ```
 
 ## 🔧 Outils Qualité
@@ -310,7 +328,7 @@ backend/transport/views_api.py (FastAPI)
     ↓
 backend/transport/routers/*.py (endpoints)
     ↓
-backend/infrastructure/streaming.py (async generator)
+backend/infrastructure/streaming/ (async generator)
     ↓
 backend/infrastructure/llm_router.py (LLMRouter)
     ↓
@@ -320,28 +338,28 @@ Ollama API
 ## 📱 Frontend Structure
 
 ```
-ui-pro-ui/
-├── components/       # UI pure (boutons, inputs, etc.)
-│   ├── chat/
-│   │   ├── HistoryItem.tsx     # Single chat in list
-│   │   ├── HistoryFilters.tsx  # Search, sort, filters
-│   │   ├── HistoryBatchActions.tsx  # Batch toolbar
-│   │   ├── MessageBubble.tsx   # Message with actions
-│   │   ├── MessageSuggestions.tsx   # Contextual suggestions
-│   │   └── ChatSuggestions.tsx  # Welcome examples
-│   ├── markdown/
-│   │   ├── CodeBlock.tsx       # Code with run/validate
-│   │   ├── CodeMinimap.tsx      # VS Code-style minimap
-│   │   └── MarkdownRenderer.tsx
-│   ├── CommandPalette.tsx      # Ctrl+K palette
-│   ├── HistoryView.tsx         # History page
-│   ├── SettingsView.tsx        # Settings + model desc
-│   └── Sidebar.tsx              # Navigation sidebar
-├── features/         # Logique métier (ChatInput, AgentSteps)
-├── services/        # HTTP/WS/SSE (apiClient, streamService)
-├── stores/          # Zustand (chatStore, settingsStore)
-└── lib/
-    └── constants.ts # Constants centralisées
+frontend/
++-- components/       # UI pure (boutons, inputs, etc.)
+|   +-- chat/
+|   |   +-- HistoryItem.tsx     # Single chat in list
+|   |   +-- HistoryFilters.tsx  # Search, sort, filters
+|   |   +-- HistoryBatchActions.tsx  # Batch toolbar
+|   |   +-- MessageBubble.tsx   # Message with actions
+|   |   +-- MessageSuggestions.tsx   # Contextual suggestions
+|   |   +-- ChatSuggestions.tsx  # Welcome examples
+|   +-- markdown/
+|   |   +-- CodeBlock.tsx       # Code with run/validate
+|   |   +-- CodeMinimap.tsx      # VS Code-style minimap
+|   |   +-- MarkdownRenderer.tsx
+|   +-- CommandPalette.tsx      # Ctrl+K palette
+|   +-- HistoryView.tsx         # History page
+|   +-- SettingsView.tsx        # Settings + model desc
+|   +-- Sidebar.tsx              # Navigation sidebar
++-- features/         # Logique metier (ChatInput, AgentSteps)
++-- services/        # HTTP/WS/SSE (apiClient, streamService)
++-- stores/          # Zustand (chatStore, settingsStore)
++-- lib/
+    +-- constants.ts # Constants centralisees
 ```
 
 ## 🆕 Features Récentes (2026)
@@ -396,13 +414,13 @@ ui-pro-ui/
 | `llm/client.py` | ❌ SUPPRIMÉ | `llm/router.py` (OllamaClient, ModelConfig) |
 | `core/config.py` | ❌ SUPPRIMÉ | `models/settings.py` (Settings singleton) |
 | `controllers/orchestrator.py` | ❌ SUPPRIMÉ | `core/orchestrator_async.py` |
-| `controllers/llm_client.py` | ❌ SUPPRIMÉ | `services/model_service.py` |
-| `controllers/team.py` | ❌ SUPPRIMÉ | `services/tools.py` |
-| `templates/*.html` | ❌ SUPPRIMÉ | Utiliser Gradio (`views/dashboard.py`) |
-| `services/code_execution1.py` | ❌ SUPPRIMÉ | `services/code_execution.py` |
+| `controllers/llm_client.py` | SUPPRIME | `infrastructure/llm/` (LLM clients) |
+| `controllers/team.py` | SUPPRIME | `infrastructure/tools/` |
+| `templates/*.html` | SUPPRIME | Gradio dashboard |
+| `services/code_execution1.py` | SUPPRIME | `infrastructure/code_execution.py` |
 | `config.yaml` | ❌ SUPPRIMÉ | `.env` uniquement |
 
-## 🔥 Streaming Service (services/streaming.py)
+## Streaming Service (infrastructure/streaming/)
 
 ### Async Generator Lifecycle
 

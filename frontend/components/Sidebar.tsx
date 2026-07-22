@@ -24,7 +24,7 @@ import { SidebarChatItem } from './sidebar/SidebarChatItem'
  * @param onNewChat - Optional callback to create new chat
  */
 
-type TabType = 'chat' | 'history' | 'settings' | 'canvas' | 'mario'
+type TabType = 'chat' | 'history' | 'settings' | 'canvas' | 'mario' | 'hermes'
 
 interface SidebarProps {
   activeTab: TabType
@@ -41,6 +41,7 @@ const getNavigationTabs = (t: Translations) => [
   { id: 'settings', label: t.sidebar.settings, icon: '⚙️', shortcut: 'Alt+3' },
   { id: 'canvas', label: t.sidebar.canvas, icon: '🔀', shortcut: 'Alt+4' },
   { id: 'mario', label: t.sidebar.mario, icon: '🎙️', shortcut: 'Alt+5' },
+  { id: 'hermes', label: t.sidebar.hermes, icon: '🧠', shortcut: 'Alt+6' },
 ] as const
 
 export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {

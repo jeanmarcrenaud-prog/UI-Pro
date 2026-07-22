@@ -4,13 +4,15 @@ import logging
 import re
 import sys
 from typing import Any, Dict, List, Optional, Callable, Awaitable
+from datetime import datetime
+from backend.transport.websocket_manager import ws_manager
+
 logger = logging.getLogger(__name__)
 
 def _opencode_cmd() -> str:
-    """Retourne le nom de la commande opencode selon la plateforme.
-    Sur Windows, npm installe opencode.cmd (nécessaire pour CreateProcess).
-    """
+    """Retourne le nom de la commande opencode selon la plateforme."""
     return "opencode.cmd" if sys.platform == "win32" else "opencode"
+
 class OpenCodeConnectorManager:
     """
     Connector OpenCode. Délègue des tâches à OpenCode via le CLI
@@ -41,7 +43,7 @@ class OpenCodeConnectorManager:
             return False
 
     async def _stream_output(self):
-        """Lit la sortie en temps réel et notifie les callbacks (WebSocket)"""
+        """Lit la sortie en temps réel et notifie les callbacks (WebSocket)."""
         if not self.process or not self.process.stdout:
             return
 
@@ -82,9 +84,7 @@ class OpenCodeConnectorManager:
 
     async def run(self, task: str, project_path: str = ".",
                   model: str = "lmstudio/google/gemma-4-12b-qat") -> Dict[str, Any]:
-        """Exécute une tâche via opencode run --format json.
-        Retourne {"success": bool, "response": str, "session_id": str}.
-        """
+        """Exécute une tâche via opencode run --format json."""
         cmd = [
             _opencode_cmd(), "run", task, "--format", "json",
             "--model", model, "--port", "0", "--pure",
@@ -120,7 +120,6 @@ class OpenCodeConnectorManager:
                         logger.error(f"OpenCode error: {event.get('error', {})}")
                         success = False
                         return
-
                     sid = event.get("sessionID")
                     if sid:
                         session_id = sid
@@ -153,11 +152,12 @@ class OpenCodeConnectorManager:
             }
 
         except FileNotFoundError:
-            logger.error("OpenCode CLI non trouvé")
+            logger.error("OpenCode CLI non trouvé. Installez-le via https://opencode.ai")
             return {"success": False, "response": "", "session_id": ""}
         except Exception as e:
             logger.error(f"Erreur OpenCode run: {e}")
             return {"success": False, "response": str(e), "session_id": ""}
+    
     def register_callback(self, callback: Callable[[Dict], Awaitable[None]]):
         self._callbacks.append(callback)
 
@@ -165,11 +165,28 @@ class OpenCodeConnectorManager:
         self._notification_history.append(event)
         if len(self._notification_history) > self._max_history:
             self._notification_history.pop(0)
+        
         for cb in self._callbacks:
             try:
                 await cb(event)
             except Exception as e:
                 logger.error(f"Erreur dans callback OpenCode: {e}")
+        
+        # --- INTEGRATION WEBSOCKET ---
+        # Diffuser les logs bruts vers le salon "logs"
+        await ws_manager.broadcast_to_channel("logs", {
+            "type": "opencode_log",
+            "content": event.get("content", ""),
+            "timestamp": datetime.now().isoformat()
+        })
+
+        # Diffuser les événements critiques vers le salon "actions"
+        if event.get("type") in ["success", "error", "file_update"]:
+            await ws_manager.broadcast_to_channel("actions", {
+                "type": "opencode_action",
+                "content": event,
+                "timestamp": datetime.now().isoformat()
+            })
 
     def get_recent_notifications(self, limit: int = 10) -> List[Dict]:
         return self._notification_history[-limit:]

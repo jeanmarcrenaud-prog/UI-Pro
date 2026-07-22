@@ -1,56 +1,91 @@
 # Architecture MCP : Hermes & OpenCode
 
-Cette architecture repose sur le **Model Context Protocol (MCP)** pour découpler les capacités d'intelligence de la manipulation des données brutes.
+Cette architecture repose sur le **Model Context Protocol (MCP)** pour connecter les capacités d'intelligence à l'exécution d'actions sur le code.
 
 ## Schéma Conceptuel
 
 ```mermaid
 graph TD
-    VSCode[VS Code] -->|Extension| OpenCode[OpenCode Extension]
-    OpenCode -->|Orchestrateur| OpenCodeAgent[OpenCode Agent]
-    OpenCodeAgent -->|Utilise| MCPClient[MCP Client intégré]
+    HermesServer[Hermes MCP Server] -->|FastMCP| Tools[Outils MCP]
+    Tools --> solve_step[solve_step: intention -> plan -> actions]
+    Tools --> read_file[read_file: lecture fichier]
+    Tools --> write_file[write_file: écriture fichier]
+    Tools --> get_status[get_opencode_status: état OpenCode]
     
-    MCPClient -->|Transport MCP| MCPTransport[MCP Transport]
+    subgraph "IntelligenceService (backend/application/intelligence/)"
+        Intelligence[IntelligenceService] --> Planner[TaskPlanner]
+        Intelligence --> Executor[ActionExecutor]
+    end
     
-    MCPTransport -->|Requêtes| HermesServer[Hermes MCP Server]
-    MCPTransport -->|Requêtes| FS_MCP[Filesystem MCP]
-
-    subgraph "Hermes MCP Server (Le Cerveau)"
-        HermesServer --> Memory[Mémoire Long-terme & Contextuelle]
-        HermesServer --> Planning[Task Planner & Stratégie]
-        HermesServer --> Research[Recherche & Analyse]
-        HermesServer --> Agents[Orchestration d'Agents]
-        HermesServer --> Tools[Outils Personnalisés]
+    subgraph "OpenCode Connector (backend/infrastructure/opencode_connector/)"
+        Connector[OpenCodeConnectorManager]
+        Connector --> Subprocess[OpenCode CLI headless]
+        Subprocess -->|stdin| JSON_Input[opencode run --format json]
+        Subprocess -->|stdout| JSON_Output[type:text / type:step_finish]
     end
-
-    subgraph "Filesystem MCP (Les Bras)"
-        FS_MCP --> ReadWrite[Lecture/Écriture Fichiers]
-        FS_MCP --> Git[Gestion Git]
-        FS_MCP --> Search[Recherche de fichiers]
+    
+    subgraph "Domain (backend/domain/core/)"
+        Models[models.py: EditorState, Action]
+        FsService[filesystem_service.py: Safe I/O]
+        EdService[editor_service.py: Editor orchestration]
+        ActExec[action_executor.py: insert/delete/rename]
     end
+    
+    Intelligence -->|DelegateAction| Connector
+    Intelligence -->|Action locale| Executor
+    Executor --> FsService
+    Executor --> EdService
+    Executor --> ActExec
+    solve_step --> Intelligence
 ```
 
 ## Composants Clés
 
-### 1. OpenCode Agent (L'Utilisateur Final)
-- Point d'entrée unique dans VS Code.
-- Gère l'interface utilisateur et le flux de travail principal.
-- Envoie des requêtes de "planification" ou de "mémoire" au Hermes MCP Server via le client MCP.
+### 1. Hermes MCP Server (Le Point d'Entrée)
+- Service MCP implémenté avec **FastMCP** dans `backend/infrastructure/mcp/server.py`.
+- Expose des outils directement appelables : `solve_step`, `read_file`, `write_file`, `get_opencode_status`.
+- Point d'entrée unique pour les agents souhaitant déléguer du travail au système Hermes.
 
-### 2. Hermes MCP Server (Le Cerveau)
-- **Mémoire** : Stockage des préférences de l'utilisateur, des décisions passées et du contexte de projet.
-- **Planning** : Reçoit des intentions complexes et les décompose en tâches atomiques.
-- **Agents** : Peut déléguer des sous-tâches à des agents spécialisés (ex: agent de test, agent de refactoring).
-- **Outils Personnalisés** : Fonctions spécifiques au projet (ex: génération de docs, analyse de performance).
+### 2. IntelligenceService (Le Cerveau)
+- Situé dans `backend/application/intelligence/intelligence_service.py`.
+- Reçoit une intention utilisateur et l'état courant (`EditorState`).
+- Délègue la planification au **TaskPlanner** qui génère une séquence d'actions.
+- Deux modes d'exécution :
+  - **Délégation OpenCode** : quand une tâche nécessite un agent externe (`DelegateAction`).
+  - **Action locale** : pour les opérations simples de code via `ActionExecutor`.
 
-### 3. Filesystem MCP (La Couche d'Accès)
-- Abstraite toute opération de système de fichiers.
-- Garantit que le "Cerveau" (Hermes) ne touche jamais directement au disque, mais passe par une interface standardisée.
-- Permet à Hermes de demander "Lis le fichier X" ou "Écris ceci dans Y" de manière sécurisée et structurée.
+### 3. OpenCodeConnectorManager (Le Délégataire)
+- Interface avec OpenCode en mode **headless** via `backend/infrastructure/opencode_connector/manager.py`.
+- Lance `opencode run --format json --port 0 --pure` comme sous-processus.
+- Modèle par défaut : `lmstudio/google/gemma-4-12b-qat` (131072 tokens de contexte).
+- Communique via stdin/stdout en JSON :
+  - `type: "text"` → réponse texte de l'agent.
+  - `type: "step_finish"` → étape terminée avec succès.
+- Maintient un historique des notifications (`_notification_history`, 100 entrées max).
+
+### 4. ActionExecutor (Les Bras Locaux)
+- Gère les actions directes sur le code dans `backend/domain/core/action_executor.py`.
+- Actions supportées : `insert_code`, `delete_code`, `rename_file`, `set_cursor`.
+- Utilise `FilesystemService` pour les opérations fichier sécurisées (protection directory traversal).
 
 ## Flux de Travail Typique
-1. **User** : "Refactorise la gestion des utilisateurs dans le backend."
-2. **OpenCode** : Reçoit l'intention et demande un plan à **Hermes**.
-3. **Hermes** : Consulte la **Mémoire** (conventions du projet) et le **Filesystem MCP** (pour voir le code actuel), puis génère un plan via le **Planning**.
-4. **OpenCode** : Reçoit le plan et demande au **Filesystem MCP** d'exécuter les actions d'écriture une par une.
-5. **Hermes** : Enregistre le succès et les changements dans la **Mémoire**.
+
+1. **Agent/Utilisateur** : Appelle `solve_step(intent, state)` via MCP.
+2. **Hermes MCP Server** : Transmet l'intention à `IntelligenceService.process_user_intent()`.
+3. **TaskPlanner** : Analyse l'intention et génère un plan structuré (liste d'actions).
+4. **IntelligenceService** : Itère sur les actions du plan :
+   - Si `DelegateAction` → appelle `OpenCodeConnectorManager.run()` pour déléguer à OpenCode en mode headless.
+   - Si action locale → appelle `ActionExecutor.execute()`.
+5. **OpenCode (headless)** : Reçoit le contexte via stdin, exécute la tâche, renvoie le résultat via stdout JSON.
+6. **IntelligenceService** : Agrège les résultats et retourne la réponse finale.
+
+## Stack Technique
+
+| Composant | Technologie |
+|-----------|------------|
+| MCP Framework | FastMCP (Python) |
+| LLM (Hermes) | LM Studio / Google Gemma 4 12B |
+| LLM (OpenCode) | OpenCode CLI (multi-modèle) |
+| Exécution | Sous-processus headless |
+| État | EditorState (modèle Pydantic) |
+| Fichiers | FilesystemService (sécurité anti-traversal) |

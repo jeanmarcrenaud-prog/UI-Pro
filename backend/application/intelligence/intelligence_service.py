@@ -27,7 +27,7 @@ class IntelligenceService:
         """Analyze intent -> planner decides (delegate vs local actions)."""
         logger.info(f"Processing intent: {intent_description}")
 
-        plan = self.planner.generate_plan(intent_description, current_state)
+        plan = await self.planner.generate_plan(intent_description, current_state)
 
         actions = []
         for step in plan:

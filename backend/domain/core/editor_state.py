@@ -38,7 +38,7 @@ class EditorState:
     terminal_output: Optional[str] = None
     git_status: Optional[Dict[str, Any]] = None
 
-class InMemoryStateStore:
+class EditorStateStore:
     """Stockage en mémoire pour l'état de l'éditeur durant les tests et le développement."""
     def __init__(self):
         self._state = EditorState()
@@ -48,3 +48,6 @@ class InMemoryStateStore:
 
     def set_state(self, state: EditorState):
         self._state = state
+
+# Alias pour garantir la compatibilité avec tous les modules
+InMemoryStateStore = EditorStateStore

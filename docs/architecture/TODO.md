@@ -114,25 +114,25 @@
 
 ```
 ui-pro/                           # Projet principal
-├── run.py                        # Launcher principal
-├── app/launcher.py              # Multi-service launcher
-│
-├── backend/                      # SOURCE DE VÉRITÉ (SEUL)
-│   ├── domain/                  # Business logic
-│   │   └── core/                # Core modules
-│   ├── infrastructure/          # Services layer
-│   ├── application/              # App layer
-│   └── transport/                # API endpoints
-│
-├── llm/                          # LLM clients (module séparé)
-├── models/                       # Data types + Settings
-├── tests/                        # Tests
-├── scripts/                     # Scripts utilitaires
-├── ui-pro-ui/                    # Next.js frontend
-│   └── components/
-│       ├── chat/                # 7 composants
-│       └── markdown/             # 3 composants
-└── workspace/                   # Code généré
+-- run.py                        # Launcher principal
+-- setup.py                      # Automated setup
+-- pyproject.toml                # Config Python
+-- conftest.py                   # Pytest config root
+-- pytest.ini
+|
+-- backend/                      # SOURCE DE VERITE (SEUL)
+|   +-- domain/                  # Business logic + core modules
+|   +-- infrastructure/          # LLM, MCP, OpenCode, streaming, voice, etc.
+|   +-- application/              # Intelligence, editor, voice, WebSocket
+|   +-- transport/                # API endpoints + routers
+|
+-- frontend/                    # Next.js frontend
+-- scripts/                     # Scripts utilitaires
+-- tests/                       # Tests
+-- docs/                        # Documentation
+-- data/                        # Runtime data (gitignored)
+-- logs/                        # Logs application
+-- workspace/                   # Code genere
 ```
 
 ---

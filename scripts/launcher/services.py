@@ -100,7 +100,7 @@ def start_api(block: bool = True):
             python_exe,
             "-m",
             "uvicorn",
-            "backend.transport.views_api:app",
+            "backend.transport.main:app",
             "--host",
             "0.0.0.0",
             "--port",
@@ -192,7 +192,7 @@ def start_all(auto_open: bool = True):
     # Start Next.js UI
     print_info("Démarrage Next.js UI...")
     ui_thread = threading.Thread(target=start_ui, daemon=True)
-
+    ui_thread.start()
     # Give UI a moment to announce
     time.sleep(1)
 

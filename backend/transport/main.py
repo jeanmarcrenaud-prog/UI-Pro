@@ -78,6 +78,7 @@ if _rate_limit_available:
 # Include routers
 from backend.transport.routers import chat, execute, health, logs, ws
 from backend.transport.routers.mario import router as mario_router
+from backend.transport.routers.hermes import router as hermes_router
 
 app.include_router(health.router)
 app.include_router(chat.router)
@@ -85,6 +86,7 @@ app.include_router(execute.router)
 app.include_router(ws.router)
 app.include_router(logs.router)
 app.include_router(mario_router)
+app.include_router(hermes_router)
 
 
 if __name__ == "__main__":

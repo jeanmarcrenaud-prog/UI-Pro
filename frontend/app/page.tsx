@@ -17,6 +17,7 @@ import { Sidebar } from '@/components/Sidebar'
 import { SettingsView } from '@/components/SettingsView'
 import { HistoryView } from '@/components/HistoryView'
 import { MarioView } from '@/components/MarioView'
+import { HermesView } from '@/components/HermesView'
 import { useUIStore } from '@/lib/stores/uiStore'
 import { useChatStore } from '@/lib/stores/chatStore'
 import { useResponsive } from '@/lib/hooks/useResponsive'
@@ -37,7 +38,7 @@ if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
   })
 }
 
-type TabType = 'chat' | 'history' | 'settings' | 'canvas' | 'mario'
+type TabType = 'chat' | 'history' | 'settings' | 'canvas' | 'mario' | 'hermes'
 
 export default function Home() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
@@ -193,6 +194,8 @@ export default function Home() {
           <SettingsView />
         ) : activeTab === 'mario' ? (
           <MarioView />
+        ) : activeTab === 'hermes' ? (
+          <HermesView />
         ) : (
           <div className="flex-1 flex items-center justify-center text-slate-400">
             Coming soon...

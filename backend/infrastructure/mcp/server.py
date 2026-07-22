@@ -1,6 +1,7 @@
 import logging
 import json
 from typing import List, Dict, Any, Optional
+from openai import OpenAI
 from backend.domain.core.models import EditorState as EditorStateModel
 from backend.domain.core.editor_service import EditorService
 from backend.domain.core.editor_state import EditorStateStore
@@ -34,7 +35,21 @@ class HermesMCPServer:
             self.connector_manager
         )
         self.intelligence_service = get_intelligence_service()
+        self.llm_client: OpenAI | None = None
+        # ─── LLM client for chat ──────────────────────────
+        self._init_llm_client()
 
+    def _init_llm_client(self):
+        """Initialise le client LLM pour le chat direct (LM Studio)."""
+        try:
+            self.llm_client = OpenAI(
+                base_url="http://localhost:1234/v1",
+                api_key="lm-studio",
+            )
+            self.llm_model = "google/gemma-4-12b-qat"
+        except Exception as e:
+            logger.warning(f"Failed to init LLM client: {e}")
+            self.llm_client = None
     def list_tools(self) -> List[Dict[str, Any]]:
         """Liste tous les outils disponibles pour le client MCP."""
         return [
@@ -77,9 +92,19 @@ class HermesMCPServer:
                     },
                     "required": ["path", "content"]
                 }
+            },
+            {
+                "name": "chat",
+                "description": "Dialogue direct avec Hermes via LLM (chat libre).",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "message": {"type": "string", "description": "Message utilisateur."}
+                    },
+                    "required": ["message"]
+                }
             }
         ]
-
     def list_resources(self) -> List[Dict[str, Any]]:
         """Liste les ressources disponibles (données statiques ou dynamiques)."""
         return [
@@ -127,9 +152,27 @@ class HermesMCPServer:
             path = arguments.get("path", "")
             content = arguments.get("content", "")
             success = self.filesystem_service.write_file(path, content)
-            return {"content": "Succès" if success else "Échec de l'écriture."}
-        
-        return {"content": f"Erreur : Outil {tool_name} non trouvé."}
+            return {'content': 'Succès' if success else 'Échec de l\'écriture.'}
 
+        elif tool_name == 'chat':
+            message = arguments.get('message', '')
+            if not self.llm_client:
+                return {'content': 'LLM client not available (check LM Studio on port 1234).'}
+            try:
+                resp = self.llm_client.chat.completions.create(
+                    model=self.llm_model,
+                    messages=[
+                        {'role': 'system', 'content': 'You are Hermes, an AI assistant. Answer clearly and concisely.'},
+                        {'role': 'user', 'content': message},
+                    ],
+                    temperature=0.7,
+                    max_tokens=1024,
+                )
+                return {'content': resp.choices[0].message.content or '...'}
+            except Exception as e:
+                logger.exception('Chat LLM call failed')
+                return {'content': f'Erreur LLM : {e}'}
+
+        return {'content': f'Erreur : Outil {tool_name} non trouvé.'}
 # Instance globale du serveur
 server = HermesMCPServer()

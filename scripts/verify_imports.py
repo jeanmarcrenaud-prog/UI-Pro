@@ -100,7 +100,7 @@ def check_backend_imports():
         ("backend.infrastructure.memory", ["MemoryManager", "add_memory"]),
         ("backend.infrastructure.llm_router", ["LLMRouter"]),
         ("backend.infrastructure.streaming", ["StreamingService"]),
-        ("backend.transport.views_api", ["app"]),
+        ("backend.transport.main", ["app"]),
         ("backend.transport.routers.ws", ["router"]),
     ]
 

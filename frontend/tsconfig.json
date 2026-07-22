@@ -41,7 +41,7 @@
         "./hooks/*"
       ]
     },
-    "target": "ES2018"
+    "target": "ESNext"
   },
   "include": [
     "next-env.d.ts",

@@ -18,45 +18,72 @@ python run.py --check       # Verify dependencies
 
 ```
 backend/
-├── domain/                 # Business logic (SOURCE OF TRUTH)
-│   ├── core/              # Core modules
-│   │   ├── executor.py    # CodeExecutor (sandbox with auto-fix loop)
-│   │   ├── state_manager.py
-│   │   ├── orchestrator_async.py
-│   │   ├── events.py
-│   │   ├── logger.py
-│   │   ├── metrics.py
-│   │   ├── prompts.py
-│   │   ├── code_review.py
-│   │   └── constants.py
-│   └── errors.py          # Domain errors
-├── infrastructure/        # External services
-│   ├── streaming.py         # Legacy streaming
-│   ├── streaming_unified.py  # Unified SSE/WS protocol
-│   ├── model_service.py   # Model management
-│   ├── model_discovery.py # Multi-backend discovery
-│   ├── memory_service.py # Memory with compression
-│   ├── memory.py         # FAISS memory
-│   ├── llm_router.py     # Advanced LLM routing
-│   ├── tools.py          # Tool execution
-│   ├── error_handler.py  # Error handling
-│   ├── code_execution.py # Code execution
-│   └── base.py           # Service base class
-├── application/           # Application layer
-│   ├── launcher.py       # Multi-service launcher
-│   └── websocket.py      # WebSocket handling
-└── transport/             # API endpoints
-    ├── main.py           # FastAPI entry point
-    ├── views_api.py      # FastAPI app
-    ├── dashboard.py      # Gradio dashboard
-    ├── translations.py   # i18n
-    └── routers/          # API routers
-        ├── health.py
-        ├── chat.py
-        ├── ws.py
-        ├── stream.py
-        ├── execute.py
-        └── logs.py
++-- domain/                 # Business logic (SOURCE OF TRUTH)
+|   +-- core/              # Core modules
+|   |   +-- action_executor.py   # Code actions (insert, delete, rename)
+|   |   +-- code_review.py       # Bandit-based code review
+|   |   +-- constants.py         # Agent step enums
+|   |   +-- editor_service.py    # Editor orchestration
+|   |   +-- editor_state.py      # Editor state management
+|   |   +-- events.py            # Event bus (Pub/Sub)
+|   |   +-- executor.py          # Code sandbox executor
+|   |   +-- filesystem_service.py # Safe file I/O
+|   |   +-- langgraph/           # Pipeline nodes
+|   |   +-- logger.py            # Logging
+|   |   +-- metrics.py           # Performance metrics
+|   |   +-- models.py            # Domain models (EditorState, Action, etc.)
+|   |   +-- orchestrator_async.py # Async pipeline orchestrator
+|   |   +-- planner.py           # Local task planner
+|   |   +-- prompts.py           # LLM prompts
+|   |   +-- state_manager.py     # Pipeline state management
+|   +-- errors.py          # Domain error hierarchy
++-- infrastructure/        # External services & backends
+|   +-- llm/               # LLM clients (Ollama, LM Studio, etc.)
+|   |   +-- hermes.py      # Hermes LLM integration
+|   |   +-- ollama.py      # Ollama client
+|   |   +-- lmstudio.py    # LM Studio client
+|   |   +-- llamacpp.py    # llama.cpp client
+|   |   +-- lemonade.py    # Lemonade client
+|   |   +-- ...            # Other LLM backends
+|   +-- mcp/               # MCP server (Hermes)
+|   |   +-- server.py      # FastMCP server with tools
+|   +-- opencode_connector/ # OpenCode headless integration
+|   |   +-- manager.py     # Subprocess lifecycle + JSON protocol
+|   |   +-- client.py      # OpenCode client
+|   |   +-- models.py      # Connector models
+|   +-- streaming/         # SSE/WebSocket streaming
+|   +-- executors/         # Code executors
+|   +-- voice/             # Voice services (STT/TTS/VAD)
+|   +-- terminal/          # Terminal emulation
+|   +-- tools/             # Tool registry & execution
+|   +-- monitoring/        # Tracing & metrics
+|   +-- adapters/          # FAISS memory adapter
+|   +-- llm_router.py     # Multi-model routing
+|   +-- model_discovery.py # Model discovery
+|   +-- memory.py          # FAISS memory
+|   +-- checkpointer.py    # SQLite checkpointing
+|   +-- code_execution.py  # Python sandbox execution
+|   +-- rate_limit.py      # Rate limiting
++-- application/           # Application layer
+|   +-- intelligence/      # Intent processing
+|   |   +-- intelligence_service.py # Intent to plan to delegate/execute
+|   |   +-- task_planner.py        # Plan generation
+|   +-- editor_manager.py  # Editor coordination
+|   +-- voice_manager.py   # Voice flow management
+|   +-- websocket.py       # WebSocket handling
++-- transport/             # API endpoints
+    +-- main.py            # FastAPI entry point
+    +-- views_api.py       # REST API routes
+    +-- websocket_manager.py # WebSocket connection manager
+    +-- routers/           # Route modules
+        +-- chat.py
+        +-- ws.py
+        +-- stream.py
+        +-- execute.py
+        +-- health.py
+        +-- logs.py
+        +-- mario.py        # Mario agent router
+        +-- node_metrics.py
 ```
 
 ### Project Structure (2026-05)
@@ -65,18 +92,18 @@ backend/
 
 ```
 ui-pro/                    # Racine projet
-├── backend/               # SOURCE DE VÉRITÉ (uniquement)
-│   ├── domain/            # Business logic + settings
-│   ├── infrastructure/    # Services: LLM, streaming, cache, checkpointer, adapters
-│   ├── application/       # Application layer: launcher, WebSocket
-│   └── transport/         # API: FastAPI, Gradio, routers
-├── data/                  # Checkpoints DB + FAISS index
-├── logs/                  # Application logs
-├── docs/                  # Documentation
-├── tests/                 # Tests pytest
-├── scripts/               # Scripts utilitaires
-├── frontend/             # Frontend Next.js
-└── workspace/             # Code généré
+-- backend/               # SOURCE DE VÉRITÉ (uniquement)
+|   +-- domain/            # Business logic + settings
+|   +-- infrastructure/    # Services: LLM, streaming, MCP, OpenCode, voice, terminal
+|   +-- application/       # App layer: intelligence, editor, voice, WebSocket
+|   +-- transport/         # API: FastAPI, routers, WebSocket manager
+-- frontend/             # Frontend Next.js
+-- scripts/              # Scripts utilitaires
+-- tests/                # Tests pytest
+-- docs/                 # Documentation
+-- data/                 # Checkpoints DB + FAISS index
+-- logs/                 # Application logs
+-- workspace/            # Code généré
 ```
 
 ## Migration Status (COMPLETED)

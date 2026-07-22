@@ -242,129 +242,115 @@ LANGSMITH_PROJECT=ui-pro-production
 | `python setup.py`     | Auto-setup environment        |
 | `python setup.py --yes` | Non-interactive setup      |
 
-## 📁 Project Structure
-
-> **NOTE**: `backend/domain/settings.py` is the single source of truth for configuration using pydantic-settings.
+## Project Structure
+> NOTE: `backend/domain/core/models.py` contains the Settings class (pydantic-settings) as single source of truth for configuration.
 
 ```
 ui-pro/
-├── run.py                    # Main launcher
-├── setup.py                  # Automated setup
-├── pyproject.toml            # Python project config
-├── requirements.txt
-├── Dockerfile                # Container build
-├── Makefile                  # Dev commands
-├── .env.example
-├── config.yaml.example
-│
-├── backend/                  # Python backend (FastAPI)
-│   ├── domain/               # Business logic
-│   │   ├── settings.py       # Unified config (pydantic-settings)
-│   │   ├── errors.py         # Domain error types
-│   │   └── core/             # LangGraph orchestrator
-│   │       ├── orchestrator_async.py
-│   │       ├── code_review.py
-│   │       ├── events.py     # Event bus
-│   │       └── langgraph/    # Pipeline nodes
-│   ├── infrastructure/       # Services & backends
-│   │   ├── llm/              # LLM clients (Ollama, LM Studio, etc.)
-│   │   ├── streaming/        # SSE/WebSocket streaming
-│   │   ├── executors/        # Code execution (Docker sandbox)
-│   │   ├── monitoring/       # Tracing & metrics
-│   │   ├── adapters/         # FAISS memory adapter
-│   │   ├── tools/            # Tool calling
-│   │   ├── llm_router.py
-│   │   ├── model_discovery.py
-│   │   ├── memory.py
-│   │   ├── checkpointer.py
-│   │   └── rate_limit.py
-│   ├── transport/            # API layer
-│   │   ├── main.py           # FastAPI app entry
-│   │   ├── views_api.py      # REST routes
-│   │   └── routers/          # WebSocket, SSE, health, logs
-│   └── application/          # App-level wiring
-│       └── websocket.py
-│
-├── frontend/                 # Next.js 16 (React 18)
-│   ├── app/                  # App router pages
-│   │   ├── page.tsx          # Main dashboard
-│   │   ├── layout.tsx        # Root layout (debug panel, theme)
-│   │   └── globals.css
-│   ├── components/           # UI components
-│   │   ├── agent/            # AgentCanvas (graph view)
-│   │   ├── chat/             # Chat messages, streaming, steps
-│   │   ├── settings/         # Settings dashboard
-│   │   ├── sidebar/          # Navigation sidebar
-│   │   ├── markdown/         # Markdown rendering
-│   │   ├── ui/               # Primitive UI kit
-│   │   ├── ChatContainer.tsx
-│   │   ├── DebugPanel.tsx
-│   │   ├── Sidebar.tsx
-│   │   ├── HistoryView.tsx
-│   │   ├── SettingsView.tsx
-│   │   ├── ThemeProvider.tsx
-│   │   └── CommandPalette.tsx
-│   ├── features/             # Feature modules
-│   │   └── chat/             # Chat feature
-│   ├── hooks/                # Custom React hooks
-│   │   ├── useChat.ts        # Chat logic + streaming
-│   │   ├── useWebSocket.ts
-│   │   ├── useStream.ts
-│   │   └── useMessageHandler.ts
-│   ├── services/             # API clients
-│   │   ├── chatService.ts
-│   │   ├── streamService.ts
-│   │   ├── WebSocketManager.ts
-│   │   ├── MessageHandler.ts
-│   │   ├── modelDiscovery.ts
-│   │   └── providers/        # LLM provider adapters
-│   ├── infrastructure/       # Framework config
-│   │   ├── config/           # Env-specific config
-│   │   ├── events/           # Event bus
-│   │   ├── persistence/      # Local storage
-│   │   └── services/         # Service registry
-│   ├── domain/               # Frontend domain
-│   │   ├── entities/         # Domain entities
-│   │   ├── events/           # Domain events
-│   │   └── config/           # App configuration
-│   ├── lib/                  # Shared utilities
-│   │   ├── stores/           # Zustand stores
-│   │   ├── hooks/            # Shared hooks
-│   │   ├── debug/            # Debug logger
-│   │   ├── i18n.ts           # EN + FR translations
-│   │   ├── events.ts         # Pub/sub event bus
-│   │   └── types.ts
-│   ├── styles/
-│   │   └── tokens.ts         # Design tokens
-│   └── public/
-│       └── logo.png
-│
-├── scripts/                  # Dev tooling
-│   └── launcher/             # CLI launcher (cli.py, services.py, etc.)
-│
-├── tests/                    # Python tests
-│   ├── conftest.py
-│   ├── test_pipeline_nodes.py
-│   ├── test_llm.py
-│   ├── test_settings.py
-│   └── ...
-│
-├── docs/                     # Documentation
-│   ├── api/API.md
-│   ├── architecture/
-│   │   ├── ARCHITECTURE.md
-│   │   ├── AGENTS.md
-│   │   └── REVIEW.md
-│   └── monitoring/
-│
-├── data/                     # Runtime data (gitignored)
-│   ├── checkpoints.db        # LangGraph sessions
-│   ├── memory.index          # FAISS index
-│   └── memory_docs.pkl
-│
-└── logs/                     # Application logs
-    ├── app.log
-    └── api.log
++-- run.py                    # Main launcher
++-- setup.py                  # Automated setup
++-- pyproject.toml            # Python project config
++-- requirements.txt
++-- Dockerfile                # Container build
++-- Makefile                  # Dev commands
++-- conftest.py               # Pytest config root
++-- pytest.ini
++-- .env.example
+|
++-- backend/                  # Python backend (FastAPI)
+|   +-- domain/               # Business logic
+|   |   +-- core/             # Core modules
+|   |   |   +-- action_executor.py   # Code actions (insert, delete, rename)
+|   |   |   +-- code_review.py       # Bandit code review
+|   |   |   +-- constants.py         # Agent step enums
+|   |   |   +-- editor_service.py    # Editor orchestration
+|   |   |   +-- editor_state.py      # Editor state management
+|   |   |   +-- events.py            # Event bus
+|   |   |   +-- executor.py          # Code sandbox executor
+|   |   |   +-- filesystem_service.py # Safe file I/O
+|   |   |   +-- langgraph/           # Pipeline nodes
+|   |   |   +-- logger.py            # Logging
+|   |   |   +-- metrics.py           # Performance metrics
+|   |   |   +-- models.py            # Domain models + Settings
+|   |   |   +-- orchestrator_async.py # Async pipeline orchestrator
+|   |   |   +-- planner.py           # Local task planner
+|   |   |   +-- prompts.py           # LLM prompts
+|   |   |   +-- state_manager.py     # Pipeline state
+|   |   +-- errors.py          # Domain error types
+|   +-- infrastructure/       # Services & backends
+|   |   +-- llm/              # LLM clients (Ollama, LM Studio, Hermes, etc.)
+|   |   +-- mcp/              # Hermes MCP server
+|   |   +-- opencode_connector/ # OpenCode headless integration
+|   |   +-- streaming/        # SSE/WebSocket streaming
+|   |   +-- executors/        # Code execution (Docker sandbox)
+|   |   +-- voice/            # Voice services (STT/TTS/VAD)
+|   |   +-- terminal/         # Terminal emulation
+|   |   +-- monitoring/       # Tracing & metrics
+|   |   +-- tools/             # Tool registry & execution
+|   |   +-- adapters/          # FAISS memory adapter
+|   |   +-- llm_router.py    # Multi-model routing
+|   |   +-- model_discovery.py # Model discovery
+|   |   +-- memory.py         # FAISS memory
+|   |   +-- checkpointer.py   # SQLite checkpointing
+|   |   +-- code_execution.py # Python sandbox execution
+|   |   +-- rate_limit.py     # Rate limiting
+|   +-- transport/            # API layer
+|   |   +-- main.py           # FastAPI app entry
+|   |   +-- views_api.py      # REST routes
+|   |   +-- websocket_manager.py # WebSocket connection manager
+|   |   +-- routers/          # Route modules
+|   |       +-- chat.py
+|   |       +-- ws.py
+|   |       +-- stream.py
+|   |       +-- execute.py
+|   |       +-- health.py
+|   |       +-- logs.py
+|   |       +-- mario.py
+|   |       +-- node_metrics.py
+|   +-- application/          # App-level wiring
+|       +-- intelligence/     # Intent processing (IntelligenceService, TaskPlanner)
+|       +-- editor_manager.py # Editor coordination
+|       +-- voice_manager.py  # Voice flow management
+|       +-- websocket.py      # WebSocket handling
+|
++-- frontend/                 # Next.js 16 (React 18)
+|   +-- app/                  # App router pages
+|   |   +-- page.tsx          # Main dashboard
+|   |   +-- layout.tsx        # Root layout
+|   |   +-- globals.css
+|   +-- components/           # UI components
+|   +-- features/             # Feature modules
+|   +-- hooks/                # Custom React hooks
+|   +-- services/             # API clients
+|   +-- lib/                  # Stores, i18n, types
+|   +-- styles/               # Design tokens
+|   +-- public/               # Static assets
+|
++-- scripts/                  # Dev tooling
+|   +-- launcher/             # CLI launcher
+|
++-- tests/                    # Python tests
+|   +-- conftest.py
+|   +-- test_pipeline_nodes.py
+|   +-- test_llm.py
+|   +-- test_settings.py
+|   +-- ...
+|
++-- docs/                     # Documentation
+|   +-- api/
+|   +-- architecture/
+|   +-- monitoring/
+|
++-- data/                     # Runtime data (gitignored)
+|   +-- checkpoints.db
+|   +-- memory.index
+|   +-- memory_docs.pkl
+|
++-- logs/                     # Application logs
+|   +-- app.log
+|   +-- api.log
+|
++-- workspace/                # Generated code
 ```
 
 ## ⚙️ Configuration

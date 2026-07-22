@@ -110,10 +110,11 @@ def check_backend_imports():
         print(f"  {RED}x{RESET} backend.infrastructure.memory: {e}")
 
     try:
-        print(f"  {GREEN}OK{RESET} backend.transport.views_api imports work")
+        from backend.transport.main import app
+        print(f"  {GREEN}OK{RESET} backend.transport.main imports work")
     except Exception as e:
-        ERRORS.append(f"backend.transport.views_api import failed: {e}")
-        print(f"  {RED}x{RESET} backend.transport.views_api: {e}")
+        ERRORS.append(f"backend.transport.main import failed: {e}")
+        print(f"  {RED}x{RESET} backend.transport.main: {e}")
 
 
 def check_duplicate_files():
