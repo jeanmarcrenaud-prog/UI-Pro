@@ -56,16 +56,16 @@ class IntelligenceService:
         Retourne une Action contenant la réponse de l'agent.
         """
         logger.info(f"Delegating to OpenCode: {task}")
-        # Correction: utiliser send_task au lieu de run
-        success = await self.connector_manager.send_task(task)
-
+        # Correction: utiliser run_task au lieu de send_task
+        content = await self.connector_manager.run_task(task)
+        
         return [Action(
             action_type="opencode_delegate",
-            status="success" if success else "failed",
+            status="success" if "SUCCESS" in content else "failed",
             params={
                 "task": task,
                 "project": self.project_path,
-                "response": "Task submitted successfully" if success else "Failed to submit",
+                "response": content,
                 "session_id": "current_session" # À remplacer par le vrai ID si disponible
             },
         )]

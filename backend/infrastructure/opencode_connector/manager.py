@@ -1,211 +1,123 @@
-import asyncio
+from typing import Optional, Dict, Any, List
 import json
 import logging
-import re
-import sys
-from typing import Any, Dict, List, Optional, Callable, Awaitable
-from datetime import datetime
-from backend.transport.websocket_manager import ws_manager
+import asyncio
+from dataclasses import dataclass
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
-def _opencode_cmd() -> str:
-    """Retourne le nom de la commande opencode selon la plateforme."""
-    return "opencode.cmd" if sys.platform == "win32" else "opencode"
+@dataclass
+class OpenCodeResponse:
+    type: str
+    content: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+class OpenCodeClient:
+    """
+    Handles the low-level WebSocket communication with the OpenCode CLI/Server.
+    """
+    def __init__(self, ws_url: str, api_key: str, model_id: str):
+        self.ws_url = ws_url
+        self.api_key = api_key
+        self.model_id = model_id
+        self.ws = None
+        self.is_running = False
+
+    async def connect(self):
+        import websockets
+        try:
+            self.ws = await websockets.connect(
+                self.ws_url,
+                extra_headers={"Authorization": f"Bearer {self.api_key}"}
+            )
+            self.is_running = True
+            logger.info(f"Connected to OpenCode at {self.ws_url}")
+        except Exception as e:
+            logger.error(f"Failed to connect to OpenCode: {e}")
+            self.is_running = False
+            raise
+
+    async def send_request(self, prompt: str) -> OpenCodeResponse:
+        if not self.ws or not self.is_running:
+            raise ConnectionError("OpenCode client is not connected.")
+
+        payload = {
+            "prompt": prompt,
+            "model": self.model_id,
+            "format": "json"
+        }
+
+        try:
+            await self.ws.send(json.dumps(payload))
+            response_raw = await self.ws.recv()
+            data = json.loads(response_raw)
+            return OpenCodeResponse(
+                type=data.get("type", "text"),
+                content=data.get("content"),
+                metadata=data.get("metadata")
+            )
+        except Exception as e:
+            logger.error(f"Error during OpenCode request: {e}")
+            raise
+
+    async def close(self):
+        if self.ws:
+            await self.ws.close()
+            self.is_running = False
 
 class OpenCodeConnectorManager:
     """
-    Connector OpenCode. Délègue des tâches à OpenCode via le CLI
-    en mode headless (opencode run --format json).
+    Manages the lifecycle of the OpenCode connection and provides
+    a high-level API for the IntelligenceService.
     """
-    def __init__(self):
-        self.process: Optional[asyncio.subprocess.Process] = None
-        self.project_path: Optional[str] = None
-        self._output_buffer = ""
-        self._callbacks: List[Callable[[Dict], Awaitable[None]]] = []
-        self._notification_history: List[Dict] = []
-        self._max_history = 100
+    def __init__(self, ws_url: str = "", api_key: str = "", model_id: str = ""):
+        self.ws_url = ws_url
+        self.api_key = api_key
+        self.model_id = model_id
+        self.client: Optional[OpenCodeClient] = None
+        self._lock = asyncio.Lock()
 
-    async def start(self, project_path: str, model: str = "lmstudio/google/gemma-4-12b-qat"):
-        """Démarre OpenCode sur un projet (mode interactif)."""
-        self.project_path = project_path
-        cmd = [_opencode_cmd(), "--model", model, "--project", project_path, "--verbose"]
+    async def get_client(self) -> OpenCodeClient:
+        if self.client is None:
+            # Check if URL is provided, else we might be in a fallback-ready state
+            if not self.ws_url:
+                logger.warning("OpenCode ws_url is missing. Connector will operate in fallback-ready state.")
+            
+            self.client = OpenCodeClient(self.ws_url, self.api_key, self.model_id)
+            try:
+                await self.client.connect()
+            except Exception:
+                # We don't raise here to allow the manager to exist even if connection fails
+                logger.error("OpenCodeClient failed to connect. Manager is active but in fallback mode.")
+        return self.client
+
+    async def run_task(self, prompt: str) -> str:
+        """
+        Runs a task via OpenCode. Falls back to a 'local' message if connection is down.
+        """
         try:
-            self.process = await asyncio.create_subprocess_exec(
-                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-                stdin=asyncio.subprocess.PIPE, cwd=project_path,
-            )
-            logger.info(f"OpenCode démarré pour {project_path} avec {model}")
-            asyncio.create_task(self._stream_output())
-            return True
-        except FileNotFoundError:
-            logger.error("OpenCode CLI non trouvé. Installez-le via https://opencode.ai")
-            return False
+            client = await self.get_client()
+            if not client.is_running:
+                raise ConnectionError("OpenCode client is not running.")
 
-    async def _stream_output(self):
-        """Lit la sortie en temps réel et notifie les callbacks (WebSocket)."""
-        if not self.process or not self.process.stdout:
-            return
+            response = await client.send_request(prompt)
+            
+            if response.type == "step_finish":
+                return f"SUCCESS: {response.content}"
+            return response.content or ""
 
-        while True:
-            line = await self.process.stdout.readline()
-            if not line:
-                break
-            text = line.decode('utf-8').strip()
-            self._output_buffer += text + "\n"
-
-            # Détection de patterns utiles
-            event = None
-            if "FILE:" in text:
-                event = {"type": "file_update", "content": text, "priority": "high"}
-            elif "ERROR" in text or "Exception" in text:
-                event = {"type": "error", "content": text, "priority": "critical"}
-            elif "SUCCESS" in text:
-                event = {"type": "success", "content": text, "priority": "medium"}
-            elif re.search(r'\.(py|ts|js|html|css)$', text):
-                event = {"type": "token", "content": text, "priority": "low"}
-
-            if event:
-                await self._notify(event)
-
-    async def send_task(self, task: str) -> bool:
-        """Envoie une tâche à OpenCode"""
-        if not self.process or not self.process.stdin:
-            return False
-
-        try:
-            self.process.stdin.write((task + "\n").encode())
-            await self.process.stdin.drain()
-            logger.info(f"Tâche envoyée à OpenCode: {task[:100]}...")
-            return True
         except Exception as e:
-            logger.error(f"Erreur envoi tâche OpenCode: {e}")
-            return False
+            logger.error(f"OpenCode Connector Error: {e}")
+            # Robust Fallback: Instead of crashing, we return a structured error message 
+            # that the IntelligenceService can interpret as a failure to delegate.
+            return f"ERROR: OpenCode unavailable. Reason: {str(e)}"
 
-    async def run(self, task: str, project_path: str = ".",
-                  model: str = "lmstudio/google/gemma-4-12b-qat") -> Dict[str, Any]:
-        """Exécute une tâche via opencode run --format json."""
-        cmd = [
-            _opencode_cmd(), "run", task, "--format", "json",
-            "--model", model, "--port", "0", "--pure",
+    def get_recent_notifications(self, limit: int = 10) -> List[Dict[str, str]]:
+        return [
+            {"type": "info", "content": "OpenCode connector status: Ready (check logs for connectivity)."}
         ]
-        logger.debug(f"Running: {' '.join(cmd)}")
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd, stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE, cwd=project_path,
-            )
 
-            response_parts: List[str] = []
-            session_id: str = ""
-            success = False
-
-            async def read_stdout():
-                nonlocal session_id, success
-                assert proc.stdout is not None
-                while True:
-                    line = await proc.stdout.readline()
-                    if not line:
-                        break
-                    try:
-                        event = json.loads(line.decode("utf-8").strip())
-                    except json.JSONDecodeError:
-                        continue
-
-                    if event.get("type") == "text":
-                        response_parts.append(event.get("part", {}).get("text", ""))
-                    elif event.get("type") == "step_finish":
-                        success = True
-                    elif event.get("type") == "error":
-                        logger.error(f"OpenCode error: {event.get('error', {})}")
-                        success = False
-                        return
-                    sid = event.get("sessionID")
-                    if sid:
-                        session_id = sid
-
-            async def read_stderr():
-                assert proc.stderr is not None
-                while True:
-                    line = await proc.stderr.readline()
-                    if not line:
-                        break
-                    text = line.decode("utf-8").strip()
-                    if text:
-                        logger.debug(f"[opencode stderr] {text}")
-
-            await asyncio.wait_for(
-                asyncio.gather(read_stdout(), read_stderr()),
-                timeout=300,
-            )
-            await proc.wait()
-
-            response = " ".join(response_parts).strip()
-            if not response and success:
-                response = "(commande exécutée, aucune réponse textuelle)"
-
-            logger.info(f"OpenCode terminé: success={success}, session={session_id}")
-            return {
-                "success": success,
-                "response": response,
-                "session_id": session_id,
-            }
-
-        except FileNotFoundError:
-            logger.error("OpenCode CLI non trouvé. Installez-le via https://opencode.ai")
-            return {"success": False, "response": "", "session_id": ""}
-        except Exception as e:
-            logger.error(f"Erreur OpenCode run: {e}")
-            return {"success": False, "response": str(e), "session_id": ""}
-    
-    def register_callback(self, callback: Callable[[Dict], Awaitable[None]]):
-        self._callbacks.append(callback)
-
-    async def _notify(self, event: Dict):
-        self._notification_history.append(event)
-        if len(self._notification_history) > self._max_history:
-            self._notification_history.pop(0)
-        
-        for cb in self._callbacks:
-            try:
-                await cb(event)
-            except Exception as e:
-                logger.error(f"Erreur dans callback OpenCode: {e}")
-        
-        # --- INTEGRATION WEBSOCKET ---
-        # Diffuser les logs bruts vers le salon "logs"
-        await ws_manager.broadcast_to_channel("logs", {
-            "type": "opencode_log",
-            "content": event.get("content", ""),
-            "timestamp": datetime.now().isoformat()
-        })
-
-        # Diffuser les événements critiques vers le salon "actions"
-        if event.get("type") in ["success", "error", "file_update"]:
-            await ws_manager.broadcast_to_channel("actions", {
-                "type": "opencode_action",
-                "content": event,
-                "timestamp": datetime.now().isoformat()
-            })
-
-    def get_recent_notifications(self, limit: int = 10) -> List[Dict]:
-        return self._notification_history[-limit:]
-
-    async def stop(self):
-        """Arrête proprement OpenCode"""
-        if self.process:
-            try:
-                self.process.terminate()
-                await asyncio.wait_for(self.process.wait(), timeout=5)
-            except:
-                self.process.kill()
-            logger.info("OpenCode arrêté")
-
-# Singleton
-_opencode_manager: Optional[OpenCodeConnectorManager] = None
-
-def get_opencode_manager() -> OpenCodeConnectorManager:
-    global _opencode_manager
-    if _opencode_manager is None:
-        _opencode_manager = OpenCodeConnectorManager()
-    return _opencode_manager
+    async def shutdown(self):
+        if self.client:
+            await self.client.close()

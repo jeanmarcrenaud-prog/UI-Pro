@@ -12,19 +12,19 @@ graph TD
     Tools --> write_file[write_file: écriture fichier]
     Tools --> get_status[get_opencode_status: état OpenCode]
     
-    subgraph "IntelligenceService (backend/application/intelligence/)"
+    subgraph \"IntelligenceService (backend/application/intelligence/)\"
         Intelligence[IntelligenceService] --> Planner[TaskPlanner]
         Intelligence --> Executor[ActionExecutor]
     end
     
-    subgraph "OpenCode Connector (backend/infrastructure/opencode_connector/)"
+    subgraph \"OpenCode Connector (backend/infrastructure/opencode_connector/)\"
         Connector[OpenCodeConnectorManager]
         Connector --> Subprocess[OpenCode CLI headless]
         Subprocess -->|stdin| JSON_Input[opencode run --format json]
         Subprocess -->|stdout| JSON_Output[type:text / type:step_finish]
     end
     
-    subgraph "Domain (backend/domain/core/)"
+    subgraph \"Domain (backend/domain/core/)\"
         Models[models.py: EditorState, Action]
         FsService[filesystem_service.py: Safe I/O]
         EdService[editor_service.py: Editor orchestration]
@@ -42,31 +42,31 @@ graph TD
 ## Composants Clés
 
 ### 1. Hermes MCP Server (Le Point d'Entrée)
-- Service MCP implémenté avec **FastMCP** dans `backend/infrastructure/mcp/server.py`.
-- Expose des outils directement appelables : `solve_step`, `read_file`, `write_file`, `get_opencode_status`.
-- Point d'entrée unique pour les agents souhaitant déléguer du travail au système Hermes.
+|- Service MCP implémenté avec **FastMCP** dans `backend/infrastructure/mcp/server.py`.
+|- Expose des outils directement appelables : `solve_step`, `read_file`, `write_file`, `get_opencode_status`.
+|- Point d'entrée unique pour les agents souhaitant déléguer du travail au système Hermes.
 
 ### 2. IntelligenceService (Le Cerveau)
-- Situé dans `backend/application/intelligence/intelligence_service.py`.
-- Reçoit une intention utilisateur et l'état courant (`EditorState`).
-- Délègue la planification au **TaskPlanner** qui génère une séquence d'actions.
-- Deux modes d'exécution :
+|- Situé dans `backend/application/intelligence/intelligence_service.py`.
+|- Reçoit une intention utilisateur et l'état courant (`EditorState`).
+|- Délègue la planification au **TaskPlanner** qui génère une séquence d'actions.
+|- Deux modes d'exécution :
   - **Délégation OpenCode** : quand une tâche nécessite un agent externe (`DelegateAction`).
   - **Action locale** : pour les opérations simples de code via `ActionExecutor`.
 
 ### 3. OpenCodeConnectorManager (Le Délégataire)
-- Interface avec OpenCode en mode **headless** via `backend/infrastructure/opencode_connector/manager.py`.
-- Lance `opencode run --format json --port 0 --pure` comme sous-processus.
-- Modèle par défaut : `lmstudio/google/gemma-4-12b-qat` (131072 tokens de contexte).
-- Communique via stdin/stdout en JSON :
-  - `type: "text"` → réponse texte de l'agent.
-  - `type: "step_finish"` → étape terminée avec succès.
-- Maintient un historique des notifications (`_notification_history`, 100 entrées max).
+|- Interface avec OpenCode en mode **headless** via `backend/infrastructure/opencode_connector/manager.py`.
+|- Lance `opencode run --format json --port 0 --pure` comme sous-processus.
+|- Modèle par défaut : `lmstudio/google/gemma-4-12b-qat` (131072 tokens de contexte).
+|- Communique via stdin/stdout en JSON :
+  - `type: \"text\"` → réponse texte de l'agent.
+  - `type: \"step_finish\"` → étape terminée avec succès.
+|- Maintient un historique des notifications (`_notification_history`, 100 entrées max).
 
 ### 4. ActionExecutor (Les Bras Locaux)
-- Gère les actions directes sur le code dans `backend/domain/core/action_executor.py`.
-- Actions supportées : `insert_code`, `delete_code`, `rename_file`, `set_cursor`.
-- Utilise `FilesystemService` pour les opérations fichier sécurisées (protection directory traversal).
+|- Gère les actions directes sur le code dans `backend/domain/core/action_executor.py`.
+|- Actions supportées : `insert_code`, `delete_code`, `rename_file`, `set_cursor`.
+|- Utilise `FilesystemService` pour les opérations fichier sécurisées (protection directory traversal).
 
 ## Flux de Travail Typique
 
@@ -81,11 +81,27 @@ graph TD
 
 ## Stack Technique
 
-| Composant | Technologie |
-|-----------|------------|
-| MCP Framework | FastMCP (Python) |
-| LLM (Hermes) | LM Studio / Google Gemma 4 12B |
-| LLM (OpenCode) | OpenCode CLI (multi-modèle) |
-| Exécution | Sous-processus headless |
-| État | EditorState (modèle Pydantic) |
-| Fichiers | FilesystemService (sécurité anti-traversal) |
+|| Composant | Technologie |
+||-----------|------------|
+|| MCP Framework | FastMCP (Python) |
+|| LLM (Hermes) | LM Studio / Google Gemma 4 12B |
+|| LLM (OpenCode) | OpenCode CLI (multi-modèle) |
+|| Exécution | Sous-processus headless |
+|| État | EditorState (modèle Pydantic) |
+|| Fichiers | FilesystemService (sécurité anti-traversal) |
+
+## Architecture des Agents : Couches de Contrôle
+
+Pour garantir une efficacité maximale, Hermes distingue deux couches d'interaction majeures :
+
+### 1. Couche OS / Système (Bras et Yeux) - `cua-driver`
+- **Rôle** : Manipulation directe de l'interface Windows.
+- **Cas d'usage** : Déplacement de fenêtres, clics sur des boutons d'applications non-agentiques, gestion du bureau, interactions avec des outils système sans API dédiée.
+- **Type d'interaction** : Simulation robotique (bas niveau).
+
+### 2. Couche Code / IDE (Cerveau) - `OpenCode` via WebSocket
+- **Rôle** : Intelligence de codage et compréhension du projet.
+- **Cas d'usage** : Navigation sémantique dans le code, application de modifications complexes, gestion des Pull Requests, compréhension des dépendances et refactorings.
+- **Type d'interaction** : Collaboration sémantique (haut niveau).
+
+**Note d'implémentation :** `cua-driver` est une solution complémentaire. Il ne remplace pas le connecteur OpenCode mais sert de "sauvegardeur" pour les tâches système que l'agent doit accomplir en dehors de son flux de développement principal.
