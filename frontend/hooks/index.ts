@@ -7,3 +7,9 @@ export { useChat } from './useChat'
 // Streaming hooks
 export { useStream } from './useStream'
 export { useWebSocket, mapStreamEvent } from './useWebSocket'
+
+// Action hooks
+export { useChatActions } from './useChatActions'
+
+// Message handling hooks
+export { useMessageHandler } from './useMessageHandler'

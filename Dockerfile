@@ -29,7 +29,6 @@ COPY --from=dependencies /usr/local/bin /usr/local/bin
 
 # Copy application code
 COPY backend/ ./backend/
-COPY models/ ./models/
 # Copy config template (user should mount their own config.yaml at runtime)
 COPY config.yaml.example ./config.yaml
 

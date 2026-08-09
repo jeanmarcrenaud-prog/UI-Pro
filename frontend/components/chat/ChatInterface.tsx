@@ -6,6 +6,7 @@ import { chatService } from '@/services/chatService';
 import { events } from '@/lib/events';
 import type { Message } from '@/lib/types';
 import { ExecutionApproval } from './ExecutionApproval';
+import StatusBadge from './StatusBadge';
 
 export default function ChatInterface() {
   const [messages, setMessages] = useState<any[]>([]);
@@ -14,10 +15,17 @@ export default function ChatInterface() {
   const [currentSpeed, setCurrentSpeed] = useState<number>(0);
   const [finalStats, setFinalStats] = useState<string>('');
   const [progress, setProgress] = useState(0);
+  const [isConnected, setIsConnected] = useState(false);
+  const [mode, setMode] = useState<'REMOTE' | 'LOCAL'>('LOCAL');
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // Simulation de la détection de connexion (à lier au backend plus tard)
+    setIsConnected(true);
+    setMode('REMOTE');
+
     const unsubMessage = chatService.onMessage((msg: Message) => {
       setMessages((prev) => {
         const last = [...prev];
@@ -63,6 +71,12 @@ export default function ChatInterface() {
           setProgress(100);
           setTimeout(() => setProgress(0), 1500);
         }
+        if (stepId === 'opencode_delegation_start') {
+          setIsProcessing(true);
+        }
+        if (stepId === 'opencode_delegation_end') {
+          setIsProcessing(false);
+        }
       }
     );
 
@@ -99,6 +113,12 @@ export default function ChatInterface() {
 
   return (
     <div className="flex flex-col h-full bg-[#0a0f1c] text-white">
+      <div className="flex flex-col p-4 border-b border-gray-800/50 bg-[#0d1220]">
+        <div className="flex justify-between items-center">
+          <h1 className="text-lg font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">UI-Pro Agent</h1>
+          <StatusBadge isConnected={isConnected} mode={mode} isProcessing={isProcessing} />
+        </div>
+      </div>
       {/* Messages Area */}
       <div className="flex-1 overflow-auto p-6 space-y-6 scrollbar-thin scrollbar-thumb-slate-700">
         {messages.map((msg, i) => (
@@ -107,9 +127,7 @@ export default function ChatInterface() {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3 }}
-            className={`flex ${
-              msg.role === 'user' ? 'justify-end' : 'justify-start'
-            }`}
+            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
             <div
               className={`max-w-[85%] px-5 py-3.5 rounded-2xl text-[15px] leading-relaxed ${
@@ -123,10 +141,8 @@ export default function ChatInterface() {
           </motion.div>
         ))}
 
-        {/* Execution approval (human-in-the-loop) */}
         <ExecutionApproval />
 
-        {/* Indicateur de génération en cours */}
         <AnimatePresence>
           {isLoading && (
             <motion.div
@@ -135,7 +151,6 @@ export default function ChatInterface() {
               exit={{ opacity: 0 }}
               className="flex flex-col items-center gap-3 py-6"
             >
-              {/* Barre de progression */}
               <div className="w-80 h-1.5 bg-gray-800 rounded-full overflow-hidden shadow-lg">
                 <motion.div
                   className="h-full rounded-full bg-gradient-to-r from-emerald-400 via-cyan-400 to-blue-500"
@@ -144,15 +159,13 @@ export default function ChatInterface() {
                   style={{ boxShadow: '0 0 12px rgba(52, 211, 153, 0.4)' }}
                 />
               </div>
-
-              {/* Vitesse en temps réel */}
               <div className="flex items-center gap-3 text-sm font-mono">
                 <div className="px-4 py-1.5 bg-gray-900/80 rounded-full border border-emerald-500/30 flex items-center gap-2 backdrop-blur-sm">
                   <span className="relative flex h-2 w-2">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
                   </span>
-                  <span className="text-emerald-400 drop-shadow-[0_0_6px_rgba(52,211,153,0.5)]">
+                  <span className="text-emerald-400 drop-shadow-[0_0_6px rgba(52,211,153,0.5)]">
                     {currentSpeed > 0
                       ? `${currentSpeed.toFixed(1)} tok/s`
                       : 'Thinking...'}
@@ -163,7 +176,6 @@ export default function ChatInterface() {
           )}
         </AnimatePresence>
 
-        {/* Statistiques finales */}
         <AnimatePresence>
           {finalStats && (
             <motion.div
@@ -182,7 +194,6 @@ export default function ChatInterface() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Area */}
       <div className="sticky bottom-0 p-6 border-t border-gray-800/80 bg-[#0a0f1c]">
         <div className="max-w-4xl mx-auto">
           <div className="flex gap-3">

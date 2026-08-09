@@ -210,6 +210,61 @@ Les tool calls sont encapsulés dans les réponses LLM:
 
 ---
 
+### 6. Hermes Conversation API
+
+> Hermes est le moteur d'intelligence locale qui orchestre les outils MCP et l'LLM. Les endpoints sont disponibles sur `/api/hermes/*` (via `backend.transport.main:app`).
+
+#### GET /api/hermes/status
+
+Verifier la disponibilite de Hermes et lister les outils disponibles.
+
+**Response (200):**
+```json
+{
+  "available": true,
+  "tools": [
+    {"name": "execute_intent", "description": "Execute user intent"}
+  ]
+}
+```
+
+#### POST /api/hermes/conversation
+
+Envoyer un message a Hermes et recevoir une reponse complete.
+
+**Request:**
+```json
+{"message": "What is the weather in Paris?"}
+```
+
+**Response (200):**
+```json
+{"response": "The weather in Paris is sunny."}
+```
+
+#### POST /api/hermes/conversation/stream
+
+Stream une reponse de Hermes token par token via SSE.
+
+**Request:**
+```json
+{"message": "Create a hello world Python script"}
+```
+
+**Response (SSE stream):**
+```
+data: Here
+data:  is
+data:  a
+data:  hello
+data:  world
+data:  script:
+data: 
+data:  print('Hello, World!')
+```
+
+---
+
 ## Error Codes
 
 | Code | Meaning | Détail |

@@ -3,6 +3,7 @@
 
 import type { Message } from '@/domain/entities/Message';
 import { STREAM_EVENTS } from '@/domain/events/StreamEvents';
+import { API_CONFIG } from '@/lib/config';
 import { events } from '@/infrastructure/events/EventBus';
 
 type LifecycleState = 'idle' | 'connecting' | 'open' | 'closing' | 'fallback';
@@ -248,7 +249,7 @@ class ChatServiceAdapter {
 
     try {
       const host = window.location.hostname || 'localhost';
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace('localhost', host) || 'http://localhost:8000';
+      const apiUrl = API_CONFIG.apiUrl?.replace('localhost', host) || `http://localhost:8000`;
       const response = await fetch(`${apiUrl}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

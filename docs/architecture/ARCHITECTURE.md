@@ -252,9 +252,9 @@ async def llm_error_handler(request: Request, exc: LLMError):
 
 ## 📊 Configuration
 
-### Domain Models (backend/domain/core/models.py)
+### Settings (backend/domain/settings.py)
 
-> **Settings** est la SOURCE UNIQUE de configuration dans `backend/domain/core/models.py`. Les valeurs sont overridées via variables d'environnement (fichier `.env` gitignore).
+> **Settings** is the single source of truth for configuration in `backend/domain/settings.py`. Values are overridden via environment variables (fichier `.env` gitignore).
 
 ```
 .env (override) ──→ Settings class
@@ -287,7 +287,7 @@ class Settings(BaseSettings):
 ### Commandes
 ```bash
 # Python
-pytest tests/ -v --cov=ui-pro --cov-report=html
+pytest tests/ -v --cov=backend --cov-report=term-missing --cov-report=html
 
 # Frontend  
 cd frontend && npm run lint
@@ -317,6 +317,10 @@ profile = "black"
 | `/api/tools` | tools | Outils disponibles |
 | `/api/history` | history | Historique |
 | `/ws` | ws | WebSocket streaming |
+| `/api/hermes` | hermes | Hermes conversation + streaming |
+| `/api/editor_state` | main | Editor state API |
+| `/mcp/tools` | main | MCP tools list |
+| `/mcp/call` | main | MCP tool execution |
 | `/health` | health | Health check |
 
 ## 🔄 Flux Backend

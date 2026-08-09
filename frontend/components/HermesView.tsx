@@ -3,8 +3,10 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { motion } from 'framer-motion'
 import { useI18n } from '@/lib/i18n'
+import { API_CONFIG } from '@/lib/config'
+import { motion } from 'framer-motion'
+
 
 // ─── Types ──────────────────────────────────────
 
@@ -20,7 +22,7 @@ interface HermesStatus {
 
 // ─── API helpers ─────────────────────────────────
 
-const API_BASE = 'http://localhost:8000/api/hermes'
+const API_BASE = `${API_CONFIG.apiUrl || ''}/api/hermes`
 
 async function fetchStatus(): Promise<HermesStatus> {
   const res = await fetch(`${API_BASE}/status`)
@@ -28,8 +30,11 @@ async function fetchStatus(): Promise<HermesStatus> {
   return res.json()
 }
 
-async function sendConversation(message: string): Promise<string> {
-  const res = await fetch(`${API_BASE}/conversation`, {
+async function sendConversationStream(
+  message: string,
+  onToken: (token: string) => void,
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/conversation/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ message }),
@@ -38,8 +43,25 @@ async function sendConversation(message: string): Promise<string> {
     const err = await res.json().catch(() => ({ detail: 'Unknown error' }))
     throw new Error(err.detail || 'Conversation failed')
   }
-  const data = await res.json()
-  return data.response
+  const reader = res.body?.getReader()
+  if (!reader) throw new Error('No reader available')
+  const decoder = new TextDecoder()
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      const chunk = decoder.decode(value, { stream: true })
+      // Parse SSE format: "data: {content}\n\n"
+      for (const line of chunk.split('\n\n')) {
+        const match = line.match(/^data:\s(.*)$/)
+        if (match) {
+          onToken(match[1])
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock()
+  }
 }
 
 // ─── Component ───────────────────────────────────
@@ -87,12 +109,23 @@ export function HermesView() {
     setInput('')
     setChatLoading(true)
 
+    // Add empty assistant message for streaming
+    setMessages((prev) => [...prev, { role: 'assistant', content: '' }])
+
     try {
-      const response = await sendConversation(msg)
-      setMessages((prev) => [...prev, { role: 'assistant', content: response }])
+      await sendConversationStream(msg, (token) => {
+        setMessages((prev) => {
+          const last = prev[prev.length - 1]
+          if (last && last.role === 'assistant') {
+            return [...prev.slice(0, -1), { ...last, content: last.content + token }]
+          }
+          return prev
+        })
+      })
     } catch (e: any) {
+      // Replace the empty assistant message with the error
       setMessages((prev) => [
-        ...prev,
+        ...prev.slice(0, -1),
         { role: 'assistant', content: `Error: ${e.message}` },
       ])
     } finally {

@@ -29,9 +29,10 @@ export function useStream({ url, onToken, onStep, onDone, onError }: UseStreamOp
 
   // Register handlers and start stream
   const start = useCallback(async (prompt: string) => {
+    const newStreamId = `stream-${Date.now()}`
     setIsStreaming(true)
-    setStreamId(`stream-${Date.now()}`)
-    setCurrentStreamId(streamId)
+    setStreamId(newStreamId)
+    setCurrentStreamId(newStreamId)
 
     serviceRef.current = streamService
 

@@ -243,7 +243,7 @@ LANGSMITH_PROJECT=ui-pro-production
 | `python setup.py --yes` | Non-interactive setup      |
 
 ## Project Structure
-> NOTE: `backend/domain/core/models.py` contains the Settings class (pydantic-settings) as single source of truth for configuration.
+> NOTE: `backend/domain/settings.py` contains the Settings class (pydantic-settings) as single source of truth for configuration.
 
 ```
 ui-pro/
@@ -259,6 +259,7 @@ ui-pro/
 |
 +-- backend/                  # Python backend (FastAPI)
 |   +-- domain/               # Business logic
+|   |   +-- settings.py          # Settings (pydantic-settings) - single source of truth
 |   |   +-- core/             # Core modules
 |   |   |   +-- action_executor.py   # Code actions (insert, delete, rename)
 |   |   |   +-- code_review.py       # Bandit code review
@@ -271,7 +272,7 @@ ui-pro/
 |   |   |   +-- langgraph/           # Pipeline nodes
 |   |   |   +-- logger.py            # Logging
 |   |   |   +-- metrics.py           # Performance metrics
-|   |   |   +-- models.py            # Domain models + Settings
+|   |   |   +-- models.py            # Domain models (dataclasses)
 |   |   |   +-- orchestrator_async.py # Async pipeline orchestrator
 |   |   |   +-- planner.py           # Local task planner
 |   |   |   +-- prompts.py           # LLM prompts

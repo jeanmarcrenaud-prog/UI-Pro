@@ -120,13 +120,9 @@ export const useUIStore = create<UIState>()(
       setLocale: (locale) => set({ locale }),
 
       theme: 'dark',
-      setTheme: (theme) => {
-        set({ theme })
-        document.documentElement.className = theme
-      },
+      setTheme: (theme) => set({ theme }),
       toggleTheme: () => set((state) => {
         const next = state.theme === 'dark' ? 'light' : state.theme === 'light' ? 'purple-rain' : state.theme === 'purple-rain' ? 'pro' : 'dark'
-        document.documentElement.className = next
         return { theme: next }
       }),
 

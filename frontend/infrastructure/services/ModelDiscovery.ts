@@ -2,7 +2,7 @@
 // Role: Discovers available LLM models from backends (Ollama, LMStudio, llama.cpp, Lemonade)
 
 import { events } from '@/infrastructure/events/EventBus';
-import { LLM_CONFIG } from '@/infrastructure/config/Config';
+import { LLM_CONFIG } from '@/lib/config';
 
 export type SpeedTier = 'very_fast' | 'fast' | 'medium' | 'slow';
 

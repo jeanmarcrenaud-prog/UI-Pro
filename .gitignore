@@ -56,3 +56,6 @@ frontend/.next/
 # land in a public repo (private conversation content). Removed
 # from history via git filter-repo; this entry prevents re-leak.
 .claude/transcripts/
+
+backend/config.yaml
+# Hermes config (contains user-specific paths)

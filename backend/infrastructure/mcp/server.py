@@ -31,12 +31,13 @@ class HermesMCPServer:
         self._init_llm_client()
 
     def _init_llm_client(self):
+        import os
         try:
             self.llm_client = OpenAI(
-                base_url="http://localhost:1234/v1",
-                api_key="lm-studio",
+                base_url=os.environ.get("HERMES_LLM_BASE_URL", "http://localhost:1234/v1"),
+                api_key=os.environ.get("HERMES_LLM_API_KEY", "lm-studio"),
             )
-            self.llm_model = "google/gemma-4-12b-qat"
+            self.llm_model = os.environ.get("HERMES_LLM_MODEL", "google/gemma-4-12b-qat")
         except Exception as e:
             logger.warning(f"Failed to init LLM client: {e}")
             self.llm_client = None
@@ -218,6 +219,78 @@ class HermesMCPServer:
             logger.exception("Chat LLM call failed")
             return {"content": f"Erreur LLM : {e}"}
 
+    async def stream_chat(self, message: str):
+        """Stream chat response token-by-token via async generator.
+
+        Uses the same system prompt and tool-calling logic as _handle_chat
+        but yields tokens as they arrive from the LLM for real-time display.
+        """
+        if not self.llm_client:
+            yield "LLM client not available (check LM Studio on port 1234)."
+            return
+
+        try:
+            tool_names = [t["name"] for t in self.list_tools() if t["name"] != "chat"]
+
+            system_prompt = (
+                "You are Hermes, the intelligence engine of UI-Pro. "
+                "You run locally and CAN execute tasks on this machine. "
+                f"Available tools: {', '.join(tool_names)}. "
+                "When the user asks you to do something, use a tool. "
+                "To call a tool, write on its own line:\n"
+                "<|tool_call>call:TOOL_NAME{\"arg1\": \"value1\"}<tool_call|>\n"
+                "Example: <|tool_call>call:execute_intent{\"intent\": \"launch msedge.exe\"}<tool_call|>\n"
+                "If the command is simple (like launching an app), use execute_intent. "
+                "Answer clearly and concisely in the language the user speaks."
+            )
+
+            messages: List[Dict[str, Any]] = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": message},
+            ]
+
+            stream = self.llm_client.chat.completions.create(
+                model=self.llm_model,
+                messages=messages,
+                temperature=0.7,
+                max_tokens=2048,
+                stream=True,
+            )
+
+            collected_content = ""
+            for chunk in stream:
+                content = chunk.choices[0].delta.content or ""
+                if content:
+                    collected_content += content
+                    yield content
+
+            # Handle tool calls (same logic as _handle_chat)
+            tool_call_match = parse_tool_call_tag(collected_content)
+            if tool_call_match:
+                func_name, func_args = tool_call_match
+                logger.info(f"Hermes executing tool: {func_name}({func_args})")
+                yield "\n\n[tool: {}\n\n".format(func_name)
+                result = await self.call_tool(func_name, func_args)
+                yield "\n```json\n{}\n```\n\n".format(json.dumps(result.get("content", ""), ensure_ascii=False))
+                followup = build_followup_messages(collected_content, func_name, func_args, result)
+                messages.extend(followup)
+                stream2 = self.llm_client.chat.completions.create(
+                    model=self.llm_model,
+                    messages=messages,
+                    temperature=0.7,
+                    max_tokens=1024,
+                    stream=True,
+                )
+
+                for chunk in stream2:
+                    content = chunk.choices[0].delta.content or ""
+                    if content:
+                        yield content
+
+        except Exception as e:
+            logger.exception("Chat stream failed")
+            yield f"Error: {e}"
+
 
 def parse_tool_call_tag(text: str):
     """
@@ -275,5 +348,20 @@ def build_followup_messages(original_text, func_name, func_args, result):
         )
     }]
 
+_server_instance: HermesMCPServer | None = None
 
-server = HermesMCPServer()
+
+def get_server() -> HermesMCPServer:
+    """Lazy-initialized singleton for HermesMCPServer.
+
+    Avoids constructing the server (and its LLM client / intelligence service)
+    at import time. Callers should use this instead of importing a module-level
+    instance, so the server is only created when actually needed.
+    """
+    global _server_instance
+    if _server_instance is None:
+        _server_instance = HermesMCPServer()
+    return _server_instance
+
+
+__all__ = ["HermesMCPServer", "get_server"]

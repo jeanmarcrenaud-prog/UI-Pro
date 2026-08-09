@@ -45,6 +45,9 @@ graph TD
 |- Service MCP implémenté avec **FastMCP** dans `backend/infrastructure/mcp/server.py`.
 |- Expose des outils directement appelables : `solve_step`, `read_file`, `write_file`, `get_opencode_status`.
 |- Point d'entrée unique pour les agents souhaitant déléguer du travail au système Hermes.
+|- Configurable via variables d'environnement : `HERMES_LLM_BASE_URL`, `HERMES_LLM_API_KEY`, `HERMES_LLM_MODEL`.
+|- Utilise `get_server()` pour l'initialisation paresseuse (lazy loading) — le serveur n'est créé qu'au premier appel.
+|- Supporte le streaming token-par-token via `stream_chat()` (SSE).
 
 ### 2. IntelligenceService (Le Cerveau)
 |- Situé dans `backend/application/intelligence/intelligence_service.py`.

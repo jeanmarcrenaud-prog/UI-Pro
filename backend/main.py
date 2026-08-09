@@ -1,3 +1,14 @@
+"""
+Standalone Hermes MCP Server
+
+Alternative entry point focused on Hermes MCP functionality.
+Provides MCP protocol endpoints (/mcp/tools, /mcp/call) and a WebSocket
+bridge to the Hermes Intelligence Service. Use this when you only need
+Hermes capabilities without the full UI-Pro API surface.
+
+Run:  uvicorn backend.main:app --host 0.0.0.0 --port 8000
+"""
+
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from typing import Dict, Any
@@ -9,7 +20,7 @@ from backend.domain.core.action_executor import ActionExecutor
 from backend.application.intelligence.intelligence_service import init_intelligence_service, get_intelligence_service
 from backend.application.intelligence.task_planner import get_task_planner
 from backend.infrastructure.opencode_connector.manager import OpenCodeConnectorManager
-from backend.infrastructure.mcp.server import server as hermes_mcp_server
+from backend.infrastructure.mcp.server import get_server
 from backend.transport.websocket_manager import ws_manager
 
 app = FastAPI(title="Hermes Backend API", version="1.0.0")
@@ -62,16 +73,18 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
 @app.get("/mcp/tools")
 async def list_mcp_tools():
     """Expose la liste des outils pour le client MCP."""
-    return hermes_mcp_server.list_tools()
+    server = get_server()
+    return server.list_tools()
 
 @app.post("/mcp/call")
 async def call_mcp_tool(request: Dict[str, Any]):
     """Exécute un outil spécifique demandé par le client MCP."""
     tool_name = request.get("tool_name")
     arguments = request.get("arguments", {})
-    result = await hermes_mcp_server.call_tool(tool_name, arguments)
+    server = get_server()
+    result = await server.call_tool(tool_name, arguments)
     return result
 
 if __name__ == "__main__":
     # Lancement du serveur sur le port 8000
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)

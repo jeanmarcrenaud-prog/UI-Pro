@@ -29,10 +29,10 @@ test:
 	pytest tests/ -v
 
 test-cov:
-	pytest tests/ -v --cov=ui-pro --cov-report=term-missing --cov-report=html
+	pytest tests/ -v --cov=backend --cov-report=term-missing --cov-report=html
 
 clean:
-	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name __pycache__ -not -path '*/.venv/*' -not -path '*/node_modules/*' -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true
 	rm -rf .pytest_cache .mypy_cache htmlcov .coverage
 

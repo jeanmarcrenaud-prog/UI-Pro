@@ -25,7 +25,9 @@ export const CONNECTION_TIMEOUT = 8000 // 8s
 
 export const REQUEST_TIMEOUT = 30000 // 30s max wait for concurrent requests
 
-export const DEFAULT_MODEL = 'qwen3.5:9b'
+import { LLM_CONFIG } from '../lib/config'
+
+export const DEFAULT_MODEL = LLM_CONFIG.defaultModel
 export const DEFAULT_PROVIDER = 'ollama'
 
 export const MAX_HANDLERS = 10
