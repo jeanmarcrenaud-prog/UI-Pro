@@ -65,9 +65,8 @@ if (typeof crypto !== 'undefined' && !crypto.randomUUID) {
   }
 }
 
-// Configure process.env pour les tests
-process.env.NODE_ENV = 'test'
-
+// Configure process.env pour les tests — NODE_ENV is set to 'test' automatically by Jest
+// and is read-only in the DOM lib types (TS2540)
 // Configure React strict mode
 if (typeof window !== 'undefined') {
   // Assurez-vous que React fonctionne dans l'environnement de test

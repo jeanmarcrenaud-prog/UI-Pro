@@ -26,7 +26,7 @@ try:
     from backend.domain.core.editor_service import EditorService
     from backend.infrastructure.opencode_connector.manager import OpenCodeConnectorManager
     from backend.domain.core.action_executor import ActionExecutor
-    from backend.domain.core.models import EditorUpdate, HermesAction
+    from backend.infrastructure.opencode_connector.models import EditorUpdate, HermesAction
 except ImportError as e:
     logger.error(f"Erreur d'importation : {e}")
     logger.error(f"Chemin de recherche : {sys.path}")

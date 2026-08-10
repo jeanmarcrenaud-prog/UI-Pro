@@ -1,47 +1,28 @@
 import requests
-import sys
-import os
+import pytest
+
 
 def test_mcp_discovery():
-    # URL du serveur local
-    BASE_URL = "http://localhost:8000"
+    """Discover MCP tools exposed by the standalone Hermes MCP server (port 8001)."""
+    BASE_URL = "http://localhost:8001"
     TOOLS_ENDPOINT = f"{BASE_URL}/mcp/tools"
-    
-    print(f"--- Test de découverte MCP ---")
-    print(f"Tentative de connexion à : {TOOLS_ENDPOINT}")
-    
+
     try:
         response = requests.get(TOOLS_ENDPOINT, timeout=5)
-        print(f"Statut de la réponse : {response.status_code}")
-        
-        if response.status_code == 200:
-            tools = response.json()
-            print(f"Outils détectés ({len(tools)} au total) :")
-            for tool in tools:
-                print(f"  - {tool['name']} : {tool['description']}")
-            
-            # Vérification des outils critiques
-            critical_tools = ["execute_intent", "generate_plan", "get_opencode_status"]
-            missing = [t for t in critical_tools if t not in [tool['name'] for tool in tools]]
-            
-            if not missing:
-                print("\n✅ SUCCESS : Tous les outils critiques sont exposés.")
-                sys.exit(0)
-            else:
-                print(f"\n⚠️  WARNING : Les outils suivants sont manquants : {missing}")
-                sys.exit(1)
-        else:
-            print(f"❌ ERREUR : Le serveur a répondu avec le code {response.status_code}")
-            sys.exit(1)
-            
     except requests.exceptions.ConnectionError:
-        print("❌ ERREUR : Impossible de se connecter au serveur.")
-        print("Assurez-vous que le serveur backend tourne sur le port 8000.")
-        print("Commande : uvicorn backend.main:app --host 0.0.0.0 --port 8000")
-        sys.exit(1)
-    except Exception as e:
-        print(f"❌ ERREUR inattendue : {e}")
-        sys.exit(1)
+        pytest.skip("Hermes MCP server not running on port 8001 (start: python run.py --hermes)")
+
+    assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+
+    tools = response.json()
+    assert isinstance(tools, list), f"Expected a list of tools, got {type(tools)}"
+    assert len(tools) > 0, "MCP server exposed no tools"
+
+    # Verification of critical tools
+    tool_names = [tool["name"] for tool in tools]
+    critical_tools = ["execute_intent", "get_opencode_status", "read_file", "write_file", "chat"]
+    missing = [t for t in critical_tools if t not in tool_names]
+    assert not missing, f"Missing critical tools: {missing}"
 
 if __name__ == "__main__":
     test_mcp_discovery()

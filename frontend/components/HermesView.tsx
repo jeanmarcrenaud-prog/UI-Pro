@@ -31,7 +31,6 @@ async function fetchStatus(): Promise<HermesStatus> {
     return res.json()
   } catch (e: any) {
     throw new Error(e.message?.includes('fetch') ? 'Backend API not running. Start with: python run.py --api' : e.message)
-    throw new Error(e.message?.includes('fetch') ? 'Backend API not running. Start with: python run.py --api' : e.message)
   }
 }
 

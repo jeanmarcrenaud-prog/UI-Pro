@@ -3,7 +3,7 @@ import numpy as np
 import pyaudio
 import asyncio
 from typing import Optional, Callable, Awaitable
-from backend.domain.core.models import EditorUpdate
+
 
 logger = logging.getLogger(__name__)
 
