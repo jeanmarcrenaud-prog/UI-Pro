@@ -24,7 +24,9 @@ from scripts.launcher.tools import (
 
 # Port constants
 API_PORT = 8000
+API_PORT = 8000
 UI_PORT = 3000
+HERMES_PORT = 8001
 
 
 def check_services():
@@ -42,6 +44,12 @@ def check_services():
         print_success(f"Next.js UI ({UI_PORT}) - En cours d'exécution")
     else:
         print_warning(f"Next.js UI ({UI_PORT}) - Non lancé")
+
+    # Hermes MCP
+    if check_port(HERMES_PORT):
+        print_success(f"Hermes MCP ({HERMES_PORT}) - En cours d'exécution")
+    else:
+        print_warning(f"Hermes MCP ({HERMES_PORT}) - Non lancé")
 
     # LLM Backends (Ollama, LM Studio, Lemonade)
     backends = check_backends()
@@ -180,7 +188,9 @@ def start_all(auto_open: bool = True):
 
     # Auto-détection des ports libres
     API_PORT = find_free_port(8000)
+    API_PORT = find_free_port(8000)
     UI_PORT = find_free_port(3000)
+    HERMES_PORT = find_free_port(8001)
     if API_PORT != 8000:
         print_warning(f"Port 8000 déjà utilisé — API sur le port {API_PORT}")
     if UI_PORT != 3000:
@@ -220,6 +230,12 @@ def start_all(auto_open: bool = True):
         return
     print_success("FastAPI prêt")
 
+    # Start Hermes MCP server (standalone)
+    print_info("Démarrage Hermes MCP...")
+    hermes_thread = threading.Thread(target=start_hermes, daemon=True)
+    hermes_thread.start()
+    time.sleep(1)
+
     # Start Next.js UI
     print_info("Démarrage Next.js UI...")
     ui_thread = threading.Thread(target=start_ui, daemon=True)
@@ -232,6 +248,8 @@ def start_all(auto_open: bool = True):
     print(f"{Colors.GREEN}FastAPI:  http://localhost:{API_PORT}{Colors.RESET}")
     print(f"{Colors.GREEN}API Docs: http://localhost:{API_PORT}/docs{Colors.RESET}")
     print(f"{Colors.GREEN}Next.js:  http://localhost:{UI_PORT}{Colors.RESET}")
+    print(f"{Colors.GREEN}Hermes MCP:  http://localhost:{HERMES_PORT}{Colors.RESET}")
+    print(f"{Colors.GREEN}Hermes Tools: http://localhost:{HERMES_PORT}/mcp/tools{Colors.RESET}")
 
     if auto_open:
         print(f"\nOuvrir http://localhost:{UI_PORT} dans le navigateur...")
