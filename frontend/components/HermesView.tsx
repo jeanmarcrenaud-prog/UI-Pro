@@ -25,9 +25,14 @@ interface HermesStatus {
 const API_BASE = `${API_CONFIG.apiUrl || ''}/api/hermes`
 
 async function fetchStatus(): Promise<HermesStatus> {
-  const res = await fetch(`${API_BASE}/status`)
-  if (!res.ok) throw new Error('Failed to fetch Hermes status')
-  return res.json()
+  try {
+    const res = await fetch(`${API_BASE}/status`)
+    if (!res.ok) throw new Error(`Hermes API error (${res.status})`)
+    return res.json()
+  } catch (e: any) {
+    throw new Error(e.message?.includes('fetch') ? 'Backend API not running. Start with: python run.py --api' : e.message)
+    throw new Error(e.message?.includes('fetch') ? 'Backend API not running. Start with: python run.py --api' : e.message)
+  }
 }
 
 async function sendConversationStream(
