@@ -95,6 +95,7 @@ def check_dependencies() -> bool:
         ("faiss", "FAISS"),
         ("sentence_transformers", "SentenceTransformers"),
         ("requests", "requests"),
+        ("openai", "OpenAI"),
         ("pydantic", "Pydantic"),
         ("python-dotenv", "python-dotenv"),
     ]

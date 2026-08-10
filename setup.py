@@ -190,12 +190,21 @@ def check_node() -> bool:
     return False
 
 def check_services(skip_prompts: bool = False) -> bool:
-    """Check if LLM backends are running."""
+    """Check if LLM backends are running, including Hermes-specific endpoints."""
     print_step("Checking LLM backends...")
 
     ollama = check_port("localhost", 11434, "Ollama")
     lmstudio = check_port("localhost", 1234, "LM Studio")
     lemonade = check_port("localhost", 8080, "Lemonade")
+
+    # Check Hermes-specific LLM endpoint (LM Studio by default)
+    hermes_url = os.environ.get("HERMES_LLM_BASE_URL", "http://localhost:1234/v1")
+    if "1234" in hermes_url:
+        if lmstudio:
+            print_success(f"Hermes LLM endpoint: {hermes_url}")
+        else:
+            print_warning(f"Hermes LLM endpoint not reachable at {hermes_url}")
+            print_warning("Set HERMES_LLM_BASE_URL to override default")
 
     if not ollama and not lmstudio and not lemonade:
         print_warning("No LLM backend detected!")
