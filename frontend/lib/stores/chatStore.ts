@@ -52,6 +52,7 @@ interface ChatStore extends ChatState {
   togglePinChat: (id: string) => void
   addTagToChat: (id: string, tag: string) => void
   removeTagFromChat: (id: string, tag: string) => void
+  forkChat: (id: string) => void
   // Messages
   addMessage: (message: Message) => void
   updateLastMessage: (content: string, status?: Message['status']) => void

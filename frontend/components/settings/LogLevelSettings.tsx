@@ -10,11 +10,11 @@ export function LogLevelSettings() {
   const { currentLevel, availableLevels, isSaving, message, setLevel, saveLevel } = useLogLevel()
 
   const levelDesc: Record<string, string> = {
-    DEBUG: t.levelDescDebug,
-    INFO: t.levelDescInfo,
-    WARNING: t.levelDescWarning,
-    ERROR: t.levelDescError,
-    CRITICAL: t.levelDescCritical,
+    DEBUG: t.settings.levelDescDebug,
+    INFO: t.settings.levelDescInfo,
+    WARNING: t.settings.levelDescWarning,
+    ERROR: t.settings.levelDescError,
+    CRITICAL: t.settings.levelDescCritical,
   }
 
   return (

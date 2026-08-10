@@ -27,7 +27,6 @@ interface CanvasState {
   selectedNodeId: string | null
   collapsedNodes: string[]
   isRunning: boolean
-  isRunning: boolean
 
   // Approval status
   approvalStatus: 'PENDING' | 'APPROVED' | 'REJECTED' | null
@@ -48,11 +47,6 @@ interface CanvasState {
   setApprovalStatus: (status: 'PENDING' | 'APPROVED' | 'REJECTED', reason?: string) => void
   resetCanvas: () => void
   set: (partial: Partial<Omit<CanvasState, 'set' | 'setSteps' | 'updateStep' | 'addStep' | 'setCurrentStep' | 'setSelectedNode' | 'toggleCollapse' | 'setRunning' | 'setApprovalStatus' | 'resetCanvas' | 'markStepRunning' | 'markStepDone' | 'markStepError' | 'sendApprovalDecision'>>) => void
-  setRunning: (isRunning: boolean) => void
-  setRunning: (isRunning: boolean) => void
-  setApprovalStatus: (status: 'PENDING' | 'APPROVED' | 'REJECTED', reason?: string) => void
-  resetCanvas: () => void
-  set: (partial: Partial<Omit<CanvasState, 'set' | 'setSteps' | 'updateStep' | 'addStep' | 'setCurrentStep' | 'setSelectedNode' | 'setRunning' | 'setApprovalStatus' | 'resetCanvas' | 'markStepRunning' | 'markStepDone' | 'markStepError' | 'sendApprovalDecision'>>) => void
 
   // Helpers
   markStepRunning: (name: string) => void
@@ -69,7 +63,6 @@ export const useAgentCanvasStore = create<CanvasState>()(
         currentStep: null,
         selectedNodeId: null,
         collapsedNodes: [],
-        isRunning: false,
         isRunning: false,
         approvalStatus: null,
         approvalReason: undefined,
@@ -101,7 +94,6 @@ export const useAgentCanvasStore = create<CanvasState>()(
           })),
         setRunning: (isRunning) => set({ isRunning }),
 
-        setRunning: (isRunning) => set({ isRunning }),
 
         setApprovalStatus: (status, reason) =>
           set({ approvalStatus: status, approvalReason: reason }),
@@ -141,8 +133,6 @@ export const useAgentCanvasStore = create<CanvasState>()(
             currentStep: null,
             selectedNodeId: null,
             collapsedNodes: [],
-            isRunning: false,
-            isRunning: false,
             isRunning: false,
             approvalStatus: null,
             approvalReason: undefined,

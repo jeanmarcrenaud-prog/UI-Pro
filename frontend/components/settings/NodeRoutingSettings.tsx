@@ -56,24 +56,28 @@ export function NodeRoutingSettings() {
             tier="fast"
             model={models.fast}
             current={routing.analyzing_node}
+            unsetLabel={t.settings.routingUnset}
           />
           <RoutingRow
             label={t.settings.routingLabelPlan}
             tier="reasoning"
             model={models.reasoning}
             current={routing.planning_node}
+            unsetLabel={t.settings.routingUnset}
           />
           <RoutingRow
             label={t.settings.routingLabelCode}
             tier="reasoning"
             model={models.reasoning}
             current={routing.coding_node}
+            unsetLabel={t.settings.routingUnset}
           />
           <RoutingRow
             label={t.settings.routingLabelReview}
             tier="reasoning"
             model={models.reasoning}
             current={routing.reviewing_node}
+            unsetLabel={t.settings.routingUnset}
           />
         </div>
       )}
@@ -102,11 +106,13 @@ function RoutingRow({
   tier,
   model,
   current,
+  unsetLabel,
 }: {
   label: string
   tier: string
   model: string
   current: string
+  unsetLabel: string
 }) {
   return (
     <div className="flex items-center justify-between text-[10px] gap-2">
@@ -122,8 +128,8 @@ function RoutingRow({
           {current}
         </span>
       </div>
-      <span className="text-slate-500 font-mono truncate text-right" title={model || t.settings.routingUnset}>
-        {model || t.settings.routingUnset}
+      <span className="text-slate-500 font-mono truncate text-right" title={model || unsetLabel}>
+        {model || unsetLabel}
       </span>
     </div>
   )
