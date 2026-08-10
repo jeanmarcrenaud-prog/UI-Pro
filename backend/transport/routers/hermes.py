@@ -77,7 +77,13 @@ async def conversation_stream(req: ConversationRequest):
     server = get_server()
 
     async def event_stream():
-        async for token in server.stream_chat(req.message):
-            yield f"data: {token}\n\n"
+        try:
+            async for token in server.stream_chat(req.message):
+                # Escape any newlines in token to preserve SSE format
+                safe_token = token.replace("\n", "\\n")
+                yield f"data: {safe_token}\n\n"
+        except Exception as e:
+            logger.exception("Hermes stream failed")
+            yield f"data: [ERROR] {e}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")

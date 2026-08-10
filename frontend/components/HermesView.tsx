@@ -55,14 +55,14 @@ async function sendConversationStream(
       for (const line of chunk.split('\n\n')) {
         const match = line.match(/^data:\s(.*)$/)
         if (match) {
-          onToken(match[1])
+          const token = match[1]
+          // Detect SSE error events from server
+          if (token.startsWith('[ERROR] ')) {
+            throw new Error(token.replace('[ERROR] ', ''))
+          }
+          onToken(token)
         }
       }
-    }
-  } finally {
-    reader.releaseLock()
-  }
-}
 
 // ─── Component ───────────────────────────────────
 
@@ -76,6 +76,7 @@ export function HermesView() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
+  const [chatConnecting, setChatConnecting] = useState(false)
 
   const chatEndRef = useRef<HTMLDivElement>(null)
 
@@ -108,12 +109,16 @@ export function HermesView() {
     setMessages((prev) => [...prev, { role: 'user', content: msg }])
     setInput('')
     setChatLoading(true)
+    setChatConnecting(true)
 
     // Add empty assistant message for streaming
     setMessages((prev) => [...prev, { role: 'assistant', content: '' }])
 
     try {
       await sendConversationStream(msg, (token) => {
+        // Clear connecting state on first token
+        setChatConnecting(false)
+        setMessages((prev) => {
         setMessages((prev) => {
           const last = prev[prev.length - 1]
           if (last && last.role === 'assistant') {
@@ -130,7 +135,8 @@ export function HermesView() {
       ])
     } finally {
       setChatLoading(false)
-    }
+      setChatConnecting(false)
+  }, [input, chatLoading, chatConnecting])
   }, [input, chatLoading])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -255,6 +261,21 @@ export function HermesView() {
             </div>
           ))}
           {chatLoading && (
+            <div className="flex justify-start">
+              {chatConnecting && (
+                <div className="bg-[var(--surface-secondary)] rounded-2xl rounded-bl-md px-4 py-2.5 text-sm text-[var(--text-muted)]">
+                  Connecting to Hermes...
+                </div>
+              )
+              <div className="bg-[var(--surface-secondary)] rounded-2xl rounded-bl-md px-4 py-2.5 text-sm">
+                <span className="inline-flex gap-1">
+                  <span className="animate-bounce">.</span>
+                  <span className="animate-bounce" style={{ animationDelay: '0.1s' }}>.</span>
+                  <span className="animate-bounce" style={{ animationDelay: '0.2s' }}>.</span>
+                </span>
+              </div>
+            </div>
+          )
             <div className="flex justify-start">
               <div className="bg-[var(--surface-secondary)] rounded-2xl rounded-bl-md px-4 py-2.5 text-sm">
                 <span className="inline-flex gap-1">

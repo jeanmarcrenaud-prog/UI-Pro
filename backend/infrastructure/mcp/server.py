@@ -14,6 +14,30 @@ from backend.infrastructure.opencode_connector.manager import OpenCodeConnectorM
 logger = logging.getLogger(__name__)
 
 
+# ─── Shared Prompts ───────────────────────────────────
+
+_SYSTEM_PROMPT_BASE = (
+    "You are Hermes, the intelligence engine of UI-Pro. "
+    "You run locally and CAN execute tasks on this machine. "
+)
+
+_SYSTEM_PROMPT_SUFFIX = (
+    "When the user asks you to do something, use a tool. "
+    "To call a tool, write on its own line:\n"
+    "<|tool_call>call:TOOL_NAME{\"arg1\": \"value1\"}<tool_call|>\n"
+    "Example: <|tool_call>call:execute_intent{\"intent\": \"launch msedge.exe\"}<tool_call|>\n"
+    "If the command is simple (like launching an app), use execute_intent. "
+    "Answer clearly and concisely in the language the user speaks."
+)
+
+
+def _build_system_prompt(tool_names: List[str]) -> str:
+    """Build the system prompt with the list of available tools."""
+    return (
+        _SYSTEM_PROMPT_BASE
+        + f"Available tools: {', '.join(tool_names)}. "
+        + _SYSTEM_PROMPT_SUFFIX
+    )
 class HermesMCPServer:
     """
     Serveur MCP (Model Context Protocol) pour Hermes.
@@ -172,17 +196,7 @@ class HermesMCPServer:
         try:
             tool_names = [t["name"] for t in self.list_tools() if t["name"] != "chat"]
 
-            system_prompt = (
-                "You are Hermes, the intelligence engine of UI-Pro. "
-                "You run locally and CAN execute tasks on this machine. "
-                f"Available tools: {', '.join(tool_names)}. "
-                "When the user asks you to do something, use a tool. "
-                "To call a tool, write on its own line:\n"
-                "<|tool_call>call:TOOL_NAME{\"arg1\": \"value1\"}<tool_call|>\n"
-                "Example: <|tool_call>call:execute_intent{\"intent\": \"launch msedge.exe\"}<tool_call|>\n"
-                "If the command is simple (like launching an app), use execute_intent. "
-                "Answer clearly and concisely in the language the user speaks."
-            )
+            system_prompt = _build_system_prompt(tool_names)
 
             messages: List[Dict[str, Any]] = [
                 {"role": "system", "content": system_prompt},
@@ -232,17 +246,7 @@ class HermesMCPServer:
         try:
             tool_names = [t["name"] for t in self.list_tools() if t["name"] != "chat"]
 
-            system_prompt = (
-                "You are Hermes, the intelligence engine of UI-Pro. "
-                "You run locally and CAN execute tasks on this machine. "
-                f"Available tools: {', '.join(tool_names)}. "
-                "When the user asks you to do something, use a tool. "
-                "To call a tool, write on its own line:\n"
-                "<|tool_call>call:TOOL_NAME{\"arg1\": \"value1\"}<tool_call|>\n"
-                "Example: <|tool_call>call:execute_intent{\"intent\": \"launch msedge.exe\"}<tool_call|>\n"
-                "If the command is simple (like launching an app), use execute_intent. "
-                "Answer clearly and concisely in the language the user speaks."
-            )
+            system_prompt = _build_system_prompt(tool_names)
 
             messages: List[Dict[str, Any]] = [
                 {"role": "system", "content": system_prompt},
@@ -337,7 +341,7 @@ def _parse_kv(raw: str, sep: str = ":") -> dict:
 
 
 def build_followup_messages(original_text, func_name, func_args, result):
-    result_content = result.get("content", str(result))
+    result_content = result.get("content", str(result)) if isinstance(result, dict) else str(result)
     return [{
         "role": "system",
         "content": (

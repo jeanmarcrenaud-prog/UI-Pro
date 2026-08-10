@@ -1,0 +1,79 @@
+# Hermes Configuration File
+# This file contains the global settings for the Hermes ecosystem.
+# Copy to backend/config.yaml and customize for your environment.
+
+# General Settings
+version: "1.0.0"
+environment: "development" # options: development, staging, production
+debug: true
+
+# Model Configuration
+# Primary LLM for Hermes Agent
+llm:
+  provider: lmstudio
+  model: google/gemma-4-12b-qat
+  base_url: http://127.0.0.1:1234/v1
+  context_length: 131072
+  temperature: 0.7
+  max_tokens: 4096
+
+# OpenCode Connector Configuration (WebSocket)
+# This connects Hermes to the OpenCode extension for advanced coding tasks.
+opencode:
+  enabled: true
+  ws_url: "ws://localhost:8080"
+  api_key: "your_opencode_api_key_here" # To be filled by user
+  default_model: "google/gemma-4-12b-qat"
+  timeout: 300
+  max_retries: 3
+  # Path to the OpenCode CLI binary if needed for fallback
+  cli_path: "opencode"
+
+# MCP Servers
+mcp_servers:
+  cua_driver:
+    command: "cua-driver"
+    args:
+      - mcp
+  # Add other MCP servers here
+  # opencode:
+  #   command: "opencode"
+  #   args: ["run", "--format", "json"]
+
+# UI & Display Settings
+display:
+  skin: "default"
+  personality: "technical"
+  show_reasoning: true
+  interim_assistant_messages: true
+  busy_input_mode: "interrupt"
+  bell_on_complete: false
+
+# Memory Settings
+memory:
+  enabled: true
+  user_profile_enabled: true
+  memory_char_limit: 2200
+  user_char_limit: 1375
+  nudge_interval: 10
+  flush_min_turns: 6
+
+# WhatsApp & Social
+whatsapp:
+  enabled: false
+  bridge_port: 3001
+  allowed_users: []
+
+# Security
+security:
+  redact_secrets: true
+  tirith_enabled: true
+  tirith_path: "tirith"
+  tirith_timeout: 5
+  tirith_fail_open: true
+
+# Development / Debug
+dev:
+  hot_reload: true
+  log_level: "DEBUG"
+  port: 8000

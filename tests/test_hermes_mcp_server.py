@@ -7,7 +7,8 @@ from backend.infrastructure.mcp.server import (
     _parse_kv,
     build_followup_messages,
     get_server,
-)
+    _build_system_prompt,
+ )
 
 
 class TestParseToolCallTag:
@@ -103,7 +104,14 @@ class TestBuildFollowupMessages:
         assert "write_file" in messages[0]["content"]
         assert "File created successfully" in messages[0]["content"]
 
-    def test_build_followup_with_missing_content(self):
+    def test_build_followup_with_non_dict_result(self):
+        """Should convert non-dict result to string (no crash)."""
+        result = "Some string result"
+        messages = build_followup_messages(
+            "original text", "execute_intent", {"intent": "test"}, result
+        )
+        assert len(messages) == 1
+        assert "Some string result" in messages[0]["content"]
         """Should fall back to string representation when result lacks 'content'."""
         result = {"status": "unknown"}
         messages = build_followup_messages(
@@ -121,6 +129,27 @@ class TestBuildFollowupMessages:
         assert "read_file" in messages[0]["content"]
         assert "hello.py" in messages[0]["content"]
 
+
+class TestBuildSystemPrompt:
+    """Tests for the _build_system_prompt helper."""
+
+    def test_prompt_contains_base_text(self):
+        """Should include the base identity text."""
+
+        prompt = _build_system_prompt(["read_file"])
+        assert "Hermes, the intelligence engine" in prompt
+        assert "run locally" in prompt
+
+    def test_prompt_includes_tool_names(self):
+        """Should list available tools."""
+        prompt = _build_system_prompt(["read_file", "write_file"])
+        assert "read_file" in prompt
+        assert "write_file" in prompt
+
+    def test_prompt_excludes_chat_tool(self):
+        """Chat tool should not appear in available tools list (excluded by caller)."""
+        prompt = _build_system_prompt(["execute_intent"])
+        assert "chat" not in prompt
 
 class TestHermesMCPServerTools:
     """Tests for HermesMCPServer tool listing and resources."""

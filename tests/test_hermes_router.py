@@ -182,6 +182,30 @@ class TestHermesConversationStream:
 
             assert call_args == ["What is AI?"]
 
+    def test_stream_handles_errors_gracefully(self, hermes_client):
+        """Stream endpoint should yield SSE error event on exception."""
+        with patch("backend.transport.routers.hermes.get_server") as mock_get_server:
+            mock_server = MagicMock()
+
+            async def mock_stream(message):
+                yield "partial"
+                raise RuntimeError("LLM connection dropped")
+
+            mock_server.stream_chat = mock_stream
+            mock_get_server.return_value = mock_server
+
+            response = hermes_client.post(
+                "/api/hermes/conversation/stream",
+                json={"message": "Hello"}
+            )
+
+            assert response.status_code == 200
+            assert "text/event-stream" in response.headers["content-type"]
+            content = response.content.decode()
+            assert "data: partial" in content
+            assert "[ERROR]" in content
+            assert "LLM connection dropped" in content
+
 
 class TestToolEndpoint:
     """Tests for POST /api/hermes/tool."""
