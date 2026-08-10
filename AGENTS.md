@@ -18,3 +18,20 @@ Ce projet est une application complète comprenant un frontend, un backend et de
 - Toujours vérifier les dépendances dans `requirements.txt` avant de suggérer des bibliothèques.
 - Utiliser le `Makefile` pour exécuter les commandes de build ou de test standard si elles existent.
 - Lors de la création de nouveaux fichiers, respecter la structure existante des répertoires `/frontend` et `/backend`.
+
+# Architecture Backend (FastAPI Dual-App)
+
+Le backend dispose de **deux serveurs FastAPI** indépendants :
+
+| App | Entry Point | Port | Rôle |
+|---|---|---|---|
+| **Hermes MCP** (standalone) | `backend.main:app` | 8001 | Serveur MCP minimal — liste d'outils, appel d'outils, WebSocket bridge |
+| **UI-Pro API** (complet) | `backend.transport.main:app` | 8000 | API complète — LangGraph orchestrator, streaming, code sandbox, FAISS memory |
+
+### Lancement
+```bash
+python run.py --api       # UI-Pro API (FastAPI sur :8000)
+python run.py --hermes    # Hermes MCP standalone (sur :8001)
+python run.py --all     # Tous les services (API + UI)
+```
+| 

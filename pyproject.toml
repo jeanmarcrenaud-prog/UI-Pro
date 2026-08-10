@@ -27,6 +27,9 @@ dependencies = [
     "pytest-mock>=3",
     "langgraph>=1.0.0",
     "langgraph-checkpoint-sqlite>=1.0.0",
+    "langgraph>=1.0.0",
+    "langgraph-checkpoint-sqlite>=1.0.0",
+    "openai>=1.50.0",
 ]
 
 [project.optional-dependencies]

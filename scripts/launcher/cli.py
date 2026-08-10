@@ -8,6 +8,11 @@ from scripts.launcher.services import (
     start_all,
     start_api,
     start_ui,
+    start_hermes,
+    run_tests,
+    start_all,
+    start_api,
+    start_ui,
 )
 
 
@@ -19,6 +24,7 @@ def main():
 Exemples:
   python run.py             Lance tous les services
   python run.py --api         FastAPI uniquement
+  python run.py --hermes      Hermes MCP standalone
   python run.py --ui          Next.js UI uniquement
   python run.py --status      Vér status
   python run.py --check        Vérifie dépendances
@@ -29,6 +35,7 @@ Exemples:
 
     parser.add_argument("--api", action="store_true", help="Lance FastAPI")
     parser.add_argument("--ui", action="store_true", help="Lance Next.js UI")
+    parser.add_argument("--hermes", action="store_true", help="Lance Hermes MCP standalone")
     parser.add_argument("--all", action="store_true", help="Lance tous les services")
     parser.add_argument("--status", action="store_true", help="Vér status")
     parser.add_argument("--check", action="store_true", help="Vérifie dépendances")
@@ -44,7 +51,7 @@ Exemples:
 
     # Default: show status
     if not any(
-        [args.api, args.ui, args.all, args.status, args.check, args.prereq, args.test]
+        [args.api, args.ui, args.hermes, args.all, args.status, args.check, args.prereq, args.test]
     ):
         args.all = True
 
@@ -63,6 +70,9 @@ Exemples:
 
     elif args.ui:
         start_ui()
+
+    elif args.hermes:
+        start_hermes()
 
     elif args.all:
         start_all(auto_open=not args.no_open)

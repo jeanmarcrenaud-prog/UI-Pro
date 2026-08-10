@@ -109,6 +109,37 @@ def start_api(block: bool = True):
     )
 
 
+HERMES_PORT = 8001
+
+
+def start_hermes(block: bool = True):
+    """Lance le serveur Hermes MCP en standalone."""
+    global HERMES_PORT
+    HERMES_PORT = find_free_port(8001)
+    original = 8001
+
+    if HERMES_PORT != original:
+        print_warning(f"Port {original} déjà utilisé — Hermes sur le port {HERMES_PORT}")
+
+    print_header("Lancement Hermes MCP (standalone)")
+    print(f"{Colors.GREEN}→ http://localhost:{HERMES_PORT}")
+    print(f"{Colors.GREEN}→ http://localhost:{HERMES_PORT}/mcp/tools")
+
+    python_exe = _resolve_python()
+    subprocess.run(
+        [
+            python_exe,
+            "-m",
+            "uvicorn",
+            "backend.main:app",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            str(HERMES_PORT),
+        ]
+    )
+
+
 def start_ui():
     """Lance Next.js UI avec auto-détection du port."""
     global UI_PORT
