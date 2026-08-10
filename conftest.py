@@ -13,6 +13,12 @@ import pytest
 # Import project modules for testing
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# Disable rate limiting for ALL tests, before any app import. The app is a
+# module-level singleton that reads RATE_LIMIT_ENABLED at import time; setting
+# this per-test-file is racy (whichever file imports first wins) and causes
+# spurious 429 failures when test_api.py runs before test_mario.py.
+os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
+
 # Import only what conftest needs
 
 # =========================================

@@ -35,7 +35,7 @@ filesystem_service = FilesystemService()
 editor_service = EditorService(state_store, filesystem_service)
 
 # 3. Connecteur OpenCode
-connector_manager = OpenCodeConnectorManager(editor_service, None)
+connector_manager = OpenCodeConnectorManager()
 
 # 4. Intelligence & Planning
 # On initialise le service d'intelligence avec les composants requis

@@ -151,6 +151,63 @@ async def health_check():
     }
 
 
+# ====================== Version endpoint ======================
+
+
+@router.get("/api/version")
+def version_endpoint():
+    """Return UI-Pro and FastAPI version info.
+
+    Useful for diagnostics, deployment verification, and the frontend
+    "About" panel. Reports the pinned UI-Pro version, the running
+    FastAPI version, the Python version, and a per-component presence
+    map so the UI can show capabilities (e.g. \"GPU monitoring: yes\").
+    """
+    import platform
+    import sys
+
+    try:
+        import fastapi
+
+        fastapi_version = fastapi.__version__
+    except Exception:
+        fastapi_version = "unknown"
+
+    try:
+        import langgraph
+
+        langgraph_version = langgraph.__version__
+    except Exception:
+        langgraph_version = "unknown"
+
+    # Optional native deps — True/False per module, never raise.
+    capabilities: dict[str, bool] = {}
+    for mod in ("faiss", "aiosqlite", "pynvml", "sentence_transformers"):
+        try:
+            __import__(mod)
+            capabilities[mod] = True
+        except Exception:
+            capabilities[mod] = False
+
+    return {
+        "ui_pro_version": getattr(settings, "version", "1.0.0"),
+        "fastapi_version": fastapi_version,
+        "langgraph_version": langgraph_version,
+        "python_version": sys.version.split()[0],
+        "platform": platform.platform(),
+        "capabilities": capabilities,
+    }
+
+
+@router.get("/")
+async def home():
+    """API root — lightweight service banner."""
+    return {
+        "service": "UI-Pro",
+        "message": "UI-Pro API",
+        "docs": "/docs",
+    }
+
 @router.get("/health/deep")
 async def health_check_deep():
     """Deep health check: dependencies + backends + GPU + Ollama version.

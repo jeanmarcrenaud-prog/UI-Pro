@@ -27,7 +27,7 @@ from backend.domain.core.langgraph.llm_wrapper import (
     LLMWrapper,
     _resolve_provider_for_model,
 )
-from backend.domain.core.langgraph import nodes as langgraph_nodes
+from backend.domain.core.langgraph.nodes import _base as langgraph_nodes
 
 
 # ========================================

@@ -1,45 +1,52 @@
-import asyncio
-import logging
-import unittest
-from backend.domain.core.editor_state import EditorStateStore
-from backend.domain.core.editor_service import EditorService
-from backend.infrastructure.opencode_connector.manager import OpenCodeConnectorManager
+"""
+test_send_action.py - Tests for sending tasks through the OpenCode connector.
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+The legacy ``send_action`` / ``start`` / ``stop`` API was replaced by the
+task-runner API (``run_task``). These tests verify the current contract.
+"""
+
+import asyncio
+import unittest
+from unittest.mock import AsyncMock, MagicMock
+
+from backend.infrastructure.opencode_connector.manager import (
+    OpenCodeConnectorManager,
+    OpenCodeClient,
+    OpenCodeResponse,
+)
+
 
 class TestSendActionFlow(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.state_store = EditorStateStore()
-        self.editor_service = EditorService(self.state_store)
-        
-        # Utilisation de l'URL locale par défaut
         self.manager = OpenCodeConnectorManager(
-            uri="ws://localhost:8765",
-            state_store=self.state_store,
-            editor_service=self.editor_service
+            ws_url="ws://localhost:8765", api_key="key", model_id="model"
         )
-        self.manager.set_editor_update_callback(lambda x: None)
-        await self.manager.start()
+        self.fake_client = MagicMock(spec=OpenCodeClient)
+        self.fake_client.is_running = True
+        self.fake_client.send_request = AsyncMock(
+            return_value=OpenCodeResponse(type="text", content="ack")
+        )
+        self.manager.client = self.fake_client
 
     async def test_send_simple_action(self):
-        """Vérifie que l'envoi d'une action vers le connecteur fonctionne."""
-        # On tente d'envoyer une action d'insertion de code
-        # Cette action doit être formatée par l'ActionExecutor avant d'être envoyée
-        action_type = "insert_code"
-        params = {
-            "line": 5,
-            "column": 0,
-            "text": "print('Hello from Hermes!')"
-        }
-        
-        logger.info(f"Tentative d'envoi de l'action : {action_type}")
-        await self.manager.send_action(action_type, params)
-        # Si le script n'échoue pas, l'appel a réussi à traverser le manager
-        logger.info("L'appel send_action a réussi sans erreur.")
+        """run_task forwards the prompt to the client and returns its content."""
+        result = await self.manager.run_task("insert print('Hello from Hermes!')")
+        self.assertEqual(result, "ack")
+        self.fake_client.send_request.assert_awaited_once()
 
-    async def asyncTearDown(self):
-        await self.manager.stop()
+    async def test_run_task_with_step_finish_prefixes_success(self):
+        """step_finish responses are surfaced as SUCCESS: <content>."""
+        self.fake_client.send_request = AsyncMock(
+            return_value=OpenCodeResponse(type="step_finish", content="Done")
+        )
+        result = await self.manager.run_task("do something")
+        self.assertEqual(result, "SUCCESS: Done")
+
+    async def test_shutdown_closes_client(self):
+        """shutdown closes the underlying client."""
+        await self.manager.shutdown()
+        self.fake_client.close.assert_awaited_once()
+
 
 if __name__ == "__main__":
     unittest.main()

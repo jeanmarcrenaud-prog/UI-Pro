@@ -29,7 +29,7 @@ class OpenCodeClient:
         try:
             self.ws = await websockets.connect(
                 self.ws_url,
-                extra_headers={"Authorization": f"Bearer {self.api_key}"}
+                additional_headers={"Authorization": f"Bearer {self.api_key}"}
             )
             self.is_running = True
             logger.info(f"Connected to OpenCode at {self.ws_url}")

@@ -1,66 +1,73 @@
-import unittest
-import asyncio
-import logging
-from backend.domain.core.editor_state import EditorStateStore
-from backend.domain.core.editor_service import EditorService
-from backend.infrastructure.opencode_connector.manager import OpenCodeConnectorManager
+"""
+test_streaming_verification.py - Tests for the OpenCode connector streaming flow.
 
-# Configuration du logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+The connector was rewritten from an editor-state-sync WebSocket protocol
+to a task-runner API (``run_task`` / ``get_recent_notifications``). These
+tests verify that flow and its graceful fallback when the backend is down.
+"""
+
+import asyncio
+import unittest
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from backend.infrastructure.opencode_connector.manager import (
+    OpenCodeConnectorManager,
+    OpenCodeClient,
+    OpenCodeResponse,
+)
+
 
 class TestStreamingVerification(unittest.IsolatedAsyncioTestCase):
-    async def asyncSetUp(self):
-        # Initialisation des composants
-        self.state_store = EditorStateStore()
-        self.editor_service = EditorService(self.state_store)
-        
-        # Mocking du manager
-        self.manager = OpenCodeConnectorManager(
-            uri="ws://localhost:8080",
-            state_store=self.state_store,
-            editor_service=self.editor_service
+    async def test_run_task_returns_success_when_client_responds(self):
+        """run_task returns SUCCESS: payload for a step_finish response."""
+        manager = OpenCodeConnectorManager(
+            ws_url="ws://localhost:8080", api_key="key", model_id="model"
         )
-        self.manager.on_editor_update_callback = lambda x: None
+        fake_client = MagicMock(spec=OpenCodeClient)
+        fake_client.is_running = True
+        fake_client.send_request = AsyncMock(
+            return_value=OpenCodeResponse(type="step_finish", content="Done!")
+        )
+        manager.client = fake_client
 
-    def test_terminal_streaming_flow(self):
-        """Vérifie que le flux du terminal met à jour le store et le service."""
-        mock_update = {
-            "active_file": {"path": "main.py"},
-            "cursor": {"line": 1, "column": 0},
-            "selection": None,
-            "diagnostics": [],
-            "terminal": {"output": "Compiling... Success!"},
-            "git": {}
-        }
-        
-        self.manager._handle_update(mock_update)
-        
-        state = self.state_store.get_state()
-        self.assertEqual(state.terminal_output, "Compiling... Success!")
-        self.assertEqual(state.active_file.path, "main.py")
-        
-        service_state = self.editor_service.get_editor_state()
-        self.assertEqual(service_state.terminal_output, "Compiling... Success!")
+        result = await manager.run_task("write tests")
 
-    def test_editor_update_flow(self):
-        """Vérifie que le curseur et les diagnostics sont mis à jour."""
-        mock_update = {
-            "active_file": {"path": "test.py"},
-            "cursor": {"line": 10, "column": 5},
-            "selection": {"start_line": 9, "start_col": 0, "end_line": 9, "end_col": 10},
-            "diagnostics": [{"line": 10, "message": "Syntax Error"}],
-            "terminal": {"output": ""},
-            "git": {}
-        }
-        
-        self.manager._handle_update(mock_update)
-        
-        state = self.state_store.get_state()
-        self.assertEqual(state.cursor.line, 10)
-        self.assertEqual(state.cursor.column, 5)
-        self.assertEqual(len(state.diagnostics), 1)
-        self.assertEqual(state.diagnostics[0].message, "Syntax Error")
+        self.assertEqual(result, "SUCCESS: Done!")
+        fake_client.send_request.assert_awaited_once_with("write tests")
+
+    async def test_run_task_falls_back_when_client_not_running(self):
+        """A disconnected client must not raise — it degrades to an ERROR string."""
+        manager = OpenCodeConnectorManager(
+            ws_url="ws://localhost:8080", api_key="key", model_id="model"
+        )
+        fake_client = MagicMock(spec=OpenCodeClient)
+        fake_client.is_running = False
+        manager.client = fake_client
+
+        result = await manager.run_task("write tests")
+
+        self.assertTrue(result.startswith("ERROR:"), f"Unexpected result: {result}")
+
+    async def test_get_client_is_lazy_and_falls_back_on_connect_error(self):
+        """get_client should not raise when the WebSocket cannot be reached."""
+        manager = OpenCodeConnectorManager(
+            ws_url="ws://localhost:1", api_key="key", model_id="model"
+        )
+        with patch.object(
+            OpenCodeClient, "connect", new=AsyncMock(side_effect=ConnectionError("down"))
+        ):
+            client = await manager.get_client()
+        self.assertIsNotNone(client)
+
+    def test_get_recent_notifications_returns_list(self):
+        """The notifications feed returns a structured list."""
+        manager = OpenCodeConnectorManager()
+        notifications = manager.get_recent_notifications(limit=10)
+        self.assertIsInstance(notifications, list)
+        for n in notifications:
+            self.assertIn("type", n)
+            self.assertIn("content", n)
+
 
 if __name__ == "__main__":
     unittest.main()

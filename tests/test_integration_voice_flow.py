@@ -17,6 +17,8 @@ class TestVoiceFlow(unittest.TestCase):
     def setUp(self):
         # Mock du connecteur
         self.mock_connector = MagicMock(spec=OpenCodeConnectorManager)
+        self.mock_connector.run_task = AsyncMock(return_value=
+            "SUCCESS: Bonjour!")
         self.mock_connector.run = AsyncMock(return_value={
             "success": True, "response": "Bonjour!", "session_id": "ses_test_001"
         })
@@ -28,15 +30,15 @@ class TestVoiceFlow(unittest.TestCase):
             "selection": None
         }
         
-        self.executor = ActionExecutor(self.mock_editor_service)
+        self.executor = ActionExecutor(self.mock_editor_service, MagicMock())
         
         # Mock Planner pour des intentions complexes (Délégation)
-        self.mock_planner_complex = MagicMock()
+        self.mock_planner_complex = AsyncMock()
         self.mock_planner_complex.generate_plan.side_effect = lambda intent, state: [
             DelegateAction(task=intent, status="delegated")
         ]
 
-        self.mock_planner_simple = MagicMock()
+        self.mock_planner_simple = AsyncMock()
         self.mock_planner_simple.generate_plan.side_effect = lambda intent, state: [
             HermesAction(action_type="insert_code", params={"content": "print('hello')"})
         ]
@@ -75,7 +77,7 @@ class TestVoiceFlow(unittest.TestCase):
         state = EditorState(cursor=Cursor(line=10, column=5))
         actions = self.run_async(intelligence.process_voice_command("Explique le code", state))
         
-        self.mock_connector.run.assert_called_once_with("Explique le code", "workspace")
+        self.mock_connector.run_task.assert_called_once_with("Explique le code")
         self.assertEqual(len(actions), 1)
         self.assertEqual(actions[0].action_type, "opencode_delegate")
         self.assertEqual(actions[0].status, "success")

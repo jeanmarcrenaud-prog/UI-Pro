@@ -21,6 +21,7 @@ from typing import Any, Literal
 
 from backend.domain.settings import settings
 
+from backend.infrastructure.llm.errors import LLMBackendError
 from ..state import AgentState, PlanData, ReviewData
 
 from ._base import (
@@ -361,7 +362,32 @@ async def reviewing_node(state: AgentState) -> dict[str, Any]:
             "[reviewing_node] LLM response: %s",
             full_response[:200] if full_response else "EMPTY",
         )
-    except (asyncio.TimeoutError, TimeoutError) as exc:
+    except (asyncio.TimeoutError, TimeoutError, LLMBackendError) as exc:
+        logger.warning(
+            "[reviewing_node] LLM review failed — fallback review: %s",
+            exc,
+        )
+        if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
+            _emit_step("reviewing", f"⏱️ LLM timeout — fallback review")
+            _issue = f"LLM review timed out after {settings.llm_timeout}s. "
+        else:
+            _emit_step("reviewing", f"⚠️ LLM backend error — fallback review")
+            _issue = "LLM backend unavailable (review was not performed). "
+        fallback: ReviewData = {
+            "passed": False,
+            "score": 0.0,
+            "issues": [
+                _issue,
+                "The code was not reviewed."
+            ],
+            "suggestions": [
+                "Try a faster model",
+                "Increase LLM_TIMEOUT in Settings",
+                "Simplify the generated code",
+            ],
+            "issue_severities": ["medium"],
+        }
+        state["review"] = fallback
         logger.warning(
             "[reviewing_node] LLM call failed after %ss — fallback review",
             settings.llm_timeout,
@@ -371,7 +397,7 @@ async def reviewing_node(state: AgentState) -> dict[str, Any]:
             "passed": False,
             "score": 0.0,
             "issues": [
-                f"LLM review timed out after {settings.llm_timeout}s. "
+                f"LLM review timed out after {settings.llm_timeout}s. ",
                 "The code was not reviewed."
             ],
             "suggestions": [

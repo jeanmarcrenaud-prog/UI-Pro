@@ -1,120 +1,84 @@
+"""
+test_integration_opencode.py - Integration test for the OpenCode connector.
+
+Covers the current task-runner contract: ``get_client`` lazy init,
+``run_task`` round-trip through a live WebSocket mock, and graceful
+fallback when the backend is unavailable.
+"""
+
 import asyncio
 import json
 import logging
-import threading
-import time
 import unittest
-import sys
-import os
 
-# Configuration du logging
-logging.basicConfig(level=logging.INFO)
+import websockets
+
+from backend.infrastructure.opencode_connector.manager import OpenCodeConnectorManager
+
 logger = logging.getLogger("integration_test")
 
-# Correction robuste du PYTHONPATH
-# On remonte jusqu'à la racine du projet (où se trouve le dossier 'backend')
-current_file = os.path.abspath(__file__)
-current_dir = os.path.dirname(current_file)
-# On remonte de 2 niveaux (tests -> ui-pro)
-project_root = os.path.abspath(os.path.join(current_dir, "..", ".."))
+MOCK_HOST = "127.0.0.1"
+MOCK_PORT = 8766  # keep clear of the real API (8000) and other mocks (8765)
+MOCK_URI = f"ws://{MOCK_HOST}:{MOCK_PORT}"
 
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
 
-try:
-    from backend.domain.core.editor_state import EditorStateStore
-    from backend.domain.core.editor_service import EditorService
-    from backend.infrastructure.opencode_connector.manager import OpenCodeConnectorManager
-    from backend.domain.core.action_executor import ActionExecutor
-    from backend.infrastructure.opencode_connector.models import EditorUpdate, HermesAction
-except ImportError as e:
-    logger.error(f"Erreur d'importation : {e}")
-    logger.error(f"Chemin de recherche : {sys.path}")
-    sys.exit(1)
+async def mock_opencode_server():
+    """Simulates an OpenCode server that replies to run_task requests."""
 
-# --- Mock WebSocket Server ---
-class MockOpenCodeServer:
-    """Simule un serveur OpenCode qui envoie des mises à jour."""
-    def __init__(self):
-        self.clients = []
-        self.running = True
-
-    async def handle_client(self, reader, writer):
-        self.clients.append((reader, writer))
-        logger.info("Client connecté au Mock Server")
+    async def handler(websocket):
         try:
-            while self.running:
-                await asyncio.sleep(1)
-                # Simuler une mise à jour de l'éditeur toutes les secondes
-                update_data = {
-                    "active_file": {"path": "/mock/path/file.py", "content": "print('hello')"},
-                    "cursor": {"line": 1, "column": 10},
-                    "selection": {"start_line": 1, "start_col": 0, "end_line": 1, "end_col": 10, "text": "print('hello')"},
-                    "diagnostics": [],
-                    "terminal": {"output": "Success"},
-                    "git": {"branch": "master", "is_dirty": False}
-                }
-                msg = json.dumps({"editor_update": update_data})
-                writer.write(msg.encode())
-                await writer.drain()
-        except Exception as e:
-            logger.error(f"Erreur Mock Server : {e}")
-        finally:
-            writer.close()
+            message = await websocket.recv()
+            data = json.loads(message)
+            reply = {
+                "type": "step_finish",
+                "content": f"processed: {data.get('prompt', '')}",
+                "metadata": {"model": data.get("model")},
+            }
+            await websocket.send(json.dumps(reply))
+        except websockets.exceptions.ConnectionClosed:
+            pass
 
-    async def run(self, host='127.0.0.1', port=8000):
-        server = await asyncio.start_server(self.handle_client, host, port)
-        logger.info(f"Mock Server lancé sur {host}:{port}")
-        async with server:
-            await server.serve_forever()
+    async with websockets.serve(handler, MOCK_HOST, MOCK_PORT):
+        # Serve until the task is cancelled.
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            pass
 
-# --- Test Suite ---
+
 class TestOpenCodeIntegration(unittest.IsolatedAsyncioTestCase):
-    async def asyncSetUp(self):
-        self.state_store = EditorStateStore()
-        self.editor_service = EditorService(self.state_store)
-        # On utilise une URL locale pour le test
-        self.manager = OpenCodeConnectorManager("ws://127.0.0.1:8000", self.state_store, self.editor_service)
-        self.manager.set_editor_update_callback(lambda x: logger.info(f"Callback reçu : {x}"))
-
     async def asyncTearDown(self):
-        if self.manager.client:
-            await self.manager.client.close()
+        server_task = getattr(self, "server_task", None)
+        if server_task is not None:
+            server_task.cancel()
+            try:
+                await server_task
+            except (asyncio.CancelledError, Exception):
+                pass
 
-    async def test_full_flow(self):
-        # 1. Lancer le serveur mock dans un thread séparé
-        mock_server = MockOpenCodeServer()
-        server_thread = threading.Thread(target=lambda: asyncio.run(mock_server.run()), daemon=True)
-        server_thread.start()
-        time.sleep(2) # Laisser le temps au serveur de démarrer
+    async def test_run_task_round_trip(self):
+        """run_task reaches the WebSocket server and surfaces its response."""
+        self.server_task = asyncio.create_task(mock_opencode_server())
+        await asyncio.sleep(1)
 
-        # 2. Connecter le manager
-        logger.info("Connexion du manager au Mock Server...")
-        await self.manager.start()
-        
-        # 3. Attendre une mise à jour (le mock envoie toutes les secondes)
-        await asyncio.sleep(2)
-        
-        # 4. Vérifier l'état via le service de domaine
-        state = self.editor_service.get_current_state()
-        logger.info(f"État récupéré : {state}")
-        
-        self.assertIsNotNone(state)
-        self.assertEqual(state["active_file"]["path"], "/mock/path/file.py")
-        
-        # 5. Tester l'executor d'action
-        executor = ActionExecutor(self.editor_service)
-        action = executor.execute_action("insert_code", {"content": "new_code"})
-        
-        logger.info(f"Action générée : {action}")
-        self.assertEqual(action["action"], "insert_code")
-        self.assertEqual(action["params"]["content"], "new_code")
-        self.assertEqual(action["params"]["line"], 1)
-        self.assertEqual(action["params"]["col"], 10)
+        manager = OpenCodeConnectorManager(
+            ws_url=MOCK_URI, api_key="test-key", model_id="test-model"
+        )
+        try:
+            result = await manager.run_task("hello")
+        finally:
+            await manager.shutdown()
 
-        # 6. Simuler l'envoi de l'action
-        await self.manager.send_action("insert_code", {"content": "new_code"})
-        logger.info("Action envoyée avec succès via le manager.")
+        self.assertEqual(result, "SUCCESS: processed: hello")
+
+    async def test_run_task_falls_back_when_unreachable(self):
+        """An unreachable backend degrades to an ERROR string, not an exception."""
+        manager = OpenCodeConnectorManager(
+            ws_url="ws://127.0.0.1:1", api_key="k", model_id="m"
+        )
+        result = await manager.run_task("hello")
+        self.assertTrue(result.startswith("ERROR:"))
+
 
 if __name__ == "__main__":
     unittest.main()
