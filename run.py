@@ -11,6 +11,9 @@ Handles:
 Usage:
     python run.py                  Launch all services
     python run.py --api          FastAPI only
+    python run.py --hermes      Hermes MCP standalone
+    python run.py --ui            Next.js UI only
+    python run.py --api          FastAPI only
     python run.py --ui            Next.js UI only
     python run.py --check         Verify dependencies
     python run.py --test         Run tests
