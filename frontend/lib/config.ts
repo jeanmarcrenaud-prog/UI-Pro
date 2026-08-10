@@ -6,7 +6,7 @@
 // API Configuration
 export const API_CONFIG = {
   // FastAPI backend - Use relative URLs for HTTP (Next.js rewrites them)
-  apiUrl: process.env.NEXT_PUBLIC_API_URL || '',
+  apiUrl: (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/+$/, ''),
   wsUrl: process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3000',
 
   // Canvas WebSocket - connects DIRECTLY to backend (not through Next.js proxy)
