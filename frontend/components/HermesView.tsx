@@ -61,9 +61,13 @@ async function sendConversationStream(
             throw new Error(token.replace('[ERROR] ', ''))
           }
           onToken(token)
-        }
       }
-
+  }
+  }
+} finally {
+    reader.releaseLock()
+  }
+}
 // ─── Component ───────────────────────────────────
 
 export function HermesView() {
@@ -119,7 +123,6 @@ export function HermesView() {
         // Clear connecting state on first token
         setChatConnecting(false)
         setMessages((prev) => {
-        setMessages((prev) => {
           const last = prev[prev.length - 1]
           if (last && last.role === 'assistant') {
             return [...prev.slice(0, -1), { ...last, content: last.content + token }]
@@ -136,8 +139,8 @@ export function HermesView() {
     } finally {
       setChatLoading(false)
       setChatConnecting(false)
+    }
   }, [input, chatLoading, chatConnecting])
-  }, [input, chatLoading])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -266,17 +269,7 @@ export function HermesView() {
                 <div className="bg-[var(--surface-secondary)] rounded-2xl rounded-bl-md px-4 py-2.5 text-sm text-[var(--text-muted)]">
                   Connecting to Hermes...
                 </div>
-              )
-              <div className="bg-[var(--surface-secondary)] rounded-2xl rounded-bl-md px-4 py-2.5 text-sm">
-                <span className="inline-flex gap-1">
-                  <span className="animate-bounce">.</span>
-                  <span className="animate-bounce" style={{ animationDelay: '0.1s' }}>.</span>
-                  <span className="animate-bounce" style={{ animationDelay: '0.2s' }}>.</span>
-                </span>
-              </div>
-            </div>
-          )
-            <div className="flex justify-start">
+              )}
               <div className="bg-[var(--surface-secondary)] rounded-2xl rounded-bl-md px-4 py-2.5 text-sm">
                 <span className="inline-flex gap-1">
                   <span className="animate-bounce">.</span>
@@ -301,7 +294,7 @@ export function HermesView() {
               className="flex-1 px-4 py-2.5 rounded-xl bg-[var(--surface-secondary)] border border-[var(--border-subtle)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/50 outline-none focus:ring-2 focus:ring-violet-500/30 transition-all"
             />
             <button
-              onClick={handleSend}
+              onClick={() => handleSend()}
               disabled={chatLoading || !input.trim()}
               className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white text-sm font-medium disabled:opacity-40 hover:from-violet-700 hover:to-fuchsia-700 transition-all shrink-0"
             >
