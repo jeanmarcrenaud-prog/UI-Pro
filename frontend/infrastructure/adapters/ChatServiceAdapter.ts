@@ -249,7 +249,7 @@ class ChatServiceAdapter {
 
     try {
       const host = window.location.hostname || 'localhost';
-      const apiUrl = API_CONFIG.apiUrl?.replace('localhost', host) || `http://localhost:8000`;
+      const apiUrl = API_CONFIG.apiUrl?.replace(/^\/+|\/+$/, '') || `http://localhost:8000`
       const response = await fetch(`${apiUrl}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

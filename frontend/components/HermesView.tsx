@@ -22,7 +22,7 @@ interface HermesStatus {
 
 // ─── API helpers ─────────────────────────────────
 
-const API_BASE = `${API_CONFIG.apiUrl || ''}/api/hermes`
+const API_BASE = `${(API_CONFIG.apiUrl || '').replace(/\/$/, '')}/api/hermes`
 
 async function fetchStatus(): Promise<HermesStatus> {
   try {
