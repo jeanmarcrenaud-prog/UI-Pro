@@ -6,7 +6,6 @@ import { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useAgentStore } from '@/lib/stores/agentStore'
 import { useAgentCanvasStore } from '@/lib/stores'
-import { sendApprovalDecision } from '@/services/canvasWebSocket'
 import GraphVisualization from '../canvas/GraphVisualization'
 import { CanvasControls } from './CanvasControls'
 import { ExecutionTimeline } from './ExecutionTimeline'
@@ -55,6 +54,7 @@ export function AgentCanvas({
   const canvasSteps = useAgentCanvasStore((s) => s.steps)
   const setApprovalStatus = useAgentCanvasStore((s) => s.setApprovalStatus)
   const setSelectedNode = useAgentCanvasStore((s) => s.setSelectedNode)
+  const sendApprovalDecision = useAgentCanvasStore((s) => s.sendApprovalDecision)
 
 
   // Subscribe to awaitingApproval event from chatService/MessageHandler

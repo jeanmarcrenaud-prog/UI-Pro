@@ -158,7 +158,8 @@ export const useAgentCanvasStore = create<CanvasState>()(
 // By subscribing at the store level, ALL consumers get updates without manual sync.
 
 function syncStepsFromAgent(agentSteps: AgentStep[]) {
-  useAgentCanvasStore.getState().setSteps(
+  const canvasStore = useAgentCanvasStore.getState()
+  canvasStore.setSteps(
     agentSteps.map((s) => ({
       name: s.id,
       status: s.status === 'active' ? 'running' : (s.status as StepStatus),
@@ -168,6 +169,15 @@ function syncStepsFromAgent(agentSteps: AgentStep[]) {
       error: s.detail,
     })),
   )
+  // Sync execution state so the "live" badge / isRunning reflect
+  // the actual streaming state (was never set during streaming).
+  const hasActive = agentSteps.some((s) => s.status === 'active')
+  const isIdle = agentSteps.length === 0 || agentSteps.every((s) => s.status === 'done' || s.status === 'error')
+  if (hasActive) {
+    canvasStore.setRunning(true)
+  } else if (isIdle) {
+    canvasStore.setRunning(false)
+  }
 }
 
 // Subscribe to future agentStore changes and sync to canvasStore
