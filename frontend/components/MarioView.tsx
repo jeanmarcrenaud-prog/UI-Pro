@@ -7,6 +7,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { useI18n } from '@/lib/i18n'
+import { API_CONFIG } from '@/lib/config'
 
 // ─── Types ───────────────────────────────────────────
 
@@ -27,7 +28,7 @@ interface ChatMessage {
 
 // ─── API helpers ─────────────────────────────────────
 
-const API_BASE = 'http://localhost:8000/api/mario'
+const API_BASE = `${(API_CONFIG.apiUrl || '').replace(/\/$/, '')}/api/mario`
 
 async function fetchStatus(): Promise<MarioStatus> {
   const res = await fetch(`${API_BASE}/status`)

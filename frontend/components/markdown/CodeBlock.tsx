@@ -48,6 +48,7 @@ SyntaxHighlighter.registerLanguage('jsx', tsx)
 
 import { downloadCode } from '@/lib/download'
 import { useI18n } from '@/lib/i18n'
+import { API_CONFIG } from '@/lib/config'
 import { CodeMinimap } from './CodeMinimap'
 
 interface CodeBlockProps {
@@ -99,7 +100,7 @@ export const CodeBlock = memo(function CodeBlock({
     setError(null)
     
     try {
-      const res = await fetch('http://localhost:8000/api/execute', {
+      const res = await fetch(`${API_CONFIG.apiUrl}/api/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -135,7 +136,7 @@ export const CodeBlock = memo(function CodeBlock({
     setValidationResult(null)
     
     try {
-      const res = await fetch('http://localhost:8000/api/validate', {
+      const res = await fetch(`${API_CONFIG.apiUrl}/api/validate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: value })
