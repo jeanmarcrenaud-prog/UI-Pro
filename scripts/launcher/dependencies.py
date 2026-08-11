@@ -97,7 +97,7 @@ def check_dependencies() -> bool:
         ("requests", "requests"),
         ("openai", "OpenAI"),
         ("pydantic", "Pydantic"),
-        ("python-dotenv", "python-dotenv"),
+        ("dotenv", "python-dotenv"),
     ]
 
     all_ok = True
