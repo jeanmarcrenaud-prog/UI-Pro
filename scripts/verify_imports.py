@@ -93,13 +93,13 @@ def check_backend_imports():
 
     # Test key imports
     tests = [
-        ("backend.domain.core", ["OrchestratorAsync", "CodeExecutor", "AgentState"]),
+        ("backend.domain.core", ["CodeExecutor", "AgentState"]),
         ("backend.domain.core.events", ["get_event_bus", "emit_agent_step"]),
         ("backend.domain.core.logger", ["get_logger"]),
         ("backend.domain.core.metrics", ["MetricsManager", "get_metrics"]),
         ("backend.infrastructure.memory", ["MemoryManager", "add_memory"]),
         ("backend.infrastructure.llm_router", ["LLMRouter"]),
-        ("backend.infrastructure.streaming", ["StreamingService"]),
+        ("backend.infrastructure.streaming", ["UnifiedStreamer", "get_unified_streamer"]),
         ("backend.transport.main", ["app"]),
         ("backend.transport.routers.ws", ["router"]),
     ]
@@ -170,7 +170,7 @@ def check_circular_imports():
 
     # Just verify basic imports work (would fail on circular)
     try:
-        from backend.domain.core import OrchestratorAsync
+        from backend.domain.core import CodeExecutor
         from backend.domain.settings import settings
 
         print(f"  {GREEN}OK{RESET} No obvious circular imports")

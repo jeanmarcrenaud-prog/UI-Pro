@@ -32,8 +32,7 @@ ui-pro/                           # Racine projet
 |   |   |   +-- logger.py            # Logging
 |   |   |   +-- metrics.py           # Metriques
 |   |   |   +-- models.py            # Domain models (EditorState, Action, etc.)
-|   |   |   +-- orchestrator_async.py # Async pipeline orchestrator
-|   |   |   +-- planner.py           # Local task planner
+|   |   |   +-- prompts.py           # LLM prompts
 |   |   |   +-- prompts.py           # LLM prompts
 |   |   |   +-- state_manager.py     # Etat pipeline
 |   |   +-- errors.py            # Domain errors
@@ -419,7 +418,7 @@ frontend/
 |--------|--------|-------------|
 | `llm/client.py` | ❌ SUPPRIMÉ | `llm/router.py` (OllamaClient, ModelConfig) |
 | `core/config.py` | ❌ SUPPRIMÉ | `models/settings.py` (Settings singleton) |
-| `controllers/orchestrator.py` | ❌ SUPPRIMÉ | `core/orchestrator_async.py` |
+| `controllers/orchestrator.py` | ❌ SUPPRIMÉ | `domain/core/langgraph/` (pipeline) |
 | `controllers/llm_client.py` | SUPPRIME | `infrastructure/llm/` (LLM clients) |
 | `controllers/team.py` | SUPPRIME | `infrastructure/tools/` |
 | `templates/*.html` | SUPPRIME | Gradio dashboard |

@@ -32,8 +32,7 @@ backend/
 |   |   +-- logger.py            # Logging
 |   |   +-- metrics.py           # Performance metrics
 |   |   +-- models.py            # Domain models (EditorState, Action, etc.)
-|   |   +-- orchestrator_async.py # Async pipeline orchestrator
-|   |   +-- planner.py           # Local task planner
+|   |   +-- prompts.py           # LLM prompts
 |   |   +-- prompts.py           # LLM prompts
 |   |   +-- state_manager.py     # Pipeline state management
 |   +-- errors.py          # Domain error hierarchy

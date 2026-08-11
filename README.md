@@ -273,8 +273,7 @@ ui-pro/
 |   |   |   +-- logger.py            # Logging
 |   |   |   +-- metrics.py           # Performance metrics
 |   |   |   +-- models.py            # Domain models (dataclasses)
-|   |   |   +-- orchestrator_async.py # Async pipeline orchestrator
-|   |   |   +-- planner.py           # Local task planner
+|   |   |   +-- prompts.py           # LLM prompts
 |   |   |   +-- prompts.py           # LLM prompts
 |   |   |   +-- state_manager.py     # Pipeline state
 |   |   +-- errors.py          # Domain error types

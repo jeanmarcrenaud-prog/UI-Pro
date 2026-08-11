@@ -124,7 +124,7 @@ def _merge_steps(
 class AgentState(TypedDict, total=False):
     """Persistent state for the LangGraph agent pipeline.
 
-    Used by both langgraph/ and orchestrator_async.py pipelines.
+    Used by the LangGraph pipeline (domain/core/langgraph/).
     All fields are optional (total=False) to allow partial updates
     at each graph node step.
 
