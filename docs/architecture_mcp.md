@@ -19,9 +19,9 @@ graph TD
     
     subgraph \"OpenCode Connector (backend/infrastructure/opencode_connector/)\"
         Connector[OpenCodeConnectorManager]
-        Connector --> Subprocess[OpenCode CLI headless]
-        Subprocess -->|stdin| JSON_Input[opencode run --format json]
-        Subprocess -->|stdout| JSON_Output[type:text / type:step_finish]
+        Connector --> WS[WebSocket ws_url]
+        WS -->|requête JSON| JSON_Input[{prompt, model, format}]
+        WS -->|réponse JSON| JSON_Output[type:text / type:step_finish]
     end
     
     subgraph \"Domain (backend/domain/core/)\"
@@ -59,12 +59,13 @@ graph TD
 
 ### 3. OpenCodeConnectorManager (Le Délégataire)
 |- Interface avec OpenCode en mode **headless** via `backend/infrastructure/opencode_connector/manager.py`.
-|- Lance `opencode run --format json --port 0 --pure` comme sous-processus.
+- Se connecte à un serveur OpenCode via **WebSocket** (`websockets.connect`) — le client est créé paresseusement par `get_client()`.
+- Si la connexion échoue, le manager reste actif en mode *fallback* (`run_task` retourne `ERROR: ...` au lieu de lever une exception).
 |- Modèle par défaut : `lmstudio/google/gemma-4-12b-qat` (131072 tokens de contexte).
-|- Communique via stdin/stdout en JSON :
+- Communique via WebSocket en JSON :
   - `type: \"text\"` → réponse texte de l'agent.
   - `type: \"step_finish\"` → étape terminée avec succès.
-|- Maintient un historique des notifications (`_notification_history`, 100 entrées max).
+- Expose `run_task(prompt) -> str` (surface `SUCCESS: <content>` pour `step_finish`) et `get_recent_notifications(limit)`.
 
 ### 4. ActionExecutor (Les Bras Locaux)
 |- Gère les actions directes sur le code dans `backend/domain/core/action_executor.py`.
@@ -77,9 +78,9 @@ graph TD
 2. **Hermes MCP Server** : Transmet l'intention à `IntelligenceService.process_user_intent()`.
 3. **TaskPlanner** : Analyse l'intention et génère un plan structuré (liste d'actions).
 4. **IntelligenceService** : Itère sur les actions du plan :
-   - Si `DelegateAction` → appelle `OpenCodeConnectorManager.run()` pour déléguer à OpenCode en mode headless.
+   - Si `DelegateAction` → appelle `OpenCodeConnectorManager.run_task()` pour déléguer à OpenCode en mode headless.
    - Si action locale → appelle `ActionExecutor.execute()`.
-5. **OpenCode (headless)** : Reçoit le contexte via stdin, exécute la tâche, renvoie le résultat via stdout JSON.
+5. **OpenCode (headless)** : Reçoit le prompt via WebSocket, exécute la tâche, renvoie le résultat en JSON (`type: text` / `type: step_finish`).
 6. **IntelligenceService** : Agrège les résultats et retourne la réponse finale.
 
 ## Stack Technique

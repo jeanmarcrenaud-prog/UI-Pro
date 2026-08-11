@@ -67,6 +67,41 @@ Vérifier le statut de santé de l'API.
 }
 ```
 
+#### GET /api/version
+
+Informations de version et capacités (diagnostics, panel "About" du frontend).
+Servi par le routeur `health.py` (prefix vide).
+
+**Response (200):**
+```json
+{
+  "ui_pro_version": "1.0.0",
+  "fastapi_version": "0.115.6",
+  "langgraph_version": "0.2.60",
+  "python_version": "3.12.4",
+  "platform": "Windows-11",
+  "capabilities": {
+    "faiss": true,
+    "aiosqlite": true,
+    "pynvml": false,
+    "sentence_transformers": true
+  }
+}
+```
+
+#### GET /
+
+Racine de l'API — bannière de service légère.
+
+**Response (200):**
+```json
+{
+  "service": "UI-Pro",
+  "message": "UI-Pro API",
+  "docs": "/docs"
+}
+```
+
 ---
 
 ### 3. Status

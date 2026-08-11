@@ -322,6 +322,8 @@ profile = "black"
 | `/mcp/tools` | main | MCP tools list |
 | `/mcp/call` | main | MCP tool execution |
 | `/health` | health | Health check |
+| `/api/version` | health | Version + capacités |
+| `/` | health | Bannière racine |
 
 ## 🔄 Flux Backend
 
