@@ -2,29 +2,16 @@
 import logging
 from collections.abc import AsyncGenerator
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from backend.domain.settings import settings
+from backend.transport.deps import verify_api_key
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
 logger = logging.getLogger(__name__)
-
-API_KEY_HEADER = "x-api-key"
-
-
-def verify_api_key(request: Request):
-    api_key = getattr(settings, "api_key", None)
-    if not api_key:
-        return True
-    if request.headers.get(API_KEY_HEADER) != api_key:
-        from fastapi import HTTPException
-
-        raise HTTPException(status_code=401, detail="Invalid or missing API key")
-    return True
-
 
 class ChatRequest(BaseModel):
     message: str

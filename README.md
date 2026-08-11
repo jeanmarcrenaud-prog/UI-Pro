@@ -297,7 +297,7 @@ ui-pro/
 |   |   +-- rate_limit.py     # Rate limiting
 |   +-- transport/            # API layer
 |   |   +-- main.py           # FastAPI app entry
-|   |   +-- views_api.py      # REST routes
+|   |   +-- deps.py           # Shared dependencies (verify_api_key)
 |   |   +-- websocket_manager.py # WebSocket connection manager
 |   |   +-- routers/          # Route modules
 |   |       +-- chat.py

@@ -2,7 +2,7 @@
 import logging
 import time
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 from pydantic import BaseModel
 
 from backend.domain.settings import settings
@@ -10,20 +10,6 @@ from backend.domain.settings import settings
 router = APIRouter(prefix="/api", tags=["execute"])
 
 logger = logging.getLogger(__name__)
-
-API_KEY_HEADER = "x-api-key"
-
-
-def verify_api_key(request: Request):
-    api_key = getattr(settings, "api_key", None)
-    if not api_key:
-        return True
-    if request.headers.get(API_KEY_HEADER) != api_key:
-        from fastapi import HTTPException
-
-        raise HTTPException(status_code=401, detail="Invalid or missing API key")
-    return True
-
 
 # ===================== EXECUTE =====================
 class ExecuteRequest(BaseModel):

@@ -75,7 +75,7 @@ ui-pro/                           # Racine projet
 |   |
 |   +-- transport/               # API endpoints
 |       +-- main.py               # FastAPI entry point
-|       +-- views_api.py          # FastAPI app
+       +-- deps.py              # Shared dependencies (verify_api_key)
 |       +-- websocket_manager.py  # WebSocket connection manager
 |       +-- routers/              # API routers
 |           +-- chat.py
@@ -132,7 +132,7 @@ ui-pro/                           # Racine projet
 > **NOTE**: La structure legacy a été supprimée. Tout importe maintenant depuis `backend/`.
 
 ```
-backend/transport/views_api.py ──→ backend/application/* ──→ backend/infrastructure/* ──→ backend/domain/core/*
+backend/transport/main.py ──→ backend/application/* ──→ backend/infrastructure/* ──→ backend/domain/core/*
      │                              │                              │                                │
      └─────────────────────────────┴──────────────────────────────┴────────────────────────────────┘
                                                   ↓
@@ -330,7 +330,7 @@ profile = "black"
 ```
 Request HTTP
     ↓
-backend/transport/views_api.py (FastAPI)
+backend/transport/main.py (FastAPI)
     ↓
 backend/transport/routers/*.py (endpoints)
     ↓
