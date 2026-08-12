@@ -7,7 +7,7 @@ export default defineConfig({
   workers: 1,
   reporter: [['html', { outputFolder: 'playwright-report' }]],
   use: {
-    baseURL: 'http://localhost:3000',
+    baseURL: 'http://localhost:3010',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
@@ -18,10 +18,10 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npx next dev -p 3000',
-    url: 'http://localhost:3000',
+    command: 'node node_modules/next/dist/bin/next dev -p 3010',
+    url: 'http://localhost:3010',
     reuseExistingServer: !process.env.CI,
     cwd: '.',
-    timeout: 120_000,
+    timeout: 180_000,
   },
 })

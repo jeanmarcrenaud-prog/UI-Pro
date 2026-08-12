@@ -84,6 +84,37 @@ async function triggerExecutionApproval(page: import('@playwright/test').Page) {
   await page.waitForTimeout(500)
 }
 
+// ── Canvas helpers (approval banner lives in AgentCanvas, needs steps) ──
+
+const MOCK_STEPS = [
+  { id: 'step-analyzing', title: 'Analyze', status: 'done' as const, detail: 'Classify & route task', duration: 1.2, tokens: 340 },
+  { id: 'step-planning', title: 'Plan', status: 'done' as const, detail: 'Implementation plan', duration: 3.4, tokens: 890 },
+  { id: 'step-coding', title: 'Code', status: 'done' as const, detail: 'Generate Python code', duration: 8.1, tokens: 2450 },
+  { id: 'step-reviewing', title: 'Review', status: 'done' as const, detail: 'Static & LLM review', duration: 2.1, tokens: 560 },
+  { id: 'step-executing', title: 'Execute', status: 'active' as const, detail: 'Sandboxed execution', duration: 0, tokens: 0 },
+]
+
+async function injectSteps(page: import('@playwright/test').Page, steps: typeof MOCK_STEPS = MOCK_STEPS) {
+  await page.waitForFunction(() => !!(window as any).__TEST_AGENT_STORE__, null, { timeout: 10000 })
+  await page.evaluate((s) => {
+    const store = (window as any).__TEST_AGENT_STORE__
+    store.getState().setSteps(s)
+  }, steps)
+  // Give the agentStore -> canvasStore sync + React Flow a moment
+  await page.waitForTimeout(800)
+}
+
+async function stubSendExecuteDecision(page: import('@playwright/test').Page) {
+  await page.waitForFunction(() => !!(window as any).__TEST_CHAT_SERVICE__, null, { timeout: 10000 })
+  await page.evaluate(() => {
+    const svc = (window as any).__TEST_CHAT_SERVICE__
+    if (!svc.__decisions) svc.__decisions = []
+    svc.sendExecuteDecision = async (decision: string, feedback?: string) => {
+      svc.__decisions.push({ decision, feedback })
+    }
+  })
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────
 
 test.describe('Chat Interface — E2E Smoke Tests', () => {
@@ -99,8 +130,8 @@ test.describe('Chat Interface — E2E Smoke Tests', () => {
     const input = page.locator('textarea[placeholder*="Describe your task"]')
     await expect(input).toBeVisible({ timeout: 5000 })
 
-    // Send button
-    const sendBtn = page.locator('button').filter({ hasText: '➤' })
+    // Send button (aria-label on the icon button in ChatContainer)
+    const sendBtn = page.getByRole('button', { name: 'Send message' })
     await expect(sendBtn).toBeVisible()
 
     // Sidebar should be visible
@@ -159,97 +190,81 @@ test.describe('Chat Interface — E2E Smoke Tests', () => {
     await page.screenshot({ path: path.join(dir, 'chat-assistant-response.png'), fullPage: false })
   })
 
-  test('T5: Execution approval buttons appear when triggered', async ({ page }) => {
+  test('T5: Execution approval banner appears in the canvas header when triggered', async ({ page }) => {
     await page.goto('/')
     await page.waitForLoadState('networkidle')
 
-    // Inject a conversation first
-    await injectChatMessage(page, 'Generate a Python script', 'user')
-    await injectChatMessage(page, 'Generated code:\n\n```python\ndef hello():\n    pass\n```', 'assistant')
+    // The approval banner lives in the Agent Canvas header, so the canvas
+    // must be mounted first (needs agent steps + Graphe view).
+    await injectSteps(page)
+    await expect(page.getByText('Agent Canvas').first()).toBeVisible({ timeout: 5000 })
 
-    // Trigger the execution approval event
+    // Trigger the awaitingApproval event via the exposed events emitter
     await triggerExecutionApproval(page)
 
-    // Verify approval UI is visible
-    // 1. Title
-    await expect(page.getByText(/Code ready.*execute or adjust/i)).toBeVisible({ timeout: 3000 })
-    // 2. Awaiting approval badge
-    await expect(page.getByText(/Awaiting approval/i)).toBeVisible({ timeout: 3000 })
-    // 3. Action buttons
-    await expect(page.getByText('Execute').first()).toBeVisible({ timeout: 3000 })
-    await expect(page.getByText('Correct').first()).toBeVisible({ timeout: 3000 })
-    await expect(page.getByText('Cancel').first()).toBeVisible({ timeout: 3000 })
-    // 4. Code preview
-    await expect(page.getByText(/def hello/)).toBeVisible({ timeout: 3000 })
+    // Verify approval banner is visible in the canvas header
+    await expect(page.getByText(/Awaiting approval/i).first()).toBeVisible({ timeout: 3000 })
+    await expect(page.getByRole('button', { name: /Approve|Approuver/i }).first()).toBeVisible({ timeout: 3000 })
+    await expect(page.getByRole('button', { name: /Reject|Rejeter/i }).first()).toBeVisible({ timeout: 3000 })
 
     const dir = await ensureScreenshotDir()
     await page.screenshot({ path: path.join(dir, 'chat-execution-approval.png'), fullPage: false })
   })
 
-  test('T6: Correct button reveals feedback textarea', async ({ page }) => {
+  test('T6: Approve button hides the banner and sends execute decision', async ({ page }) => {
     await page.goto('/')
     await page.waitForLoadState('networkidle')
 
-    await injectChatMessage(page, 'Generate code', 'user')
-    await injectChatMessage(page, '```python\nprint("ok")\n```', 'assistant')
+    await injectSteps(page)
+    await expect(page.getByText('Agent Canvas').first()).toBeVisible({ timeout: 5000 })
     await triggerExecutionApproval(page)
 
-    // Click "Correct"
-    await page.getByText('Correct').first().click()
+    // Spy on the chat service's sendExecuteDecision to avoid a real WS call
+    await stubSendExecuteDecision(page)
+
+    const approveBtn = page.getByRole('button', { name: /Approve|Approuver/i }).first()
+    await expect(approveBtn).toBeVisible({ timeout: 3000 })
+    await approveBtn.click()
     await page.waitForTimeout(300)
 
-    // Verify feedback textarea appears
-    const feedbackInput = page.locator('textarea[placeholder*="Describe what to change"]')
-    await expect(feedbackInput).toBeVisible({ timeout: 3000 })
+    // Approval banner should disappear after approving
+    await expect(page.getByText(/Awaiting approval/i).first()).not.toBeVisible({ timeout: 3000 })
 
-    // Button text should change to "Send correction"
-    await expect(page.getByText('Send correction').first()).toBeVisible({ timeout: 3000 })
-
-    // Type feedback
-    await feedbackInput.fill('Use async/await pattern')
-    const value = await feedbackInput.inputValue()
-    expect(value).toBe('Use async/await pattern')
-
-    const dir = await ensureScreenshotDir()
-    await page.screenshot({ path: path.join(dir, 'chat-correction-feedback.png'), fullPage: false })
+    // The decision was routed through chatService.sendExecuteDecision('execute')
+    const decisions = await page.evaluate(() => (window as any).__TEST_CHAT_SERVICE__?.__decisions ?? [])
+    expect(decisions.some((d: any) => d.decision === 'execute')).toBe(true)
   })
 
-  test('T7: Execute button click sends decision via chatService', async ({ page }) => {
+  test('T7: Reject button hides the banner and sends cancel decision', async ({ page }) => {
     await page.goto('/')
     await page.waitForLoadState('networkidle')
 
-    await injectChatMessage(page, 'Generate code', 'user')
-    await injectChatMessage(page, '```python\nprint("ok")\n```', 'assistant')
+    await injectSteps(page)
+    await expect(page.getByText('Agent Canvas').first()).toBeVisible({ timeout: 5000 })
     await triggerExecutionApproval(page)
 
-    // Spy on the chat service's sendExecuteDecision method if available
-    // At minimum, verify the button click doesn't throw and approval UI dismisses
-    const executeBtn = page.getByText('Execute').first()
-    await expect(executeBtn).toBeVisible({ timeout: 3000 })
+    await stubSendExecuteDecision(page)
 
-    // Click execute
-    await executeBtn.click()
-    await page.waitForTimeout(500)
+    const rejectBtn = page.getByRole('button', { name: /Reject|Rejeter/i }).first()
+    await expect(rejectBtn).toBeVisible({ timeout: 3000 })
+    await rejectBtn.click()
+    await page.waitForTimeout(300)
 
-    // Approval panel should disappear after clicking execute
-    await expect(page.getByText(/Code ready.*execute or adjust/i)).not.toBeVisible({ timeout: 3000 })
+    await expect(page.getByText(/Awaiting approval/i).first()).not.toBeVisible({ timeout: 3000 })
+
+    const decisions = await page.evaluate(() => (window as any).__TEST_CHAT_SERVICE__?.__decisions ?? [])
+    expect(decisions.some((d: any) => d.decision === 'cancel')).toBe(true)
   })
 
-  test('T8: Cancel button dismisses approval panel', async ({ page }) => {
+  test('T8: No approval banner without the awaitingApproval event', async ({ page }) => {
     await page.goto('/')
     await page.waitForLoadState('networkidle')
 
-    await injectChatMessage(page, 'Generate code', 'user')
-    await injectChatMessage(page, '```python\nprint("ok")\n```', 'assistant')
-    await triggerExecutionApproval(page)
+    await injectSteps(page)
+    await expect(page.getByText('Agent Canvas').first()).toBeVisible({ timeout: 5000 })
 
-    const cancelBtn = page.getByText('Cancel').first()
-    await expect(cancelBtn).toBeVisible({ timeout: 3000 })
-
-    await cancelBtn.click()
-    await page.waitForTimeout(500)
-
-    await expect(page.getByText(/Code ready.*execute or adjust/i)).not.toBeVisible({ timeout: 3000 })
+    // No event emitted → no approval banner
+    await expect(page.getByText(/Awaiting approval/i)).toHaveCount(0)
   })
 
   test('T9: History tab renders correctly', async ({ page }) => {

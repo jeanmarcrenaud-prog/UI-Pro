@@ -1,5 +1,13 @@
 // e2e/canvas.spec.ts
-// Visual tests for the Agent Canvas (React Flow graph)
+// Visual & smoke tests for the Agent Canvas (React Flow graph).
+//
+// Architecture note (current):
+//   - The canvas lives INSIDE ChatContainer (above the messages), NOT in a
+//     sidebar tab. It renders when the agent store has steps and the
+//     "Graphe" view is active (canvasView defaults to true).
+//   - Tests inject mock steps through window.__TEST_AGENT_STORE__
+//     (exposed by app/page.tsx in dev), which the agentCanvasStore
+//     auto-syncs into the canvas graph.
 import { test, expect } from '@playwright/test'
 import fs from 'fs'
 import path from 'path'
@@ -16,31 +24,20 @@ const MOCK_STEPS = [
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
-async function switchToCanvas(page: import('@playwright/test').Page) {
-  await page.keyboard.press('Alt+4')
-  await page.waitForTimeout(600)
-  const onCanvas = await page.getByText(/Agent Canvas|No execution data/i).isVisible().catch(() => false)
-  if (onCanvas) return
-  const navItems = page.locator('nav button, nav a').filter({ hasNot: page.locator('[hidden]') })
-  const count = await navItems.count()
-  for (let i = 0; i < count; i++) {
-    const text = await navItems.nth(i).textContent()
-    if (text?.toLowerCase().includes('canvas') || text?.includes('🔀')) {
-      await navItems.nth(i).click()
-      await page.waitForTimeout(300)
-      return
-    }
-  }
+async function gotoApp(page: import('@playwright/test').Page) {
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
 }
 
-async function injectSteps(page: import('@playwright/test').Page) {
-  // Wait until the store is exposed on window (dynamic import may be async)
+async function injectSteps(page: import('@playwright/test').Page, steps: typeof MOCK_STEPS = MOCK_STEPS) {
+  // Wait until the agent store is exposed on window (dynamic import may be async)
   await page.waitForFunction(() => !!(window as any).__TEST_AGENT_STORE__, null, { timeout: 10000 })
-  await page.evaluate((steps) => {
+  await page.evaluate((s) => {
     const store = (window as any).__TEST_AGENT_STORE__
-    store.getState().setSteps(steps)
-  }, MOCK_STEPS)
-  await page.waitForTimeout(500)
+    store.getState().setSteps(s)
+  }, steps)
+  // Give the agentStore -> canvasStore sync + React Flow a moment
+  await page.waitForTimeout(800)
 }
 
 async function ensureScreenshotDir() {
@@ -51,94 +48,81 @@ async function ensureScreenshotDir() {
 
 // ── Tests ─────────────────────────────────────────────────────────────
 
-test.describe('Agent Canvas — Visual & Smoke Tests', () => {
+test.describe('Agent Canvas — Visual & Smoke Tests (in ChatContainer)', () => {
 
-  test('T1: sidebar has Canvas tab with keyboard shortcut Alt+4', async ({ page }) => {
-    await page.goto('/')
-    await page.waitForLoadState('networkidle')
+  test('T1: canvas is hidden until agent steps exist', async ({ page }) => {
+    await gotoApp(page)
 
-    const canvasTab = page.locator('nav button, nav a').filter({ hasText: /canvas|🔀/i })
-    await expect(canvasTab.first()).toBeVisible({ timeout: 5000 })
-
-    await switchToCanvas(page)
-
-    const canvasContent = page.getByText(/Agent Canvas|No execution data|Export as/i)
-    await expect(canvasContent.first()).toBeVisible({ timeout: 3000 })
+    // No steps => no Agent Canvas block, no React Flow
+    await expect(page.locator('.agent-canvas')).toHaveCount(0)
+    await expect(page.locator('.react-flow')).toHaveCount(0)
+    await expect(page.getByText(/Step Progress|Agent Canvas/).first()).not.toBeVisible()
   })
 
-  test('T2: empty state renders correctly', async ({ page }) => {
-    await page.goto('/')
-    await page.waitForLoadState('networkidle')
-    await switchToCanvas(page)
+  test('T2: canvas appears above messages after steps are injected', async ({ page }) => {
+    await gotoApp(page)
+    await injectSteps(page)
 
-    await expect(page.getByText(/No execution data/i)).toBeVisible({ timeout: 3000 })
+    // Header + graph + controls visible
+    await expect(page.getByText('Agent Canvas').first()).toBeVisible({ timeout: 5000 })
+    await expect(page.locator('.react-flow')).toBeVisible({ timeout: 5000 })
     await expect(page.getByTitle('Export as PNG')).toBeVisible()
     await expect(page.getByTitle('Export as JSON')).toBeVisible()
-
-    const dir = await ensureScreenshotDir()
-    await page.screenshot({ path: path.join(dir, 'canvas-empty.png'), fullPage: false })
-  })
-
-  test('T3: React Flow graph renders with mock pipeline data', async ({ page }) => {
-    await page.goto('/')
-    await page.waitForLoadState('networkidle')
-    await switchToCanvas(page)
-
-    await injectSteps(page)
-    await page.waitForTimeout(800)
-
-    const reactFlow = page.locator('.react-flow')
-    await expect(reactFlow).toBeVisible({ timeout: 5000 })
-
-    const nodeCount = await page.locator('.react-flow__node').count()
-    expect(nodeCount).toBeGreaterThanOrEqual(1)
 
     const dir = await ensureScreenshotDir()
     await page.screenshot({ path: path.join(dir, 'canvas-with-data.png'), fullPage: false })
   })
 
-  test('T4: timeline sidebar visible in standalone mode', async ({ page }) => {
-    await page.goto('/')
-    await page.waitForLoadState('networkidle')
-    await switchToCanvas(page)
+  test('T3: React Flow graph renders pipeline nodes from mock steps', async ({ page }) => {
+    await gotoApp(page)
     await injectSteps(page)
-    await page.waitForTimeout(500)
 
-    const visibleCount = await page.locator('text=/Analyze|Plan|Code|Review|Execute/i').count()
-    expect(visibleCount).toBeGreaterThanOrEqual(3)
+    const reactFlow = page.locator('.react-flow')
+    await expect(reactFlow).toBeVisible({ timeout: 5000 })
+
+    // 5 injected steps -> at least 5 nodes in the graph
+    const nodeCount = await page.locator('.react-flow__node').count()
+    expect(nodeCount).toBeGreaterThanOrEqual(5)
   })
 
-  test('T5: timeline step click selects node', async ({ page }) => {
-    await page.goto('/')
-    await page.waitForLoadState('networkidle')
-    await switchToCanvas(page)
+  test('T4: timeline sidebar is visible with step titles', async ({ page }) => {
+    await gotoApp(page)
     await injectSteps(page)
-    await page.waitForTimeout(500)
 
-    const analyzeBtn = page.getByText('Analyze').first()
-    await analyzeBtn.click()
+    await expect(page.getByText('Timeline').first()).toBeVisible({ timeout: 5000 })
+
+    for (const step of MOCK_STEPS) {
+      await expect(page.getByText(step.title).first()).toBeVisible({ timeout: 3000 })
+    }
+  })
+
+  test('T5: clicking a timeline step opens the node detail panel', async ({ page }) => {
+    await gotoApp(page)
+    await injectSteps(page)
+
+    // Click "Analyze" inside the timeline sidebar (w-56), not the graph node
+    const timeline = page.locator('div.w-56')
+    await expect(timeline).toBeVisible({ timeout: 5000 })
+    await timeline.getByText('Analyze').click()
     await page.waitForTimeout(400)
 
-    const detailPanel = page.locator('[class*="NodeDetail"], [class*="detail-panel"]').first()
-    const detailVisible = await detailPanel.isVisible().catch(() => false)
-
-    if (detailVisible) {
-      await expect(detailPanel).toBeVisible()
+    // Either the detail panel (close button) or a selected React Flow node
+    const closeBtn = page.locator('[aria-label="Close detail panel"]')
+    const closeVisible = await closeBtn.isVisible().catch(() => false)
+    if (closeVisible) {
+      await expect(closeBtn).toBeVisible()
+      await expect(page.getByText(/Analyze|Classify & route task/).first()).toBeVisible()
       const dir = await ensureScreenshotDir()
       await page.screenshot({ path: path.join(dir, 'canvas-node-detail.png'), fullPage: false })
     } else {
-      const selectedNode = page.locator('.react-flow__node.selected').first()
-      const selected = await selectedNode.isVisible().catch(() => false)
-      expect(selected || detailVisible).toBeTruthy()
+      const selectedNode = page.locator('.react-flow__node.selected')
+      await expect(selectedNode.first()).toBeVisible({ timeout: 3000 })
     }
   })
 
   test('T6: export buttons are functional', async ({ page }) => {
-    await page.goto('/')
-    await page.waitForLoadState('networkidle')
-    await switchToCanvas(page)
+    await gotoApp(page)
     await injectSteps(page)
-    await page.waitForTimeout(500)
 
     const pngBtn = page.getByTitle('Export as PNG')
     await expect(pngBtn).toBeEnabled()
@@ -151,12 +135,28 @@ test.describe('Agent Canvas — Visual & Smoke Tests', () => {
     await page.waitForTimeout(300)
   })
 
-  test('T7: page header visible on canvas tab', async ({ page }) => {
-    await page.goto('/')
-    await page.waitForLoadState('networkidle')
-    await switchToCanvas(page)
+  test('T7: Liste/Graphe toggle switches between Step Progress and canvas', async ({ page }) => {
+    await gotoApp(page)
+    await injectSteps(page)
 
-    await expect(page.getByText(/Agent Canvas/i).first()).toBeVisible({ timeout: 3000 })
-    await expect(page.getByText('UI-Pro').first()).toBeVisible()
+    // Default: graph view
+    await expect(page.getByText('Agent Canvas').first()).toBeVisible({ timeout: 5000 })
+
+    // Switch to list view
+    await page.getByRole('button', { name: /Liste/i }).click()
+    await expect(page.getByText('Step Progress').first()).toBeVisible({ timeout: 3000 })
+    await expect(page.locator('.agent-canvas')).toHaveCount(0)
+
+    // Switch back to graph view
+    await page.getByRole('button', { name: /Graphe/i }).click()
+    await expect(page.locator('.react-flow')).toBeVisible({ timeout: 5000 })
+  })
+
+  test('T8: page header remains visible with the canvas', async ({ page }) => {
+    await gotoApp(page)
+    await injectSteps(page)
+
+    await expect(page.getByText('UI-Pro').first()).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText('Agent Canvas').first()).toBeVisible()
   })
 })
