@@ -4,9 +4,6 @@
 // Hooks index
 export { useChat } from './useChat'
 
-// Streaming hooks
-export { useStream } from './useStream'
-export { useWebSocket, mapStreamEvent } from './useWebSocket'
 
 // Action hooks
 export { useChatActions } from './useChatActions'
