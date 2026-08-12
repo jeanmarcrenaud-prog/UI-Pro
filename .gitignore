@@ -62,3 +62,9 @@ backend/config.yaml
 
 # TypeScript build info (regenerated on each tsc run)
 frontend/tsconfig.tsbuildinfo
+
+# Playwright / Jest test artifacts
+frontend/test-results/
+frontend/playwright-report/
+frontend/playwright/.cache/
+frontend/e2e/screenshots/
