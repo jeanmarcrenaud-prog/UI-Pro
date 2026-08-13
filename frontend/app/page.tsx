@@ -20,7 +20,7 @@ import { MarioView } from '@/components/MarioView'
 import { HermesView } from '@/components/HermesView'
 import { useUIStore } from '@/lib/stores/uiStore'
 import { useChatStore } from '@/lib/stores/chatStore'
-import { useResponsive } from '@/lib/hooks/useResponsive'
+import { useResponsive } from '@/hooks/useResponsive'
 
 // Expose stores for e2e testing
 if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {

@@ -68,3 +68,8 @@ frontend/test-results/
 frontend/playwright-report/
 frontend/playwright/.cache/
 frontend/e2e/screenshots/
+
+# Python build artifacts
+packages/prompts/dist/
+packages/prompts/src/ui_pro_prompts.egg-info/
+*.egg-info/
