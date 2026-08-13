@@ -262,6 +262,20 @@ class Settings(BaseSettings):
         from copy import deepcopy
 
         self.backends = deepcopy(self.backends_template)
+        # Sync backend URLs with the canonical Settings fields (DRY).
+        # backends_template holds static defaults; this ensures env overrides
+        # (OLLAMA_URL, LMSTUDIO_URL, ...) propagate to the live backends dict.
+        _backend_url_fields = {
+            "ollama": "ollama_url",
+            "lemonade": "lemonade_url",
+            "llamacpp": "llamacpp_url",
+            "lmstudio": "lmstudio_url",
+            "opendesign": "opendesign_url",
+            "hermes": "hermes_url",
+        }
+        for _name, _field in _backend_url_fields.items():
+            if _name in self.backends:
+                self.backends[_name]["url"] = getattr(self, _field)
         # Sync per-backend timeouts with llm_timeout so the HTTP client
         # doesn't kill the stream before the outer LLM deadline fires.
         for cfg in self.backends.values():
@@ -306,7 +320,7 @@ class Settings(BaseSettings):
             return self.model_reasoning
         if t == "code":
             return self.model_code
-        return self.model_fast or ""
+        return self.model_fast
 
     def get_preset(self) -> ModelPreset | None:
         """Get the active model preset (fallback)."""
@@ -486,10 +500,8 @@ class Settings(BaseSettings):
         """Validate configuration."""
         errors = []
 
-        if self.api_port <= 0 or self.api_port > 65535:
-            errors.append(f"Invalid api_port: {self.api_port}")
-        if self.dashboard_port <= 0 or self.dashboard_port > 65535:
-            errors.append(f"Invalid dashboard_port: {self.dashboard_port}")
+        # api_port / dashboard_port are already constrained by Field(ge=1, le=65535),
+        # so no redundant range check is needed here.
         if not self.model_fast:
             errors.append("MODEL_FAST is required (set via env or preset)")
         if not self.model_reasoning:
@@ -497,9 +509,10 @@ class Settings(BaseSettings):
         if not self.model_code:
             errors.append("MODEL_CODE is required (set via env or preset)")
 
-        if not self.workspace.exists():
+        _workspace_path = Path(self.workspace)
+        if not _workspace_path.exists():
             try:
-                self.workspace.mkdir(parents=True, exist_ok=True)
+                _workspace_path.mkdir(parents=True, exist_ok=True)
             except Exception as e:
                 errors.append(f"Cannot create workspace: {e}")
 
