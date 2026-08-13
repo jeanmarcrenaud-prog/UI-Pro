@@ -1,4 +1,4 @@
-// lib/circularBuffer.ts
+// lib/CircularBuffer.ts
 // Role: Fixed-size circular buffer to prevent memory bloat from unlimited log/message accumulation
 
 export class CircularBuffer<T> {

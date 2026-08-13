@@ -8,7 +8,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { Message, ChatState, ChatHistoryItem } from '@/lib/types'
 import { events } from '@/lib/events'
-import { CircularBuffer } from '@/lib/circularBuffer'
+import { CircularBuffer } from '@/lib/CircularBuffer'
 
 // Log event types (only what's actually used)
 const LogEvents = {
