@@ -10,6 +10,7 @@ from backend.domain.core.filesystem_service import FilesystemService
 from backend.application.intelligence.intelligence_service import init_intelligence_service, get_intelligence_service
 from backend.application.intelligence.task_planner import get_task_planner
 from backend.infrastructure.opencode_connector.manager import OpenCodeConnectorManager
+from backend.domain.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +59,7 @@ class HermesMCPServer:
         import os
         try:
             self.llm_client = OpenAI(
-                base_url=os.environ.get("HERMES_LLM_BASE_URL", "http://localhost:1234/v1"),
+                base_url=os.environ.get("HERMES_LLM_BASE_URL", settings.lmstudio_url.rstrip("/") + "/v1"),
                 api_key=os.environ.get("HERMES_LLM_API_KEY", "lm-studio"),
             )
             self.llm_model = os.environ.get("HERMES_LLM_MODEL", "google/gemma-4-12b-qat")
@@ -72,7 +73,7 @@ class HermesMCPServer:
         try:
             planner = asyncio.run(init_task_planner(
                 model_name="google/gemma-4-12b-qat",
-                base_url="http://localhost:1234/v1",
+                base_url=settings.lmstudio_url.rstrip("/") + "/v1",
             ))
             init_intelligence_service(planner, None, self.connector_manager)
             self.intelligence_service = get_intelligence_service()

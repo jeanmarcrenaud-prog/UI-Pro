@@ -6,6 +6,7 @@ from typing import List, Dict, Any, Optional
 from openai import OpenAI
 from backend.domain.core.models import Action, EditorState, DelegateAction
 from backend.domain.core.action_executor import ActionExecutor
+from backend.domain.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +14,7 @@ class TaskPlanner:
     def __init__(
         self,
         model_name: str = "local-model",
-        base_url: str = "http://localhost:1234/v1", # LM Studio default
+        base_url: str = settings.lmstudio_url.rstrip('/') + '/v1',  # LM Studio default
         api_key: str = "lm-studio",
         prompt_path: str = "backend/prompts/planner_system_prompt.md"
     ):
@@ -100,7 +101,7 @@ Please provide a JSON array of actions to fulfill this request.
 # Singleton for TaskPlanner
 _task_planner: Optional[TaskPlanner] = None
 
-async def init_task_planner(model_name: str = "local-model", base_url: str = "http://localhost:1234/v1"):
+async def init_task_planner(model_name: str = 'local-model', base_url: str = settings.lmstudio_url.rstrip('/') + '/v1'):
     global _task_planner
     _task_planner = TaskPlanner(model_name=model_name, base_url=base_url)
     return _task_planner
