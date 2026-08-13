@@ -9,10 +9,6 @@ from scripts.launcher.services import (
     start_api,
     start_ui,
     start_hermes,
-    run_tests,
-    start_all,
-    start_api,
-    start_ui,
 )
 
 
