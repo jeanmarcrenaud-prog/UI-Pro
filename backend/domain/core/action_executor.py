@@ -93,14 +93,34 @@ class ActionExecutor:
         }
 
     def _handle_run_terminal(self, command: str, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Exécute une commande dans le terminal."""
+        """Exécute réellement une commande dans le terminal de manière non bloquante."""
         if not command:
             return {"status": "error", "message": "Command is required"}
-            
+
+        import subprocess
+
+        # Répertoire de travail : dossier racine du filesystem (workspace par défaut)
+        cwd = getattr(self.filesystem_service, "root_dir", None) or os.getcwd()
+
+        try:
+            # Lancement non bloquant : le processus tourne en arrière-plan,
+            # le serveur ne bloque pas sur son exécution.
+            process = subprocess.Popen(
+                command,
+                shell=True,
+                cwd=cwd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception as e:
+            logger.error(f"Échec du lancement de la commande '{command}': {e}")
+            return {"status": "error", "message": f"Failed to run command: {e}"}
+
+        logger.info(f"Commande lancée (pid={process.pid}): {command}")
         return {
             "status": "success",
             "action": "run_terminal_command",
-            "params": {"command": command}
+            "params": {"command": command, "pid": process.pid}
         }
 
     def _handle_open_file(self, path: str, state: Dict[str, Any]) -> Dict[str, Any]:

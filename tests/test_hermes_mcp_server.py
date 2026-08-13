@@ -1,5 +1,8 @@
 """Test utilities for Hermes MCP server — parsing and helper functions."""
+import asyncio
 import json
+from unittest.mock import MagicMock
+
 import pytest
 
 from backend.infrastructure.mcp.server import (
@@ -269,3 +272,51 @@ class TestCallTool:
 
         result = asyncio.run(server.call_tool("unknown_tool", {"arg": "val"}))
         assert "unknown_tool" in result["content"]
+
+
+class TestCallToolFileOperations:
+    """Tests for call_tool read_file / write_file with mocked filesystem_service."""
+
+    def _make_server(self):
+        from backend.infrastructure.mcp.server import HermesMCPServer
+
+        server = HermesMCPServer.__new__(HermesMCPServer)
+        server.llm_client = None
+        server.filesystem_service = MagicMock()
+        return server
+
+    def test_call_tool_read_file_success(self):
+        server = self._make_server()
+        file_content = MagicMock()
+        file_content.content = "print('hello')"
+        server.filesystem_service.read_file.return_value = file_content
+
+        result = asyncio.run(server.call_tool("read_file", {"path": "main.py"}))
+        assert result["content"] == "print('hello')"
+        server.filesystem_service.read_file.assert_called_once_with("main.py")
+
+    def test_call_tool_read_file_not_found(self):
+        server = self._make_server()
+        server.filesystem_service.read_file.return_value = None
+
+        result = asyncio.run(server.call_tool("read_file", {"path": "missing.py"}))
+        assert "non trouve" in result["content"]
+
+    def test_call_tool_write_file_success(self):
+        server = self._make_server()
+        server.filesystem_service.write_file.return_value = True
+
+        result = asyncio.run(server.call_tool(
+            "write_file", {"path": "main.py", "content": "print('hi')"}
+        ))
+        assert "Succes" in result["content"]
+        server.filesystem_service.write_file.assert_called_once_with("main.py", "print('hi')")
+
+    def test_call_tool_write_file_failure(self):
+        server = self._make_server()
+        server.filesystem_service.write_file.return_value = False
+
+        result = asyncio.run(server.call_tool(
+            "write_file", {"path": "main.py", "content": "x"}
+        ))
+        assert "Echec" in result["content"]
