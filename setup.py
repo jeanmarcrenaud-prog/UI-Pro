@@ -77,6 +77,16 @@ def run_command(
             stdout=e.stdout or "",
             stderr=e.stderr or "",
         )
+    except subprocess.TimeoutExpired:
+        print_error(f"Command timed out after 120s: {' '.join(cmd)}")
+        if check:
+            sys.exit(1)
+        return subprocess.CompletedProcess(
+            args=cmd,
+            returncode=124,
+            stdout="",
+            stderr=f"Command timed out after 120s",
+        )
     except FileNotFoundError:
         print_error(f"Command not found: {cmd[0]}")
         sys.exit(1)
@@ -168,6 +178,11 @@ def check_node() -> bool:
                 return False
             else:
                 print_success(f"Node.js {version_str}")
+        else:
+            print_error(f"Node.js check failed (exit {result.returncode})")
+            if result.stderr:
+                print(f"  {result.stderr.strip()}")
+            return False
     except Exception:
         print_error("Node.js check failed")
         return False
@@ -183,6 +198,9 @@ def check_node() -> bool:
         if result.returncode == 0:
             print_success(f"npm {result.stdout.strip()}")
             return True
+        else:
+            print_error(f"npm check failed (exit {result.returncode})")
+            return False
     except Exception:
         pass
 
@@ -214,7 +232,12 @@ def check_services(skip_prompts: bool = False) -> bool:
 {Colors.BOLD}Would you like to install Ollama with qwen3.5:0.8B?{Colors.END}
 This is a lightweight model (~500MB) perfect for getting started.
 """)
-            response = input("Install Ollama? [Y/n]: ").strip().lower()
+            try:
+                response = input("Install Ollama? [Y/n]: ").strip().lower()
+            except EOFError:
+                # Non-interactive stdin (CI/pipe) — default to no
+                print_warning("Non-interactive stdin detected — skipping Ollama install")
+                response = "n"
             if response in ("", "y", "yes"):
                 install_ollama()
         else:
@@ -435,7 +458,18 @@ def install_ollama() -> bool:
         )
         import time
 
-        time.sleep(2)
+        # Wait for Ollama to be ready (poll port 11434)
+        print_step("Waiting for Ollama server to start...")
+        ready = False
+        for _ in range(30):
+            if check_port("localhost", 11434, "Ollama"):
+                ready = True
+                break
+            time.sleep(1)
+        if not ready:
+            print_warning("Ollama server did not start in time")
+            print("Try manually: ollama serve")
+            return False
 
         # Pull model
         result = subprocess.run(
@@ -479,7 +513,8 @@ def main():
     print_step("Checking prerequisites...")
     if not check_python_version():
         sys.exit(1)
-    check_git()
+    if not check_git():
+        print_warning("git not found — version control features will be unavailable")
     if not check_node():
         print_warning("Continuing without Node.js...")
 
