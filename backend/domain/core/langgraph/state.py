@@ -23,10 +23,15 @@ def _merge_messages(
 
 
 def _last_wins(a: Any, b: Any) -> Any:
-    """Simple "last value wins" reducer — equivalent to LangGraph's
-    default shallow merge but explicitly declared so the schema is
-    self-documenting."""
-    return b if b is not None else a
+    """True "last value wins" reducer.
+
+    Returns ``b`` unconditionally, so a node may also *clear* a value by
+    returning ``None`` (e.g. ``error`` after a successful retry). The
+    previous ``b if b is not None else a`` guard silently swallowed
+    intentional resets — that was masked by the old in-place state
+    mutation pattern which bypassed reducers entirely.
+    """
+    return b
 
 
 class Message(TypedDict):

@@ -36,9 +36,13 @@ completion event sent to the frontend Agent Canvas.
 # ── Step-tracking helpers for Agent Canvas state ─────────────────────────
 
 
-def _step_start(state: AgentState, name: str) -> None:
-    """Mark a pipeline step as ``running`` in ``steps_history`` and set
-    ``current_step``.  Call this at the top of each node function."""
+def _step_start(state: AgentState, name: str) -> dict[str, Any]:
+    """Return state updates marking a pipeline step as running.
+
+    Pure helper: does NOT mutate ``state``. Nodes must merge the
+    returned ``current_step`` / ``steps_history`` into their own updates
+    dict and return them so LangGraph's reducers apply them.
+    """
     model = (state.get("metadata") or {}).get("model", "")
     step: StepInfo = {
         "name": name,
@@ -50,33 +54,34 @@ def _step_start(state: AgentState, name: str) -> None:
     }
     history = list(state.get("steps_history", []))
     history.append(step)
-    state["current_step"] = name
-    state["steps_history"] = history
+    return {"current_step": name, "steps_history": history}
 
 
 def _step_done(
-    state: AgentState,
     name: str,
+    history: list[StepInfo],
     status: Literal["done", "error"] = "done",
 ) -> dict[str, Any]:
-    """Update the most recent ``steps_history`` entry for *name* with
-    final token count and duration, then return a dict with the updated
-    ``current_step`` and ``steps_history`` for the node to merge into
-    its return value.
+    """Mark the most recent running step for *name* as finished.
+
+    Pure helper: does NOT mutate the incoming state. ``history`` is the
+    list returned by ``_step_start`` (already containing the running
+    step); the matching entry is marked with the final token count.
+    Nodes merge the returned updates into their own.
 
     Usage::
 
-        return _step_done(state, "analyzing") | {
+        updates = _step_start(state, "analyzing")
+        ...
+        return _step_done("analyzing", updates["steps_history"]) | {
             "task_type": task_json,
         }
     """
-    history = list(state.get("steps_history", []))
     for step in reversed(history):
         if step.get("name") == name and step.get("status") == "running":
             step["status"] = status
             step["tokens"] = _node_token_counts.get(name, 0)
             break
-    state["steps_history"] = history
     return {"current_step": name, "steps_history": history}
 
 
@@ -152,7 +157,7 @@ def _get_model_info(state: AgentState) -> tuple[str, str]:
     return (metadata or {}).get("model", ""), (metadata or {}).get("provider", "ollama")
 
 
-def _clean_plan(plan: PlanData | None) -> dict[str, object]:
+def _clean_plan(plan: PlanData | None) -> dict[str, Any]:
     if plan is None:
         return {}
     return {k: v for k, v in plan.items() if k not in ("raw", "thinking", "analysis")}
@@ -170,9 +175,24 @@ def _get_llm_router():
     return _llm_router_instance
 
 
-def _record_error(state: AgentState, node_name: str, error: str) -> None:
-    """Append an error entry to ``error_history`` in the state, then emit a
-    step event so the frontend Debug UI can display it in real time."""
+def _reset_llm_router() -> None:
+    """Reset the cached LLMRouter singleton.
+
+    Called by ``settings._invalidate_provider_singletons`` when runtime
+    changes (model, URL, provider) must take effect on the next LLM call.
+    Must mutate the module-level cell, not a re-exported copy."""
+    global _llm_router_instance
+    _llm_router_instance = None
+
+
+def _record_error(state: AgentState, node_name: str, error: str) -> dict[str, Any]:
+    """Return updates appending an error entry to ``error_history``.
+
+    Pure helper: does NOT mutate ``state``. Emits a step event so the
+    frontend Debug UI can display the error in real time, then returns
+    ``{"error_history": [...]}`` for the caller to merge into its
+    updates dict.
+    """
     entry = {
         "node": node_name,
         "error": error,
@@ -181,9 +201,9 @@ def _record_error(state: AgentState, node_name: str, error: str) -> None:
     }
     history = list(state.get("error_history", []))
     history.append(entry)
-    state["error_history"] = history
     # Forward to frontend via event bus
     _emit_step(node_name, f"❌ {error}", data={"error": entry})
+    return {"error_history": history}
 
 
 def _emit_step(phase: str, message: str, data: dict | None = None):
@@ -193,6 +213,95 @@ def _emit_step(phase: str, message: str, data: dict | None = None):
         emit_agent_step(phase, message, data=data)
     except Exception:
         pass
+
+
+# ========================================
+# Robust JSON extraction (thinking-model safe)
+# ========================================
+
+
+def _strip_thinking(text: str) -> str:
+    """Remove reasoning blocks emitted by thinking-mode models.
+
+    Handles ``<thinking>...</thinking>`` (DeepSeek-R1, Qwen3),
+    ``<|thinking|>...</thinking|>`` (Anthropic-style) and Qwen3's
+    self-closing ``<|thinking|>...<|thinking|>`` so reasoning text
+    with braces doesn't pollute JSON extraction.
+    """
+    cleaned = re.sub(
+        r"<\|?thinking\|?>[\s\S]*?<\/?\|?thinking\|?>",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    return cleaned.strip()
+
+
+def _extract_json_object(text: str) -> dict[str, Any] | None:
+    """Extract the first valid JSON object from raw LLM output.
+
+    Robust against thinking-model preamble/reasoning:
+    1. Strips ``<thinking>...</thinking>`` blocks.
+    2. Scans for balanced ``{...}`` objects (string-aware, like ``json.loads``).
+    3. Tries ``json.loads`` on each candidate, returning the first valid dict.
+    4. Repairs common LLM mistakes (single quotes → double, trailing commas).
+
+    Returns ``None`` if no valid JSON object is found.
+    """
+    cleaned = _strip_thinking(text)
+
+    # 2. Balanced-brace scan (string-aware) — finds every top-level {...}
+    candidates: list[str] = []
+    depth = 0
+    start = -1
+    in_string = False
+    escape = False
+    for i, ch in enumerate(cleaned):
+        if escape:
+            escape = False
+            continue
+        if ch == chr(92):  # backslash
+            escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start >= 0:
+                    candidates.append(cleaned[start : i + 1])
+                    start = -1
+
+    # 3. Try each candidate as-is
+    for cand in candidates:
+        try:
+            obj = json.loads(cand)
+            if isinstance(obj, dict):
+                return obj
+        except json.JSONDecodeError:
+            continue
+
+    # 4. Repair pass on the first candidate (single quotes, trailing commas)
+    if candidates:
+        repaired = candidates[0]
+        repaired = re.sub(r"(?<!\\)'", '"', repaired)
+        repaired = re.sub(r",\s*]", "]", repaired)
+        repaired = re.sub(r",\s*}", "}", repaired)
+        try:
+            obj = json.loads(repaired)
+            if isinstance(obj, dict):
+                return obj
+        except json.JSONDecodeError:
+            pass
+
+    return None
 
 
 # ========================================

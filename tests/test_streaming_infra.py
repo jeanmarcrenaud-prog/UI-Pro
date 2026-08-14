@@ -456,10 +456,12 @@ class TestRecordError:
         from backend.domain.core.langgraph.nodes._base import _record_error
 
         state: dict[str, Any] = {"attempt": 0, "error_history": []}
-        _record_error(state, "coding", "Syntax error at line 2")
+        updates = _record_error(state, "coding", "Syntax error at line 2")
 
-        assert len(state["error_history"]) == 1
-        entry = state["error_history"][0]
+        # Pure helper: state is NOT mutated, updates carry the new history
+        assert state["error_history"] == []
+        assert len(updates["error_history"]) == 1
+        entry = updates["error_history"][0]
         assert entry["node"] == "coding"
         assert entry["error"] == "Syntax error at line 2"
         assert entry["attempt"] == 0
@@ -469,15 +471,19 @@ class TestRecordError:
         from backend.domain.core.langgraph.nodes._base import _record_error
 
         state: dict[str, Any] = {"attempt": 1}
-        _record_error(state, "reviewing", "Review failed")
-        assert len(state["error_history"]) == 1
+        updates = _record_error(state, "reviewing", "Review failed")
+
+        assert len(updates["error_history"]) == 1
+        assert updates["error_history"][0]["node"] == "reviewing"
 
     def test_multiple_errors_accumulate(self):
         from backend.domain.core.langgraph.nodes._base import _record_error
 
         state: dict[str, Any] = {"attempt": 0, "error_history": []}
-        _record_error(state, "coding", "Error 1")
-        _record_error(state, "coding", "Error 2")
+        # Merge updates back into state the way nodes do (via LangGraph reducers)
+        state = {**state, **_record_error(state, "coding", "Error 1")}
+        state = {**state, **_record_error(state, "coding", "Error 2")}
+
         assert len(state["error_history"]) == 2
 
     def test_emits_step_event(self):
@@ -489,7 +495,7 @@ class TestRecordError:
         with patch(
             "backend.domain.core.langgraph.nodes._base._emit_step"
         ) as mock_emit:
-            _record_error(state, "coding", "Syntax error")
+            updates = _record_error(state, "coding", "Syntax error")
 
             mock_emit.assert_called_once()
             args, kwargs = mock_emit.call_args
@@ -498,3 +504,5 @@ class TestRecordError:
             data = kwargs.get("data", {})
             assert "error" in data
             assert data["error"]["node"] == "coding"
+        # Emit is a side effect; the history update still lands in the return
+        assert len(updates["error_history"]) == 1

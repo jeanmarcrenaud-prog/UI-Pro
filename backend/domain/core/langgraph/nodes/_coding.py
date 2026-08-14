@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 @_timed_node("coding")
 async def coding_node(state: AgentState) -> dict[str, Any]:
-    _step_start(state, "coding")
+    updates = _step_start(state, "coding")
     _emit_step("coding", "Generation du code...")
 
     # Per-node routing: code generation is the heaviest LLM task. Small
@@ -53,7 +53,7 @@ async def coding_node(state: AgentState) -> dict[str, Any]:
 
     # Detect language from user request
     language = _detect_language(user_message)
-    state["language"] = language
+    updates["language"] = language
     lang_cfg = _get_lang_config(language)
     ext = lang_cfg["ext"]
     block = lang_cfg["block"]
@@ -202,24 +202,26 @@ async def coding_node(state: AgentState) -> dict[str, Any]:
     except (asyncio.TimeoutError, TimeoutError) as exc:
         logger.warning("[coding_node] LLM call timed out after %ss — empty fallback", settings.llm_timeout)
         _emit_step("coding", f"⏱️ LLM timeout ({settings.llm_timeout}s)")
-        state["code"] = {"files": {}}
-        state["error"] = f"LLM code generation timed out after {settings.llm_timeout}s"
-        return _step_done(state, "coding", status="error") | {
-            "code": state.get("code"),
-            "error": state.get("error"),
+        updates["code"] = {"files": {}}
+        updates["error"] = f"LLM code generation timed out after {settings.llm_timeout}s"
+        return _step_done("coding", updates["steps_history"], status="error") | {
+            "code": updates["code"],
+            "error": updates["error"],
+            "language": updates["language"],
         }
 
     _emit_step("coding", "Extraction et validation du code...")
     from ..code_extractor import extract_code_dict
     from ..code_sanitizer import sanitize_files
 
-    state["code"] = extract_code_dict(full_response)
+    code_data = extract_code_dict(full_response)
+    updates["code"] = code_data
 
     # Language enforcement: rename files with wrong extension to match
     # the detected language. Small models often ignore the format
     # instruction and output TypeScript/JavaScript when Python was
     # requested, which breaks the executor chain.
-    code_files = state["code"].get("files", {})
+    code_files = code_data.get("files", {})
     wrong_ext = (".ts", ".js", ".jsx", ".tsx", ".java", ".cpp", ".c", ".h", ".rs", ".go")
     renamed: dict[str, str] = {}
     for fname in list(code_files.keys()):
@@ -229,16 +231,16 @@ async def coding_node(state: AgentState) -> dict[str, Any]:
             renamed[fname] = new_fname
             logger.info("[coding_node] Renamed %s → %s (language enforcement)", fname, new_fname)
     if renamed:
-        state["code"]["files"] = code_files
-        state["code"]["_renamed"] = renamed
+        code_data["files"] = code_files
+        code_data["_renamed"] = renamed
 
     # Runtime safety net: Python-specific stdlib shim injection.
     # Detects `requests`/`httpx` imports and prepends urllib-backed shims.
     if language == "python":
-        original_files = state["code"].get("files", {})
+        original_files = code_data.get("files", {})
         sanitized_files, sanitize_meta = sanitize_files(original_files)
-        state["code"]["files"] = sanitized_files
-        state["code"]["sanitize_meta"] = sanitize_meta
+        code_data["files"] = sanitized_files
+        code_data["sanitize_meta"] = sanitize_meta
 
         for inj in sanitize_meta.get("injections", []):
             logger.info(
@@ -248,10 +250,11 @@ async def coding_node(state: AgentState) -> dict[str, Any]:
                 inj["file"],
             )
 
-    files_count = len(state["code"].get("files", {}))
+    files_count = len(code_data.get("files", {}))
     _emit_step("coding", f"Code généré: {files_count} fichiers")
-    state["files_generated"] = dict(state["code"].get("files", {}))
-    return _step_done(state, "coding") | {
-        "code": state.get("code"),
-        "files_generated": state.get("files_generated"),
+    updates["files_generated"] = dict(code_data.get("files", {}))
+    return _step_done("coding", updates["steps_history"]) | {
+        "code": updates["code"],
+        "files_generated": updates["files_generated"],
+        "language": updates["language"],
     }

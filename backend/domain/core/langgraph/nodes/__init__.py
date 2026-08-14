@@ -29,11 +29,24 @@ from ._base import (
     _classify_issue_severity,
     _clean_plan,
     _emit_step,
+    _extract_json_object,
     _get_user_message,
     _heuristic_review_score,
     _llm_generate,
     _llm_run_node,
     _record_error,
+    _reset_llm_router,
+    _step_done,
+    _step_start,
+    _strip_thinking,
+    _timed_node,
+    _emit_step,
+    _get_user_message,
+    _heuristic_review_score,
+    _llm_generate,
+    _llm_run_node,
+    _record_error,
+    _reset_llm_router,
     _step_done,
     _step_start,
     _timed_node,
@@ -62,7 +75,7 @@ __all__ = [
 
 @_timed_node("analyzing")
 async def analyzing_node(state: AgentState) -> dict[str, Any]:
-    _step_start(state, "analyzing")
+    updates = _step_start(state, "analyzing")
     _emit_step("analyzing", "Analyse des exigences...")
 
     # Per-node routing: classification is a simple task that benefits from
@@ -91,20 +104,15 @@ async def analyzing_node(state: AgentState) -> dict[str, Any]:
         full_response[:200] if full_response else "EMPTY",
     )
 
-    # Extract JSON even if the model prepends "Thinking Process"
+    # Extract JSON robustly — handles thinking-model preamble/reasoning
+    # via balanced-brace scan + single-quote/trailing-comma repair.
     task_json = full_response
-    json_match = re.search(r"\{[\s\S]*\}", full_response)
-    if json_match:
-        try:
-            parsed = json.loads(json_match.group(0))
-            if isinstance(parsed, dict) and "task_type" in parsed:
-                task_json = json.dumps(parsed)
-        except json.JSONDecodeError:
-            pass
+    parsed = _extract_json_object(full_response)
+    if parsed is not None and "task_type" in parsed:
+        task_json = json.dumps(parsed)
 
     _emit_step("analyzing", f"Tâche classifiée: {task_json[:80]}...")
-    state["task_type"] = task_json
-    return _step_done(state, "analyzing") | {
+    return _step_done("analyzing", updates["steps_history"]) | {
         "task_type": task_json,
     }
 
@@ -116,7 +124,7 @@ async def analyzing_node(state: AgentState) -> dict[str, Any]:
 
 @_timed_node("planning")
 async def planning_node(state: AgentState) -> dict[str, Any]:
-    _step_start(state, "planning")
+    updates = _step_start(state, "planning")
     _emit_step("planning", "Creation du plan d'implementation...")
 
     # Per-node routing: planning needs structured JSON output with
@@ -152,6 +160,8 @@ async def planning_node(state: AgentState) -> dict[str, Any]:
 
     def _parse_plan(text: str) -> PlanData:
         """Multi-strategy JSON extraction for plan."""
+        # Strip thinking-model preamble so reasoning braces don't pollute scan
+        text = _strip_thinking(text)
         # Strategy 1: direct parse
         try:
             return json.loads(text)
@@ -214,22 +224,23 @@ async def planning_node(state: AgentState) -> dict[str, Any]:
 
         # Fallback
         logger.warning("Could not parse plan from LLM response, using empty plan")
-        _record_error(state, "planning", "Could not parse plan from LLM response")
+        updates.update(_record_error(state, "planning", "Could not parse plan from LLM response"))
         return {"raw": text[:500], "steps": [], "files": {}}
 
     plan = _parse_plan(full_response)
 
-    state["plan"] = _clean_plan(plan)
-    steps_count = len(state.get("plan", {}).get("steps", []))
-    files_count = len(state.get("plan", {}).get("files", {}))
+    plan_clean = _clean_plan(plan)
+    updates["plan"] = plan_clean
+    steps_count = len(plan_clean.get("steps", []))
+    files_count = len(plan_clean.get("files", {}))
     _emit_step("planning", f"Plan créé avec {steps_count} étapes")
     intro = (
         f"I'll implement this with {steps_count} step(s) across "
         f"{files_count} file(s). Generating the code now..."
     )
-    return _step_done(state, "planning") | {
+    return _step_done("planning", updates["steps_history"]) | {
         "messages": [{"role": "assistant", "content": intro}],
-        "plan": state.get("plan"),
+        "plan": updates["plan"],
     }
 
 
@@ -240,7 +251,7 @@ async def planning_node(state: AgentState) -> dict[str, Any]:
 
 @_timed_node("reviewing")
 async def reviewing_node(state: AgentState) -> dict[str, Any]:
-    _step_start(state, "reviewing")
+    updates = _step_start(state, "reviewing")
     _emit_step("reviewing", "Analyse statique du code...")
 
     # Per-node routing: review needs a model that can follow the
@@ -256,7 +267,7 @@ async def reviewing_node(state: AgentState) -> dict[str, Any]:
             "reviewing",
             "❌ Aucun code généré par coding_node — review ignorée",
         )
-        state["review"] = {
+        updates["review"] = {
             "passed": False,
             "score": 0.0,
             "issues": [
@@ -271,8 +282,8 @@ async def reviewing_node(state: AgentState) -> dict[str, Any]:
             ],
             "issue_severities": ["high"],
         }
-        return _step_done(state, "reviewing") | {
-            "review": state.get("review"),
+        return _step_done("reviewing", updates["steps_history"]) | {
+            "review": updates["review"],
         }
 
     # ── Generic validation for ALL files ──
@@ -315,7 +326,7 @@ async def reviewing_node(state: AgentState) -> dict[str, Any]:
             "; ".join(_syntax_errors),
         )
         _emit_step("reviewing", f"❌ {len(_syntax_errors)} erreur(s) de validation détectée(s)")
-        state["review"] = {
+        updates["review"] = {
             "passed": False,
             "score": 0.0,
             "issues": _syntax_errors,
@@ -325,9 +336,9 @@ async def reviewing_node(state: AgentState) -> dict[str, Any]:
             ],
             "issue_severities": ["high"] * len(_syntax_errors),
         }
-        _record_error(state, "reviewing", "; ".join(_syntax_errors))
-        return _step_done(state, "reviewing", status="error") | {
-            "review": state.get("review"),
+        updates.update(_record_error(state, "reviewing", "; ".join(_syntax_errors)))
+        return _step_done("reviewing", updates["steps_history"], status="error") | {
+            "review": updates["review"],
         }
 
     _emit_step("reviewing", "Vérification de la qualité du code...")
@@ -387,29 +398,9 @@ async def reviewing_node(state: AgentState) -> dict[str, Any]:
             ],
             "issue_severities": ["medium"],
         }
-        state["review"] = fallback
-        logger.warning(
-            "[reviewing_node] LLM call failed after %ss — fallback review",
-            settings.llm_timeout,
-        )
-        _emit_step("reviewing", f"⏱️ LLM timeout — fallback review")
-        fallback: ReviewData = {
-            "passed": False,
-            "score": 0.0,
-            "issues": [
-                f"LLM review timed out after {settings.llm_timeout}s. ",
-                "The code was not reviewed."
-            ],
-            "suggestions": [
-                "Try a faster model",
-                "Increase LLM_TIMEOUT in Settings",
-                "Simplify the generated code",
-            ],
-            "issue_severities": ["medium"],
-        }
-        state["review"] = fallback
-        return _step_done(state, "reviewing", status="error") | {
-            "review": state.get("review"),
+        updates["review"] = fallback
+        return _step_done("reviewing", updates["steps_history"], status="error") | {
+            "review": updates["review"],
         }
 
     _REVIEW_FALLBACK: ReviewData = {
@@ -434,6 +425,8 @@ async def reviewing_node(state: AgentState) -> dict[str, Any]:
         return None
 
     def _parse_review(text: str) -> ReviewData:
+        # Strip thinking-model preamble so reasoning braces don't pollute scan
+        text = _strip_thinking(text)
         # 1. Direct parse
         try:
             coerced = _coerce_to_dict(json.loads(text))
@@ -442,17 +435,15 @@ async def reviewing_node(state: AgentState) -> dict[str, Any]:
         except json.JSONDecodeError:
             pass
 
-        # 2. First top-level {...} block
-        obj_block = re.search(r"\{[\s\S]*\}", text)
-        if obj_block:
-            try:
-                coerced = _coerce_to_dict(json.loads(obj_block.group(0)))
-                if coerced is not None:
-                    return coerced
-            except json.JSONDecodeError:
-                pass
+        # 2. Balanced-brace JSON object extraction (handles single quotes,
+        #    trailing commas, and thinking-model reasoning)
+        obj = _extract_json_object(text)
+        if obj is not None:
+            coerced = _coerce_to_dict(obj)
+            if coerced is not None:
+                return coerced
 
-        # 3. First top-level [...] block
+        # 3. First top-level [...] block (list of issues)
         list_block = re.search(r"\[[\s\S]*?\]", text)
         if list_block:
             try:
@@ -464,7 +455,7 @@ async def reviewing_node(state: AgentState) -> dict[str, Any]:
             except json.JSONDecodeError:
                 pass
 
-        _record_error(state, "reviewing", "Could not parse LLM review response")
+        updates.update(_record_error(state, "reviewing", "Could not parse LLM review response"))
         return _REVIEW_FALLBACK
 
     review = _parse_review(full_response)
@@ -480,14 +471,14 @@ async def reviewing_node(state: AgentState) -> dict[str, Any]:
     else:
         review["score"] = _heuristic_review_score(issues, suggestions)
 
-    state["review"] = review
+    updates["review"] = review
     if review.get("passed"):
         _emit_step("reviewing", "✅ Review OK - code valide")
     else:
         issues_count = len(review.get("issues", []))
         _emit_step("reviewing", f"⚠️ {issues_count} problème(s) détecté(s)")
-    return _step_done(state, "reviewing") | {
-        "review": state.get("review"),
+    return _step_done("reviewing", updates["steps_history"]) | {
+        "review": updates["review"],
     }
 
 
@@ -498,7 +489,7 @@ async def reviewing_node(state: AgentState) -> dict[str, Any]:
 
 @_timed_node("executing")
 async def executing_node(state: AgentState) -> dict[str, Any]:
-    _step_start(state, "executing")
+    updates = _step_start(state, "executing")
     _emit_step("executing", "Préparation du sandbox...")
 
     from backend.infrastructure.code_execution import CodeExecutionService
@@ -517,6 +508,8 @@ async def executing_node(state: AgentState) -> dict[str, Any]:
             pass
 
     _emit_step("executing", f"Exécution de {len(files)} fichier(s) dans le sandbox...")
+    updates["attempt"] = state.get("attempt", 0) + 1
+    status: Literal["done", "error"] = "done"
     try:
         try:
             result = await asyncio.wait_for(
@@ -524,56 +517,56 @@ async def executing_node(state: AgentState) -> dict[str, Any]:
                 timeout=float(settings.executor_timeout),
             )
         except asyncio.TimeoutError:
+            status = "error"
             timeout_s = int(float(settings.executor_timeout))
             err_msg = (
                 f"Execution timed out after {timeout_s}s "
                 f"(sandbox exceeded EXECUTOR_TIMEOUT). "
                 f"Increase executor_timeout in Settings, or simplify the code."
             )
-            state["error"] = err_msg
-            state["execution_result"] = {"success": False, "error": err_msg, "output": ""}
+            updates["error"] = err_msg
+            updates["execution_result"] = {"success": False, "error": err_msg, "output": ""}
             _emit_step("executing", f"❌ Timeout ({timeout_s}s)")
             logger.warning("Sandbox execution timed out after %ss", timeout_s)
-            _record_error(state, "executing", err_msg)
-            state["attempt"] = state.get("attempt", 0) + 1
-            return _step_done(state, "executing", status="error") | _build_execution_summary(state)
-
+            updates.update(_record_error(state, "executing", err_msg))
         except asyncio.CancelledError:
+            status = "error"
             err_msg = "Execution was cancelled (e.g. client disconnect or shutdown)"
-            state["error"] = err_msg
-            state["execution_result"] = {"success": False, "error": err_msg, "output": ""}
+            updates["error"] = err_msg
+            updates["execution_result"] = {"success": False, "error": err_msg, "output": ""}
             _emit_step("executing", "❌ Cancelled")
             logger.warning("Sandbox execution cancelled")
-            _record_error(state, "executing", err_msg)
-            state["attempt"] = state.get("attempt", 0) + 1
-            return _step_done(state, "executing", status="error") | _build_execution_summary(state)
-
-        state["execution_result"] = {
-            "success": result.success,
-            "error": result.error,
-            "output": result.output,
-        }
-        state["error"] = None
-        if result.success:
-            _emit_step("executing", "✅ Exécution réussie")
+            updates.update(_record_error(state, "executing", err_msg))
         else:
-            err_msg = result.error or "(no error message from sandbox — check executor logs)"
-            _emit_step("executing", f"❌ Échec: {err_msg[:80]}")
-            _record_error(state, "executing", err_msg)
+            updates["execution_result"] = {
+                "success": result.success,
+                "error": result.error,
+                "output": result.output,
+            }
+            updates["error"] = None
+            if result.success:
+                _emit_step("executing", "✅ Exécution réussie")
+            else:
+                err_msg = result.error or "(no error message from sandbox — check executor logs)"
+                _emit_step("executing", f"❌ Échec: {err_msg[:80]}")
+                updates.update(_record_error(state, "executing", err_msg))
     except Exception as e:
+        status = "error"
         err_msg = f"{type(e).__name__}: {e}" if str(e) else f"{type(e).__name__} (no message)"
-        state["error"] = err_msg
-        state["execution_result"] = {"success": False, "error": err_msg, "output": ""}
+        updates["error"] = err_msg
+        updates["execution_result"] = {"success": False, "error": err_msg, "output": ""}
         _emit_step("executing", f"❌ Exception: {err_msg[:80]}")
-        _record_error(state, "executing", err_msg)
-        _step_done(state, "executing", status="error")
+        updates.update(_record_error(state, "executing", err_msg))
         logger.exception("Execution failed")
 
-    state["attempt"] = state.get("attempt", 0) + 1
-    return _step_done(state, "executing") | _build_execution_summary(state)
+    return {
+        **updates,
+        **_step_done("executing", updates["steps_history"], status=status),
+        **_build_execution_summary({**state, **updates}),
+    }
 
 
-def _build_execution_summary(state: AgentState) -> dict[str, Any]:
+def _build_execution_summary(state: dict[str, Any]) -> dict[str, Any]:
     """Build a user-facing summary dict for merging into the node result.
 
     The returned dict should be merged via ``|`` with the step-track dict:
