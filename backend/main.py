@@ -79,7 +79,7 @@ async def list_mcp_tools():
 @app.post("/mcp/call")
 async def call_mcp_tool(request: Dict[str, Any]):
     """Exécute un outil spécifique demandé par le client MCP."""
-    tool_name = request.get("tool_name")
+    tool_name = request.get("tool_name") or ""
     arguments = request.get("arguments", {})
     server = get_server()
     result = await server.call_tool(tool_name, arguments)

@@ -78,7 +78,7 @@ def generate_with_fallback(
     """
     from backend.domain.settings import settings
 
-    provider = provider or getattr(settings, "active_provider", None) or "ollama"
+    provider = str(provider or getattr(settings, "active_provider", None) or "ollama")
     model_name = model or settings.model_fast
 
     errors: list[str] = []
@@ -124,7 +124,7 @@ def stream_with_fallback(
     """
     from backend.domain.settings import settings
 
-    provider = provider or getattr(settings, "active_provider", None) or "ollama"
+    provider = str(provider or getattr(settings, "active_provider", None) or "ollama")
     model_name = model or settings.model_fast
 
     errors: list[str] = []
@@ -167,7 +167,7 @@ async def astream_with_fallback(
     """
     from backend.domain.settings import settings
 
-    provider = provider or getattr(settings, "active_provider", None) or "ollama"
+    provider = str(provider or getattr(settings, "active_provider", None) or "ollama")
     model_name = model or settings.model_fast
 
     errors: list[str] = []

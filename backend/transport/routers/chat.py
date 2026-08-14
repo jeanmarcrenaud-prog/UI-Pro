@@ -39,7 +39,7 @@ async def chat(request: ChatRequest):
         async for chunk in stream_chat(
             prompt=request.message,
             model=request.model or settings.model_fast,
-            provider=request.provider,
+            provider=request.provider or "ollama",
         ):
             if chunk.text:
                 chunks.append(chunk.text)
@@ -69,7 +69,7 @@ async def stream(request: ChatRequest):
             async for chunk in stream_chat(
                 prompt=request.message,
                 model=request.model or settings.model_fast,
-                provider=request.provider,
+                provider=request.provider or "ollama",
             ):
                 if chunk.text:
                     chunk_count += 1

@@ -1,8 +1,9 @@
 import logging
 import json
 import re
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from openai import OpenAI
+from openai.types.chat import ChatCompletionMessageParam
 from backend.domain.core.models import EditorState as EditorStateModel
 from backend.domain.core.editor_service import EditorService
 from backend.domain.core.editor_state import EditorStateStore
@@ -154,15 +155,7 @@ class HermesMCPServer:
 
     async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         if tool_name == "execute_intent":
-            stored = self.state_store.get_state()
-            state = EditorStateModel(
-                cursor=stored.cursor,
-                selection=stored.selection,
-                active_file=stored.active_file,
-                diagnostics=stored.diagnostics,
-                terminal_output=stored.terminal_output,
-                git_status=stored.git_status,
-            )
+            state = self.state_store.get_state()
             actions = await self.intelligence_service.process_user_intent(
                 arguments.get("intent", ""), state
             )
@@ -199,7 +192,7 @@ class HermesMCPServer:
 
             system_prompt = _build_system_prompt(tool_names)
 
-            messages: List[Dict[str, Any]] = [
+            messages: List[ChatCompletionMessageParam] = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": message},
             ]
@@ -249,7 +242,7 @@ class HermesMCPServer:
 
             system_prompt = _build_system_prompt(tool_names)
 
-            messages: List[Dict[str, Any]] = [
+            messages: List[ChatCompletionMessageParam] = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": message},
             ]
@@ -341,7 +334,7 @@ def _parse_kv(raw: str, sep: str = ":") -> dict:
     return result
 
 
-def build_followup_messages(original_text, func_name, func_args, result):
+def build_followup_messages(original_text, func_name, func_args, result) -> List[ChatCompletionMessageParam]:
     result_content = result.get("content", str(result)) if isinstance(result, dict) else str(result)
     return [{
         "role": "system",

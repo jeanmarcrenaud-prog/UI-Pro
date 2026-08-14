@@ -12,6 +12,7 @@ Provides stronger isolation than SubprocessExecutor:
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
 from backend.infrastructure.docker_sandbox import DockerSandbox, get_docker_sandbox
