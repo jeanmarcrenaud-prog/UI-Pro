@@ -110,3 +110,38 @@ def pytest_runtest_setup(item):
         if marker and os.environ.get("LOG_LEVEL") == "DEBUG":
             item.log_start = True
             item.log_debug = True
+
+
+def pytest_configure(config):
+    """Force UTF-8 on stdout/stderr in place (reconfigure, not replace).
+
+    Reconfiguring the existing TextIOWrapper avoids breaking pytest's
+    capture machinery (which holds its own stdout reference). This lets
+    tests emit unicode (e.g. ★) without 'I/O operation on closed file'
+    errors during capture teardown.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            getattr(stream, "reconfigure")(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _close_checkpointer_after_tests():
+    """Close the LangGraph SQLite checkpointer at session end.
+
+    The app lifespan (run by TestClient warm-up) opens an AsyncSqliteSaver
+    which holds an aiosqlite connection; without an explicit close, pytest
+    teardown can leak it and emit 'Event loop is closed' errors. Best-effort:
+    close failures are logged, never fatal for the session.
+    """
+    yield
+    import asyncio
+
+    from backend.domain.core.langgraph.checkpointer import close_checkpointer
+
+    try:
+        asyncio.run(close_checkpointer())
+    except Exception:
+        pass

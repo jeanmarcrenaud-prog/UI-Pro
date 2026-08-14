@@ -9,14 +9,37 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.transport.routers import chat, execute, health, logs, templates, ws
+from backend.transport.routers.hermes import router as hermes_router
+from backend.transport.routers.mario import router as mario_router
+
 logger = logging.getLogger("api")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("[START] UI-Pro API starting...")
+
+    # Warm up the LangGraph orchestrator (and its SQLite checkpointer) as
+    # part of the app lifecycle instead of lazily on the first request:
+    # the first chat message doesn't pay the one-time init cost and the
+    # checkpointer lifecycle is owned by the application, not the first call.
+    try:
+        from backend.domain.core.langgraph import get_orchestrator
+
+        await get_orchestrator()
+        logger.info("[START] LangGraph orchestrator ready")
+    except Exception:
+        logger.exception("[START] Orchestrator warm-up failed — will retry on first request")
+
     yield
     logger.info("[STOP] UI-Pro API shutting down...")
+    try:
+        from backend.domain.core.langgraph.checkpointer import close_checkpointer
+
+        await close_checkpointer()
+    except Exception:
+        logger.exception("[STOP] Checkpointer close failed")
 
 
 app = FastAPI(
@@ -75,10 +98,6 @@ if _rate_limit_available:
         logger.info("Rate limiting disabled via settings")
 
 
-# Include routers
-from backend.transport.routers import chat, execute, health, logs, ws, templates
-from backend.transport.routers.mario import router as mario_router
-from backend.transport.routers.hermes import router as hermes_router
 
 app.include_router(health.router)
 app.include_router(chat.router)

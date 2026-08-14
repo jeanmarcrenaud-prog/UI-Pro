@@ -30,7 +30,6 @@ def client():
     from backend.transport.main import app
 
     return TestClient(app)
-    return TestClient(app)
 
 @pytest.fixture
 def mock_mario_available():
