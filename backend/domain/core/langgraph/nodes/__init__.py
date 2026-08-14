@@ -28,6 +28,7 @@ from ._base import (
     _classify_issue_severity,
     _clean_plan,
     _emit_step,
+    _error_guard,
     _extract_json_object,
     _get_user_message,
     _heuristic_review_score,
@@ -65,6 +66,7 @@ __all__ = [
 
 
 @_timed_node("analyzing")
+@_error_guard("analyzing")
 async def analyzing_node(state: AgentState) -> dict[str, Any]:
     updates = _step_start(state, "analyzing")
     _emit_step("analyzing", "Analyse des exigences...")
@@ -114,6 +116,7 @@ async def analyzing_node(state: AgentState) -> dict[str, Any]:
 
 
 @_timed_node("planning")
+@_error_guard("planning")
 async def planning_node(state: AgentState) -> dict[str, Any]:
     updates = _step_start(state, "planning")
     _emit_step("planning", "Creation du plan d'implementation...")
@@ -241,6 +244,7 @@ async def planning_node(state: AgentState) -> dict[str, Any]:
 
 
 @_timed_node("reviewing")
+@_error_guard("reviewing")
 async def reviewing_node(state: AgentState) -> dict[str, Any]:
     updates = _step_start(state, "reviewing")
     _emit_step("reviewing", "Analyse statique du code...")
@@ -480,6 +484,7 @@ async def reviewing_node(state: AgentState) -> dict[str, Any]:
 
 
 @_timed_node("executing")
+@_error_guard("executing")
 async def executing_node(state: AgentState) -> dict[str, Any]:
     updates = _step_start(state, "executing")
     _emit_step("executing", "Préparation du sandbox...")

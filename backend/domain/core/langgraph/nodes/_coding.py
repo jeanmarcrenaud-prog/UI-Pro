@@ -23,6 +23,7 @@ from ._base import (
     _clean_plan,
     _detect_language,
     _emit_step,
+    _error_guard,
     _get_lang_config,
     _get_user_message,
     _llm_run_node,
@@ -35,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 
 @_timed_node("coding")
+@_error_guard("coding")
 async def coding_node(state: AgentState) -> dict[str, Any]:
     updates = _step_start(state, "coding")
     _emit_step("coding", "Generation du code...")

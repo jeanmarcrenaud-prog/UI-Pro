@@ -141,6 +141,57 @@ def _timed_node(name: str):
     return decorator
 
 
+def _error_guard(node_name: str):
+    """Decorator that converts an unhandled node exception into a recorded
+    error + error-status step, so the pipeline continues instead of crashing.
+
+    Pairs with ``@_timed_node`` — apply it BELOW (inside) it::
+
+        @_timed_node("coding")
+        @_error_guard("coding")
+        async def coding_node(state): ...
+
+    On exception the wrapper records the error via ``_record_error``, marks
+    the step as ``error`` in ``steps_history``, sets ``error``, and returns
+    the partial updates so the graph can continue (e.g. the no-code
+    short-circuit or the fix loop). ``BaseException`` (e.g.
+    ``asyncio.CancelledError``) is NOT caught — cancellation must propagate.
+    """
+
+    def decorator(func):
+        @functools.wraps(func)
+        async def wrapper(state, *args, **kwargs):
+            try:
+                return await func(state, *args, **kwargs)
+            except Exception as exc:
+                logger.exception("[%s_node] Unhandled exception", node_name)
+                msg = (
+                    f"{type(exc).__name__}: {exc}"
+                    if str(exc)
+                    else f"{type(exc).__name__} (no message)"
+                )
+                updates = _record_error(state, node_name, msg)
+                # The node may have crashed before _step_start, so its
+                # running step (if any) lives in the lost local updates.
+                # Append a synthetic running step and mark it error.
+                history = list(state.get("steps_history", []))
+                history.append({
+                    "name": node_name,
+                    "status": "running",
+                    "model_used": (state.get("metadata") or {}).get("model") or None,
+                    "tokens": 0,
+                    "duration_ms": 0,
+                    "started_at": datetime.now(timezone.utc).isoformat(),
+                })
+                updates.update(_step_done(node_name, history, status="error"))
+                updates["error"] = msg
+                return updates
+
+        return wrapper
+
+    return decorator
+
+
 # ========================================
 # Helpers
 # ========================================

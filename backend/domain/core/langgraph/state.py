@@ -34,6 +34,32 @@ def _last_wins(a: Any, b: Any) -> Any:
     return b
 
 
+def _merge_errors(
+    left: list[dict[str, object]] | None,
+    right: list[dict[str, object]] | None,
+) -> list[dict[str, object]]:
+    """Merge error history, deduplicating entries by (node, timestamp).
+
+    ``_record_error`` returns the full accumulated history (state's
+    entries + the new one), so a plain ``operator.add`` would duplicate
+    the existing entries on every update. Deduping by (node, timestamp)
+    keeps the merge idempotent — two nodes updating in the same
+    superstep, or a checkpoint replay, cannot lose or duplicate entries.
+    """
+    if not right:
+        return left or []
+    if not left:
+        return right
+    seen = {(e.get("node"), e.get("timestamp")) for e in left}
+    merged = list(left)
+    for entry in right:
+        key = (entry.get("node"), entry.get("timestamp"))
+        if key not in seen:
+            merged.append(entry)
+            seen.add(key)
+    return merged
+
+
 class Message(TypedDict):
     """A single message in the conversation history."""
 
@@ -170,4 +196,4 @@ class AgentState(TypedDict, total=False):
     thinking_mode: Annotated[bool, _last_wins]
 
     # Error history — each entry: {"node": str, "error": str, "attempt": int, "timestamp": str}
-    error_history: Annotated[list[dict[str, object]], _last_wins]
+    error_history: Annotated[list[dict[str, object]], _merge_errors]

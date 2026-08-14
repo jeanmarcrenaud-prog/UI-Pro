@@ -31,6 +31,7 @@ from ._base import (
     _clean_plan,
     _detect_language,
     _emit_step,
+    _error_guard,
     _get_lang_config,
     _get_user_message,
     _llm_run_node,
@@ -43,6 +44,7 @@ logger = logging.getLogger(__name__)
 
 
 @_timed_node("fixing")
+@_error_guard("fixing")
 async def fixing_node(state: AgentState) -> dict[str, Any]:
     updates = _step_start(state, "fixing")
     _emit_step("fixing", "Correction automatique du code...")

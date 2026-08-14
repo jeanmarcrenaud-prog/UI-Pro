@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any, Literal
 
@@ -527,3 +528,89 @@ class TestFixingNode:
             e.source == "fixing" and not e.conditional and e.target == "review"
             for e in graph.edges
         )
+
+
+
+class TestErrorGuard:
+    """_error_guard — unhandled node exceptions become recorded errors.
+
+    A crashing node must not abort the whole run: the wrapper records
+    the error, marks the step as error, sets ``error``, and returns
+    partial updates so the pipeline can continue."""
+
+    def test_catches_exception_and_records_error(self):
+        from backend.domain.core.langgraph.nodes._base import _error_guard
+
+        @_error_guard("coding")
+        async def boom(state):
+            raise RuntimeError("kaboom")
+
+        state: dict[str, Any] = {
+            "attempt": 0,
+            "error_history": [],
+            "steps_history": [],
+        }
+        updates = asyncio.run(boom(state))
+
+        assert updates["error"] == "RuntimeError: kaboom"
+        assert len(updates["error_history"]) == 1
+        entry = updates["error_history"][0]
+        assert entry["node"] == "coding"
+        assert entry["error"] == "RuntimeError: kaboom"
+        # Step marked error for the Agent Canvas
+        last_step = updates["steps_history"][-1]
+        assert last_step["name"] == "coding"
+        assert last_step["status"] == "error"
+
+    def test_returns_node_result_on_success(self):
+        from backend.domain.core.langgraph.nodes._base import _error_guard
+
+        @_error_guard("coding")
+        async def ok(state):
+            return {"code": {"files": {"main.py": "print(1)"}}}
+
+        updates = asyncio.run(ok({}))
+        assert updates["code"]["files"]["main.py"] == "print(1)"
+
+    def test_cancelled_error_propagates(self):
+        """Cancellation is a BaseException — the guard must not swallow it."""
+        from backend.domain.core.langgraph.nodes._base import _error_guard
+
+        @_error_guard("coding")
+        async def cancelled(state):
+            raise asyncio.CancelledError()
+
+        with pytest.raises(asyncio.CancelledError):
+            asyncio.run(cancelled({}))
+
+
+class TestMergeErrors:
+    """_merge_errors — error_history reducer dedupes by (node, timestamp)."""
+
+    def _entry(self, node, error, ts):
+        return {"node": node, "error": error, "attempt": 0, "timestamp": ts}
+
+    def test_accumulates_distinct_entries(self):
+        from backend.domain.core.langgraph.state import _merge_errors
+
+        e1 = self._entry("coding", "a", "t1")
+        e2 = self._entry("reviewing", "b", "t2")
+        merged = _merge_errors([e1], [e1, e2])
+        assert len(merged) == 2
+        assert merged[0] == e1
+        assert merged[1] == e2
+
+    def test_dedupes_same_node_and_timestamp(self):
+        from backend.domain.core.langgraph.state import _merge_errors
+
+        e1 = self._entry("coding", "a", "t1")
+        merged = _merge_errors([e1], [e1])
+        assert len(merged) == 1
+
+    def test_handles_none_sides(self):
+        from backend.domain.core.langgraph.state import _merge_errors
+
+        e1 = self._entry("coding", "a", "t1")
+        assert _merge_errors(None, [e1]) == [e1]
+        assert _merge_errors([e1], None) == [e1]
+        assert _merge_errors(None, None) == []
