@@ -12,6 +12,7 @@ class TemplateInfo(BaseModel):
     id: str
     name: str
     description: str
+    prompt_suffix: str
 
 
 class ApplyTemplateRequest(BaseModel):

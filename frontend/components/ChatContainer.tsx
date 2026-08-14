@@ -408,6 +408,16 @@ export function ChatContainer({
       <div className="sticky bottom-0 bg-gradient-to-t from-[var(--bg-primary)] via-[var(--bg-primary)] to-transparent pt-6 pb-8 px-6 border-t border-[var(--border-subtle)]">
         <div className="max-w-4xl mx-auto">
           <div className="relative bg-slate-900 rounded-3xl border border-slate-700 focus-within:border-violet-500 transition-colors">
+            <div className="absolute top-2 left-2 z-10">
+              <TemplateSelectorTrigger
+                onSelect={(prompt) => {
+                  setInputValue(prompt)
+                  textareaRef.current?.focus()
+                  textareaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                }}
+                disabled={isLoading}
+              />
+            </div>
             {editingMessageId && (
               <div className="absolute -top-3 left-4 flex items-center gap-2">
                 <span className="text-[11px] text-amber-400 bg-slate-800 px-2 py-0.5 rounded-full border border-amber-500/30">
@@ -428,7 +438,7 @@ export function ChatContainer({
               disabled={isLoading}
               placeholder={t.input?.placeholder || 'Describe your task...'}
               rows={1}
-              className="w-full bg-transparent text-white placeholder-slate-500 px-6 py-4 pr-20 resize-y min-h-[56px] max-h-[180px] outline-none text-[15px]"
+              className="w-full bg-transparent text-white placeholder-slate-500 pl-12 py-4 pr-20 resize-y min-h-[56px] max-h-[180px] outline-none text-[15px]"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault()

@@ -283,7 +283,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
 def list_templates() -> list[dict[str, str]]:
     """Return a list of all available templates (id, name, description)."""
     return [
-        {"id": t.id, "name": t.name, "description": t.description}
+        {"id": t.id, "name": t.name, "description": t.description, "prompt_suffix": t.prompt_suffix}
         for t in TEMPLATES.values()
     ]
 

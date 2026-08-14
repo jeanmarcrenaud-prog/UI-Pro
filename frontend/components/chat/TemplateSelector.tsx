@@ -1,6 +1,7 @@
 // TemplateSelector.tsx
-// Role: Modal selector for project templates — pre-fills the chat prompt
-//       with the template's prompt_suffix when a template is chosen.
+// Role: Modal selector for project templates — applies the template
+//       (POST /api/templates/{id}/apply) then pre-fills the chat prompt
+//       with the backend's prompt_suffix.
 
 'use client'
 
@@ -12,6 +13,7 @@ export interface TemplateInfo {
   id: string
   name: string
   description: string
+  prompt_suffix: string
 }
 
 interface TemplateSelectorProps {
@@ -33,6 +35,7 @@ export function TemplateSelector({ isOpen, onClose, onSelect }: TemplateSelector
   const [templates, setTemplates] = useState<TemplateInfo[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [applying, setApplying] = useState<string | null>(null)
 
   useEffect(() => {
     if (!isOpen) return
@@ -75,12 +78,26 @@ export function TemplateSelector({ isOpen, onClose, onSelect }: TemplateSelector
   }, [isOpen, onClose])
 
   const handleSelect = useCallback(
-    (template: TemplateInfo) => {
-      const prompt = `Create a ${template.name} project. ${template.description}`
-      onSelect(prompt)
-      onClose()
+    async (template: TemplateInfo) => {
+      if (applying) return
+      setApplying(template.id)
+      setError(null)
+      try {
+        const res = await fetch(`/api/templates/${template.id}/apply`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ template_id: template.id }),
+        })
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        onSelect(template.prompt_suffix)
+        onClose()
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to apply template')
+      } finally {
+        setApplying(null)
+      }
     },
-    [onSelect, onClose],
+    [applying, onSelect, onClose],
   )
 
   return (
@@ -163,10 +180,15 @@ export function TemplateSelector({ isOpen, onClose, onSelect }: TemplateSelector
 
                       <button
                         onClick={() => handleSelect(template)}
-                        className="mt-3 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm bg-violet-600 hover:bg-violet-700 text-white rounded-lg transition-colors"
+                        disabled={applying !== null}
+                        className="mt-3 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm bg-violet-600 hover:bg-violet-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        Use template
+                        {applying === template.id ? (
+                          <span className="animate-spin w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full" />
+                        ) : (
+                          <Sparkles className="w-3.5 h-3.5" />
+                        )}
+                        {applying === template.id ? 'Applying…' : 'Use template'}
                       </button>
                     </motion.div>
                   ))}
