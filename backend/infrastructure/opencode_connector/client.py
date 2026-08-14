@@ -2,6 +2,8 @@ import asyncio
 import json
 import logging
 import websockets
+from websockets.asyncio.client import ClientConnection
+from websockets.protocol import State
 from typing import Callable, Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 from .models import EditorUpdate, HermesAction, OpenCodeResponse
@@ -15,7 +17,7 @@ class OpenCodeClient:
     def __init__(self, uri: str, on_update: Callable[[EditorUpdate], None]):
         self.uri = uri
         self.on_update = on_update
-        self.websocket: Optional[websockets.WebSocketClientProtocol] = None
+        self.websocket: Optional[ClientConnection] = None
 
     async def connect(self):
         try:
@@ -26,6 +28,9 @@ class OpenCodeClient:
             logger.error(f"Échec de la connexion à OpenCode: {e}")
 
     async def _listen(self):
+        if self.websocket is None:
+            logger.error("WebSocket non initialisé, impossible d'écouter.")
+            return
         try:
             async for message in self.websocket:
                 data = json.loads(message)
@@ -45,7 +50,7 @@ class OpenCodeClient:
             logger.error(f"Erreur dans la boucle d'écoute : {e}")
 
     async def send_action(self, action: HermesAction):
-        if self.websocket and self.websocket.open:
+        if self.websocket and self.websocket.state is State.OPEN:
             await self.websocket.send(json.dumps({
                 "hermes_action": action.dict()
             }))

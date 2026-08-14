@@ -2,6 +2,7 @@ import asyncio
 import logging
 from typing import Optional
 from backend.domain.core.editor_state import EditorStateStore
+from backend.domain.core.filesystem_service import FilesystemService
 from backend.domain.core.editor_service import EditorService
 from backend.infrastructure.opencode_connector.manager import OpenCodeConnectorManager
 
@@ -39,30 +40,13 @@ async def init_editor_services(ws_uri: str = "ws://localhost:8765"):
     
     if _editor_service is None:
         logger.info("Initialisation du service de domaine de l'éditeur...")
-        _editor_service = EditorService(_editor_state_store)
+        _editor_service = EditorService(_editor_state_store, FilesystemService())
     
     if _opencode_manager is None:
         logger.info(f"Initialisation du connecteur OpenCode sur {ws_uri}...")
-        # Correction : On passe bien le state_store et l'editor_service ici
-        _opencode_manager = OpenCodeConnectorManager(
-            ws_uri, 
-            _editor_state_store, 
-            _editor_service
-        )
-        
-        # Enregistrer le callback pour mettre à jour le store automatiquement
-        _opencode_manager.set_editor_update_callback(
-            lambda update: _editor_state_store.update(
-                active_file=update.active_file,
-                cursor=update.cursor,
-                selection=update.selection,
-                diagnostics=update.diagnostics,
-                terminal_output=update.terminal.get("output") if update.terminal else None,
-                git_status=update.git
-            )
-        )
-        
+        _opencode_manager = OpenCodeConnectorManager(ws_uri)
+
         # Démarrer la connexion (non bloquant)
-        asyncio.create_task(_opencode_manager.start())
+        asyncio.create_task(_opencode_manager.get_client())
     
     logger.info("Tous les services de l'éditeur sont initialisés.")

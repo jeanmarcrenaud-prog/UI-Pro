@@ -38,7 +38,7 @@ class TaskPlanner:
         """
         # Prepare the context from the current editor state
         context_str = (
-            f"Active Files: {current_state.active_files}\n"
+            f"Active Files: {current_state.active_file}\n"
             f"Cursor Position: Line {current_state.cursor.line}, Column {current_state.cursor.column}\n"
             f"Selection: {current_state.selection if current_state.selection else 'None'}\n"
             f"Diagnostics: {current_state.diagnostics if current_state.diagnostics else 'None'}"

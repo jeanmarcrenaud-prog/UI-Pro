@@ -43,7 +43,8 @@ class VoiceManager:
         self.is_speaking = False
 
         # Enregistrement du callback de feedback pour OpenCode
-        self.connector_manager.register_callback(self._handle_opencode_notification)
+        # Le connecteur OpenCode n'expose pas de notification push :
+        # les feedbacks sont lus via get_recent_notifications (voir intelligence_service).
 
     async def start(self):
         """Démarre la boucle de traitement vocal."""
@@ -119,8 +120,8 @@ class VoiceManager:
                 
                 if actions:
                     for action in actions:
-                        # OpenCodeConnectorManager.send_task takes a string — serialize the action
-                        await self.connector_manager.send_task(
+                        # OpenCodeConnectorManager.run_task prend une chaîne — on sérialise l'action
+                        await self.connector_manager.run_task(
                             json.dumps({'type': action.action_type, 'params': action.params})
                         )
                         
