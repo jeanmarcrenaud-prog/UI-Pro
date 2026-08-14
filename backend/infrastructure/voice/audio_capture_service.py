@@ -20,12 +20,17 @@ class AudioCaptureService:
         self.stream: Optional[pyaudio.Stream] = None
         self.on_audio_chunk: Optional[Callable[[np.ndarray], Awaitable[None]]] = None
 
-    def _audio_callback(self, in_data, frame_count, time_info, status):
+    def _audio_callback(self, in_data, frame_count, time_info, status) -> tuple[bytes | None, int]:
         audio_data = np.frombuffer(in_data, dtype=np.float32)
         if self.on_audio_chunk:
             # On utilise create_task car le callback de PyAudio est bloquant/synchrone
             # et nous voulons une exécution asynchrone sans bloquer le thread d'audio.
-            asyncio.create_task(self.on_audio_chunk(audio_data))
+            asyncio.create_task(self._dispatch_audio_chunk(audio_data))
+        return (None, pyaudio.paContinue)
+
+    async def _dispatch_audio_chunk(self, audio_data: np.ndarray) -> None:
+        if self.on_audio_chunk:
+            await self.on_audio_chunk(audio_data)
 
     async def start(self):
         """Démarre le flux de capture."""

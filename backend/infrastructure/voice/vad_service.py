@@ -21,7 +21,6 @@ class VADService:
             self.model, self.utils = torch.hub.load(
                 repo_or_dir='snakers-void/silero-vad',
                 model='silero_vad',
-                 Lombard=False # Optionnel: ajustement selon l'environnement
             )
             self.model.to(torch.device(device))
             self.model.eval()
@@ -43,7 +42,7 @@ class VADService:
                 if not isinstance(audio_data, torch.Tensor):
                     audio_tensor = torch.from_numpy(audio_data).to(self.device)
                 else:
-                    audio_tensor = audio_data.to(self.device)
+                    audio_tensor = torch.as_tensor(audio_data).to(self.device)
 
                 # Calcul du score de probabilité
                 probability = self.model(audio_tensor, self.utils.get_speech_timestamps).probs

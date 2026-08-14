@@ -18,7 +18,7 @@ class TextToSpeechService(VoiceService):
     """Convertit le texte en audio."""
     async def synthesize(self, text: str) -> bytes:
         # À implémenter avec Edge-TTS ou ElevenLabs
-        return b"Données audio simulées"
+        return "Données audio simulées".encode("utf-8")
 
 class VoiceActivityDetector(VoiceService):
     """Détecte si quelqu'un parle."""
