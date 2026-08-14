@@ -79,6 +79,7 @@ class ReviewData(TypedDict, total=False):
     raw: str
     score: float
     issue_severities: list[str]
+    no_code: bool  # True when reviewing_node short-circuited on empty code
 
 
 class ExecutionResult(TypedDict, total=False):
