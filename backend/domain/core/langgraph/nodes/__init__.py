@@ -20,10 +20,9 @@ import re
 from typing import Any, Literal
 
 from backend.domain.settings import settings
-
 from backend.infrastructure.llm.errors import LLMBackendError
-from ..state import AgentState, PlanData, ReviewData
 
+from ..state import AgentState, PlanData, ReviewData
 from ._base import (
     _build_llm,
     _classify_issue_severity,
@@ -39,16 +38,6 @@ from ._base import (
     _step_done,
     _step_start,
     _strip_thinking,
-    _timed_node,
-    _emit_step,
-    _get_user_message,
-    _heuristic_review_score,
-    _llm_generate,
-    _llm_run_node,
-    _record_error,
-    _reset_llm_router,
-    _step_done,
-    _step_start,
     _timed_node,
 )
 from ._coding import coding_node
@@ -379,10 +368,10 @@ async def reviewing_node(state: AgentState) -> dict[str, Any]:
             exc,
         )
         if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
-            _emit_step("reviewing", f"⏱️ LLM timeout — fallback review")
+            _emit_step("reviewing", "⏱️ LLM timeout — fallback review")
             _issue = f"LLM review timed out after {settings.llm_timeout}s. "
         else:
-            _emit_step("reviewing", f"⚠️ LLM backend error — fallback review")
+            _emit_step("reviewing", "⚠️ LLM backend error — fallback review")
             _issue = "LLM backend unavailable (review was not performed). "
         fallback: ReviewData = {
             "passed": False,
@@ -665,16 +654,6 @@ def should_continue(state: AgentState) -> Literal["fix_code", "end"]:
     if attempt >= max_attempts:
         _emit_step("max_attempts_reached", f"Max attempts ({max_attempts}) reached", data={"attempt": attempt, "max_attempts": max_attempts})
         return "end"
-
-    # Priority 5: reviewing_node detected empty code (re-check)
-    if review is not None:
-        issues = review.get("issues") or []
-        if any("No code was generated" in str(i) for i in issues):
-            _emit_step(
-                "no_code_short_circuit",
-                "❌ coding_node returned no code; skipping auto-fix loop",
-            )
-            return "end"
 
     # Default: auto-fix
     _emit_step("fixing", f"Auto-fix attempt {attempt + 1}/{max_attempts}", data={"attempt": attempt + 1, "max_attempts": max_attempts})
