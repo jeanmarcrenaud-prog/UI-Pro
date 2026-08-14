@@ -438,6 +438,20 @@ class Settings(BaseSettings):
         self.runtime_overrides[key] = value
         if hasattr(self, key):
             setattr(self, key, value)
+        # Keep per-backend read timeouts aligned with llm_timeout for
+        # runtime updates. set_timeout() re-syncs too; without this, a
+        # POST /api/settings {llm_timeout: 1800} leaves the HTTP clients
+        # on the old (e.g. 900s) read timeout, so they kill the stream
+        # before the wrapper deadline — see README "Troubleshooting >
+        # LLM_TIMEOUT". Clamps mirror the Pydantic Field bounds so a
+        # runtime value can never be written that a .env reload would
+        # later reject.
+        if key == "llm_timeout":
+            self.llm_timeout = max(30, min(1800, int(value)))
+            for cfg in self.backends.values():
+                cfg["timeout"] = self.llm_timeout
+        elif key == "executor_timeout":
+            self.executor_timeout = max(5, min(600, int(value)))
 
     def get_node_routing_enabled(self) -> bool:
         """Whether each pipeline node routes to its preset tier.
@@ -477,7 +491,7 @@ class Settings(BaseSettings):
         try:
             import backend.domain.core.langgraph.nodes as _nodes
 
-            _nodes._llm_router_instance = None
+            _nodes._reset_llm_router()
         except Exception:
             pass
 

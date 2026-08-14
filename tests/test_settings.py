@@ -278,6 +278,63 @@ class TestTimeoutFloor:
         assert s.llm_timeout == 1800  # clamped from 99999 to max
 
 
+class TestTimeoutBackendSync:
+    """Per-backend read timeouts must stay aligned with llm_timeout.
+
+    The HTTP clients (Ollama/LM Studio/...) read ``backends[*].timeout``.
+    If a runtime update changes llm_timeout without re-syncing the
+    backends dict, the client kills the stream before the wrapper
+    deadline — README "Troubleshooting > LLM_TIMEOUT"."""
+
+    def _fresh(self, monkeypatch):
+        from backend.domain.settings import Settings, get_settings
+
+        monkeypatch.setenv("LLM_TIMEOUT", "900")
+        get_settings.cache_clear()
+        return Settings()
+
+    def test_init_syncs_backends_with_llm_timeout(self, monkeypatch):
+        s = self._fresh(monkeypatch)
+        assert s.llm_timeout == 900
+        for cfg in s.backends.values():
+            assert cfg["timeout"] == 900
+
+    def test_set_timeout_resyncs_backends(self, monkeypatch):
+        s = self._fresh(monkeypatch)
+        s.set_timeout(llm=600, executor=60)
+        assert s.llm_timeout == 600
+        for cfg in s.backends.values():
+            assert cfg["timeout"] == 600
+
+    def test_set_runtime_override_llm_timeout_resyncs_backends(self, monkeypatch):
+        """POST /api/settings {llm_timeout: X} goes through
+        set_runtime_override — it must re-sync the HTTP client timeouts"""
+        s = self._fresh(monkeypatch)
+        s.set_runtime_override("llm_timeout", 1200)
+        assert s.llm_timeout == 1200
+        for cfg in s.backends.values():
+            assert cfg["timeout"] == 1200
+
+    def test_set_runtime_override_clamps_llm_timeout(self, monkeypatch):
+        s = self._fresh(monkeypatch)
+        s.set_runtime_override("llm_timeout", 99999)
+        assert s.llm_timeout == 1800
+        for cfg in s.backends.values():
+            assert cfg["timeout"] == 1800
+
+    def test_set_runtime_override_clamps_executor_timeout(self, monkeypatch):
+        s = self._fresh(monkeypatch)
+        s.set_runtime_override("executor_timeout", 1)
+        assert s.executor_timeout == 5
+
+    def test_set_runtime_override_other_keys_unaffected(self, monkeypatch):
+        s = self._fresh(monkeypatch)
+        s.set_runtime_override("node_routing_enabled", True)
+        assert s.llm_timeout == 900
+        for cfg in s.backends.values():
+            assert cfg["timeout"] == 900
+
+
 class TestSettingsReload:
     """Tests for Settings.reload_from_env() — the hot-reload primitive
     behind POST /api/settings/reload.
