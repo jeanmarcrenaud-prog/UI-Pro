@@ -1,21 +1,26 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Test the WebSocket pipeline by sending an HTML generation request."""
 
 import asyncio
 import json
 import sys
-import io
 
-# Force UTF-8 output to handle unicode chars like ★
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-
+import pytest
 import websockets
 
 
+@pytest.mark.integration
 async def test_pipeline():
     uri = "ws://localhost:8000/ws"
-    
+
+    # This is an integration test: skip cleanly when no backend is running
+    # instead of failing the whole suite with a connection error.
+    try:
+        probe = await asyncio.wait_for(websockets.connect(uri), timeout=3)
+        await probe.close()
+    except (OSError, asyncio.TimeoutError):
+        pytest.skip("UI-Pro backend not running on ws://localhost:8000")
+
     print(f"Connecting to {uri}...")
     async with websockets.connect(uri) as ws:
         print("Connected.")
@@ -88,7 +93,7 @@ async def test_pipeline():
                 print(f"\n[HUMAN INPUT NEEDED] {event.get('message', '')}")
                 
             elif event_type == "completed":
-                print(f"\n[COMPLETED] Pipeline finished!")
+                print("\n[COMPLETED] Pipeline finished!")
                 break
                 
             elif event_type == "error":
@@ -96,7 +101,7 @@ async def test_pipeline():
                 break
                 
             elif event_type == "cancelled":
-                print(f"\n[CANCELLED]")
+                print("\n[CANCELLED]")
                 break
                 
             elif event_type == "pong":
@@ -111,7 +116,7 @@ async def test_pipeline():
                     print(f"[{event_type.upper()}] {msg}")
                     
             elif event_type == "done":
-                print(f"\n[DONE]")
+                print("\n[DONE]")
                 break
                 
             else:
