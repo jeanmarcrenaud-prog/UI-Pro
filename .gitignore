@@ -29,6 +29,7 @@ coverage.json
 coverage.xml
 .tox/
 .pytest_cache/
+.ruff_cache/
 
 # Logs
 *.log

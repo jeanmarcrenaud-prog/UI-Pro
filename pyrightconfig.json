@@ -1,6 +1,7 @@
 {
   "include": ["backend/**"],
   "exclude": ["workspace/**", "**/__pycache__/**", ".venv/**"],
+  "extraPaths": ["packages/prompts/src"],
   "typeCheckingMode": "basic",
   "reportMissingImports": false,
   "reportOptionalMemberAccess": false,
