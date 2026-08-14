@@ -13,8 +13,11 @@ new severity-aware rendering in `format_fix_prompt`.
 
 from __future__ import annotations
 
+import pytest
+
 from typing import Any
 
+from backend.domain.core.code_review import CodeReviewer
 from backend.domain.core.langgraph.fix_prompts import format_fix_prompt
 from backend.domain.core.langgraph.nodes import (
     _classify_issue_severity,
@@ -235,3 +238,61 @@ class TestRegressionGuards:
         assert "- old-style suggestion" in out
         # No severity tags.
         assert "[HIGH]" not in out
+
+
+# ========================================
+# calculate_weighted_score
+# ========================================
+
+
+class TestCalculateWeightedScore:
+    """Weighted scoring: security (3x) > performance (2x) > readability (1x).
+
+    Each issue deducts weight * MAX_SCORE_PER_ISSUE (5) points from 100.
+    """
+
+    @pytest.fixture
+    def reviewer(self) -> CodeReviewer:
+        return CodeReviewer()
+
+    def test_perfect_score_for_no_issues(self, reviewer):
+        assert reviewer.calculate_weighted_score([]) == 100.0
+
+    def test_single_high_issue(self, reviewer):
+        # weight 3.0 * 5 = 15 penalty -> 85
+        issues = [{"severity": "high"}]
+        assert reviewer.calculate_weighted_score(issues) == 85.0
+
+    def test_single_medium_issue(self, reviewer):
+        # weight 2.0 * 5 = 10 penalty -> 90
+        issues = [{"severity": "medium"}]
+        assert reviewer.calculate_weighted_score(issues) == 90.0
+
+    def test_single_low_issue(self, reviewer):
+        # weight 1.0 * 5 = 5 penalty -> 95
+        issues = [{"severity": "low"}]
+        assert reviewer.calculate_weighted_score(issues) == 95.0
+
+    def test_multiple_issues_accumulate(self, reviewer):
+        # 1 high (15) + 1 medium (10) + 1 low (5) = 30 penalty -> 70
+        issues = [{"severity": "high"}, {"severity": "medium"}, {"severity": "low"}]
+        assert reviewer.calculate_weighted_score(issues) == 70.0
+
+    def test_score_clamps_at_zero(self, reviewer):
+        # 7 high issues = 7 * 15 = 105 penalty -> clamps to 0
+        issues = [{"severity": "high"} for _ in range(7)]
+        assert reviewer.calculate_weighted_score(issues) == 0.0
+
+    def test_unknown_severity_defaults_to_low(self, reviewer):
+        # Unknown severity -> weight 1.0 -> 5 penalty -> 95
+        issues = [{"severity": "unknown"}]
+        assert reviewer.calculate_weighted_score(issues) == 95.0
+
+    def test_missing_severity_defaults_to_low(self, reviewer):
+        issues = [{}]
+        assert reviewer.calculate_weighted_score(issues) == 95.0
+
+    def test_security_keyword_maps_to_high(self, reviewer):
+        # "security" in severity string -> high weight
+        issues = [{"severity": "security"}]
+        assert reviewer.calculate_weighted_score(issues) == 85.0

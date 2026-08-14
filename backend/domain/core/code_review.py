@@ -31,12 +31,6 @@ class ReviewResult:
     raw_output: str = ""
     weighted_score: float = 0.0  # 0-100, higher is better
 
-    success: bool
-    issues: list[dict[str, Any]]
-    tool: str
-    summary: str
-    raw_output: str = ""
-    weighted_score: float = 0.0  # 0-100, higher is better
 
 
 class CodeReviewer:
@@ -195,19 +189,18 @@ class CodeReviewer:
             return 100.0
 
         total_penalty = 0.0
-        max_possible_penalty = 0.0
 
         for issue in issues:
             severity = issue.get("severity", "low").lower()
-            weight = SEVERITY_WEIGHTS.get(severity, 1.0)
-            penalty = weight * MAX_SCORE_PER_ISSUE
-            total_penalty += penalty
-            max_possible_penalty += penalty * 5  # Assume up to 5 issues per severity level
+            if "high" in severity or "security" in severity:
+                weight = SEVERITY_WEIGHTS["high"]
+            elif "medium" in severity:
+                weight = SEVERITY_WEIGHTS["medium"]
+            else:
+                weight = SEVERITY_WEIGHTS["low"]
+            total_penalty += weight * MAX_SCORE_PER_ISSUE
 
-        if max_possible_penalty == 0:
-            return 100.0
-
-        score = max(0.0, 100.0 - (total_penalty / max_possible_penalty * 100))
+        score = max(0.0, 100.0 - total_penalty)
         return round(score, 1)
 
 
