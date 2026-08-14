@@ -8,6 +8,7 @@ from backend.infrastructure.streaming.legacy import (
     get_unified_streamer,
     stream_chat,
 )
+from backend.infrastructure.streaming.streamer import cancel_stream
 from backend.infrastructure.streaming.models import (
     CHUNK_THRESHOLD,
     StreamChunk,
@@ -35,5 +36,7 @@ __all__ = [
     "create_sse_response",
     "get_unified_streamer",
     "parse_event",
+    "stream_chat",
+    "cancel_stream",
     "stream_chat",
 ]

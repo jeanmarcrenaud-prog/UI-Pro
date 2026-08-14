@@ -41,6 +41,8 @@ interface EventMap {
   
   // Execution output events (terminal streaming)
   execOutput: { line: string; channel: string }
+  // Stream lifecycle
+  streamId: { stream_id: string }
 
   // Custom store events
   log: { message?: string }

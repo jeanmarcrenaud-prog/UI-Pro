@@ -62,6 +62,12 @@ export class MessageHandler {
       if (msg) this.onError(msg)
       return
     }
+    // Handle stream_id — capture the real backend stream id for cancellation
+    if (type === 'stream_id' && data.stream_id) {
+      events.emit('streamId', { stream_id: data.stream_id })
+      return
+    }
+
 
     // Handle cancelled (from stop button)
     if (type === 'cancelled') {

@@ -3,6 +3,7 @@
 
 import type { FallbackParams, MessageHandlerCallback } from './types'
 import { debugLogger } from '@/lib/debug/logger'
+import { events } from '@/lib/events'
 
 export class FallbackHandler {
   private currentAbort: AbortController | null = null
@@ -49,6 +50,10 @@ export class FallbackHandler {
           if (line.startsWith('data: ')) {
             try {
               const data = JSON.parse(line.slice(6))
+              // Capture stream_id for server-side cancellation
+              if (data.stream_id) {
+                events.emit('streamId', { stream_id: data.stream_id })
+              }
               const content = data.content || data.token || ''
               const isDone = !!data.done
               

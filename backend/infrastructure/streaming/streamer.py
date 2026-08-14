@@ -21,6 +21,26 @@ from backend.infrastructure.streaming.transports import (
 
 logger = logging.getLogger(__name__)
 
+# Registry of active streams for server-side cancellation (SSE path).
+# Maps stream_id -> {"cancelled": bool}
+_active_streams: dict[str, dict[str, bool]] = {}
+
+
+def cancel_stream(stream_id: str) -> bool:
+    """Signal an in-flight stream to stop (used by the SSE cancel endpoint).
+
+    The streaming loop checks the ``cancelled`` flag between chunks and
+    breaks early.  This is a sync function so it can be called from a
+    regular FastAPI endpoint without an event loop.
+
+    Returns True if a stream was found and flagged for cancellation.
+    """
+    stream = _active_streams.get(stream_id)
+    if stream is None:
+        return False
+    stream["cancelled"] = True
+    return True
+
 
 class UnifiedStreamer:
     """Unified streaming interface that handles both SSE and WebSocket.
@@ -62,6 +82,7 @@ class UnifiedStreamer:
         async with self._lock:
             self._counter += 1
             stream_id = f"stream-{self._counter}-{uuid.uuid4().hex[:8]}"
+        _active_streams[stream_id] = {"cancelled": False}
 
         message_id = str(uuid.uuid4())
         buf = _TokenBuffer()
@@ -93,6 +114,8 @@ class UnifiedStreamer:
                 decision=decision,
                 feedback=feedback,
             ):
+                if _active_streams.get(stream_id, {}).get("cancelled"):
+                    break
                 if not transport.is_connected:
                     break
 
@@ -137,5 +160,8 @@ class UnifiedStreamer:
             )
             yield StreamEvent(event_type="done", message_id=message_id)
 
+        finally:
+            _active_streams.pop(stream_id, None)
 
-__all__ = ["UnifiedStreamer"]
+
+__all__ = ["UnifiedStreamer", "cancel_stream"]

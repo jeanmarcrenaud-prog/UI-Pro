@@ -9,6 +9,7 @@ import { persist } from 'zustand/middleware'
 import type { Message, ChatState, ChatHistoryItem } from '@/lib/types'
 import { events } from '@/lib/events'
 import { CircularBuffer } from '@/lib/CircularBuffer'
+import { chatService } from '@/services/chatService'
 
 // Log event types (only what's actually used)
 const LogEvents = {
@@ -87,6 +88,11 @@ function _initEventListeners() {
       useChatStore.getState().setTokenCount(data.tokenCount)
     }
   })
+
+  // Capture the real backend stream_id (from WS or SSE) for cancellation
+  events.on('streamId', (data: { stream_id: string }) => {
+    useChatStore.getState().setCurrentStreamId(data.stream_id)
+  })
 }
 
 // Initialize on first use (call once)
@@ -121,14 +127,23 @@ export const useChatStore = create<ChatStore>()(
       abortCurrentStream: () => {
         const streamId = get().currentStreamId
         if (streamId) {
-          // TODO: call cancel_stream API when implemented
+          // Server-side cancel (SSE path) — fire and forget; the WS path
+          // is handled by chatService.cancel() which sends {type:'cancel'}.
+          fetch(`/api/stream/${streamId}/cancel`, { method: 'POST' }).catch(() => {
+            /* stream may already be gone — ignore */
+          })
+          chatService.cancel()
           set({ currentStreamId: null })
         }
       },
 
       resumeFromIndex: (index) => {
-        // TODO: implement resume logic
+        const messageId = get().currentMessageId
+        if (!messageId) return
+        const prompt = get().messageHistory[messageId]
+        if (!prompt) return
         set({ lastReceivedChunkIndex: index })
+        chatService.sendMessage(prompt, messageId, index)
       },
 
       resetCurrentMessage: () =>

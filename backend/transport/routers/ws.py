@@ -1,5 +1,6 @@
 # views/routers/ws.py - WebSocket endpoint with Unified Streaming Protocol
 
+import asyncio
 import json
 import logging
 import uuid
@@ -40,6 +41,31 @@ async def websocket_endpoint(ws: WebSocket):
     session_id = await ws_controller.handle_connection(ws, client_info)
 
     current_message_id: str | None = None
+    stream_task: asyncio.Task | None = None
+    cancel_requested = False
+
+    async def run_stream(streamer, transport, **kwargs):
+        """Consume the unified streamer and forward events to the client.
+
+        Runs as a background task so the receive loop stays responsive
+        (ping / cancel / execute_decision can arrive during generation).
+        """
+        async for event in streamer.stream(transport=transport, **kwargs):
+            if cancel_requested:
+                # Suppress trailing events (e.g. the CancelledError fallback
+                # event) after the client asked to stop.
+                continue
+            await ws.send_text(event.to_ws())
+
+    async def stop_inflight() -> None:
+        """Cancel any running stream and reset the cancel flag."""
+        nonlocal stream_task, cancel_requested
+        if stream_task and not stream_task.done():
+            cancel_requested = True
+            stream_task.cancel()
+            await asyncio.gather(stream_task, return_exceptions=True)
+        stream_task = None
+        cancel_requested = False
 
     try:
         while True:
@@ -56,9 +82,15 @@ async def websocket_endpoint(ws: WebSocket):
             except json.JSONDecodeError:
                 request = {"message": data}
 
-            # Handle cancel
+            # Handle cancel — stop the in-flight stream (if any).
+            # The stream runs as a background task so this receive loop
+            # stays responsive during generation.
             if request.get("type") == "cancel":
-                logger.info(f"[ws] Cancel requested for {current_message_id}")
+                if stream_task and not stream_task.done():
+                    logger.info(f"[ws] Cancelling stream for {current_message_id}")
+                    cancel_requested = True
+                    stream_task.cancel()
+                    await asyncio.gather(stream_task, return_exceptions=True)
                 await ws.send_text(
                     json.dumps(
                         {
@@ -80,16 +112,20 @@ async def websocket_endpoint(ws: WebSocket):
                     f"(message_id={msg_id}, feedback={feedback})"
                 )
 
+                # Stop any previous in-flight stream before starting a new one
+                await stop_inflight()
+
                 streamer = get_unified_streamer()
                 transport = WebSocketTransport(ws)
-
-                async for event in streamer.stream(
-                    transport=transport,
-                    session_id=session_id,
-                    decision=decision,
-                    feedback=feedback,
-                ):
-                    await ws.send_text(event.to_ws())
+                stream_task = asyncio.create_task(
+                    run_stream(
+                        streamer,
+                        transport,
+                        session_id=session_id,
+                        decision=decision,
+                        feedback=feedback,
+                    )
+                )
                 continue
 
             # Validate request
@@ -123,23 +159,29 @@ async def websocket_endpoint(ws: WebSocket):
 
             current_message_id = message_id
 
-            # Stream using unified protocol
+            # Stop any previous in-flight stream (defensive; the client serializes)
+            await stop_inflight()
+
+            # Stream using unified protocol (background task so cancel works mid-stream)
             streamer = get_unified_streamer()
             transport = WebSocketTransport(ws)
-
-            async for event in streamer.stream(
-                transport=transport,
-                message=task,
-                session_id=session_id,
-                model=model,
-                provider=provider,
-                max_attempts=max_attempts,
-                resume_from=resume_from,
-            ):
-                await ws.send_text(event.to_ws())
+            stream_task = asyncio.create_task(
+                run_stream(
+                    streamer,
+                    transport,
+                    message=task,
+                    session_id=session_id,
+                    model=model,
+                    provider=provider,
+                    max_attempts=max_attempts,
+                    resume_from=resume_from,
+                )
+            )
 
     except (WebSocketDisconnect, RuntimeError):
         logger.info(f"WebSocket disconnected: {session_id}")
+        # Stop any in-flight stream when the client goes away
+        await stop_inflight()
     except Exception as e:
         logger.error(f"WebSocket error: {e}", exc_info=True)
     finally:

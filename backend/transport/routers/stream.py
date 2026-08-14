@@ -13,7 +13,7 @@ router = APIRouter(tags=["stream"])
 
 # Import unified streaming
 from backend.domain.core.langgraph.streaming import get_stream_checkpoint
-from backend.infrastructure.streaming import create_sse_response
+from backend.infrastructure.streaming import create_sse_response, cancel_stream
 
 
 class StreamRequest(BaseModel):
@@ -117,3 +117,13 @@ async def get_checkpoint(stream_id: str):
         "session_id": checkpoint["session_id"],
         "timestamp": checkpoint["timestamp"],
     }
+
+
+@router.post("/stream/{stream_id}/cancel")
+@router.post("/api/stream/{stream_id}/cancel")
+async def cancel_stream_endpoint(stream_id: str):
+    """Cancel an in-flight SSE stream by ID (server-side stop)."""
+    cancelled = cancel_stream(stream_id)
+    if not cancelled:
+        return {"success": False, "stream_id": stream_id, "detail": "Stream not found or already finished"}
+    return {"success": True, "stream_id": stream_id, "detail": "Cancellation requested"}
