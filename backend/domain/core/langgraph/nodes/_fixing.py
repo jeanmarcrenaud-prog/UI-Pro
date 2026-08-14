@@ -1,7 +1,14 @@
-"""Coding node — the heaviest LangGraph pipeline node.
+"""Fixing node — dedicated auto-fix correction step.
 
-Extracted from the monolithic ``nodes.py`` to isolate the ~180 lines of
-prompt construction, code extraction, and stdlib-shim logic.
+Extracted from ``coding_node`` so code generation and self-correction are
+separate pipeline steps with their own metrics and step tracking.
+
+The fix loop is::
+
+    execute → should_continue → fixing → review → execute → should_continue → end
+
+``fixing_node`` produces the corrected code (LLM + extraction + sanitize)
+and routes to ``review``; ``coding_node`` is now pure generation.
 """
 
 from __future__ import annotations
@@ -13,6 +20,7 @@ from typing import Any
 
 from backend.domain.settings import settings
 
+from ..fix_prompts import format_fix_prompt
 from ..prompts import CODING_SYSTEM_PROMPT
 from ..state import AgentState
 
@@ -34,19 +42,18 @@ from ._base import (
 logger = logging.getLogger(__name__)
 
 
-@_timed_node("coding")
-async def coding_node(state: AgentState) -> dict[str, Any]:
-    updates = _step_start(state, "coding")
-    _emit_step("coding", "Generation du code...")
+@_timed_node("fixing")
+async def fixing_node(state: AgentState) -> dict[str, Any]:
+    updates = _step_start(state, "fixing")
+    _emit_step("fixing", "Correction automatique du code...")
 
-    # Per-node routing: code generation is the heaviest LLM task. Small
-    # models (1.2B) ignore explicit constraints (e.g. "stdlib only") and
-    # hallucinate API endpoints/keys. Force the preset's "reasoning"
-    # slot (9B+) when node_routing_enabled; otherwise user_model wins.
+    # Per-node routing: correction needs the same reasoning tier as code
+    # generation — small models ignore the fix context and re-hallucinate.
     llm = _build_llm(state, "reasoning")
 
     user_message = _get_user_message(state)
     plan_clean = _clean_plan(state.get("plan", {}))
+    attempt = state.get("attempt", 0)
 
     # Detect language from user request
     language = _detect_language(user_message)
@@ -55,12 +62,12 @@ async def coding_node(state: AgentState) -> dict[str, Any]:
     ext = lang_cfg["ext"]
     block = lang_cfg["block"]
     lang_name = lang_cfg["name"]
-    logger.info("[coding_node] Langue detectee: %s (ext=.%s, block=%s)", language, ext, block)
+    logger.info("[fixing_node] Langue detectee: %s (ext=.%s, block=%s)", language, ext, block)
 
     # ── Prompt construction ─────────────────────────────────────────────
-    # Order matters: system prompt (static) first, then context, then
-    # dynamic appendices (examples, quality rules).
-
+    # Order matters: system prompt (static) first, then context, then the
+    # fix context (previous code + error + review), then dynamic
+    # appendices (syntax rules, quality rules).
     prompt_parts = [
         CODING_SYSTEM_PROMPT,
         f"## Langage cible : {lang_name}",
@@ -69,6 +76,20 @@ async def coding_node(state: AgentState) -> dict[str, Any]:
 
     if plan_clean:
         prompt_parts.append(f"Implementation plan: {json.dumps(plan_clean, ensure_ascii=False)}")
+
+    # Core of the fix: hand the model the previous code, the execution
+    # error, and the review issues/suggestions.
+    fix_ctx = format_fix_prompt(
+        state, advanced=bool(getattr(settings, "advanced_self_critique", False))
+    )
+    if fix_ctx:
+        prompt_parts.append(fix_ctx)
+        logger.info(
+            "[fixing_node] fix attempt %d/%d — advanced=%s",
+            attempt,
+            state.get("max_attempts", 3),
+            settings.advanced_self_critique,
+        )
 
     # ── Language-specific constraints (reinforce / override) ─────────────
     lang_specific = ""
@@ -112,84 +133,23 @@ async def coding_node(state: AgentState) -> dict[str, Any]:
         f"{_build_code_quality_section(language)}"
     )
 
-    # Constraint reinforcement: if the user explicitly forbids `requests` /
-    # `httpx` (e.g. "stdlib only", "no requests", "urllib only"), the model
-    # is shown to ignore the rule. This block is a "negative example + good
-    # example" pair to push it the right way.
-    user_msg_lower = user_message.lower()
-    stdlib_only_hint = any(
-        phrase in user_msg_lower
-        for phrase in (
-            "stdlib only",
-            "no requests",
-            "no httpx",
-            "urllib only",
-            "urllib.request",
-            "standard library only",
-            "stdlib uniquement",
-            "pas de requests",
-        )
-    )
-    if language == "python" and stdlib_only_hint:
-        prompt_parts.append(
-            "IMPORTANT — STDLIB ONLY (user requirement):\n"
-            "The user explicitly asked for stdlib-only code. You MUST use "
-            "`urllib.request` for HTTP, NOT `requests` or `httpx`.\n\n"
-            "BAD (do NOT do this):\n"
-            "```python\n"
-            "import requests\n"
-            "response = requests.get(url, params=params)\n"
-            "data = response.json()\n"
-            "```\n\n"
-            "GOOD (do this — combines ALL the CODE QUALITY rules above):\n"
-            "```python\n"
-            "import urllib.request\n"
-            "import urllib.parse\n"
-            "import json\n"
-            "import sys\n"
-            "\n"
-            "def fetch(url, params=None, timeout=10):\n"
-            "    if params:\n"
-            "        url = url + ('&' if '?' in url else '?') + urllib.parse.urlencode(params)\n"
-            "    try:\n"
-            "        with urllib.request.urlopen(url, timeout=timeout) as resp:\n"
-            "            return json.loads(resp.read().decode('utf-8'))\n"
-            "    except urllib.error.URLError as e:\n"
-            "        print(f'Network error: {e.reason}', file=sys.stderr)\n"
-            "        raise\n"
-            "    except urllib.error.HTTPError as e:\n"
-            "        print(f'Server error: HTTP {e.code}', file=sys.stderr)\n"
-            "        raise\n"
-            "    except json.JSONDecodeError as e:\n"
-            "        print(f'Invalid response format: {e}', file=sys.stderr)\n"
-            "        raise\n"
-            "\n"
-            "if __name__ == '__main__':\n"
-            "    data = fetch('https://api.example.com/v1/forecast', params={'q': 'x'})\n"
-            "    print(data)\n"
-            "```\n\n"
-            "Note: the GOOD example above uses `urllib.request` (stdlib), has an "
-            "explicit `timeout`, a `with` block, three distinct except branches, "
-            "and an `if __name__ == '__main__':` guard. Replicate this structure."
-        )
-
     prompt = "\n\n".join(prompt_parts)
     try:
         full_response = await _llm_run_node(
-            llm, prompt, "coding", model_type="fast", temperature=0.3,
+            llm, prompt, "fixing", model_type="fast", temperature=0.25,
         )
     except (asyncio.TimeoutError, TimeoutError) as exc:
-        logger.warning("[coding_node] LLM call timed out after %ss — empty fallback", settings.llm_timeout)
-        _emit_step("coding", f"⏱️ LLM timeout ({settings.llm_timeout}s)")
+        logger.warning("[fixing_node] LLM call timed out after %ss — empty fallback", settings.llm_timeout)
+        _emit_step("fixing", f"⏱️ LLM timeout ({settings.llm_timeout}s)")
         updates["code"] = {"files": {}}
-        updates["error"] = f"LLM code generation timed out after {settings.llm_timeout}s"
-        return _step_done("coding", updates["steps_history"], status="error") | {
+        updates["error"] = f"LLM code correction timed out after {settings.llm_timeout}s"
+        return _step_done("fixing", updates["steps_history"], status="error") | {
             "code": updates["code"],
             "error": updates["error"],
             "language": updates["language"],
         }
 
-    _emit_step("coding", "Extraction et validation du code...")
+    _emit_step("fixing", "Extraction et validation du code corrigé...")
     from ..code_extractor import extract_code_dict
     from ..code_sanitizer import sanitize_files
 
@@ -208,7 +168,7 @@ async def coding_node(state: AgentState) -> dict[str, Any]:
             new_fname = fname.rsplit(".", 1)[0] + "." + ext
             code_files[new_fname] = code_files.pop(fname)
             renamed[fname] = new_fname
-            logger.info("[coding_node] Renamed %s → %s (language enforcement)", fname, new_fname)
+            logger.info("[fixing_node] Renamed %s → %s (language enforcement)", fname, new_fname)
     if renamed:
         code_data["files"] = code_files
         code_data["_renamed"] = renamed
@@ -223,16 +183,16 @@ async def coding_node(state: AgentState) -> dict[str, Any]:
 
         for inj in sanitize_meta.get("injections", []):
             logger.info(
-                "[coding_node] Injected stdlib shim for '%s' in %s "
+                "[fixing_node] Injected stdlib shim for '%s' in %s "
                 "(user requested stdlib-only; model ignored)",
                 inj["package"],
                 inj["file"],
             )
 
     files_count = len(code_data.get("files", {}))
-    _emit_step("coding", f"Code généré: {files_count} fichiers")
+    _emit_step("fixing", f"Code corrigé: {files_count} fichiers")
     updates["files_generated"] = dict(code_data.get("files", {}))
-    return _step_done("coding", updates["steps_history"]) | {
+    return _step_done("fixing", updates["steps_history"]) | {
         "code": updates["code"],
         "files_generated": updates["files_generated"],
         "language": updates["language"],

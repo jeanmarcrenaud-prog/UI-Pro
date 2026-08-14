@@ -482,3 +482,48 @@ class TestParsePlanIntegration:
         result = self._parse_and_clean(text)
         assert len(result["steps"]) == 1  # type: ignore[arg-type]
 
+
+
+class TestFixingNode:
+    """The dedicated auto-fix node extracted from coding_node.
+
+    The fix loop is: execute → should_continue → fixing → review →
+    execute → should_continue → end. fixing_node produces the corrected
+    code and routes to review; coding_node is pure generation.
+    """
+
+    def test_fixing_node_exported_as_distinct_callable(self):
+        import inspect
+
+        from backend.domain.core.langgraph.nodes import (
+            coding_node,
+            fixing_node,
+        )
+
+        assert inspect.iscoroutinefunction(fixing_node)
+        assert fixing_node is not coding_node
+
+    def test_graph_wires_fix_code_to_fixing_node(self):
+        """Regression guard: should_continue's 'fix_code' label must route
+        to the fixing node, and fixing must route to review (not back to
+        the code node — the fix would be re-generated and lost)."""
+        from backend.domain.core.langgraph import build_graph
+
+        app = build_graph()
+        graph = app.get_graph()
+
+        # Conditional edges leaving "execute" (should_continue)
+        fix_edges = [
+            e
+            for e in graph.edges
+            if e.conditional and e.source == "execute"
+        ]
+        targets = {e.target for e in fix_edges}
+        assert "fixing" in targets
+        assert "code" not in targets
+
+        # Plain edge fixing → review
+        assert any(
+            e.source == "fixing" and not e.conditional and e.target == "review"
+            for e in graph.edges
+        )

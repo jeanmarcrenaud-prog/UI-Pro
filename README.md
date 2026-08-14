@@ -109,7 +109,7 @@ User Prompt
                │  7. Fix Code │  ← max 3 attempts
                └──────┬───────┘
                       │
-                      └──► back to step 3
+                      └──► back to step 4
 ```
 
 | Step | Node | What it does |
@@ -119,8 +119,8 @@ User Prompt
 | **3** | `coding_node` | Generates Python code with Pydantic extraction |
 | **4** | `reviewing_node` | Auto code review + static security analysis |
 | **5** | `executing_node` | Runs code in Docker sandbox (configurable timeout) |
-| **6** | `should_fix_code` | Conditional edge: if review fails & attempts < 3 → loop to step 3 |
-| **7** | Fix + Re-execute | Automatic correction iteration (up to 3 attempts) |
+| **6** | `should_fix_code` | Conditional edge: if execution failed & attempts < 3 → loop to step 7 |
+| **7** | `fixing_node` | Dedicated correction: LLM fix prompt + extraction → routes to review (step 4) |
 
 > **Checkpointing**: SQLite-backed (`AsyncSqliteSaver`) — resume any session after restart.
 

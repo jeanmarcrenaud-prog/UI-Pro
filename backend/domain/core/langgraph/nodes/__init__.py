@@ -41,6 +41,7 @@ from ._base import (
     _timed_node,
 )
 from ._coding import coding_node
+from ._fixing import fixing_node
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,7 @@ __all__ = [
     "analyzing_node",
     "coding_node",
     "executing_node",
+    "fixing_node",
     "planning_node",
     "reviewing_node",
     "should_continue",
