@@ -27,8 +27,6 @@ interface EventMap {
   agentStep: { stepId: string; status: 'pending' | 'active' | 'done' | 'running' | 'error'; content?: string; duration?: number; tokenCount?: number }
   agentPlan: { steps: string[] }
   
-  // Human-in-the-loop execution approval
-  awaitingApproval: { stream_id: string; code_preview: string; message_id: string }
   
   // Tool events
   toolCall: { tool: string; status: 'start' | 'done' }

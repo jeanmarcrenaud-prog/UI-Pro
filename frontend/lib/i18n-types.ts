@@ -179,8 +179,5 @@ export interface Translations {
     duration: string
     tokens: string
     detail: string
-    approvalPending: string
-    approve: string
-    reject: string
   }
 }

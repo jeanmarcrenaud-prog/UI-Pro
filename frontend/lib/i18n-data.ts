@@ -129,7 +129,6 @@ const en: Translations = {
     exportPng: 'Export PNG', exportJson: 'Export JSON', fitView: 'Fit View', resetView: 'Reset View',
     filterNodes: 'Filter nodes...', splitView: 'Split View', noData: 'No execution data yet',
     live: 'live', status: 'Status', duration: 'Duration', tokens: 'Tokens', detail: 'Detail',
-    approvalPending: 'Awaiting approval...', approve: 'Approve', reject: 'Reject',
   },
 }
 
@@ -260,8 +259,7 @@ const fr: Translations = {
     title: 'Agent Canvas', pipeline: 'Pipeline', timeline: 'Chronologie',
     exportPng: 'Exporter PNG', exportJson: 'Exporter JSON', fitView: 'Ajuster la vue', resetView: 'R\u00e9initialiser',
     filterNodes: 'Filtrer les noeuds...', splitView: 'Vue scind\u00e9e', noData: 'Aucune donn\u00e9e d\'ex\u00e9cution',
-    live: 'en direct', status: 'Statut', duration: 'Dur\u00e9e', tokens: 'Tokens', detail: 'D\u00e9tail',
-    approvalPending: 'En attente d\'approbation...', approve: 'Approuver', reject: 'Rejeter',
+    live: 'en direct', status: 'Statut', duration: 'Durée', tokens: 'Tokens', detail: 'Détail',
   },
 }
 
