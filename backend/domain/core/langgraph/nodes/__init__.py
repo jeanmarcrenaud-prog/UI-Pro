@@ -525,6 +525,7 @@ async def executing_node(state: AgentState) -> dict[str, Any]:
                 f"Increase executor_timeout in Settings, or simplify the code."
             )
             updates["error"] = err_msg
+            updates["error_fatal"] = False
             updates["execution_result"] = {"success": False, "error": err_msg, "output": ""}
             _emit_step("executing", f"❌ Timeout ({timeout_s}s)")
             logger.warning("Sandbox execution timed out after %ss", timeout_s)
@@ -533,6 +534,7 @@ async def executing_node(state: AgentState) -> dict[str, Any]:
             status = "error"
             err_msg = "Execution was cancelled (e.g. client disconnect or shutdown)"
             updates["error"] = err_msg
+            updates["error_fatal"] = False
             updates["execution_result"] = {"success": False, "error": err_msg, "output": ""}
             _emit_step("executing", "❌ Cancelled")
             logger.warning("Sandbox execution cancelled")
@@ -544,6 +546,7 @@ async def executing_node(state: AgentState) -> dict[str, Any]:
                 "output": result.output,
             }
             updates["error"] = None
+            updates["error_fatal"] = False
             if result.success:
                 _emit_step("executing", "✅ Exécution réussie")
             else:
@@ -554,6 +557,7 @@ async def executing_node(state: AgentState) -> dict[str, Any]:
         status = "error"
         err_msg = f"{type(e).__name__}: {e}" if str(e) else f"{type(e).__name__} (no message)"
         updates["error"] = err_msg
+        updates["error_fatal"] = False
         updates["execution_result"] = {"success": False, "error": err_msg, "output": ""}
         _emit_step("executing", f"❌ Exception: {err_msg[:80]}")
         updates.update(_record_error(state, "executing", err_msg))
@@ -689,13 +693,13 @@ def should_continue(state: AgentState) -> Literal["fix_code", "end", "error"]:
 def route_after_node(state: AgentState) -> Literal["continue", "error"]:
     """Early error routing for mid-pipeline LLM nodes.
 
-    If a recorded error exists (set by ``_error_guard`` / the timeout
-    ``error_handler``), short-circuit to ``error_node`` instead of
-    continuing the pipeline. Safe on ``plan``/``code``: before those
-    nodes, ``state.error`` can only come from the node itself or an
-    earlier node already gated by this router.
+    Short-circuits to ``error_node`` only when a recorded error is
+    FATAL (``state.error_fatal`` is True — set by ``_error_guard`` / the
+    timeout ``error_handler`` / internal LLM timeouts). Recoverable
+    errors (``error_fatal`` False or absent, e.g. sandbox failures) pass
+    through so the fix loop can handle them.
     """
-    if state.get("error"):
+    if state.get("error") and state.get("error_fatal"):
         return "error"
     return "continue"
 

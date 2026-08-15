@@ -185,7 +185,7 @@ def _record_node_error(state: AgentState, node_name: str, exc: BaseException) ->
         if str(exc)
         else f"{type(exc).__name__} (no message)"
     )
-    updates = _record_error(state, node_name, msg)
+    updates = _record_error(state, node_name, msg, fatal=True)
     # The node may have crashed before _step_start, so its running step
     # (if any) lives in the lost local updates. Append a synthetic running
     # step and mark it error.
@@ -200,6 +200,7 @@ def _record_node_error(state: AgentState, node_name: str, exc: BaseException) ->
     })
     updates.update(_step_done(node_name, history, status="error"))
     updates["error"] = msg
+    updates["error_fatal"] = True
     return updates
 
 
@@ -247,19 +248,27 @@ def _reset_llm_router() -> None:
     _llm_router_instance = None
 
 
-def _record_error(state: AgentState, node_name: str, error: str) -> dict[str, Any]:
+def _record_error(
+    state: AgentState,
+    node_name: str,
+    error: str,
+    *,
+    fatal: bool = False,
+) -> dict[str, Any]:
     """Return updates appending an error entry to ``error_history``.
 
     Pure helper: does NOT mutate ``state``. Emits a step event so the
     frontend Debug UI can display the error in real time, then returns
     ``{"error_history": [...]}`` for the caller to merge into its
-    updates dict.
+    updates dict. The ``fatal`` flag is stored in the history entry for
+    UI debugging — routing reads ``state.error_fatal``, not the history.
     """
     entry = {
         "node": node_name,
         "error": error,
         "attempt": state.get("attempt", 0),
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "fatal": fatal,
     }
     history = list(state.get("error_history", []))
     history.append(entry)

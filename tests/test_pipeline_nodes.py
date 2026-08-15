@@ -523,11 +523,16 @@ class TestFixingNode:
         assert "fixing" in targets
         assert "code" not in targets
 
-        # Plain edge fixing → review
-        assert any(
-            e.source == "fixing" and not e.conditional and e.target == "review"
+        # fixing routes to review via its conditional gate — only fatal
+        # errors short-circuit to error_node; never back to the code node
+        fix_gate_edges = [
+            e
             for e in graph.edges
-        )
+            if e.conditional and e.source == "fixing"
+        ]
+        fix_targets = {e.target for e in fix_gate_edges}
+        assert "review" in fix_targets
+        assert "code" not in fix_targets
 
 
 
@@ -582,6 +587,26 @@ class TestErrorGuard:
 
         with pytest.raises(asyncio.CancelledError):
             asyncio.run(cancelled({}))
+
+    def test_crash_records_fatal_flag(self):
+        """A crash is FATAL: error_fatal=True so route_after_node
+        short-circuits to error_node; the history entry carries the flag
+        for UI debugging."""
+        from backend.domain.core.langgraph.nodes._base import _error_guard
+
+        @_error_guard("coding")
+        async def boom(state):
+            raise RuntimeError("kaboom")
+
+        state: dict[str, Any] = {
+            "attempt": 0,
+            "error_history": [],
+            "steps_history": [],
+        }
+        updates = asyncio.run(boom(state))
+
+        assert updates["error_fatal"] is True
+        assert updates["error_history"][0]["fatal"] is True
 
 
 class TestMergeErrors:
@@ -864,15 +889,31 @@ class TestWrapperRetryBackendError:
 class TestRouteAfterNode:
     """route_after_node — early error routing for mid-pipeline LLM nodes.
 
-    A recorded ``state.error`` (set by ``_error_guard`` / the timeout
-    ``error_handler``) short-circuits the pipeline to ``error_node``
-    instead of continuing to the next node.
+    Only FATAL errors (``state.error_fatal`` True — crashes, timeouts)
+    short-circuit to ``error_node``. Recoverable errors (sandbox
+    failures) pass through so the fix loop can handle them.
     """
 
-    def test_error_routes_to_error(self):
+    def test_fatal_error_routes_to_error(self):
         from backend.domain.core.langgraph.nodes import route_after_node
 
-        assert route_after_node({"error": "planning failed"}) == "error"
+        assert route_after_node(
+            {"error": "planning failed", "error_fatal": True}
+        ) == "error"
+
+    def test_recoverable_error_continues(self):
+        """Sandbox failures are recoverable — must NOT short-circuit."""
+        from backend.domain.core.langgraph.nodes import route_after_node
+
+        assert route_after_node(
+            {"error": "sandbox fail", "error_fatal": False}
+        ) == "continue"
+
+    def test_error_without_flag_continues(self):
+        """Absent flag defaults to recoverable (defensive)."""
+        from backend.domain.core.langgraph.nodes import route_after_node
+
+        assert route_after_node({"error": "planning failed"}) == "continue"
 
     def test_no_error_continues(self):
         from backend.domain.core.langgraph.nodes import route_after_node
@@ -885,13 +926,12 @@ class TestRouteAfterNode:
 
         assert route_after_node({"error": ""}) == "continue"
 
-
 class TestGraphMidPipelineGates:
-    """The graph wires route_after_node after plan and code.
+    """The graph wires route_after_node after plan, code, and fixing.
 
-    fixing keeps its plain edge to review: executing_node sets
-    ``state.error`` on normal (recoverable) failures, so a gate there
-    would break the fix loop.
+    fixing now has a conditional gate: only FATAL errors (LLM crash /
+    timeout) short-circuit to error_node — recoverable sandbox failures
+    still flow fixing → review → execute → fix loop.
     """
 
     def test_plan_and_code_gate_to_error_node(self):
@@ -910,16 +950,16 @@ class TestGraphMidPipelineGates:
             ]
             assert {e.target for e in cond_edges} == targets
 
-    def test_fixing_keeps_plain_edge_to_review(self):
+    def test_fixing_gates_to_error_node(self):
         from backend.domain.core.langgraph import build_graph
 
         app = build_graph()
         graph = app.get_graph()
 
-        assert any(
-            e.source == "fixing" and not e.conditional and e.target == "review"
-            for e in graph.edges
-        )
+        cond_edges = [
+            e for e in graph.edges if e.conditional and e.source == "fixing"
+        ]
+        assert {e.target for e in cond_edges} == {"review", "error_node"}
 
     def test_error_in_plan_routes_to_error_node(self):
         """End-to-end: a node setting state.error is short-circuited to
@@ -929,7 +969,7 @@ class TestGraphMidPipelineGates:
         from backend.domain.core.langgraph.state import AgentState
 
         async def plan(state):
-            return {"error": "planning failed"}
+            return {"error": "planning failed", "error_fatal": True}
 
         g = StateGraph(AgentState)
 
@@ -950,3 +990,33 @@ class TestGraphMidPipelineGates:
         assert result["error"] == "planning failed"
         assert result["steps_history"][-1]["name"] == "error"
         assert result["steps_history"][-1]["status"] == "error"
+
+    def test_recoverable_error_in_plan_continues(self):
+        """End-to-end: a recoverable error (error_fatal False) passes
+        through the gate instead of short-circuiting to error_node."""
+        from langgraph.graph import END, START, StateGraph
+        from backend.domain.core.langgraph.nodes import error_node, route_after_node
+        from backend.domain.core.langgraph.state import AgentState
+
+        async def plan(state):
+            return {"error": "sandbox fail", "error_fatal": False}
+
+        g = StateGraph(AgentState)
+        g.add_node("plan", plan)
+        g.add_node("error_node", error_node)
+        g.add_edge(START, "plan")
+        g.add_conditional_edges(
+            "plan",
+            route_after_node,
+            {"continue": END, "error": "error_node"},
+        )
+        g.add_edge("error_node", END)
+        app = g.compile()
+
+        result = asyncio.run(
+            app.ainvoke({"error_history": [], "steps_history": []})
+        )
+        assert result["error"] == "sandbox fail"
+        assert all(
+            step.get("name") != "error" for step in result["steps_history"]
+        )

@@ -173,6 +173,7 @@ class AgentState(TypedDict, total=False):
     review: Annotated[ReviewData | None, _last_wins]
     execution_result: Annotated[ExecutionResult | None, _last_wins]
     error: Annotated[str | None, _last_wins]
+    error_fatal: Annotated[bool, _last_wins]  # True = skip fix, route to error_node
     attempt: Annotated[int, _last_wins]
     max_attempts: Annotated[int, _last_wins]
     session_id: Annotated[str, _last_wins]

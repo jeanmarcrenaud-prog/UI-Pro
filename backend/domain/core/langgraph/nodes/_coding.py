@@ -185,6 +185,7 @@ async def coding_node(state: AgentState) -> dict[str, Any]:
         _emit_step("coding", f"⏱️ LLM timeout ({settings.llm_timeout}s)")
         updates["code"] = {"files": {}}
         updates["error"] = f"LLM code generation timed out after {settings.llm_timeout}s"
+        updates["error_fatal"] = True
         return _step_done("coding", updates["steps_history"], status="error") | {
             "code": updates["code"],
             "error": updates["error"],

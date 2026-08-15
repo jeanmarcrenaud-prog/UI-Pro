@@ -109,7 +109,11 @@ def build_graph():
         {"continue": "review", "error": "error_node"},
     )
     workflow.add_edge("review", "execute")
-    workflow.add_edge("fixing", "review")
+    workflow.add_conditional_edges(
+        "fixing",
+        route_after_node,
+        {"continue": "review", "error": "error_node"},
+    )
 
     workflow.add_conditional_edges(
         "execute",
