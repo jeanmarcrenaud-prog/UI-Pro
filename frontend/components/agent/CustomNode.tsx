@@ -131,12 +131,6 @@ export default function CustomNode({ id, data, selected }: NodeProps<CanvasStep>
             </motion.div>
           )}
 
-          {/* Approval indicator */}
-          {status === 'awaiting_approval' && (
-            <div className="mt-2 text-xs text-amber-400 font-medium">
-              ⏳ En attente d&apos;approbation
-            </div>
-          )}
         </motion.div>
         )}
         </AnimatePresence>

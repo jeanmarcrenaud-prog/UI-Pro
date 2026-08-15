@@ -50,8 +50,6 @@ export function getStatusColor(status: string): string {
       return 'text-emerald-400'
     case 'error':
       return 'text-red-400'
-    case 'awaiting_approval':
-      return 'text-amber-400'
     default:
       return 'text-slate-400'
   }
@@ -80,7 +78,6 @@ export function getNodeClasses(id: string, name: string, status: string): string
   if (status === 'done') cls += ' node-completed node-success'
   else if (status === 'error') cls += ' node-error'
   else if (status === 'pending') cls += ' node-waiting'
-  else if (status === 'awaiting_approval') cls += ' node-waiting'
 
   if (status === 'running') cls += ' node-active'
 

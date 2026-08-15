@@ -47,25 +47,13 @@ export function AgentCanvas({
   const { t } = useI18n()
   const agentSteps = useAgentStore((s) => s.steps)
 
-  // Canvas store — UI state, selection, approval, session
+  // Canvas store — UI state, selection, session
   const selectedNodeId = useAgentCanvasStore((s) => s.selectedNodeId)
-  const approvalStatus = useAgentCanvasStore((s) => s.approvalStatus)
   const isRunning = useAgentCanvasStore((s) => s.isRunning)
   const canvasSteps = useAgentCanvasStore((s) => s.steps)
-  const setApprovalStatus = useAgentCanvasStore((s) => s.setApprovalStatus)
   const setSelectedNode = useAgentCanvasStore((s) => s.setSelectedNode)
-  const sendApprovalDecision = useAgentCanvasStore((s) => s.sendApprovalDecision)
 
 
-  // Subscribe to awaitingApproval event from chatService/MessageHandler
-  // This is the bridge: backend emits AWAITING_APPROVAL → MessageHandler calls
-  // chatService.handleApproval → events.emit('awaitingApproval') → we update the store
-  useEffect(() => {
-    const unsubscribe = events.on('awaitingApproval', () => {
-      setApprovalStatus('PENDING')
-    })
-    return unsubscribe
-  }, [setApprovalStatus])
 
   // Palette open/close
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -167,26 +155,6 @@ export function AgentCanvas({
           )}
         </div>
 
-        {/* Approval banner */}
-        {approvalStatus === 'PENDING' && (
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] text-amber-400 font-medium">
-              ⏳ {t.canvas?.approvalPending || 'Awaiting approval'}
-            </span>
-            <button
-              onClick={() => sendApprovalDecision('APPROVED')}
-              className="text-[10px] font-mono px-2 py-1 rounded-md bg-emerald-600/20 text-emerald-400 border border-emerald-600/30 hover:bg-emerald-600/30 transition-colors"
-            >
-              {t.canvas?.approve || 'Approve'}
-            </button>
-            <button
-              onClick={() => sendApprovalDecision('REJECTED', 'User cancelled')}
-              className="text-[10px] font-mono px-2 py-1 rounded-md bg-red-600/20 text-red-400 border border-red-600/30 hover:bg-red-600/30 transition-colors"
-            >
-              {t.canvas?.reject || 'Reject'}
-            </button>
-          </div>
-        )}
       </div>
 
       {/* Controls */}
