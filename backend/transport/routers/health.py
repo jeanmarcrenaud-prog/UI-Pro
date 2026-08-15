@@ -343,7 +343,7 @@ async def _check_dependencies() -> dict[str, dict]:
             return {
                 "ok": True,
                 "status": "available",
-                "timeout": svc.TIMEOUT_SECONDS,
+                "timeout": svc.timeout_seconds,
             }
         except Exception as e:
             return {"ok": False, "status": "unavailable", "error": str(e)}
