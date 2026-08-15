@@ -14,6 +14,7 @@ from collections.abc import Callable
 from typing import Any
 
 from backend.domain.core.code_review import review_code
+from backend.domain.settings import settings
 from backend.infrastructure.secure_executor import SecureCodeExecutor
 
 from .executors import BaseExecutor, ExecutionResult, get_executor
@@ -30,12 +31,22 @@ class CodeExecutionService:
     4. Timeout et gestion d'erreurs
     """
 
-    TIMEOUT_SECONDS = 5
 
-    def __init__(self, backend: BaseExecutor | str | None = None):
+    def __init__(
+        self,
+        backend: BaseExecutor | str | None = None,
+        timeout_seconds: int | None = None,
+    ):
+        # Source unique : arg explicite > settings
+        self.timeout_seconds = int(
+            timeout_seconds
+            if timeout_seconds is not None
+            else settings.executor_timeout
+        )
+
         # Secure executor with AST analysis (Python only)
         self._secure_executor = SecureCodeExecutor(
-            timeout=self.TIMEOUT_SECONDS, memory_limit_mb=512
+            timeout=self.timeout_seconds, memory_limit_mb=512
         )
 
         # Backend d'exécution
@@ -43,7 +54,7 @@ class CodeExecutionService:
             self._executor = backend
         else:
             self._executor = get_executor(
-                preferred=backend, timeout_seconds=self.TIMEOUT_SECONDS
+                preferred=backend, timeout_seconds=self.timeout_seconds
             )
 
     @property
@@ -86,13 +97,19 @@ class CodeExecutionService:
         try:
             result = await asyncio.wait_for(
                 self._executor.execute(code),
-                timeout=self.TIMEOUT_SECONDS,
+                timeout=self.timeout_seconds,
             )
             result.review_result = review
             return result
 
         except asyncio.TimeoutError:
-            return ExecutionResult(False, error="execution timeout")
+            return ExecutionResult(
+                False,
+                error=(
+                    f"execution timeout after {self.timeout_seconds}s "
+                    f"(EXECUTOR_TIMEOUT)"
+                ),
+            )
 
         except Exception as exc:
             logger.exception("execution failed")
