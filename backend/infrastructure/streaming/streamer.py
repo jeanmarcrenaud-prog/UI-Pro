@@ -75,9 +75,6 @@ class UnifiedStreamer:
         temperature: float = 0.7,
         max_attempts: int = 3,
         resume_from: str | None = None,
-        # Human-in-the-loop execution approval (Phase 2)
-        decision: str | None = None,  # "execute" | "correct" | "cancel"
-        feedback: str | None = None,
     ) -> AsyncIterator[StreamEvent]:
         async with self._lock:
             self._counter += 1
@@ -110,9 +107,6 @@ class UnifiedStreamer:
                 provider=provider,
                 max_attempts=max_attempts,
                 resume_from=resume_from,
-                # Phase 2 approval params
-                decision=decision,
-                feedback=feedback,
             ):
                 if _active_streams.get(stream_id, {}).get("cancelled"):
                     break
