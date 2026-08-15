@@ -77,6 +77,7 @@ def build_graph():
         fixing_node,
         planning_node,
         reviewing_node,
+        route_after_node,
         should_continue,
     )
 
@@ -97,8 +98,16 @@ def build_graph():
 
     workflow.add_edge(START, "analyze")
     workflow.add_edge("analyze", "plan")
-    workflow.add_edge("plan", "code")
-    workflow.add_edge("code", "review")
+    workflow.add_conditional_edges(
+        "plan",
+        route_after_node,
+        {"continue": "code", "error": "error_node"},
+    )
+    workflow.add_conditional_edges(
+        "code",
+        route_after_node,
+        {"continue": "review", "error": "error_node"},
+    )
     workflow.add_edge("review", "execute")
     workflow.add_edge("fixing", "review")
 

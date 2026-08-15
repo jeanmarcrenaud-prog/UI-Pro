@@ -53,10 +53,12 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "analyzing_node",
     "coding_node",
+    "error_node",
     "executing_node",
     "fixing_node",
     "planning_node",
     "reviewing_node",
+    "route_after_node",
     "should_continue",
 ]
 
@@ -682,6 +684,20 @@ def should_continue(state: AgentState) -> Literal["fix_code", "end", "error"]:
     # Default: auto-fix
     _emit_step("fixing", f"Auto-fix attempt {attempt + 1}/{max_attempts}", data={"attempt": attempt + 1, "max_attempts": max_attempts})
     return "fix_code"
+
+
+def route_after_node(state: AgentState) -> Literal["continue", "error"]:
+    """Early error routing for mid-pipeline LLM nodes.
+
+    If a recorded error exists (set by ``_error_guard`` / the timeout
+    ``error_handler``), short-circuit to ``error_node`` instead of
+    continuing the pipeline. Safe on ``plan``/``code``: before those
+    nodes, ``state.error`` can only come from the node itself or an
+    earlier node already gated by this router.
+    """
+    if state.get("error"):
+        return "error"
+    return "continue"
 
 
 def error_node(state: AgentState) -> dict[str, Any]:

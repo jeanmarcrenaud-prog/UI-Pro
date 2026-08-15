@@ -859,3 +859,94 @@ class TestWrapperRetryBackendError:
         assert router.stream_calls == 2
         # attempt 1: stream fails -> generate fallback retries once internally
         assert router.generate_calls == 2
+
+
+class TestRouteAfterNode:
+    """route_after_node — early error routing for mid-pipeline LLM nodes.
+
+    A recorded ``state.error`` (set by ``_error_guard`` / the timeout
+    ``error_handler``) short-circuits the pipeline to ``error_node``
+    instead of continuing to the next node.
+    """
+
+    def test_error_routes_to_error(self):
+        from backend.domain.core.langgraph.nodes import route_after_node
+
+        assert route_after_node({"error": "planning failed"}) == "error"
+
+    def test_no_error_continues(self):
+        from backend.domain.core.langgraph.nodes import route_after_node
+
+        assert route_after_node({}) == "continue"
+
+    def test_empty_error_continues(self):
+        """An empty string is falsy — treated as no error."""
+        from backend.domain.core.langgraph.nodes import route_after_node
+
+        assert route_after_node({"error": ""}) == "continue"
+
+
+class TestGraphMidPipelineGates:
+    """The graph wires route_after_node after plan and code.
+
+    fixing keeps its plain edge to review: executing_node sets
+    ``state.error`` on normal (recoverable) failures, so a gate there
+    would break the fix loop.
+    """
+
+    def test_plan_and_code_gate_to_error_node(self):
+        from backend.domain.core.langgraph import build_graph
+
+        app = build_graph()
+        graph = app.get_graph()
+
+        expected = {
+            "plan": {"code", "error_node"},
+            "code": {"review", "error_node"},
+        }
+        for source, targets in expected.items():
+            cond_edges = [
+                e for e in graph.edges if e.conditional and e.source == source
+            ]
+            assert {e.target for e in cond_edges} == targets
+
+    def test_fixing_keeps_plain_edge_to_review(self):
+        from backend.domain.core.langgraph import build_graph
+
+        app = build_graph()
+        graph = app.get_graph()
+
+        assert any(
+            e.source == "fixing" and not e.conditional and e.target == "review"
+            for e in graph.edges
+        )
+
+    def test_error_in_plan_routes_to_error_node(self):
+        """End-to-end: a node setting state.error is short-circuited to
+        the terminal error node instead of continuing."""
+        from langgraph.graph import END, START, StateGraph
+        from backend.domain.core.langgraph.nodes import error_node, route_after_node
+        from backend.domain.core.langgraph.state import AgentState
+
+        async def plan(state):
+            return {"error": "planning failed"}
+
+        g = StateGraph(AgentState)
+
+        g.add_node("plan", plan)
+        g.add_node("error_node", error_node)
+        g.add_edge(START, "plan")
+        g.add_conditional_edges(
+            "plan",
+            route_after_node,
+            {"continue": END, "error": "error_node"},
+        )
+        g.add_edge("error_node", END)
+        app = g.compile()
+
+        result = asyncio.run(
+            app.ainvoke({"error_history": [], "steps_history": []})
+        )
+        assert result["error"] == "planning failed"
+        assert result["steps_history"][-1]["name"] == "error"
+        assert result["steps_history"][-1]["status"] == "error"
