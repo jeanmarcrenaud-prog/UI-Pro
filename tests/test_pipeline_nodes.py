@@ -614,3 +614,112 @@ class TestMergeErrors:
         assert _merge_errors(None, [e1]) == [e1]
         assert _merge_errors([e1], None) == [e1]
         assert _merge_errors(None, None) == []
+
+
+class TestErrorNode:
+    """error_node — terminal formatting of a recorded error."""
+
+    def test_emits_terminal_error_step(self):
+        from backend.domain.core.langgraph.nodes import error_node
+
+        state = {
+            "error": "RuntimeError: kaboom",
+            "error_history": [
+                {"node": "coding", "error": "RuntimeError: kaboom", "attempt": 0, "timestamp": "t1"}
+            ],
+            "steps_history": [],
+            "metadata": {},
+        }
+        updates = error_node(state)
+        assert updates["error"] == "RuntimeError: kaboom"
+        last_step = updates["steps_history"][-1]
+        assert last_step["name"] == "error"
+        assert last_step["status"] == "error"
+        assert last_step["error_detail"] == "RuntimeError: kaboom"
+
+    def test_unknown_error_fallback(self):
+        from backend.domain.core.langgraph.nodes import error_node
+
+        updates = error_node({"steps_history": []})
+        assert updates["error"] == "Unknown error"
+        assert updates["steps_history"][-1]["status"] == "error"
+
+
+class TestShouldContinueErrorRouting:
+    """should_continue routes recorded errors to the terminal error node.
+
+    The fix loop must win over error routing while attempts remain; the
+    no_code short-circuit (priority 0) and execution success (priority 1)
+    keep their existing behavior.
+    """
+
+    def _make_state(self, **overrides: Any) -> dict[str, Any]:
+        defaults = {
+            "review": None,
+            "execution_result": None,
+            "attempt": 0,
+            "max_attempts": 3,
+        }
+        defaults.update(overrides)
+        return defaults
+
+    def test_error_without_execution_routes_to_error(self):
+        state = self._make_state(error="planning failed")
+        assert should_continue(state) == "error"
+
+    def test_error_with_failed_execution_and_retries_left_fixes(self):
+        state = self._make_state(
+            error="execution failed",
+            execution_result={"success": False, "error": "boom", "output": ""},
+            attempt=1,
+        )
+        assert should_continue(state) == "fix_code"
+
+    def test_error_with_failed_execution_exhausted_routes_to_error(self):
+        state = self._make_state(
+            error="execution failed",
+            execution_result={"success": False, "error": "boom", "output": ""},
+            attempt=3,
+            max_attempts=3,
+        )
+        assert should_continue(state) == "error"
+
+    def test_error_with_no_code_still_ends(self):
+        """no_code short-circuit (priority 0) wins over error routing."""
+        state = self._make_state(
+            error="syntax error",
+            review={"passed": False, "no_code": True, "issues": ["x"]},
+        )
+        assert should_continue(state) == "end"
+
+    def test_error_with_successful_execution_ends(self):
+        state = self._make_state(
+            error="stale planning error",
+            execution_result={"success": True, "error": None, "output": "ok"},
+        )
+        assert should_continue(state) == "end"
+
+
+class TestGraphErrorNode:
+    """The graph wires should_continue's 'error' label to error_node."""
+
+    def test_graph_wires_error_to_error_node(self):
+        from backend.domain.core.langgraph import build_graph
+
+        app = build_graph()
+        graph = app.get_graph()
+
+        fix_edges = [
+            e
+            for e in graph.edges
+            if e.conditional and e.source == "execute"
+        ]
+        targets = {e.target for e in fix_edges}
+        assert "error_node" in targets
+
+        # error_node is terminal: explicit edge to END ("__end__" in the
+        # compiled graph representation)
+        assert any(
+            e.source == "error_node" and e.target == "__end__"
+            for e in graph.edges
+        )

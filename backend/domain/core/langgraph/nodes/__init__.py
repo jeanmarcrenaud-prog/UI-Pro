@@ -17,12 +17,13 @@ import asyncio
 import json
 import logging
 import re
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 from backend.domain.settings import settings
 from backend.infrastructure.llm.errors import LLMBackendError
 
-from ..state import AgentState, PlanData, ReviewData
+from ..state import AgentState, PlanData, ReviewData, StepInfo
 from ._base import (
     _build_llm,
     _classify_issue_severity,
@@ -612,7 +613,7 @@ def _build_execution_summary(state: dict[str, Any]) -> dict[str, Any]:
 # ========================================================================
 
 
-def should_continue(state: AgentState) -> Literal["fix_code", "end"]:
+def should_continue(state: AgentState) -> Literal["fix_code", "end", "error"]:
     review = state.get("review")
     execution_result = state.get("execution_result")
     attempt = state.get("attempt", 0)
@@ -635,21 +636,12 @@ def should_continue(state: AgentState) -> Literal["fix_code", "end"]:
             _emit_step("execution_success", "[OK] Execution succeeded")
             return "end"
 
-    # Priority 2: failed + exhausted → stop
+    # Priority 2: failed + retries left → fix_code. The fix loop MUST win
+    # over error routing: executing_node records an error on failure, but
+    # that error is recoverable while attempts remain.
     if execution_result is not None:
         result_dict: dict = execution_result  # type: ignore[assignment]
-        if not result_dict.get("success", False) and attempt >= max_attempts:
-            error_msg = result_dict.get("error", "unknown error")
-            _emit_step(
-                "execution_failed",
-                f"❌ Execution failed (max {max_attempts} tentatives): {error_msg[:80]}",
-            )
-            return "end"
-
-    # Priority 3: failed + retries left → fix_code
-    if execution_result is not None:
-        result_dict: dict = execution_result  # type: ignore[assignment]
-        if not result_dict.get("success", False):
+        if not result_dict.get("success", False) and attempt < max_attempts:
             error_msg = result_dict.get("error", "unknown error")
             _emit_step(
                 "fixing",
@@ -658,7 +650,31 @@ def should_continue(state: AgentState) -> Literal["fix_code", "end"]:
             )
             return "fix_code"
 
-    # Priority 4: max attempts reached → stop
+    # Priority 3: a recorded error that is not being fixed → terminal
+    # error node (formats + emits the failure for the frontend).
+    if state.get("error"):
+        history = state.get("error_history") or []
+        last_entry = history[-1] if history else None
+        _emit_step(
+            "error",
+            f"❌ {state['error']}",
+            data={"error": last_entry},
+        )
+        return "error"
+
+    # Priority 4: failed + exhausted → stop (defensive; real exhausted
+    # failures carry state.error and are caught by priority 3).
+    if execution_result is not None:
+        result_dict: dict = execution_result  # type: ignore[assignment]
+        if not result_dict.get("success", False):
+            error_msg = result_dict.get("error", "unknown error")
+            _emit_step(
+                "execution_failed",
+                f"❌ Execution failed (max {max_attempts} tentatives): {error_msg[:80]}",
+            )
+            return "end"
+
+    # Priority 5: max attempts reached → stop
     if attempt >= max_attempts:
         _emit_step("max_attempts_reached", f"Max attempts ({max_attempts}) reached", data={"attempt": attempt, "max_attempts": max_attempts})
         return "end"
@@ -666,3 +682,29 @@ def should_continue(state: AgentState) -> Literal["fix_code", "end"]:
     # Default: auto-fix
     _emit_step("fixing", f"Auto-fix attempt {attempt + 1}/{max_attempts}", data={"attempt": attempt + 1, "max_attempts": max_attempts})
     return "fix_code"
+
+
+def error_node(state: AgentState) -> dict[str, Any]:
+    """Terminal node: format and emit the recorded error for the frontend.
+
+    Reached via ``should_continue`` when ``state.error`` is set and the
+    error is not being handled by the fix loop. The error itself was
+    already recorded by ``_record_error`` / ``_error_guard`` — this node
+    only emits the terminal event and marks a terminal error step so the
+    Agent Canvas shows a coherent final state.
+    """
+    error = state.get("error") or "Unknown error"
+    history = list(state.get("steps_history", []))
+    model = (state.get("metadata") or {}).get("model", "")
+    step: StepInfo = {
+        "name": "error",
+        "status": "error",
+        "model_used": model or None,
+        "tokens": 0,
+        "duration_ms": 0,
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "error_detail": error,
+    }
+    history.append(step)
+    _emit_step("error", f"❌ {error}", data={"error": history[-1]})
+    return {"error": error, "steps_history": history}

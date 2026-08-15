@@ -137,6 +137,8 @@ class StepInfo(TypedDict, total=False):
     tokens: int
     duration_ms: int
     started_at: str | None  # ISO-8601
+    finished_at: str | None  # ISO-8601
+    error_detail: str | None
 
 
 def _merge_steps(

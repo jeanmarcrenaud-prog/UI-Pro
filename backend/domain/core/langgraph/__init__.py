@@ -42,6 +42,7 @@ def build_graph():
     from .nodes import (
         analyzing_node,
         coding_node,
+        error_node,
         executing_node,
         fixing_node,
         planning_node,
@@ -62,6 +63,7 @@ def build_graph():
     workflow.add_node("review", reviewing_node)
     workflow.add_node("execute", executing_node)
     workflow.add_node("fixing", fixing_node)
+    workflow.add_node("error_node", error_node)
 
     workflow.add_edge(START, "analyze")
     workflow.add_edge("analyze", "plan")
@@ -73,8 +75,9 @@ def build_graph():
     workflow.add_conditional_edges(
         "execute",
         should_continue,
-        {"fix_code": "fixing", "end": END},
+        {"fix_code": "fixing", "end": END, "error": "error_node"},
     )
+    workflow.add_edge("error_node", END)
 
     checkpointer = _get_checkpointer()
     return workflow.compile(checkpointer=checkpointer)
