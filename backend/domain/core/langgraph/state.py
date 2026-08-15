@@ -178,12 +178,6 @@ class AgentState(TypedDict, total=False):
     max_attempts: Annotated[int, _last_wins]
     session_id: Annotated[str, _last_wins]
     metadata: Annotated[Metadata, _last_wins]
-    # Human-in-the-loop approval (execute / correct / cancel)
-    approval_status: Literal["PENDING", "APPROVED", "REJECTED", None]
-    approval_reason: str | None
-    # ISO-8601 timestamp set when approval is requested (for timeout)
-    approval_requested_at: str | None  # e.g. "2026-07-07T12:00:00+00:00"
-
     # Language detected from user request (e.g. "python", "powershell", "bash")
     language: str | None
 

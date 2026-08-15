@@ -117,14 +117,6 @@ class TestParseEvent:
         assert event.code == "500"
         assert event.content == "Internal server error"
 
-    def test_awaiting_approval(self):
-        event = parse_event(
-            "[AWAITING_APPROVAL]stream_id:abc-123", self.MESSAGE_ID
-        )
-        assert event is not None
-        assert event.event_type == "awaiting_approval"
-        assert "abc-123" in event.content
-
     def test_exec_output(self):
         event = parse_event("[EXEC_OUT]Hello world", self.MESSAGE_ID)
         assert event is not None
