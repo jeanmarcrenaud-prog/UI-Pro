@@ -44,7 +44,6 @@ class ChatService {
       this.handleStep.bind(this),
       this.handleError.bind(this),
       this.handleComplete.bind(this),
-      this.handleApproval.bind(this),
     )
   }
 
@@ -68,7 +67,7 @@ class ChatService {
     model?: string,
     provider?: string
   ): Promise<void> {
-    // Persist model/provider for Phase 2 (execute_decision)
+    // Persist model/provider for the active request
     const effectiveModel = model || this.pendingModel?.model || DEFAULT_MODEL
     const effectiveProvider = provider || this.pendingModel?.provider || DEFAULT_PROVIDER
     this.lastModel = effectiveModel
@@ -194,52 +193,10 @@ class ChatService {
     this.activeRequest = null
     this.manuallyClosed = true
     events.emit('status', { status: 'idle' })
-    // Keep WS alive for potential execute_decision (Phase 2)
-    // closeWs = true would break the approval flow
+    // Keep WS alive for potential resume
   }
 
-  private handleApproval(streamId: string, codePreview: string, messageId: string): void {
-    this.activeRequest = null
-    this.manuallyClosed = true
-    events.emit('status', { status: 'idle' })
-    events.emit('awaitingApproval', { stream_id: streamId, code_preview: codePreview, message_id: messageId })
-  }
 
-  /** Send execute/correct/cancel decision for human-in-the-loop approval. */
-  async sendExecuteDecision(decision: 'execute' | 'correct' | 'cancel', feedback?: string): Promise<void> {
-    // Preserve the original model/provider so if a stale onclose fires
-    // tryReconnect → sendPayload, it won't send an empty model.
-    this.activeRequest = {
-      id: crypto.randomUUID(),
-      prompt: '',
-      model: this.lastModel,
-      provider: this.lastProvider,
-      assistantId: crypto.randomUUID(),
-      lastChunkIndex: 0,
-    }
-    this.manuallyClosed = false
-
-    // Ensure WS is connected before sending
-    if (!this.wsManager.isConnected) {
-      // Prevent handleClose → tryReconnect race (onclose from old WS
-      // could fire while connectWithRetry is running, causing a
-      // double-reconnect that sends sendPayload with empty model).
-      this.manuallyClosed = true
-      const reconnected = await this.connectWithRetry(3, 500)
-      this.manuallyClosed = false
-      if (!reconnected) {
-        this.handleError('Failed to reconnect for execution decision')
-        return
-      }
-    }
-
-    this.wsManager.send({
-      type: 'execute_decision',
-      message_id: this.activeRequest.id,
-      decision,
-      feedback: feedback || null,
-    })
-  }
 
   // =====================
   // INTERNAL - Connection Management

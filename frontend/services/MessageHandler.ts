@@ -8,7 +8,6 @@ import type {
   StepCallback,
   ErrorCallback,
   CompleteCallback,
-  ApprovalCallback,
 } from './types'
 import { events } from '@/lib/events'
 import { debugLogger } from '@/lib/debug/logger'
@@ -19,7 +18,6 @@ export class MessageHandler {
     private onStep: StepCallback,
     private onError: ErrorCallback,
     private onComplete: CompleteCallback,
-    private onApproval: ApprovalCallback,
   ) {}
 
   process(data: any, activeRequest: ActiveRequest | null): void {
@@ -76,15 +74,6 @@ export class MessageHandler {
       return
     }
 
-    // Handle human-in-the-loop execution approval
-    if (type === 'awaiting_approval') {
-      const streamId = data.stream_id || ''
-      const codePreview = data.code_preview || data.content || ''
-      const msgId = data.message_id || ''
-      debugLogger.logInfo(`Awaiting approval for stream: ${streamId}`, 'approval')
-      this.onApproval(streamId, codePreview, msgId)
-      return
-    }
 
     // Handle execution output (terminal streaming)
     if (type === WS_EVENTS.EXEC_OUTPUT) {
