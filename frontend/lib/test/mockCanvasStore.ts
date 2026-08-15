@@ -52,14 +52,4 @@ export const TestPipelines = {
     }),
   ],
 
-  /** Awaiting approval state */
-  awaitingApproval: [
-    createMockStep('step-analyzing', 'done', { durationMs: 1200, tokens: 340 }),
-    createMockStep('step-planning', 'done', { durationMs: 3400, tokens: 890 }),
-    createMockStep('step-coding', 'done', { durationMs: 8100, tokens: 2450 }),
-    createMockStep('step-reviewing', 'done', { durationMs: 2100, tokens: 560 }),
-    createMockStep('step-executing', 'awaiting_approval', {
-      startedAt: new Date().toISOString(),
-    }),
-  ],
 }

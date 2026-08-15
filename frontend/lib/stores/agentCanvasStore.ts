@@ -1,12 +1,11 @@
 // agentCanvasStore.ts
-// Zustand store for Agent Canvas — graph steps, selection, approval, run metadata
+// Zustand store for Agent Canvas — graph steps, selection, run metadata
 import { create } from 'zustand'
 import { devtools, persist } from 'zustand/middleware'
 import { useAgentStore } from './agentStore'
 import type { AgentStep } from '@/lib/types'
-// sendCanvasMessage imported lazily inside sendApprovalDecision to avoid circular dep
 
-export type StepStatus = 'pending' | 'running' | 'done' | 'error' | 'awaiting_approval'
+export type StepStatus = 'pending' | 'running' | 'done' | 'error'
 
 export interface CanvasStep {
   name: string
@@ -28,9 +27,6 @@ interface CanvasState {
   collapsedNodes: string[]
   isRunning: boolean
 
-  // Approval status
-  approvalStatus: 'PENDING' | 'APPROVED' | 'REJECTED' | null
-  approvalReason?: string
 
   // Run metadata
   runId: string | null
@@ -44,15 +40,13 @@ interface CanvasState {
   setSelectedNode: (nodeId: string | null) => void
   toggleCollapse: (nodeId: string) => void
   setRunning: (isRunning: boolean) => void
-  setApprovalStatus: (status: 'PENDING' | 'APPROVED' | 'REJECTED', reason?: string) => void
   resetCanvas: () => void
-  set: (partial: Partial<Omit<CanvasState, 'set' | 'setSteps' | 'updateStep' | 'addStep' | 'setCurrentStep' | 'setSelectedNode' | 'toggleCollapse' | 'setRunning' | 'setApprovalStatus' | 'resetCanvas' | 'markStepRunning' | 'markStepDone' | 'markStepError' | 'sendApprovalDecision'>>) => void
+  set: (partial: Partial<Omit<CanvasState, 'set' | 'setSteps' | 'updateStep' | 'addStep' | 'setCurrentStep' | 'setSelectedNode' | 'toggleCollapse' | 'setRunning' | 'resetCanvas' | 'markStepRunning' | 'markStepDone' | 'markStepError'>>) => void
 
   // Helpers
   markStepRunning: (name: string) => void
   markStepDone: (name: string, durationMs?: number, tokens?: number) => void
   markStepError: (name: string, error: string) => void
-  sendApprovalDecision: (decision: 'APPROVED' | 'REJECTED', reason?: string) => void
 }
 
 export const useAgentCanvasStore = create<CanvasState>()(
@@ -64,8 +58,6 @@ export const useAgentCanvasStore = create<CanvasState>()(
         selectedNodeId: null,
         collapsedNodes: [],
         isRunning: false,
-        approvalStatus: null,
-        approvalReason: undefined,
         runId: null,
         sessionId: null,
 
@@ -95,8 +87,6 @@ export const useAgentCanvasStore = create<CanvasState>()(
         setRunning: (isRunning) => set({ isRunning }),
 
 
-        setApprovalStatus: (status, reason) =>
-          set({ approvalStatus: status, approvalReason: reason }),
 
         markStepRunning: (name) => {
           get().updateStep(name, { status: 'running' })
@@ -111,21 +101,6 @@ export const useAgentCanvasStore = create<CanvasState>()(
           get().updateStep(name, { status: 'error', error })
         },
 
-        sendApprovalDecision: async (decision, reason) => {
-          // Route through chatService so the execute_decision goes on the SAME
-          // WebSocket connection that has the active stream session.
-          try {
-            const { chatService } = await import('@/services/chatService')
-            await chatService.sendExecuteDecision(
-              decision === 'APPROVED' ? 'execute' : 'cancel',
-              reason,
-            )
-          } catch (err) {
-            console.error('[canvasStore] Failed to send approval decision:', err)
-          }
-          // Update local state immediately (optimistic)
-          set({ approvalStatus: decision, approvalReason: reason ?? undefined })
-        },
 
         resetCanvas: () =>
           set({
@@ -134,8 +109,6 @@ export const useAgentCanvasStore = create<CanvasState>()(
             selectedNodeId: null,
             collapsedNodes: [],
             isRunning: false,
-            approvalStatus: null,
-            approvalReason: undefined,
             runId: null,
           }),
 
