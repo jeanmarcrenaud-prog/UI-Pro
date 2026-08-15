@@ -67,8 +67,8 @@ class TestExecutingNodeTimeout:
                 result = await nodes.executing_node(state)
                 elapsed = time.perf_counter() - start
 
-        # Should have cancelled at the configured timeout, not waited the full 30s
-        assert elapsed < 5, f"should have timed out near 2s, took {elapsed:.2f}s"
+        # Should have cancelled near the configured timeout + grace (2s + 5s), not waited the full 30s
+        assert elapsed < 9, f"should have timed out near 7s, took {elapsed:.2f}s"
 
         exec_result = result["execution_result"]
         assert exec_result["success"] is False

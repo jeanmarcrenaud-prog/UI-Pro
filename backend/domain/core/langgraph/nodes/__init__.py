@@ -494,7 +494,7 @@ async def executing_node(state: AgentState) -> dict[str, Any]:
 
     from backend.infrastructure.code_execution import CodeExecutionService
 
-    executor = CodeExecutionService()
+    executor = CodeExecutionService(timeout_seconds=int(settings.executor_timeout))
     files = state.get("code", {}).get("files", {})
 
     from backend.domain.core.events import emit_exec_output
@@ -514,7 +514,7 @@ async def executing_node(state: AgentState) -> dict[str, Any]:
         try:
             result = await asyncio.wait_for(
                 executor.run_files_async(files, output_callback=_on_exec_line),
-                timeout=float(settings.executor_timeout),
+                timeout=float(settings.executor_timeout) + 5.0,  # grace : laisser l'executor kill + remonter
             )
         except asyncio.TimeoutError:
             status = "error"
