@@ -192,9 +192,6 @@ class Settings(BaseSettings):
     checkpoint_prune_age_days: int = Field(default=30, ge=1, le=365)
     use_postgres_checkpointer: bool = False
 
-    # Approval timeout
-    approval_timeout_minutes: int = Field(default=10, ge=1, le=60,
-        description="Max minutes to wait for human approval before auto-cancelling")
     postgres_db_url: str | None = None
 
     # State management
