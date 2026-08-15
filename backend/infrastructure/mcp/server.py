@@ -3,7 +3,11 @@ import json
 import re
 from typing import List, Dict, Any
 from openai import OpenAI
-from openai.types.chat import ChatCompletionMessageParam
+from openai.types.chat import (
+    ChatCompletionMessageParam,
+    ChatCompletionMessageToolCallParam,
+    ChatCompletionToolParam,
+)
 from backend.domain.core.models import EditorState as EditorStateModel
 from backend.domain.core.editor_service import EditorService
 from backend.domain.core.editor_state import EditorStateStore
@@ -12,8 +16,11 @@ from backend.application.intelligence.intelligence_service import init_intellige
 from backend.application.intelligence.task_planner import get_task_planner
 from backend.infrastructure.opencode_connector.manager import OpenCodeConnectorManager
 from backend.domain.settings import settings
+from backend.domain.core.events import emit_tool
 
 logger = logging.getLogger(__name__)
+
+MAX_TOOL_ROUNDS = 5  # bounded tool-calling loop (native + tag fallback)
 
 
 # ─── Shared Prompts ───────────────────────────────────
@@ -83,6 +90,44 @@ class HermesMCPServer:
             logger.warning(f"Failed to init real intelligence: {e}, using fallback")
             init_intelligence_service(get_task_planner(), None, self.connector_manager)
             self.intelligence_service = get_intelligence_service()
+
+    def _build_tools(self) -> List[ChatCompletionToolParam]:
+        """Convert list_tools() to OpenAI-compatible ``tools`` parameter.
+
+        Each tool's ``input_schema`` (JSON Schema) becomes the function
+        ``parameters`` so the LLM can emit native ``tool_calls``.
+        """
+        tools: List[ChatCompletionToolParam] = []
+        for t in self.list_tools():
+            if t["name"] == "chat":
+                continue
+            tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": t["name"],
+                        "description": t.get("description", ""),
+                        "parameters": t.get(
+                            "input_schema",
+                            {"type": "object", "properties": {}},
+                        ),
+                    },
+                }
+            )
+        return tools
+
+    async def _execute_tool_call(
+        self, func_name: str, func_args: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Execute a tool and emit EventBus events for frontend visibility."""
+        logger.info("Hermes executing tool: %s(%s)", func_name, func_args)
+        try:
+            result = await self.call_tool(func_name, func_args)
+            emit_tool(func_name, func_args, result.get("content", ""), success=True)
+            return result
+        except Exception as e:
+            emit_tool(func_name, func_args, str(e), success=False)
+            raise
 
     def list_tools(self) -> List[Dict[str, Any]]:
         return [
@@ -189,39 +234,82 @@ class HermesMCPServer:
 
         try:
             tool_names = [t["name"] for t in self.list_tools() if t["name"] != "chat"]
-
             system_prompt = _build_system_prompt(tool_names)
+            tools = self._build_tools()
 
             messages: List[ChatCompletionMessageParam] = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": message},
             ]
 
-            resp = self.llm_client.chat.completions.create(
-                model=self.llm_model,
-                messages=messages,
-                temperature=0.7,
-                max_tokens=2048,
-            )
-
-            content_text = resp.choices[0].message.content or ""
-
-            tool_call_match = parse_tool_call_tag(content_text)
-            if tool_call_match:
-                func_name, func_args = tool_call_match
-                logger.info(f"Hermes executing tool: {func_name}({func_args})")
-                result = await self.call_tool(func_name, func_args)
-                followup = build_followup_messages(content_text, func_name, func_args, result)
-                messages.extend(followup)
-                resp2 = self.llm_client.chat.completions.create(
+            for _ in range(MAX_TOOL_ROUNDS):
+                resp = self.llm_client.chat.completions.create(
                     model=self.llm_model,
                     messages=messages,
                     temperature=0.7,
-                    max_tokens=1024,
+                    max_tokens=2048,
+                    tools=tools,
+                    tool_choice="auto",
+                    timeout=settings.llm_timeout,
                 )
-                return {"content": resp2.choices[0].message.content or "..."}
 
-            return {"content": content_text}
+                msg = resp.choices[0].message
+                content_text = msg.content or ""
+
+                # Native tool calling (OpenAI-compatible)
+                if msg.tool_calls:
+                    tool_calls: List[ChatCompletionMessageToolCallParam] = []
+                    for tc in msg.tool_calls:
+                        fn = getattr(tc, "function", None)
+                        if fn is None:
+                            continue
+                        tool_calls.append(
+                            {
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {
+                                    "name": fn.name,
+                                    "arguments": fn.arguments,
+                                },
+                            }
+                        )
+                    if tool_calls:
+                        messages.append(
+                            {
+                                "role": "assistant",
+                                "content": content_text or None,
+                                "tool_calls": tool_calls,
+                            }
+                        )
+                        for tc in tool_calls:
+                            func_name = tc["function"]["name"]
+                            try:
+                                func_args = json.loads(tc["function"]["arguments"] or "{}")
+                            except json.JSONDecodeError:
+                                func_args = {}
+                            result = await self._execute_tool_call(func_name, func_args)
+                            messages.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": tc["id"],
+                                    "content": result.get("content", str(result)),
+                                }
+                            )
+                    continue  # next round
+
+                # Fallback: textual tag protocol (models without native tools)
+                tool_call_match = parse_tool_call_tag(content_text)
+                if tool_call_match:
+                    func_name, func_args = tool_call_match
+                    result = await self._execute_tool_call(func_name, func_args)
+                    messages.extend(
+                        build_followup_messages(content_text, func_name, func_args, result)
+                    )
+                    continue  # next round
+
+                return {"content": content_text}
+
+            return {"content": "Tool call loop exceeded max rounds."}
 
         except Exception as e:
             logger.exception("Chat LLM call failed")
@@ -239,51 +327,104 @@ class HermesMCPServer:
 
         try:
             tool_names = [t["name"] for t in self.list_tools() if t["name"] != "chat"]
-
             system_prompt = _build_system_prompt(tool_names)
+            tools = self._build_tools()
 
             messages: List[ChatCompletionMessageParam] = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": message},
             ]
 
-            stream = self.llm_client.chat.completions.create(
-                model=self.llm_model,
-                messages=messages,
-                temperature=0.7,
-                max_tokens=2048,
-                stream=True,
-            )
-
-            collected_content = ""
-            for chunk in stream:
-                content = chunk.choices[0].delta.content or ""
-                if content:
-                    collected_content += content
-                    yield content
-
-            # Handle tool calls (same logic as _handle_chat)
-            tool_call_match = parse_tool_call_tag(collected_content)
-            if tool_call_match:
-                func_name, func_args = tool_call_match
-                logger.info(f"Hermes executing tool: {func_name}({func_args})")
-                yield "\n\n[tool: {}\n\n".format(func_name)
-                result = await self.call_tool(func_name, func_args)
-                yield "\n```json\n{}\n```\n\n".format(json.dumps(result.get("content", ""), ensure_ascii=False))
-                followup = build_followup_messages(collected_content, func_name, func_args, result)
-                messages.extend(followup)
-                stream2 = self.llm_client.chat.completions.create(
+            for _ in range(MAX_TOOL_ROUNDS):
+                stream = self.llm_client.chat.completions.create(
                     model=self.llm_model,
                     messages=messages,
                     temperature=0.7,
-                    max_tokens=1024,
+                    max_tokens=2048,
+                    tools=tools,
+                    tool_choice="auto",
                     stream=True,
+                    timeout=settings.llm_timeout,
                 )
 
-                for chunk in stream2:
-                    content = chunk.choices[0].delta.content or ""
-                    if content:
-                        yield content
+                collected_content = ""
+                tool_calls: Dict[int, Dict[str, str]] = {}
+                for chunk in stream:
+                    if not chunk.choices:
+                        continue
+                    delta = chunk.choices[0].delta
+                    if delta is None:
+                        continue
+                    if delta.content:
+                        collected_content += delta.content
+                        yield delta.content
+                    if delta.tool_calls:
+                        for tc in delta.tool_calls:
+                            entry = tool_calls.setdefault(
+                                tc.index, {"id": "", "name": "", "arguments": ""}
+                            )
+                            if tc.id:
+                                entry["id"] = tc.id
+                            if tc.function and tc.function.name:
+                                entry["name"] = tc.function.name
+                            if tc.function and tc.function.arguments:
+                                entry["arguments"] += tc.function.arguments
+
+                # Native tool calls accumulated during streaming
+                if tool_calls:
+                    messages.append(
+                        {
+                            "role": "assistant",
+                            "content": collected_content or None,
+                            "tool_calls": [
+                                {
+                                    "id": entry["id"],
+                                    "type": "function",
+                                    "function": {
+                                        "name": entry["name"],
+                                        "arguments": entry["arguments"],
+                                    },
+                                }
+                                for entry in tool_calls.values()
+                            ],
+                        }
+                    )
+                    for entry in tool_calls.values():
+                        yield "\n\n[tool: {}\n\n".format(entry["name"])
+                        try:
+                            func_args = json.loads(entry["arguments"] or "{}")
+                        except json.JSONDecodeError:
+                            func_args = {}
+                        result = await self._execute_tool_call(entry["name"], func_args)
+                        yield "\n```json\n{}\n```\n\n".format(
+                            json.dumps(result.get("content", ""), ensure_ascii=False)
+                        )
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": entry["id"],
+                                "content": result.get("content", str(result)),
+                            }
+                        )
+                    continue  # next round
+
+                # Fallback: textual tag protocol
+                tool_call_match = parse_tool_call_tag(collected_content)
+                if tool_call_match:
+                    func_name, func_args = tool_call_match
+                    yield "\n\n[tool: {}\n\n".format(func_name)
+                    result = await self._execute_tool_call(func_name, func_args)
+                    yield "\n```json\n{}\n```\n\n".format(
+                        json.dumps(result.get("content", ""), ensure_ascii=False)
+                    )
+                    messages.extend(
+                        build_followup_messages(collected_content, func_name, func_args, result)
+                    )
+                    continue  # next round
+
+                return
+
+            yield "\n\nTool call loop exceeded max rounds."
 
         except Exception as e:
             logger.exception("Chat stream failed")
