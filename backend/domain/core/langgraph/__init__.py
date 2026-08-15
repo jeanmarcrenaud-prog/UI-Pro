@@ -14,6 +14,10 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
+from backend.domain.settings import settings
+from langgraph.errors import NodeError
+from langgraph.types import Command
+
 from .checkpointer import _get_checkpointer
 from .state import AgentState
 
@@ -34,6 +38,32 @@ def _get_llm_router():
 # ========================================
 # Graph Builder
 # ========================================
+
+
+def _llm_node_timeout() -> float:
+    """Hard per-node cap for LLM nodes.
+
+    Worst-case legitimate duration: the wrapper retry chain can issue up to
+    4 LLM attempts (``run_node`` retry x ``stream_generate`` fallback to
+    ``generate`` with its own retry), each capped at ``settings.llm_timeout``.
+    The node timeout sits above that worst case so it only fires on genuine
+    hangs (deadlock, non-terminating stream, extraction loop) — never during
+    a normal retry sequence.
+    """
+    return float(settings.llm_timeout) * 4 + 60.0
+
+
+def _node_error_handler(state, error: NodeError) -> Command:
+    """Graph-level error handler for LLM nodes.
+
+    langgraph raises ``NodeTimeoutError`` OUTSIDE the node (its timeout
+    machinery wraps the whole node), so ``_error_guard`` inside the node
+    never sees it. This handler records it the same way and returns a
+    ``Command`` so the run continues to ``error_node`` instead of crashing.
+    """
+    from .nodes._base import _record_node_error
+
+    return Command(update=_record_node_error(state, error.node, error.error))
 
 
 def build_graph():
@@ -58,11 +88,11 @@ def build_graph():
     workflow = StateGraph(AgentState)
 
     workflow.add_node("analyze", analyzing_node)
-    workflow.add_node("plan", planning_node)
-    workflow.add_node("code", coding_node)
-    workflow.add_node("review", reviewing_node)
+    workflow.add_node("plan", planning_node, timeout=_llm_node_timeout(), error_handler=_node_error_handler)
+    workflow.add_node("code", coding_node, timeout=_llm_node_timeout(), error_handler=_node_error_handler)
+    workflow.add_node("review", reviewing_node, timeout=_llm_node_timeout(), error_handler=_node_error_handler)
     workflow.add_node("execute", executing_node)
-    workflow.add_node("fixing", fixing_node)
+    workflow.add_node("fixing", fixing_node, timeout=_llm_node_timeout(), error_handler=_node_error_handler)
     workflow.add_node("error_node", error_node)
 
     workflow.add_edge(START, "analyze")

@@ -8,6 +8,7 @@ import time
 from collections.abc import AsyncIterator
 
 from backend.domain.settings import settings
+from backend.infrastructure.llm.errors import LLMBackendError
 from backend.infrastructure.llm.progress import LLMProgressTracker
 from backend.infrastructure.monitoring.llm_metrics import (
     inc_llm_error,
@@ -143,30 +144,30 @@ class LLMWrapper:
                 observe_llm_latency(provider, time.monotonic() - start, model_type)
                 inc_llm_tokens(provider, len(result))
                 return result
-            except asyncio.TimeoutError as e:
+            except (asyncio.TimeoutError, LLMBackendError) as e:
                 last_exc = e
-                inc_llm_error(provider, "timeout")
+                inc_llm_error(
+                    provider,
+                    "timeout" if isinstance(e, asyncio.TimeoutError) else "backend_error",
+                )
                 if attempt < max_retries:
                     delay = _exponential_backoff(attempt)
                     logger.warning(
-                        "LLM generate timed out after %ss (model_type=%s, attempt %d/%d) — retrying in %.1fs",
-                        timeout,
+                        "LLM generate failed (model_type=%s, attempt %d/%d) — retrying in %.1fs: %s",
                         model_type,
                         attempt + 1,
                         max_retries + 1,
                         delay,
+                        e,
                     )
                     await asyncio.sleep(delay)
                     continue
-                    logger.warning(
-                        "LLM generate timed out after %ss (model_type=%s, attempt %d/%d) — retrying",
-                        timeout,
-                        model_type,
-                        attempt + 1,
-                        max_retries + 1,
-                    )
-                    continue
 
+        if isinstance(last_exc, LLMBackendError):
+            msg = f"LLM backend error after {max_retries + 1} attempt(s) (model_type={model_type}): {last_exc}"
+            logger.error(msg)
+            set_active_requests(provider, 0)
+            raise LLMBackendError(msg) from last_exc
         msg = f"LLM call timed out after {timeout}s (model_type={model_type})"
         logger.error(msg)
         set_active_requests(provider, 0)
@@ -252,9 +253,9 @@ class LLMWrapper:
     ) -> str:
         """Helper: collect full response from streaming with timeout.
 
-        Retries once on TimeoutError before failing — local models
-        (Lemonade/Ollama) sometimes stall on the first request after
-        VRAM load, and a single retry often recovers the response.
+        Retries once on TimeoutError or LLMBackendError before failing —
+        local models (Lemonade/Ollama) sometimes stall on the first request
+        after VRAM load, and a single retry often recovers the response.
         """
         timeout = float(settings.llm_timeout)
         model, provider = self._resolved()
@@ -273,31 +274,31 @@ class LLMWrapper:
                 full_response = await asyncio.wait_for(_collect(), timeout=timeout)
                 last_exc = None
                 break
-            except asyncio.TimeoutError as e:
+            except (asyncio.TimeoutError, LLMBackendError) as e:
                 last_exc = e
-                inc_llm_error(provider, "timeout")
+                inc_llm_error(
+                    provider,
+                    "timeout" if isinstance(e, asyncio.TimeoutError) else "backend_error",
+                )
                 if attempt < max_retries:
                     delay = _exponential_backoff(attempt)
                     logger.warning(
-                        "LLM call timed out after %ss (model_type=%s, attempt %d/%d) — retrying in %.1fs",
-                        timeout,
+                        "LLM call failed (model_type=%s, attempt %d/%d) — retrying in %.1fs: %s",
                         model_type,
                         attempt + 1,
                         max_retries + 1,
                         delay,
+                        e,
                     )
                     await asyncio.sleep(delay)
                     continue
-                    logger.warning(
-                        "LLM call timed out after %ss (model_type=%s, attempt %d/%d) — retrying",
-                        timeout,
-                        model_type,
-                        attempt + 1,
-                        max_retries + 1,
-                    )
-                    continue
 
         if last_exc is not None:
+            if isinstance(last_exc, LLMBackendError):
+                msg = f"LLM backend error after {max_retries + 1} attempt(s) (model_type={model_type}): {last_exc}"
+                logger.error(msg)
+                set_active_requests(provider, 0)
+                raise LLMBackendError(msg) from last_exc
             msg = f"LLM call timed out after {timeout}s (model_type={model_type})"
             logger.error(msg)
             set_active_requests(provider, 0)

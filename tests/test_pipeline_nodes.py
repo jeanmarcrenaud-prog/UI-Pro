@@ -723,3 +723,139 @@ class TestGraphErrorNode:
             e.source == "error_node" and e.target == "__end__"
             for e in graph.edges
         )
+
+
+class TestNodeTimeout:
+    """NodeTimeout — langgraph's per-node hard cap composes with _error_guard.
+
+    A node exceeding its ``timeout`` raises ``NodeTimeoutError`` (an
+    ``Exception`` subclass, NOT ``TimeoutError``). ``_error_guard`` catches
+    it, records the error, and the run terminates cleanly instead of
+    crashing.
+    """
+
+    def test_node_exceeding_timeout_raises_node_timeout_error(self):
+        from langgraph.errors import NodeTimeoutError
+        from langgraph.graph import END, START, StateGraph
+        from typing import TypedDict
+
+        class S(TypedDict, total=False):
+            x: int
+
+        async def slow(state):
+            await asyncio.sleep(5)
+            return {"x": 1}
+
+        g = StateGraph(S)
+        g.add_node("slow", slow, timeout=0.2)
+        g.add_edge(START, "slow")
+        g.add_edge("slow", END)
+        app = g.compile()
+
+        with pytest.raises(NodeTimeoutError):
+            asyncio.run(app.ainvoke({"x": 0}))
+
+    def test_error_handler_records_node_timeout(self):
+        """NodeTimeoutError is raised OUTSIDE the node (langgraph's timeout
+        machinery) — the graph-level error_handler records it so the run
+        continues instead of crashing."""
+        from langgraph.errors import NodeError
+        from langgraph.graph import END, START, StateGraph
+        from langgraph.types import Command
+        from typing import TypedDict
+        from backend.domain.core.langgraph.nodes._base import _record_node_error
+
+        class S(TypedDict, total=False):
+            x: int
+            error: str
+            error_history: list
+            steps_history: list
+            current_step: str
+
+        def handler(state, error: NodeError) -> Command:
+            return Command(update=_record_node_error(state, error.node, error.error))
+
+        async def slow(state):
+            await asyncio.sleep(5)
+            return {"x": 1}
+
+        g = StateGraph(S)
+        g.add_node("slow", slow, timeout=0.2, error_handler=handler)
+        g.add_edge(START, "slow")
+        g.add_edge("slow", END)
+        app = g.compile()
+
+        result = asyncio.run(app.ainvoke({"x": 0, "error_history": []}))
+        assert "NodeTimeoutError" in result["error"]
+        assert len(result["error_history"]) == 1
+        assert result["error_history"][0]["node"] == "slow"
+        assert result["steps_history"][-1]["status"] == "error"
+
+
+class TestWrapperRetryBackendError:
+    """LLMWrapper retries LLMBackendError exactly like it retries timeouts.
+
+    A transient backend outage (Ollama restarting, model loading) must not
+    fail the node immediately: one retry with backoff recovers it.
+    """
+
+    def test_generate_retries_backend_error_then_succeeds(self):
+        from backend.domain.core.langgraph.llm_wrapper import LLMWrapper
+        from backend.infrastructure.llm.errors import LLMBackendError
+
+        class _Router:
+            def __init__(self):
+                self.calls = 0
+
+            def generate(self, prompt, model_type, temperature, model, provider):
+                self.calls += 1
+                if self.calls == 1:
+                    raise LLMBackendError("backend down")
+                return "ok response"
+
+        router = _Router()
+        wrapper = LLMWrapper(router, user_model="m", user_provider="ollama")
+        result = asyncio.run(wrapper.generate("p", max_retries=1))
+        assert result == "ok response"
+        assert router.calls == 2
+
+    def test_generate_raises_backend_error_after_retries(self):
+        from backend.domain.core.langgraph.llm_wrapper import LLMWrapper
+        from backend.infrastructure.llm.errors import LLMBackendError
+
+        class _Router:
+            def generate(self, prompt, model_type, temperature, model, provider):
+                raise LLMBackendError("backend down")
+
+        wrapper = LLMWrapper(_Router(), user_model="m", user_provider="ollama")
+        with pytest.raises(LLMBackendError):
+            asyncio.run(wrapper.generate("p", max_retries=1))
+
+    def test_run_node_retries_backend_error(self):
+        """stream_generate falls back to generate; run_node retries the whole
+        collect when the backend error survives the fallback."""
+        from backend.domain.core.langgraph.llm_wrapper import LLMWrapper
+        from backend.infrastructure.llm.errors import LLMBackendError
+
+        class _Router:
+            def __init__(self):
+                self.stream_calls = 0
+                self.generate_calls = 0
+
+            async def astream(self, **kwargs):
+                self.stream_calls += 1
+                if self.stream_calls == 1:
+                    raise LLMBackendError("backend down")
+                yield "ok"
+
+            def generate(self, prompt, model_type, temperature=0.7, model=None, provider=None):
+                self.generate_calls += 1
+                raise LLMBackendError("backend down")
+
+        router = _Router()
+        wrapper = LLMWrapper(router, user_model="m", user_provider="ollama")
+        result = asyncio.run(wrapper.run_node("p", max_retries=1))
+        assert result == "ok"
+        assert router.stream_calls == 2
+        # attempt 1: stream fails -> generate fallback retries once internally
+        assert router.generate_calls == 2

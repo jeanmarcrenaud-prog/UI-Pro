@@ -164,32 +164,43 @@ def _error_guard(node_name: str):
             try:
                 return await func(state, *args, **kwargs)
             except Exception as exc:
-                logger.exception("[%s_node] Unhandled exception", node_name)
-                msg = (
-                    f"{type(exc).__name__}: {exc}"
-                    if str(exc)
-                    else f"{type(exc).__name__} (no message)"
-                )
-                updates = _record_error(state, node_name, msg)
-                # The node may have crashed before _step_start, so its
-                # running step (if any) lives in the lost local updates.
-                # Append a synthetic running step and mark it error.
-                history = list(state.get("steps_history", []))
-                history.append({
-                    "name": node_name,
-                    "status": "running",
-                    "model_used": (state.get("metadata") or {}).get("model") or None,
-                    "tokens": 0,
-                    "duration_ms": 0,
-                    "started_at": datetime.now(timezone.utc).isoformat(),
-                })
-                updates.update(_step_done(node_name, history, status="error"))
-                updates["error"] = msg
-                return updates
+                return _record_node_error(state, node_name, exc)
 
         return wrapper
 
     return decorator
+
+
+def _record_node_error(state: AgentState, node_name: str, exc: BaseException) -> dict[str, Any]:
+    """Record an unhandled node exception as a state error + error-status step.
+
+    Shared by ``_error_guard`` (exceptions raised inside the node) and the
+    graph-level ``error_handler`` (exceptions raised outside the node, e.g.
+    ``NodeTimeoutError`` by langgraph's timeout machinery). Returns the
+    updates dict for the caller to merge/return.
+    """
+    logger.error("[%s_node] Unhandled exception: %s", node_name, exc)
+    msg = (
+        f"{type(exc).__name__}: {exc}"
+        if str(exc)
+        else f"{type(exc).__name__} (no message)"
+    )
+    updates = _record_error(state, node_name, msg)
+    # The node may have crashed before _step_start, so its running step
+    # (if any) lives in the lost local updates. Append a synthetic running
+    # step and mark it error.
+    history = list(state.get("steps_history", []))
+    history.append({
+        "name": node_name,
+        "status": "running",
+        "model_used": (state.get("metadata") or {}).get("model") or None,
+        "tokens": 0,
+        "duration_ms": 0,
+        "started_at": datetime.now(timezone.utc).isoformat(),
+    })
+    updates.update(_step_done(node_name, history, status="error"))
+    updates["error"] = msg
+    return updates
 
 
 # ========================================
