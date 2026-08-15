@@ -48,7 +48,7 @@ async def websocket_endpoint(ws: WebSocket):
         """Consume the unified streamer and forward events to the client.
 
         Runs as a background task so the receive loop stays responsive
-        (ping / cancel / execute_decision can arrive during generation).
+        (ping / cancel can arrive during generation).
         """
         async for event in streamer.stream(transport=transport, **kwargs):
             if cancel_requested:
@@ -101,32 +101,6 @@ async def websocket_endpoint(ws: WebSocket):
                     )
                 )
                 break
-
-            # ── Phase 2: human-in-the-loop execution decision ────────
-            if request.get("type") == "execute_decision":
-                decision = request.get("decision")
-                feedback = request.get("feedback")
-                msg_id = request.get("message_id", current_message_id or str(uuid.uuid4()))
-                logger.info(
-                    f"[ws] Execute decision: {decision} "
-                    f"(message_id={msg_id}, feedback={feedback})"
-                )
-
-                # Stop any previous in-flight stream before starting a new one
-                await stop_inflight()
-
-                streamer = get_unified_streamer()
-                transport = WebSocketTransport(ws)
-                stream_task = asyncio.create_task(
-                    run_stream(
-                        streamer,
-                        transport,
-                        session_id=session_id,
-                        decision=decision,
-                        feedback=feedback,
-                    )
-                )
-                continue
 
             # Validate request
             is_valid, error_msg, parsed = await ws_controller.validate_request(request)
