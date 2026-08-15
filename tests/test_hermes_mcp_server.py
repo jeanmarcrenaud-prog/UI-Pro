@@ -1,7 +1,7 @@
 """Test utilities for Hermes MCP server — parsing and helper functions."""
 import asyncio
 import json
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -320,3 +320,164 @@ class TestCallToolFileOperations:
             "write_file", {"path": "main.py", "content": "x"}
         ))
         assert "Echec" in result["content"]
+
+
+class TestBuildTools:
+    """Tests for _build_tools — OpenAI-compatible tools parameter."""
+
+    def _make_server(self):
+        from backend.infrastructure.mcp.server import HermesMCPServer
+
+        server = HermesMCPServer.__new__(HermesMCPServer)
+        server.llm_client = None
+        return server
+
+    def test_build_tools_excludes_chat(self):
+        """chat tool should not be exposed to the LLM (avoids recursion)."""
+        server = self._make_server()
+        tools = server._build_tools()
+        names = [t["function"]["name"] for t in tools]
+        assert "chat" not in names
+        assert "execute_intent" in names
+        assert "read_file" in names
+        assert "write_file" in names
+
+    def test_build_tools_openai_shape(self):
+        """Each tool should have OpenAI function shape with JSON schema params."""
+        server = self._make_server()
+        tools = server._build_tools()
+        for t in tools:
+            assert t["type"] == "function"
+            assert "name" in t["function"]
+            assert "description" in t["function"]
+            assert t["function"]["parameters"]["type"] == "object"
+
+    def test_build_tools_read_file_schema(self):
+        """read_file schema should be carried into the tools parameter."""
+        server = self._make_server()
+        tools = server._build_tools()
+        read_file = next(
+            t for t in tools if t["function"]["name"] == "read_file"
+        )
+        params = read_file["function"]["parameters"]
+        assert isinstance(params, dict)
+        assert params["required"] == ["path"]
+        properties = params.get("properties", {})
+        assert isinstance(properties, dict)
+        assert "path" in properties
+
+
+class TestHandleChatNativeTools:
+    """Tests for _handle_chat native tool calling loop."""
+
+    def _make_server(self, llm_client):
+        from backend.infrastructure.mcp.server import HermesMCPServer
+
+        server = HermesMCPServer.__new__(HermesMCPServer)
+        server.llm_client = llm_client
+        server.llm_model = "test-model"
+        call_tool_mock = AsyncMock(
+            return_value={"content": "tool executed"}
+        )
+        setattr(server, "call_tool", call_tool_mock)
+        return server, call_tool_mock
+
+    def _mock_response(self, message):
+        resp = MagicMock()
+        resp.choices = [MagicMock()]
+        resp.choices[0].message = message
+        return resp
+
+    def test_native_tool_call_executed(self):
+        """Native tool_calls should execute the tool and return the follow-up."""
+        from backend.infrastructure.mcp.server import HermesMCPServer
+
+        llm = MagicMock()
+        # Round 1: native tool call
+        tc = MagicMock()
+        tc.id = "call_1"
+        tc.type = "function"
+        tc.function.name = "read_file"
+        tc.function.arguments = json.dumps({"path": "main.py"})
+        msg1 = MagicMock()
+        msg1.content = ""
+        msg1.tool_calls = [tc]
+        # Round 2: plain text answer
+        msg2 = MagicMock()
+        msg2.content = "Voici le fichier."
+        msg2.tool_calls = None
+        llm.chat.completions.create.side_effect = [
+            self._mock_response(msg1),
+            self._mock_response(msg2),
+        ]
+
+        server, call_tool_mock = self._make_server(llm)
+        result = asyncio.run(server._handle_chat("lis main.py"))
+
+        assert result["content"] == "Voici le fichier."
+        call_tool_mock.assert_called_once_with("read_file", {"path": "main.py"})
+        # tools= and tool_choice=auto must be passed
+        kwargs = llm.chat.completions.create.call_args_list[0].kwargs
+        assert kwargs["tool_choice"] == "auto"
+        assert "tools" in kwargs
+        # tool result must be fed back as role=tool message
+        sent_messages = kwargs["messages"]
+        assert sent_messages[-1]["role"] == "tool"
+        assert sent_messages[-1]["tool_call_id"] == "call_1"
+
+    def test_tag_fallback_still_works(self):
+        """Models without native tools should still work via tag protocol."""
+        llm = MagicMock()
+        msg1 = MagicMock()
+        msg1.content = '<|tool_call>call:read_file{"path": "a.py"}<tool_call|>'
+        msg1.tool_calls = None
+        msg2 = MagicMock()
+        msg2.content = "Fait."
+        msg2.tool_calls = None
+        llm.chat.completions.create.side_effect = [
+            self._mock_response(msg1),
+            self._mock_response(msg2),
+        ]
+
+        server, call_tool_mock = self._make_server(llm)
+        result = asyncio.run(server._handle_chat("lis a.py"))
+
+        assert result["content"] == "Fait."
+        call_tool_mock.assert_called_once_with("read_file", {"path": "a.py"})
+
+    def test_loop_bounded_by_max_rounds(self):
+        """A model that keeps calling tools must stop after MAX_TOOL_ROUNDS."""
+        from backend.infrastructure.mcp.server import MAX_TOOL_ROUNDS
+
+        llm = MagicMock()
+        tc = MagicMock()
+        tc.id = "call_x"
+        tc.type = "function"
+        tc.function.name = "read_file"
+        tc.function.arguments = "{}"
+        msg = MagicMock()
+        msg.content = ""
+        msg.tool_calls = [tc]
+        llm.chat.completions.create.return_value = self._mock_response(msg)
+
+        server, _ = self._make_server(llm)
+        result = asyncio.run(server._handle_chat("boucle"))
+
+        assert "exceeded max rounds" in result["content"]
+        assert llm.chat.completions.create.call_count == MAX_TOOL_ROUNDS
+
+    def test_timeout_aligned_with_settings(self):
+        """LLM calls should use settings.llm_timeout as the request timeout."""
+        from backend.domain.settings import settings
+
+        llm = MagicMock()
+        msg = MagicMock()
+        msg.content = "réponse simple"
+        msg.tool_calls = None
+        llm.chat.completions.create.return_value = self._mock_response(msg)
+
+        server, _ = self._make_server(llm)
+        asyncio.run(server._handle_chat("bonjour"))
+
+        kwargs = llm.chat.completions.create.call_args.kwargs
+        assert kwargs["timeout"] == settings.llm_timeout
