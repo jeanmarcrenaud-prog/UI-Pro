@@ -7,6 +7,7 @@ export const WS_EVENTS = {
   CANCEL: 'cancel',
   RESUME_ACK: 'resume_ack',
   STEP: 'step',
+  TOOL: 'tool',
   ERROR: 'error',
   DONE: 'done',
   EXEC_OUTPUT: 'exec_output',

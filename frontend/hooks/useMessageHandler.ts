@@ -77,6 +77,16 @@ export const useMessageHandler = ({
       return
     }
 
+    // === TOOL CALLS ===
+    if (normalized.type === 'tool') {
+      const tool = (normalized.stepId || '').replace(/^tool-/, '') || normalized.title || 'tool'
+      events.emit('toolCall', { tool, status: 'done' })
+      if (normalized.content) {
+        events.emit('toolResult', { tool, result: normalized.content })
+      }
+      return
+    }
+
     // === TOKEN STREAMING ===
     if (normalized.type === 'token' && normalized.content) {
       contentRef.current += normalized.content

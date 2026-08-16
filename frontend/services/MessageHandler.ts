@@ -53,6 +53,18 @@ export class MessageHandler {
       return
     }
 
+    // Handle tool call events (from [TOOL] unified protocol)
+    if (type === WS_EVENTS.TOOL) {
+      const tool = (data.step_id || '').replace(/^tool-/, '') || data.title || 'tool'
+      const content = data.content || ''
+      debugLogger.logTool(tool, content)
+      events.emit('toolCall', { tool, status: 'done' })
+      if (content) {
+        events.emit('toolResult', { tool, result: content })
+      }
+      return
+    }
+
     // Handle error
     if (type === WS_EVENTS.ERROR) {
       const msg = data.message || data.error || 'Unknown error'
