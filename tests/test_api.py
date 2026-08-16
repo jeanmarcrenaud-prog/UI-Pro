@@ -115,6 +115,25 @@ class TestHealthDeepEndpoint:
         assert isinstance(rm["configured"], list)
         assert isinstance(rm["missing"], list)
 
+    def test_health_deep_includes_hermes_agent(self, client):
+        """Deep health check reports the local Hermes MCP agent state (D4).
+
+        The block always exists so consumers can iterate over it without
+        null-checking. On a fresh boot the MCP server is lazily created,
+        so 'initialized' is False and status is 'not_initialized' — the
+        probe is report-only and must not degrade the overall status.
+        """
+        response = client.get("/health/deep")
+        data = response.json()
+        hermes_agent = data["services"].get("hermes_agent")
+        assert hermes_agent is not None, "services.hermes_agent missing"
+        assert hermes_agent["status"] in ("available", "not_initialized", "unavailable")
+        assert "initialized" in hermes_agent
+        assert "llm_client_ready" in hermes_agent
+        assert "intelligence_ready" in hermes_agent
+        assert "model" in hermes_agent
+        assert "base_url" in hermes_agent
+
 
 class TestStatusEndpoint:
     """Tests for /status endpoint"""

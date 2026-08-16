@@ -40,6 +40,44 @@ def _check_backends() -> dict[str, dict]:
     return results
 
 
+def _check_hermes_agent() -> dict[str, Any]:
+    """Probe the local Hermes MCP agent state (report-only, ADR D4).
+
+    The HTTP backends probe already covers the hermes backend over the
+    network (settings.backends["hermes"] -> /api/agents). This block
+    reports the in-process MCP server instead: whether it has been
+    constructed and whether its LLM client is initialized.
+
+    Report-only by design: the MCP server is lazily created on first
+    use, so a fresh boot with no Hermes traffic has no instance yet.
+    Degrading the overall health on that would be a false positive.
+    """
+    from backend.infrastructure.mcp.server import get_server_state
+
+    state = get_server_state()
+    configured_base_url = settings.hermes_llm_base_url or (
+        settings.lmstudio_url.rstrip("/") + "/v1"
+    )
+    configured_model = settings.hermes_llm_model
+
+    if state["llm_client_ready"]:
+        status = "available"
+    elif not state["initialized"]:
+        status = "not_initialized"
+    else:
+        status = "unavailable"
+
+    return {
+        "status": status,
+        "ok": state["llm_client_ready"],
+        "initialized": state["initialized"],
+        "llm_client_ready": state["llm_client_ready"],
+        "intelligence_ready": state["intelligence_ready"],
+        "model": state["llm_model"] or configured_model,
+        "base_url": state["base_url"] or configured_base_url,
+    }
+
+
 def _get_system_info() -> dict[str, Any]:
     """Get system info including GPU metrics."""
     system_info: dict[str, Any] = {}
@@ -284,6 +322,7 @@ async def health_check_deep():
             "backends": backend_health,
             "llm": health_summary["status"],
             "backends_summary": health_summary,
+            "hermes_agent": _check_hermes_agent(),
             "ollama_version": ollama_version,
         },
         "required_models": {
@@ -515,6 +554,8 @@ class FullSettingsRequest(BaseModel):
     log_level: str | None = None
     node_routing_enabled: bool | None = None
     llm_enable_thinking: bool | None = None
+    hermes_llm_base_url: str | None = None
+    hermes_llm_model: str | None = None
 
 
 @router.get("/api/settings")
@@ -550,6 +591,8 @@ async def get_all_settings():
         "ollama_url": _get_setting("ollama_url", "http://localhost:11434"),
         "node_routing_enabled": settings.get_node_routing_enabled(),
         "llm_enable_thinking": settings.get_llm_enable_thinking(),
+        "hermes_llm_base_url": _get_setting("hermes_llm_base_url", ""),
+        "hermes_llm_model": _get_setting("hermes_llm_model", "google/gemma-4-12b-qat"),
         "presets": {
             preset_id: {
                 "id": preset.id,
@@ -588,10 +631,25 @@ async def update_settings(body: FullSettingsRequest):
             updates["node_routing_enabled"] = body.node_routing_enabled
         if body.llm_enable_thinking is not None:
             updates["llm_enable_thinking"] = body.llm_enable_thinking
+        if body.hermes_llm_base_url is not None:
+            updates["hermes_llm_base_url"] = body.hermes_llm_base_url
+        if body.hermes_llm_model is not None:
+            updates["hermes_llm_model"] = body.hermes_llm_model
 
-        # Apply updates via set_runtime_override so singletons get invalidated
+        # Apply updates via set_runtime_override so singletons get invalidated.
+        # Hermes LLM fields are excluded — they persist to .env via
+        # set_hermes_llm_config() (the MCP server reads them at construction,
+        # so the change takes effect on restart).
         for key, value in updates.items():
+            if key in ("hermes_llm_base_url", "hermes_llm_model"):
+                continue
             settings.set_runtime_override(key, value)
+
+        if "hermes_llm_base_url" in updates or "hermes_llm_model" in updates:
+            settings.set_hermes_llm_config(
+                base_url=updates.get("hermes_llm_base_url"),
+                model=updates.get("hermes_llm_model"),
+            )
 
         return {"status": "ok", "updated": list(updates.keys())}
     except Exception as e:
