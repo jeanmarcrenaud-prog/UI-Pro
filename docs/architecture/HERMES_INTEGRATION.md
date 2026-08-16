@@ -87,15 +87,22 @@ Remplacer le parsing regex par le paramètre `tools=` OpenAI-compat :
 Émettre `emit_tool()` / `emit_agent_step()` depuis le MCP server pour chaque
 tool call → visibilité frontend + debug panel.
 
-### D3 — Settings UI (quick win)
+### D3 — Settings UI (quick win) ✅ `75d97f1`, `138c97d`, `34e34b9`, `2f2f092`
 
 Exposer `HERMES_LLM_BASE_URL` / `HERMES_LLM_MODEL` dans Settings UI (champs
-`hermes_*` dans `settings.py` + endpoint `/api/settings`).
+`hermes_*` dans `settings.py` + endpoint `/api/settings` + carte
+`HermesSettings` dans le dashboard). Le serveur MCP lit ces champs à la
+construction (premier `get_server()`), donc le changement est effectif au
+redémarrage — noté dans l'UI.
 
-### D4 — Sonde Hermes dans `/health/deep` (quick win)
+### D4 — Sonde Hermes dans `/health/deep` (quick win) ✅ `138c97d`, `34e34b9`
 
-Ajouter un bloc `hermes` dans `_check_backends()` : agent présent (LLM client
-initialisé) + modèles disponibles.
+Bloc `hermes_agent` report-only dans `/health/deep` : agent présent (LLM
+client initialisé) + modèle/base_url configurés. Le backend `hermes` est
+déjà sondé en HTTP par la boucle `_check_backends()` (via
+`settings.backends["hermes"]` → `/api/agents`) ; le bloc ajoute la sonde
+locale du serveur MCP in-process via `get_server_state()` (lazy singleton,
+donc `not_initialized` sur boot frais — ne dégrade pas le statut global).
 
 ### D5 — Transport direct (Phase 4, futur)
 
@@ -112,7 +119,7 @@ avec un transport direct qui bypass le daemon Open Design.
 | **3** | Session / cancel | ⏳ |
 | **4** | Transport abstraction (D5) | ⏳ |
 | **5** | LangGraph bridge | ⏳ |
-| **6** | Health / metrics (D4) | ⏳ |
+| **6** | Health / metrics (D4) | ✅ `138c97d`, `34e34b9` |
 | **7** | Sécurité | ⏳ |
 
 ## Fichiers concernés
@@ -123,7 +130,9 @@ avec un transport direct qui bypass le daemon Open Design.
 | `backend/infrastructure/llm/hermes.py` | HermesBackend (chemin inverse) |
 | `backend/infrastructure/llm/opendesign.py` | Client SSE Open Design |
 | `backend/transport/routers/hermes.py` | Router HTTP `/api/hermes/*` |
-| `backend/domain/settings.py` | `hermes_url`, `backends["hermes"]` |
-| `backend/transport/routers/health.py` | `/health/deep` — sonde Hermes (D4) |
+| `backend/domain/settings.py` | `hermes_url`, `backends["hermes"]`, `hermes_llm_*` (D3) |
+| `backend/transport/routers/health.py` | `/health/deep` — sonde Hermes (D4) ✅ |
+| `frontend/components/settings/HermesSettings.tsx` | Carte Settings UI Hermes (D3) ✅ |
+| `frontend/components/settings/hooks/useHermesSettings.ts` | Hook carte Hermes (D3) ✅ |
 | `frontend/lib/events.ts` | EventEmitter — consommation tool calls (D2) |
 | `frontend/services/MessageHandler.ts` | Parse WS/SSE — tool calls Hermes (D2) |
