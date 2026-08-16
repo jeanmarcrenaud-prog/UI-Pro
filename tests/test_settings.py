@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 # test_settings.py - Unit tests for settings/configuration
 
 import os
@@ -441,6 +443,79 @@ class TestSettingsReload:
         # explicitly change it — its env var is still present and
         # the fresh Settings() will have read it.
         assert s.llm_timeout == 30
+
+
+class TestHermesLLMConfig:
+    """Hermes MCP LLM endpoint config (ADR D3).
+
+    The MCP server (backend/infrastructure/mcp/server.py) reads these at
+    construction (first get_server() call) to build its OpenAI client and
+    TaskPlanner. Defaults preserve the pre-D3 behavior: empty base_url
+    falls back to LM Studio /v1, model defaults to google/gemma-4-12b-qat.
+    """
+
+    def _fresh(self, monkeypatch):
+        from backend.domain.settings import Settings, get_settings
+
+        monkeypatch.delenv("HERMES_LLM_BASE_URL", raising=False)
+        monkeypatch.delenv("HERMES_LLM_MODEL", raising=False)
+        monkeypatch.setenv("LLM_TIMEOUT", "900")
+        get_settings.cache_clear()
+        return Settings()
+
+    def test_defaults(self, monkeypatch):
+        """Empty base_url + gemma default model when nothing is set."""
+        s = self._fresh(monkeypatch)
+        assert s.hermes_llm_base_url == ""
+        assert s.hermes_llm_model == "google/gemma-4-12b-qat"
+
+    def test_env_override(self, monkeypatch):
+        """HERMES_LLM_BASE_URL / HERMES_LLM_MODEL map to the fields."""
+        from backend.domain.settings import Settings, get_settings
+
+        monkeypatch.setenv("HERMES_LLM_BASE_URL", "http://localhost:9999/v1")
+        monkeypatch.setenv("HERMES_LLM_MODEL", "hermes-test-model")
+        monkeypatch.setenv("LLM_TIMEOUT", "900")
+        get_settings.cache_clear()
+        s = Settings()
+        assert s.hermes_llm_base_url == "http://localhost:9999/v1"
+        assert s.hermes_llm_model == "hermes-test-model"
+
+    def test_set_hermes_llm_config_updates_and_persists(self, monkeypatch):
+        """set_hermes_llm_config updates both fields and persists to .env."""
+        s = self._fresh(monkeypatch)
+        with patch.object(s, "_save_to_env") as mock_save:
+            s.set_hermes_llm_config(
+                base_url="http://localhost:9999/v1",
+                model="hermes-test-model",
+            )
+        assert s.hermes_llm_base_url == "http://localhost:9999/v1"
+        assert s.hermes_llm_model == "hermes-test-model"
+        mock_save.assert_called_once_with(
+            {
+                "HERMES_LLM_BASE_URL": "http://localhost:9999/v1",
+                "HERMES_LLM_MODEL": "hermes-test-model",
+            }
+        )
+
+    def test_set_hermes_llm_config_partial(self, monkeypatch):
+        """Only the provided field is updated; the other stays untouched."""
+        s = self._fresh(monkeypatch)
+        with patch.object(s, "_save_to_env") as mock_save:
+            s.set_hermes_llm_config(model="only-model")
+        assert s.hermes_llm_base_url == ""  # untouched
+        assert s.hermes_llm_model == "only-model"
+        mock_save.assert_called_once_with({"HERMES_LLM_MODEL": "only-model"})
+
+    def test_set_hermes_llm_config_trims_whitespace(self, monkeypatch):
+        """Values are stripped before being stored/persisted."""
+        s = self._fresh(monkeypatch)
+        with patch.object(s, "_save_to_env") as mock_save:
+            s.set_hermes_llm_config(base_url="  http://localhost:9999/v1  ")
+        assert s.hermes_llm_base_url == "http://localhost:9999/v1"
+        mock_save.assert_called_once_with(
+            {"HERMES_LLM_BASE_URL": "http://localhost:9999/v1"}
+        )
 
 
 if __name__ == "__main__":

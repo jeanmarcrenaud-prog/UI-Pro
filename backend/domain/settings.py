@@ -94,6 +94,15 @@ class Settings(BaseSettings):
     opendesign_url: str = "http://localhost:7456"
     hermes_url: str = "http://localhost:7456"
 
+    # Hermes MCP LLM endpoint (ADR D3). The MCP server
+    # (backend/infrastructure/mcp/server.py) reads these at construction
+    # (first get_server() call) to build its OpenAI client and TaskPlanner.
+    # Exposed in the Settings UI and reported by the /health/deep Hermes
+    # probe (ADR D4). An empty base_url falls back to LM Studio's /v1
+    # endpoint, preserving the pre-D3 behavior.
+    hermes_llm_base_url: str = ""
+    hermes_llm_model: str = "google/gemma-4-12b-qat"
+
     # Health check tuning for the /health/deep endpoint. The fast /health
     # probe intentionally does no I/O so Docker/k8s load balancers can
     # check it in <50ms; only /health/deep hits these. health_timeout is
@@ -375,6 +384,23 @@ class Settings(BaseSettings):
                 "EXECUTOR_TIMEOUT": str(self.executor_timeout),
             }
         )
+
+    def set_hermes_llm_config(self, base_url: str | None = None, model: str | None = None) -> None:
+        """Update the Hermes MCP LLM endpoint and persist to .env.
+
+        The MCP server builds its OpenAI client at construction (first
+        get_server() call), so the change takes effect on the next process
+        restart — the same lifecycle as editing .env by hand.
+        """
+        updates: dict[str, str] = {}
+        if base_url is not None:
+            self.hermes_llm_base_url = base_url.strip()
+            updates["HERMES_LLM_BASE_URL"] = self.hermes_llm_base_url
+        if model is not None:
+            self.hermes_llm_model = model.strip()
+            updates["HERMES_LLM_MODEL"] = self.hermes_llm_model
+        if updates:
+            self._save_to_env(updates)
 
     def reload_from_env(self) -> None:
         """Re-read .env and update this instance in place.
