@@ -1,6 +1,6 @@
 # 🧭 ADR — Communication Hermes ↔ UI-Pro
 
-> **Date**: 2026-08-16 · **HEAD vérifié**: `cf51a96` · **Statut**: ✅ Cartographie complète — Phase 2 (native tool calling) en cours
+> **Date**: 2026-08-16 · **HEAD vérifié**: `b4276fc` · **Statut**: ✅ Phases 0-2 terminées (ADR, événements unifiés, native tool calling)
 
 ## Contexte
 
@@ -107,8 +107,8 @@ avec un transport direct qui bypass le daemon Open Design.
 | Phase | Contenu | Statut |
 |---|---|---|
 | **0** | ADR + rôles | ✅ Ce document |
-| **1** | Événements unifiés (D2) | ⏳ |
-| **2** | Native tool calling (D1) | 🔨 En cours |
+| **1** | Événements unifiés (D2) | ✅ `40afc03`, `1cac012`, `b4276fc` |
+| **2** | Native tool calling (D1) | ✅ `a95c756`, `ffb5eca` |
 | **3** | Session / cancel | ⏳ |
 | **4** | Transport abstraction (D5) | ⏳ |
 | **5** | LangGraph bridge | ⏳ |
