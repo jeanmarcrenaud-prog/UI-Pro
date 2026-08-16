@@ -49,6 +49,25 @@ def _emit_step(phase: str, message: str, data: dict | None = None):
         pass
 
 
+def _tool_event_to_raw(event: Any) -> str:
+    """Format a ToolEvent for the [TOOL] wire protocol.
+
+    Produces ``{tool_name}:{json}`` — the parser splits on the first
+    colon, so the tool name stays clean while the payload carries
+    success + output (truncated to keep the stream lean).
+    """
+    import json
+
+    output = getattr(event, "output_data", None)
+    if isinstance(output, str) and len(output) > 500:
+        output = output[:500] + "..."
+    payload = {
+        "success": bool(getattr(event, "success", True)),
+        "output": output,
+    }
+    return f"{event.tool_name}:{json.dumps(payload, default=str)}"
+
+
 def get_stream_checkpoint(stream_id: str) -> dict | None:
     """Get checkpoint data for resuming a stream."""
     return _stream_checkpoints.get(stream_id)
@@ -164,6 +183,7 @@ async def stream_agent(
         logger.info("[streaming] Starting astream...")
 
         step_queue: asyncio.Queue[str] = asyncio.Queue()
+        tool_queue: asyncio.Queue[str] = asyncio.Queue()
 
         def _on_agent_event(event: Any) -> None:
             try:
@@ -180,8 +200,16 @@ async def stream_agent(
             except Exception:
                 pass
 
+        def _on_tool_event(event: Any) -> None:
+            try:
+                if hasattr(event, "tool_name"):
+                    tool_queue.put_nowait(_tool_event_to_raw(event))
+            except Exception:
+                pass
+
         bus = get_event_bus()
         bus.subscribe(EventType.AGENT, _on_agent_event)
+        bus.subscribe(EventType.TOOL, _on_tool_event)
 
         _state_emitted: set[str] = set()
 
@@ -199,6 +227,13 @@ async def stream_agent(
                     if step_msg not in _step_dedup:
                         _step_dedup.add(step_msg)
                         yield f"[STEP]{step_msg}"
+            except asyncio.QueueEmpty:
+                pass
+
+            # Drain EventBus tool events (emitted via emit_tool, e.g. Hermes)
+            try:
+                while True:
+                    yield f"[TOOL]{tool_queue.get_nowait()}"
             except asyncio.QueueEmpty:
                 pass
 
@@ -319,6 +354,10 @@ async def stream_agent(
         _last_msg_idx.pop(session_id, None)
         try:
             bus.unsubscribe(EventType.AGENT, _on_agent_event)
+        except Exception:
+            pass
+        try:
+            bus.unsubscribe(EventType.TOOL, _on_tool_event)
         except Exception:
             pass
 
