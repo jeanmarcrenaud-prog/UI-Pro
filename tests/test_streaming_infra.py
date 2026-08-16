@@ -498,3 +498,64 @@ class TestRecordError:
             assert data["error"]["node"] == "coding"
         # Emit is a side effect; the history update still lands in the return
         assert len(updates["error_history"]) == 1
+
+
+# =============================================================================
+# _tool_event_to_raw — EventBus TOOL relay format
+# =============================================================================
+
+from backend.domain.core.langgraph.streaming import _tool_event_to_raw
+from backend.domain.core.events import ToolEvent
+
+
+class TestToolEventToRaw:
+    """_tool_event_to_raw formats ToolEvent for the [TOOL] wire protocol."""
+
+    def test_success_event(self):
+        event = ToolEvent(
+            tool_name="write_file", output_data="Created main.py", success=True
+        )
+        raw = _tool_event_to_raw(event)
+        name, _, payload = raw.partition(":")
+        assert name == "write_file"
+        assert json.loads(payload) == {"success": True, "output": "Created main.py"}
+
+    def test_failure_event(self):
+        event = ToolEvent(
+            tool_name="read_file", output_data="Permission denied", success=False
+        )
+        raw = _tool_event_to_raw(event)
+        name, _, payload = raw.partition(":")
+        assert name == "read_file"
+        assert json.loads(payload)["success"] is False
+
+    def test_long_output_truncated(self):
+        """Long string outputs are truncated to keep the stream lean."""
+        event = ToolEvent(tool_name="read_file", output_data="x" * 1000, success=True)
+        raw = _tool_event_to_raw(event)
+        payload = json.loads(raw.partition(":")[2])
+        assert payload["output"].endswith("...")
+        assert len(payload["output"]) <= 503
+
+    def test_dict_output_serialized(self):
+        """Non-string outputs are JSON-serialized with default=str."""
+        event = ToolEvent(
+            tool_name="execute_intent", output_data={"files": ["a.py"]}, success=True
+        )
+        raw = _tool_event_to_raw(event)
+        payload = json.loads(raw.partition(":")[2])
+        assert payload["output"] == {"files": ["a.py"]}
+
+    def test_roundtrip_through_parser(self):
+        """The raw format must be parseable by the unified protocol parser."""
+        from backend.infrastructure.streaming.parser import parse_event
+
+        event = ToolEvent(
+            tool_name="write_file", output_data="Created main.py", success=True
+        )
+        raw = _tool_event_to_raw(event)
+        parsed = parse_event(f"[TOOL]{raw}", "msg-1")
+        assert parsed is not None
+        assert parsed.event_type == "tool"
+        assert parsed.step_id == "tool-write_file"
+        assert parsed.content == raw.partition(":")[2]
