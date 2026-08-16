@@ -36,13 +36,15 @@ async function fetchStatus(): Promise<HermesStatus> {
 
 async function sendConversationStream(
   message: string,
+  sessionId: string | null,
   onToken: (token: string) => void,
-): Promise<void> {
+): Promise<string | null> {
   const res = await fetch(`${API_BASE}/conversation/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, session_id: sessionId }),
   })
+  const newSessionId = res.headers.get('X-Session-Id')
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: 'Unknown error' }))
     throw new Error(err.detail || 'Conversation failed')
@@ -68,9 +70,18 @@ async function sendConversationStream(
       }
   }
   }
-} finally {
+  } finally {
     reader.releaseLock()
   }
+  return newSessionId
+}
+
+async function cancelConversation(sessionId: string): Promise<void> {
+  await fetch(`${API_BASE}/conversation/cancel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: sessionId }),
+  }).catch(() => {})
 }
 // ─── Component ───────────────────────────────────
 
@@ -85,6 +96,7 @@ export function HermesView() {
   const [input, setInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
   const [chatConnecting, setChatConnecting] = useState(false)
+  const [sessionId, setSessionId] = useState<string | null>(null)
 
   const chatEndRef = useRef<HTMLDivElement>(null)
 
@@ -123,7 +135,7 @@ export function HermesView() {
     setMessages((prev) => [...prev, { role: 'assistant', content: '' }])
 
     try {
-      await sendConversationStream(msg, (token) => {
+      const newSessionId = await sendConversationStream(msg, sessionId, (token) => {
         // Clear connecting state on first token
         setChatConnecting(false)
         setMessages((prev) => {
@@ -134,6 +146,7 @@ export function HermesView() {
           return prev
         })
       })
+      if (newSessionId) setSessionId(newSessionId)
     } catch (e: any) {
       // Replace the empty assistant message with the error
       setMessages((prev) => [
@@ -144,7 +157,18 @@ export function HermesView() {
       setChatLoading(false)
       setChatConnecting(false)
     }
-  }, [input, chatLoading, chatConnecting])
+  }, [input, chatLoading, chatConnecting, sessionId])
+
+  const handleStop = useCallback(() => {
+    if (sessionId) cancelConversation(sessionId)
+    setChatLoading(false)
+    setChatConnecting(false)
+  }, [sessionId])
+
+  const handleNewConversation = useCallback(() => {
+    setMessages([])
+    setSessionId(null)
+  }, [])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -297,15 +321,37 @@ export function HermesView() {
               disabled={chatLoading}
               className="flex-1 px-4 py-2.5 rounded-xl bg-[var(--surface-secondary)] border border-[var(--border-subtle)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/50 outline-none focus:ring-2 focus:ring-violet-500/30 transition-all"
             />
-            <button
-              onClick={() => handleSend()}
-              disabled={chatLoading || !input.trim()}
-              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white text-sm font-medium disabled:opacity-40 hover:from-violet-700 hover:to-fuchsia-700 transition-all shrink-0"
-            >
-              Send
-            </button>
+            {chatLoading ? (
+              <button
+                onClick={handleStop}
+                className="px-5 py-2.5 rounded-xl bg-red-600/90 text-white text-sm font-medium hover:bg-red-700 transition-all shrink-0"
+              >
+                Stop
+              </button>
+            ) : (
+              <button
+                onClick={() => handleSend()}
+                disabled={!input.trim()}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white text-sm font-medium disabled:opacity-40 hover:from-violet-700 hover:to-fuchsia-700 transition-all shrink-0"
+              >
+                Send
+              </button>
+            )}
           </div>
-        </div>
+          <div className="flex items-center justify-between mt-3">
+            <button
+              onClick={handleNewConversation}
+              className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+            >
+              + New conversation
+            </button>
+            {sessionId && (
+              <span className="text-xs text-[var(--text-muted)]/60 font-mono">
+                session: {sessionId}
+              </span>
+            )}
+          </div>
+      </div>
       </div>
     </motion.div>
   )

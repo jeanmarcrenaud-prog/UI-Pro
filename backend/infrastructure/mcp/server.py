@@ -1,6 +1,7 @@
 import logging
 import json
 import re
+import uuid
 from typing import List, Dict, Any
 from openai import OpenAI
 from openai.types.chat import (
@@ -58,6 +59,9 @@ class HermesMCPServer:
         self.state_store = EditorStateStore()
         self.editor_service = EditorService(self.state_store, self.filesystem_service)
         self.connector_manager = OpenCodeConnectorManager()
+        self._sessions: Dict[str, List[ChatCompletionMessageParam]] = {}
+        self._active_streams: Dict[str, bool] = {}
+        self._max_sessions = 100
 
         self._init_intelligence()
         self.llm_client: OpenAI | None = None
@@ -226,25 +230,35 @@ class HermesMCPServer:
             return {"content": "Succes" if success else "Echec de l'ecriture."}
 
         elif tool_name == "chat":
-            return await self._handle_chat(arguments.get("message", ""))
+            return await self._handle_chat(
+                arguments.get("message", ""),
+                arguments.get("session_id"),
+            )
 
         return {"content": f"Erreur : Outil {tool_name} non trouve."}
 
-    async def _handle_chat(self, message: str) -> Dict[str, Any]:
+    async def _handle_chat(
+        self, message: str, session_id: str | None = None
+    ) -> Dict[str, Any]:
         if not self.llm_client:
             return {"content": "LLM client not available (check LM Studio on port 1234)."}
 
         try:
+            session_id, history = self._get_or_create_session(session_id)
             tool_names = [t["name"] for t in self.list_tools() if t["name"] != "chat"]
             system_prompt = _build_system_prompt(tool_names)
             tools = self._build_tools()
 
             messages: List[ChatCompletionMessageParam] = [
                 {"role": "system", "content": system_prompt},
+                *history,
                 {"role": "user", "content": message},
             ]
 
             for _ in range(MAX_TOOL_ROUNDS):
+                if self._active_streams.get(session_id):
+                    return {"content": "Cancelled.", "session_id": session_id}
+
                 resp = self.llm_client.chat.completions.create(
                     model=self.llm_model,
                     messages=messages,
@@ -309,35 +323,47 @@ class HermesMCPServer:
                     )
                     continue  # next round
 
-                return {"content": content_text}
+                messages.append({"role": "assistant", "content": content_text})
+                history[:] = messages[1:]
+                return {"content": content_text, "session_id": session_id}
 
-            return {"content": "Tool call loop exceeded max rounds."}
+            history[:] = messages[1:]
+            return {"content": "Tool call loop exceeded max rounds.", "session_id": session_id}
 
         except Exception as e:
             logger.exception("Chat LLM call failed")
             return {"content": f"Erreur LLM : {e}"}
 
-    async def stream_chat(self, message: str):
+    async def stream_chat(self, message: str, session_id: str | None = None):
         """Stream chat response token-by-token via async generator.
 
         Uses the same system prompt and tool-calling logic as _handle_chat
         but yields tokens as they arrive from the LLM for real-time display.
+        Maintains per-session history and supports cancellation via cancel().
         """
         if not self.llm_client:
             yield "LLM client not available (check LM Studio on port 1234)."
             return
 
         try:
+            session_id, history = self._get_or_create_session(session_id)
+            self._active_streams[session_id] = self._active_streams.get(session_id, False)
+
             tool_names = [t["name"] for t in self.list_tools() if t["name"] != "chat"]
             system_prompt = _build_system_prompt(tool_names)
             tools = self._build_tools()
 
             messages: List[ChatCompletionMessageParam] = [
                 {"role": "system", "content": system_prompt},
+                *history,
                 {"role": "user", "content": message},
             ]
 
             for _ in range(MAX_TOOL_ROUNDS):
+                if self._active_streams.get(session_id):
+                    yield "\n\n[cancelled]\n\n"
+                    return
+
                 stream = self.llm_client.chat.completions.create(
                     model=self.llm_model,
                     messages=messages,
@@ -352,6 +378,9 @@ class HermesMCPServer:
                 collected_content = ""
                 tool_calls: Dict[int, Dict[str, str]] = {}
                 for chunk in stream:
+                    if self._active_streams.get(session_id):
+                        yield "\n\n[cancelled]\n\n"
+                        return
                     if not chunk.choices:
                         continue
                     delta = chunk.choices[0].delta
@@ -424,13 +453,62 @@ class HermesMCPServer:
                     )
                     continue  # next round
 
+                messages.append({"role": "assistant", "content": collected_content})
+                history[:] = messages[1:]
                 return
 
+            history[:] = messages[1:]
             yield "\n\nTool call loop exceeded max rounds."
 
         except Exception as e:
             logger.exception("Chat stream failed")
             yield f"Error: {e}"
+        finally:
+            if session_id:
+                self._active_streams.pop(session_id, None)
+
+    def _get_or_create_session(
+        self, session_id: str | None
+    ) -> tuple[str, List[ChatCompletionMessageParam]]:
+        """Return (session_id, messages) for a conversation, creating it if needed.
+
+        When no session_id is given a new one is generated. When the session
+        store is at capacity the oldest session is evicted (dict preserves
+        insertion order).
+        """
+        if session_id and session_id in self._sessions:
+            return session_id, self._sessions[session_id]
+        session_id = session_id or uuid.uuid4().hex[:12]
+        if len(self._sessions) >= self._max_sessions:
+            self._sessions.pop(next(iter(self._sessions)))
+        self._sessions[session_id] = []
+        return session_id, self._sessions[session_id]
+
+    def cancel(self, session_id: str) -> bool:
+        """Request cancellation of an active stream for a session.
+
+        The streaming loop checks the flag between chunks and tool rounds.
+        Returns True if a stream was active for this session.
+        """
+        if session_id in self._active_streams:
+            self._active_streams[session_id] = True
+            return True
+        return False
+
+    def list_sessions(self) -> List[Dict[str, Any]]:
+        """List active sessions with their message counts."""
+        return [
+            {"session_id": sid, "message_count": len(msgs)}
+            for sid, msgs in self._sessions.items()
+        ]
+
+    def clear_session(self, session_id: str) -> bool:
+        """Remove a session's history. Returns True if it existed."""
+        if session_id in self._sessions:
+            del self._sessions[session_id]
+            self._active_streams.pop(session_id, None)
+            return True
+        return False
 
 
 def parse_tool_call_tag(text: str):

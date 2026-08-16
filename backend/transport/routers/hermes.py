@@ -8,6 +8,7 @@ as FastAPI endpoints within UI-Pro.
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -26,10 +27,12 @@ from backend.infrastructure.mcp.server import get_server
 class ConversationRequest(BaseModel):
     message: str
     context: str = ""
+    session_id: str | None = None
 
 
 class ConversationResponse(BaseModel):
     response: str
+    session_id: str | None = None
 
 
 class ToolRequest(BaseModel):
@@ -40,6 +43,13 @@ class ToolRequest(BaseModel):
 class ToolResponse(BaseModel):
     content: str
 
+
+class CancelRequest(BaseModel):
+    session_id: str
+
+
+class ClearSessionRequest(BaseModel):
+    session_id: str
 
 # ─── Endpoints ─────────────────────────────────
 
@@ -58,11 +68,18 @@ async def conversation(req: ConversationRequest) -> ConversationResponse:
     """Send a message to Hermes and get a chat response."""
     server = get_server()
     try:
-        result = await server.call_tool("chat", {"message": req.message})
-        return ConversationResponse(response=result.get("content", ""))
+        result = await server.call_tool(
+            "chat", {"message": req.message, "session_id": req.session_id}
+        )
+        return ConversationResponse(
+            response=result.get("content", ""),
+            session_id=result.get("session_id"),
+        )
     except Exception as e:
         logger.exception("Hermes chat failed")
         raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/tool", response_model=ToolResponse)
 async def run_tool(req: ToolRequest) -> ToolResponse:
     """Execute a specific Hermes tool by name."""
@@ -75,10 +92,11 @@ async def run_tool(req: ToolRequest) -> ToolResponse:
 async def conversation_stream(req: ConversationRequest):
     """Stream Hermes chat response token-by-token via SSE."""
     server = get_server()
+    session_id = req.session_id or uuid.uuid4().hex[:12]
 
     async def event_stream():
         try:
-            async for token in server.stream_chat(req.message):
+            async for token in server.stream_chat(req.message, session_id):
                 # Escape any newlines in token to preserve SSE format
                 safe_token = token.replace("\n", "\\n")
                 yield f"data: {safe_token}\n\n"
@@ -86,4 +104,28 @@ async def conversation_stream(req: ConversationRequest):
             logger.exception("Hermes stream failed")
             yield f"data: [ERROR] {e}\n\n"
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    response = StreamingResponse(event_stream(), media_type="text/event-stream")
+    response.headers["X-Session-Id"] = session_id
+    return response
+
+
+@router.post("/conversation/cancel")
+async def cancel_conversation(req: CancelRequest) -> dict:
+    """Cancel an in-flight Hermes stream for a session."""
+    cancelled = get_server().cancel(req.session_id)
+    return {"success": cancelled, "session_id": req.session_id}
+
+
+@router.get("/sessions")
+async def list_sessions() -> dict:
+    """List active Hermes sessions."""
+    return {"sessions": get_server().list_sessions()}
+
+
+@router.delete("/sessions/{session_id}")
+async def clear_session(session_id: str) -> dict:
+    """Clear a Hermes session's history."""
+    cleared = get_server().clear_session(session_id)
+    if not cleared:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"success": True, "session_id": session_id}

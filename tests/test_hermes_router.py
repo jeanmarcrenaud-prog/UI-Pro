@@ -71,7 +71,7 @@ class TestHermesConversation:
             data = response.json()
             assert data["response"] == "Hello from Hermes!"
             mock_server.call_tool.assert_awaited_once_with(
-                "chat", {"message": "Hello"}
+                "chat", {"message": "Hello", "session_id": None}
             )
 
     def test_conversation_error_500(self, hermes_client):
@@ -118,7 +118,7 @@ class TestHermesConversationStream:
             mock_server = MagicMock()
 
             # Create an async generator that yields tokens
-            async def mock_stream(message):
+            async def mock_stream(message, session_id=None):
                 yield "Hello"
                 yield " from"
                 yield " Hermes"
@@ -145,7 +145,7 @@ class TestHermesConversationStream:
         with patch("backend.transport.routers.hermes.get_server") as mock_get_server:
             mock_server = MagicMock()
 
-            async def mock_stream(message):
+            async def mock_stream(message, session_id=None):
                 yield "token1"
 
             mock_server.stream_chat = mock_stream
@@ -168,8 +168,8 @@ class TestHermesConversationStream:
 
             call_args = []
 
-            async def mock_stream(message):
-                call_args.append(message)
+            async def mock_stream(message, session_id=None):
+                call_args.append((message, session_id))
                 yield "response"
 
             mock_server.stream_chat = mock_stream
@@ -180,14 +180,15 @@ class TestHermesConversationStream:
                 json={"message": "What is AI?"}
             )
 
-            assert call_args == ["What is AI?"]
+            assert call_args[0][0] == "What is AI?"
+            assert isinstance(call_args[0][1], str) and len(call_args[0][1]) > 0
 
     def test_stream_handles_errors_gracefully(self, hermes_client):
         """Stream endpoint should yield SSE error event on exception."""
         with patch("backend.transport.routers.hermes.get_server") as mock_get_server:
             mock_server = MagicMock()
 
-            async def mock_stream(message):
+            async def mock_stream(message, session_id=None):
                 yield "partial"
                 raise RuntimeError("LLM connection dropped")
 
@@ -262,3 +263,152 @@ class TestToolEndpoint:
 
             assert response.status_code == 200
             assert "unknown" in response.json()["content"]
+
+
+class TestHermesSessions:
+    """Tests for Hermes session management and cancellation."""
+
+    def test_conversation_returns_session_id(self, hermes_client):
+        """Conversation should return the session_id from the server."""
+        with patch("backend.transport.routers.hermes.get_server") as mock_get_server:
+            mock_server = MagicMock()
+            mock_server.call_tool = AsyncMock(
+                return_value={"content": "Hello!", "session_id": "sess_123"}
+            )
+            mock_get_server.return_value = mock_server
+
+            response = hermes_client.post(
+                "/api/hermes/conversation",
+                json={"message": "Hello"},
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["response"] == "Hello!"
+            assert data["session_id"] == "sess_123"
+
+    def test_conversation_passes_session_id(self, hermes_client):
+        """Conversation should forward the provided session_id to the server."""
+        with patch("backend.transport.routers.hermes.get_server") as mock_get_server:
+            mock_server = MagicMock()
+            mock_server.call_tool = AsyncMock(
+                return_value={"content": "ok", "session_id": "abc"}
+            )
+            mock_get_server.return_value = mock_server
+
+            hermes_client.post(
+                "/api/hermes/conversation",
+                json={"message": "Hi", "session_id": "abc"},
+            )
+
+            mock_server.call_tool.assert_awaited_once_with(
+                "chat", {"message": "Hi", "session_id": "abc"}
+            )
+
+    def test_stream_uses_provided_session_id(self, hermes_client):
+        """Stream should forward the provided session_id to stream_chat."""
+        with patch("backend.transport.routers.hermes.get_server") as mock_get_server:
+            mock_server = MagicMock()
+
+            async def mock_stream(message, session_id=None):
+                yield "Hello"
+
+            mock_server.stream_chat = mock_stream
+            mock_get_server.return_value = mock_server
+
+            response = hermes_client.post(
+                "/api/hermes/conversation/stream",
+                json={"message": "Hello", "session_id": "sess_abc"},
+            )
+
+            assert response.status_code == 200
+            assert response.headers["X-Session-Id"] == "sess_abc"
+    def test_stream_generates_session_header(self, hermes_client):
+        """Stream should generate a session id and return it in the header."""
+        with patch("backend.transport.routers.hermes.get_server") as mock_get_server:
+            mock_server = MagicMock()
+
+            async def mock_stream(message, session_id=None):
+                yield "Hello"
+
+            mock_server.stream_chat = mock_stream
+            mock_get_server.return_value = mock_server
+
+            response = hermes_client.post(
+                "/api/hermes/conversation/stream",
+                json={"message": "Hello"},
+            )
+
+            assert response.status_code == 200
+            assert "X-Session-Id" in response.headers
+            assert len(response.headers["X-Session-Id"]) == 12
+
+    def test_cancel_endpoint_success(self, hermes_client):
+        """Cancel endpoint should call server.cancel and report success."""
+        with patch("backend.transport.routers.hermes.get_server") as mock_get_server:
+            mock_server = MagicMock()
+            mock_server.cancel.return_value = True
+            mock_get_server.return_value = mock_server
+
+            response = hermes_client.post(
+                "/api/hermes/conversation/cancel",
+                json={"session_id": "sess_1"},
+            )
+
+            assert response.status_code == 200
+            assert response.json() == {"success": True, "session_id": "sess_1"}
+            mock_server.cancel.assert_called_once_with("sess_1")
+
+    def test_cancel_endpoint_not_found(self, hermes_client):
+        """Cancel endpoint should report success=False when no stream is active."""
+        with patch("backend.transport.routers.hermes.get_server") as mock_get_server:
+            mock_server = MagicMock()
+            mock_server.cancel.return_value = False
+            mock_get_server.return_value = mock_server
+
+            response = hermes_client.post(
+                "/api/hermes/conversation/cancel",
+                json={"session_id": "nope"},
+            )
+
+            assert response.json() == {"success": False, "session_id": "nope"}
+
+    def test_list_sessions(self, hermes_client):
+        """Sessions endpoint should return the server's session list."""
+        with patch("backend.transport.routers.hermes.get_server") as mock_get_server:
+            mock_server = MagicMock()
+            mock_server.list_sessions.return_value = [
+                {"session_id": "s1", "message_count": 2},
+            ]
+            mock_get_server.return_value = mock_server
+
+            response = hermes_client.get("/api/hermes/sessions")
+
+            assert response.status_code == 200
+            assert response.json() == {
+                "sessions": [{"session_id": "s1", "message_count": 2}],
+            }
+
+    def test_delete_session(self, hermes_client):
+        """Delete endpoint should clear the session and return success."""
+        with patch("backend.transport.routers.hermes.get_server") as mock_get_server:
+            mock_server = MagicMock()
+            mock_server.clear_session.return_value = True
+            mock_get_server.return_value = mock_server
+
+            response = hermes_client.delete("/api/hermes/sessions/s1")
+
+            assert response.status_code == 200
+            assert response.json() == {"success": True, "session_id": "s1"}
+            mock_server.clear_session.assert_called_once_with("s1")
+
+    def test_delete_session_not_found(self, hermes_client):
+        """Delete endpoint should 404 when the session does not exist."""
+        with patch("backend.transport.routers.hermes.get_server") as mock_get_server:
+            mock_server = MagicMock()
+            mock_server.clear_session.return_value = False
+            mock_get_server.return_value = mock_server
+
+            response = hermes_client.delete("/api/hermes/sessions/nope")
+
+            assert response.status_code == 404

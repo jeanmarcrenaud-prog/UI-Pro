@@ -154,6 +154,7 @@ class TestBuildSystemPrompt:
         prompt = _build_system_prompt(["execute_intent"])
         assert "chat" not in prompt
 
+
 class TestHermesMCPServerTools:
     """Tests for HermesMCPServer tool listing and resources."""
 
@@ -376,6 +377,9 @@ class TestHandleChatNativeTools:
         server = HermesMCPServer.__new__(HermesMCPServer)
         server.llm_client = llm_client
         server.llm_model = "test-model"
+        server._sessions = {}
+        server._active_streams = {}
+        server._max_sessions = 100
         call_tool_mock = AsyncMock(
             return_value={"content": "tool executed"}
         )
@@ -422,8 +426,9 @@ class TestHandleChatNativeTools:
         assert "tools" in kwargs
         # tool result must be fed back as role=tool message
         sent_messages = kwargs["messages"]
-        assert sent_messages[-1]["role"] == "tool"
-        assert sent_messages[-1]["tool_call_id"] == "call_1"
+        tool_msgs = [m for m in sent_messages if m["role"] == "tool"]
+        assert len(tool_msgs) == 1
+        assert tool_msgs[0]["tool_call_id"] == "call_1"
 
     def test_tag_fallback_still_works(self):
         """Models without native tools should still work via tag protocol."""
@@ -481,3 +486,167 @@ class TestHandleChatNativeTools:
 
         kwargs = llm.chat.completions.create.call_args.kwargs
         assert kwargs["timeout"] == settings.llm_timeout
+
+
+async def _collect(agen):
+    """Collect all items from an async generator."""
+    return [item async for item in agen]
+
+
+class TestSessions:
+    """Tests for Hermes session management and cancellation."""
+
+    def _make_server(self, llm_client):
+        from backend.infrastructure.mcp.server import HermesMCPServer
+
+        server = HermesMCPServer.__new__(HermesMCPServer)
+        server.llm_client = llm_client
+        server.llm_model = "test-model"
+        server._sessions = {}
+        server._active_streams = {}
+        server._max_sessions = 100
+        return server
+
+    def _mock_response(self, message):
+        resp = MagicMock()
+        resp.choices = [MagicMock()]
+        resp.choices[0].message = message
+        return resp
+
+    def test_handle_chat_creates_and_returns_session(self):
+        """_handle_chat should create a session and return its id."""
+        llm = MagicMock()
+        msg = MagicMock()
+        msg.content = "bonjour"
+        msg.tool_calls = None
+        llm.chat.completions.create.return_value = self._mock_response(msg)
+
+        server = self._make_server(llm)
+        result = asyncio.run(server._handle_chat("salut"))
+
+        assert "session_id" in result
+        sid = result["session_id"]
+        assert sid in server._sessions
+        assert len(server._sessions[sid]) == 2  # user + assistant
+
+    def test_handle_chat_reuses_session_history(self):
+        """A second call with the same session_id should see prior messages."""
+        llm = MagicMock()
+        msg = MagicMock()
+        msg.content = "première réponse"
+        msg.tool_calls = None
+        llm.chat.completions.create.return_value = self._mock_response(msg)
+
+        server = self._make_server(llm)
+        sid = asyncio.run(server._handle_chat("bonjour"))["session_id"]
+        asyncio.run(server._handle_chat("encore", sid))
+
+        sent = llm.chat.completions.create.call_args_list[1].kwargs["messages"]
+        roles = [m["role"] for m in sent]
+        assert roles.count("user") == 2
+        assert sent[1]["content"] == "bonjour"
+        assert sent[3]["content"] == "encore"
+
+    def test_handle_chat_generates_new_session_when_none(self):
+        """Calls without a session_id should get distinct sessions."""
+        llm = MagicMock()
+        msg = MagicMock()
+        msg.content = "ok"
+        msg.tool_calls = None
+        llm.chat.completions.create.return_value = self._mock_response(msg)
+
+        server = self._make_server(llm)
+        sid1 = asyncio.run(server._handle_chat("a"))["session_id"]
+        sid2 = asyncio.run(server._handle_chat("b"))["session_id"]
+
+        assert sid1 != sid2
+        assert len(server._sessions) == 2
+
+    def test_session_cap_evicts_oldest(self):
+        """When at capacity the oldest session should be evicted."""
+        llm = MagicMock()
+        msg = MagicMock()
+        msg.content = "ok"
+        msg.tool_calls = None
+        llm.chat.completions.create.return_value = self._mock_response(msg)
+
+        server = self._make_server(llm)
+        server._max_sessions = 2
+        sid1 = asyncio.run(server._handle_chat("a"))["session_id"]
+        sid2 = asyncio.run(server._handle_chat("b"))["session_id"]
+        sid3 = asyncio.run(server._handle_chat("c"))["session_id"]
+
+        assert len(server._sessions) == 2
+        assert sid1 not in server._sessions
+        assert sid3 in server._sessions
+
+    def test_cancel_active_stream(self):
+        """cancel() should flag an active stream and return True."""
+        server = self._make_server(None)
+        server._active_streams["s1"] = False
+
+        assert server.cancel("s1") is True
+        assert server._active_streams["s1"] is True
+
+    def test_cancel_inactive_stream(self):
+        """cancel() should return False when no stream is active."""
+        server = self._make_server(None)
+        assert server.cancel("nope") is False
+
+    def test_stream_chat_stops_on_cancel(self):
+        """stream_chat should stop early when the session is cancelled."""
+        llm = MagicMock()
+        chunk = MagicMock()
+        chunk.choices = [MagicMock()]
+        chunk.choices[0].delta.content = "hello"
+        chunk.choices[0].delta.tool_calls = None
+        llm.chat.completions.create.return_value = iter([chunk, chunk, chunk])
+
+        server = self._make_server(llm)
+        server._active_streams["s1"] = True
+
+        collected = asyncio.run(_collect(server.stream_chat("hi", "s1")))
+
+        assert collected == ["\n\n[cancelled]\n\n"]
+        assert "s1" not in server._active_streams
+
+    def test_stream_chat_persists_history(self):
+        """stream_chat should store the conversation in the session."""
+        llm = MagicMock()
+        chunk = MagicMock()
+        chunk.choices = [MagicMock()]
+        chunk.choices[0].delta.content = "réponse"
+        chunk.choices[0].delta.tool_calls = None
+        llm.chat.completions.create.return_value = iter([chunk])
+
+        server = self._make_server(llm)
+        asyncio.run(_collect(server.stream_chat("bonjour", "s1")))
+
+        assert "s1" in server._sessions
+        history = server._sessions["s1"]
+        assert history[0]["role"] == "user"
+        assert history[0]["content"] == "bonjour"
+        assert "s1" not in server._active_streams
+
+    def test_clear_session(self):
+        """clear_session should remove history and active-stream flag."""
+        server = self._make_server(None)
+        server._sessions["s1"] = [{"role": "user", "content": "hi"}]
+        server._active_streams["s1"] = False
+
+        assert server.clear_session("s1") is True
+        assert "s1" not in server._sessions
+        assert "s1" not in server._active_streams
+        assert server.clear_session("s1") is False
+
+    def test_list_sessions(self):
+        """list_sessions should report session ids and message counts."""
+        server = self._make_server(None)
+        server._sessions["s1"] = [{"role": "user", "content": "a"}]
+        server._sessions["s2"] = []
+
+        sessions = server.list_sessions()
+        by_id = {s["session_id"]: s for s in sessions}
+
+        assert by_id["s1"]["message_count"] == 1
+        assert by_id["s2"]["message_count"] == 0

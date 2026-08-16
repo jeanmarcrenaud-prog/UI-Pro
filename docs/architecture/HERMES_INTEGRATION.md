@@ -108,6 +108,17 @@ donc `not_initialized` sur boot frais — ne dégrade pas le statut global).
 
 Quand Hermes exposera un serveur ACP TCP (`hermes acp`), étendre `HermesBackend`
 avec un transport direct qui bypass le daemon Open Design.
+### D6 — Sessions & cancel (Phase 3) ✅
+
+Sessions de conversation côté MCP server : `_sessions: Dict[str, List[...]]`
+(historique multi-tours persisté), `_active_streams` pour le cancel, plafond
+`_max_sessions = 100` (éviction du plus ancien). Le `session_id` est généré
+côté router (`uuid4().hex[:12]`) et retourné au client via l'en-tête
+`X-Session-Id` sur le SSE (pas dans le flux, pour ne pas casser le parsing
+frontend `data: <token>`). Endpoints : `POST /conversation/cancel`,
+`GET /sessions`, `DELETE /sessions/{session_id}`. Le frontend stocke le
+`session_id` et l'envoie aux appels suivants (multi-tours).
+
 
 ## Plan d'implémentation
 
@@ -116,7 +127,7 @@ avec un transport direct qui bypass le daemon Open Design.
 | **0** | ADR + rôles | ✅ Ce document |
 | **1** | Événements unifiés (D2) | ✅ `40afc03`, `1cac012`, `b4276fc` |
 | **2** | Native tool calling (D1) | ✅ `a95c756`, `ffb5eca` |
-| **3** | Session / cancel | ⏳ |
+| **3** | Session / cancel (D6) | ✅ |
 | **4** | Transport abstraction (D5) | ⏳ |
 | **5** | LangGraph bridge | ⏳ |
 | **6** | Health / metrics (D4) | ✅ `138c97d`, `34e34b9` |
@@ -126,13 +137,14 @@ avec un transport direct qui bypass le daemon Open Design.
 
 | Fichier | Rôle |
 |---|---|
-| `backend/infrastructure/mcp/server.py` | MCP server — native tool calling (Phase 2) |
+| `backend/infrastructure/mcp/server.py` | MCP server — native tool calling (Phase 2) + sessions/cancel (Phase 3, D6) ✅ |
 | `backend/infrastructure/llm/hermes.py` | HermesBackend (chemin inverse) |
 | `backend/infrastructure/llm/opendesign.py` | Client SSE Open Design |
-| `backend/transport/routers/hermes.py` | Router HTTP `/api/hermes/*` |
+| `backend/transport/routers/hermes.py` | Router HTTP `/api/hermes/*` — sessions/cancel (Phase 3, D6) ✅ |
 | `backend/domain/settings.py` | `hermes_url`, `backends["hermes"]`, `hermes_llm_*` (D3) |
 | `backend/transport/routers/health.py` | `/health/deep` — sonde Hermes (D4) ✅ |
 | `frontend/components/settings/HermesSettings.tsx` | Carte Settings UI Hermes (D3) ✅ |
 | `frontend/components/settings/hooks/useHermesSettings.ts` | Hook carte Hermes (D3) ✅ |
 | `frontend/lib/events.ts` | EventEmitter — consommation tool calls (D2) |
 | `frontend/services/MessageHandler.ts` | Parse WS/SSE — tool calls Hermes (D2) |
+| `frontend/components/HermesView.tsx` | Chat Hermes — session_id, cancel, New conversation (Phase 3, D6) ✅ |
