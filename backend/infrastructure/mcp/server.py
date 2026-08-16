@@ -66,11 +66,12 @@ class HermesMCPServer:
     def _init_llm_client(self):
         import os
         try:
+            base_url = settings.hermes_llm_base_url or (settings.lmstudio_url.rstrip("/") + "/v1")
             self.llm_client = OpenAI(
-                base_url=os.environ.get("HERMES_LLM_BASE_URL", settings.lmstudio_url.rstrip("/") + "/v1"),
+                base_url=base_url,
                 api_key=os.environ.get("HERMES_LLM_API_KEY", "lm-studio"),
             )
-            self.llm_model = os.environ.get("HERMES_LLM_MODEL", "google/gemma-4-12b-qat")
+            self.llm_model = settings.hermes_llm_model
         except Exception as e:
             logger.warning(f"Failed to init LLM client: {e}")
             self.llm_client = None
@@ -79,9 +80,10 @@ class HermesMCPServer:
         import asyncio
         from backend.application.intelligence.task_planner import init_task_planner
         try:
+            base_url = settings.hermes_llm_base_url or (settings.lmstudio_url.rstrip("/") + "/v1")
             planner = asyncio.run(init_task_planner(
-                model_name="google/gemma-4-12b-qat",
-                base_url=settings.lmstudio_url.rstrip("/") + "/v1",
+                model_name=settings.hermes_llm_model,
+                base_url=base_url,
             ))
             init_intelligence_service(planner, None, self.connector_manager)
             self.intelligence_service = get_intelligence_service()
@@ -503,4 +505,31 @@ def get_server() -> HermesMCPServer:
     return _server_instance
 
 
-__all__ = ["HermesMCPServer", "get_server"]
+def get_server_state() -> dict[str, Any]:
+    """Report the Hermes MCP server state without constructing it.
+
+    The server is lazily created on the first get_server() call, so a
+    fresh boot with no Hermes traffic has no instance yet. This accessor
+    lets /health/deep (ADR D4) report whether the agent is present and its
+    LLM client is initialized — without forcing construction.
+    """
+    if _server_instance is None:
+        return {
+            "initialized": False,
+            "llm_client_ready": False,
+            "intelligence_ready": False,
+            "llm_model": None,
+            "base_url": None,
+        }
+    server = _server_instance
+    llm_client = server.llm_client
+    return {
+        "initialized": True,
+        "llm_client_ready": llm_client is not None,
+        "intelligence_ready": getattr(server, "intelligence_service", None) is not None,
+        "llm_model": getattr(server, "llm_model", None),
+        "base_url": getattr(llm_client, "base_url", None) if llm_client else None,
+    }
+
+
+__all__ = ["HermesMCPServer", "get_server", "get_server_state"]
