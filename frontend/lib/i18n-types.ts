@@ -96,6 +96,12 @@ export interface Translations {
     metricsLatency: string
     metricsModels: string
     modelFallbackDesc: string
+    hermesSettings: string
+    hermesBaseUrl: string
+    hermesBaseUrlHelp: string
+    hermesModel: string
+    hermesModelHelp: string
+    hermesRestartNote: string
   }
   debug: {
     title: string

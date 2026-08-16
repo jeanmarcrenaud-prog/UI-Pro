@@ -96,6 +96,12 @@ const en: Translations = {
     metricsLatency: 'Latency',
     metricsModels: 'Models',
     modelFallbackDesc: 'Large language model',
+    hermesSettings: 'Hermes Agent',
+    hermesBaseUrl: 'LLM Base URL',
+    hermesBaseUrlHelp: 'OpenAI-compatible endpoint for the Hermes MCP agent (HERMES_LLM_BASE_URL)',
+    hermesModel: 'LLM Model',
+    hermesModelHelp: 'Model served by the Hermes LLM endpoint (HERMES_LLM_MODEL)',
+    hermesRestartNote: 'Takes effect on restart — the MCP server reads these at construction.'
   },
   debug: {
     title: 'Debug Panel',
@@ -227,6 +233,12 @@ const fr: Translations = {
     metricsLatency: 'Latence',
     metricsModels: 'Mod\u00e8les',
     modelFallbackDesc: 'Grand mod\u00e8le de langage',
+    hermesSettings: 'Agent Hermes',
+    hermesBaseUrl: 'URL de base LLM',
+    hermesBaseUrlHelp: 'Endpoint compatible OpenAI pour l\'agent MCP Hermes (HERMES_LLM_BASE_URL)',
+    hermesModel: 'Mod\u00e8le LLM',
+    hermesModelHelp: 'Mod\u00e8le servi par l\'endpoint LLM Hermes (HERMES_LLM_MODEL)',
+    hermesRestartNote: 'Effectif au red\u00e9marrage — le serveur MCP les lit \u00e0 la construction.'
   },
   debug: {
     title: 'Panneau Debug',

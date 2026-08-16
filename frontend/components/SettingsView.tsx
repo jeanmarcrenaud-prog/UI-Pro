@@ -14,6 +14,7 @@ import { BackendStatusGrid } from './settings/BackendStatusGrid'
 import { ThemeSelector } from './settings/ThemeSelector'
 import { NodeRoutingSettings } from './settings/NodeRoutingSettings'
 import { EnableThinkingSettings } from './settings/EnableThinkingSettings'
+import { HermesSettings } from './settings/HermesSettings'
 import { SystemStats } from './SystemStats'
 
 export function SettingsView() {
@@ -59,6 +60,9 @@ export function SettingsView() {
 
         {/* LLM Thinking Mode - Compact Card */}
         <EnableThinkingSettings />
+
+        {/* Hermes Agent LLM Endpoint - Compact Card */}
+        <HermesSettings />
 
         {/* Model Count - Compact Card */}
         <ModelCountCard />
