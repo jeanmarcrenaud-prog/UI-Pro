@@ -1,6 +1,6 @@
 # 🧭 ADR — Communication Hermes ↔ UI-Pro
 
-> **Date**: 2026-08-16 · **HEAD vérifié**: `b4276fc` · **Statut**: ✅ Phases 0-2 terminées (ADR, événements unifiés, native tool calling)
+> **Date**: 2026-08-16 · **HEAD vérifié**: `c9923da` · **Statut**: ✅ Phases 0-4 terminées (ADR, événements unifiés, native tool calling, sessions/cancel, transport ACP direct)
 
 ## Contexte
 
@@ -104,10 +104,15 @@ déjà sondé en HTTP par la boucle `_check_backends()` (via
 locale du serveur MCP in-process via `get_server_state()` (lazy singleton,
 donc `not_initialized` sur boot frais — ne dégrade pas le statut global).
 
-### D5 — Transport direct (Phase 4, futur)
+### D5 — Transport direct ACP stdio (Phase 4) ✅
 
-Quand Hermes exposera un serveur ACP TCP (`hermes acp`), étendre `HermesBackend`
-avec un transport direct qui bypass le daemon Open Design.
+Le backend `HermesACPBackend` parle le protocole ACP JSON-RPC 2.0 directement
+sur les flux stdio du subprocess `hermes acp` (via `agent-client-protocol`).
+Chaque appel spawn un processus, initialise la session, envoie le prompt,
+stream les réponses textuelles, puis ferme la session — bypass complet du
+daemon Open Design. Le `hermes acp` expose bien un transport **stdio**, pas TCP
+(corrigé : la version 0.20.0 du binaire Hermes utilise stdio, conformément au
+schéma ACP v0.11.2). Implémenté dans `backend/infrastructure/llm/hermes_acp.py`.
 ### D6 — Sessions & cancel (Phase 3) ✅
 
 Sessions de conversation côté MCP server : `_sessions: Dict[str, List[...]]`
@@ -128,7 +133,7 @@ frontend `data: <token>`). Endpoints : `POST /conversation/cancel`,
 | **1** | Événements unifiés (D2) | ✅ `40afc03`, `1cac012`, `b4276fc` |
 | **2** | Native tool calling (D1) | ✅ `a95c756`, `ffb5eca` |
 | **3** | Session / cancel (D6) | ✅ |
-| **4** | Transport abstraction (D5) | ⏳ |
+| **4** | Transport abstraction (D5) | ✅ `hermes_acp.py` |
 | **5** | LangGraph bridge | ⏳ |
 | **6** | Health / metrics (D4) | ✅ `138c97d`, `34e34b9` |
 | **7** | Sécurité | ⏳ |
@@ -138,10 +143,12 @@ frontend `data: <token>`). Endpoints : `POST /conversation/cancel`,
 | Fichier | Rôle |
 |---|---|
 | `backend/infrastructure/mcp/server.py` | MCP server — native tool calling (Phase 2) + sessions/cancel (Phase 3, D6) ✅ |
-| `backend/infrastructure/llm/hermes.py` | HermesBackend (chemin inverse) |
+| `backend/infrastructure/llm/hermes.py` | HermesBackend (chemin inverse, daemon fallback) |
+| `backend/infrastructure/llm/hermes_acp.py` | HermesACPBackend — transport ACP direct stdio (Phase 4, D5) ✅ |
 | `backend/infrastructure/llm/opendesign.py` | Client SSE Open Design |
 | `backend/transport/routers/hermes.py` | Router HTTP `/api/hermes/*` — sessions/cancel (Phase 3, D6) ✅ |
-| `backend/domain/settings.py` | `hermes_url`, `backends["hermes"]`, `hermes_llm_*` (D3) |
+| `backend/infrastructure/llm/factory.py` | Enregistrement `hermes_acp` backend (Phase 4) ✅ |
+| `backend/domain/settings.py` | `hermes_url`, `hermes_acp_command`, `backends["hermes"]`, `hermes_llm_*` (D3) |
 | `backend/transport/routers/health.py` | `/health/deep` — sonde Hermes (D4) ✅ |
 | `frontend/components/settings/HermesSettings.tsx` | Carte Settings UI Hermes (D3) ✅ |
 | `frontend/components/settings/hooks/useHermesSettings.ts` | Hook carte Hermes (D3) ✅ |

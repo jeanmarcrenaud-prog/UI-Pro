@@ -38,7 +38,8 @@ watchdog>=4.0.0
 langgraph>=1.0.0
 langgraph-checkpoint-sqlite>=0.1.0
 langchain-core>=0.3.0
-langsmith>=0.1.0
+langchain-core>=0.3.0
+agent-client-protocol>=0.12.0       # Agent Client Protocol (Hermes direct transport, Phase 4)
 
 ## Web & UI
 jinja2>=3.1.0

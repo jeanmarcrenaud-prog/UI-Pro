@@ -93,6 +93,7 @@ class Settings(BaseSettings):
     lmstudio_url: str = "http://localhost:1234"
     opendesign_url: str = "http://localhost:7456"
     hermes_url: str = "http://localhost:7456"
+    hermes_acp_command: str = "hermes"
 
     # Hermes MCP LLM endpoint (ADR D3). The MCP server
     # (backend/infrastructure/mcp/server.py) reads these at construction
@@ -102,6 +103,9 @@ class Settings(BaseSettings):
     # endpoint, preserving the pre-D3 behavior.
     hermes_llm_base_url: str = ""
     hermes_llm_model: str = "google/gemma-4-12b-qat"
+    # Path to the ``hermes acp`` executable (Phase 4 direct ACP transport).
+    # Override via env var HERMES_ACP_COMMAND. Defaults to "hermes" on PATH.
+# Override via env var HERMES_ACP_COMMAND. Defaults to "hermes" on PATH.
 
     # Health check tuning for the /health/deep endpoint. The fast /health
     # probe intentionally does no I/O so Docker/k8s load balancers can

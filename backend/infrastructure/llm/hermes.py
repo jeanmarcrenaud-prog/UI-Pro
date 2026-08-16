@@ -5,7 +5,10 @@ SSE protocol as OpenDesignBackend) but always routes to the
 Hermes agent.  Health checks include a Hermes-specific probe
 via the daemon's agent list.
 
-Future: when Hermes exposes a direct ACP TCP server
+Direct ACP transport is implemented in :class:`HermesACPBackend` (Phase 4),
+which speaks ACP JSON-RPC 2.0 over ``hermes acp`` stdio streams,
+bypassing the daemon entirely. This backend remains as the daemon
+fallback path.
 (``hermes acp``), this backend can be extended with a direct
 transport that bypasses the daemon.
 """
