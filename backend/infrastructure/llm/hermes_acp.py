@@ -282,6 +282,17 @@ class HermesACPConnectionPool:
             await self._evict_locked(key)
             bucket = self._buckets.setdefault(key, [])
 
+            # Drop connections whose subprocess already exited (dead process).
+            dead = [
+                c
+                for c in bucket
+                if not c.in_use
+                and getattr(c.process, "returncode", None) is not None
+            ]
+            for c in dead:
+                bucket.remove(c)
+                await self._destroy(c)
+
             for conn in bucket:
                 if not conn.in_use and conn.healthy:
                     conn.in_use = True
@@ -354,7 +365,11 @@ class HermesACPConnectionPool:
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
         )
-        reader, writer, process = await cm.__aenter__()
+        try:
+            reader, writer, process = await cm.__aenter__()
+        except Exception as e:
+            raise LLMConnectionError(f"hermes acp spawn failed: {e}") from e
+        conn = connect_to_agent(client, writer, reader)
         conn = connect_to_agent(client, writer, reader)
 
         try:
@@ -546,6 +561,9 @@ class HermesACPBackend(LLMBackend):
                         text = get_task.result()
                         if text:
                             yield text
+                    else:
+                        get_task.cancel()
+                        await asyncio.gather(get_task, return_exceptions=True)
                     if prompt_task in done:
                         # Drain any remaining queued text before exiting.
                         while not client._queue.empty():
@@ -605,6 +623,7 @@ class HermesACPBackend(LLMBackend):
                         yield text
                 else:
                     get_task.cancel()
+                    await asyncio.gather(get_task, return_exceptions=True)
                 if prompt_task in done:
                     while not client._queue.empty():
                         text = client._queue.get_nowait()
@@ -626,15 +645,13 @@ class HermesACPBackend(LLMBackend):
     ) -> AsyncGenerator[str, None]:
         pool = get_acp_pool()
         pooled = await pool.acquire(self._command, cwd)
-        discard = False
+        ok = False
         try:
             async for chunk in self._prompt_on_connection(pooled, prompt):
                 yield chunk
-        except Exception:
-            discard = True
-            raise
+            ok = True
         finally:
-            await pool.release(pooled, discard=discard)
+            await pool.release(pooled, discard=not ok)
 
     async def _generate_async(
         self, prompt: str, **kwargs: Any
