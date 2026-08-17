@@ -29,7 +29,7 @@ import time
 import uuid
 from collections.abc import AsyncGenerator, Iterator
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 from backend.infrastructure.llm.base import LLMBackend
 from backend.infrastructure.llm.errors import (
@@ -251,12 +251,37 @@ class HermesACPConnectionPool:
         *,
         max_size: int = 2,
         idle_ttl: float = 120.0,
+        settings_provider: Callable[[], Any] | None = None,
     ) -> None:
         self._max_size = max(1, max_size)
         self._idle_ttl = max(1.0, idle_ttl)
+        self._settings_provider = settings_provider
         self._lock = asyncio.Lock()
+        self._closed = False
         # key -> list of connections
         self._buckets: dict[tuple[str, str], list[_PooledConnection]] = {}
+
+    def _current_max_size(self) -> int:
+        """Live pool size from settings (falls back to the static value)."""
+        if self._settings_provider is not None:
+            try:
+                s = self._settings_provider()
+                return max(1, int(getattr(s, "hermes_acp_pool_size", self._max_size)))
+            except Exception:
+                pass
+        return self._max_size
+
+    def _current_idle_ttl(self) -> float:
+        """Live idle TTL from settings (falls back to the static value)."""
+        if self._settings_provider is not None:
+            try:
+                s = self._settings_provider()
+                return max(
+                    1.0, float(getattr(s, "hermes_acp_pool_idle_ttl", self._idle_ttl))
+                )
+            except Exception:
+                pass
+        return self._idle_ttl
 
     def stats(self) -> dict[str, Any]:
         total = busy = idle = 0
@@ -272,8 +297,8 @@ class HermesACPConnectionPool:
             "busy": busy,
             "idle": idle,
             "buckets": len(self._buckets),
-            "max_size": self._max_size,
-            "idle_ttl": self._idle_ttl,
+            "max_size": self._current_max_size(),
+            "idle_ttl": self._current_idle_ttl(),
         }
 
     async def acquire(self, command: str, cwd: str) -> _PooledConnection:
@@ -304,7 +329,7 @@ class HermesACPConnectionPool:
                     )
                     return conn
 
-            if len(bucket) >= self._max_size:
+            if len(bucket) >= self._current_max_size():
                 # At capacity: evict the oldest idle connection to make room.
                 # If everything is busy we still spawn (no queueing) so
                 # concurrency is never blocked — the bucket may temporarily
@@ -315,9 +340,16 @@ class HermesACPConnectionPool:
                     bucket.remove(victim)
                     await self._destroy(victim)
 
-            conn = await self._spawn(command, cwd)
+        # Spawn outside the lock: subprocess start + initialize round-trip
+        # can take hundreds of ms and must not block other acquires.
+        conn = await self._spawn(command, cwd)
+
+        async with self._lock:
+            if self._closed:
+                await self._destroy(conn)
+                raise LLMBackendError("ACP pool is closed")
             conn.in_use = True
-            bucket.append(conn)
+            self._buckets.setdefault(key, []).append(conn)
             logger.debug("ACP pool miss — spawned command=%s cwd=%s", command, cwd)
             return conn
 
@@ -336,6 +368,7 @@ class HermesACPConnectionPool:
 
     async def close_all(self) -> None:
         async with self._lock:
+            self._closed = True
             for bucket in list(self._buckets.values()):
                 for conn in list(bucket):
                     await self._destroy(conn)
@@ -347,7 +380,7 @@ class HermesACPConnectionPool:
         for conn in bucket:
             if (
                 not conn.in_use
-                and (conn.idle_for() > self._idle_ttl or not conn.healthy)
+                and (conn.idle_for() > self._current_idle_ttl() or not conn.healthy)
             ):
                 await self._destroy(conn)
             else:
@@ -420,6 +453,7 @@ def get_acp_pool() -> HermesACPConnectionPool:
             _pool = HermesACPConnectionPool(
                 max_size=int(getattr(settings, "hermes_acp_pool_size", 2)),
                 idle_ttl=float(getattr(settings, "hermes_acp_pool_idle_ttl", 120.0)),
+                settings_provider=lambda: settings,
             )
         except Exception:
             _pool = HermesACPConnectionPool()

@@ -7,10 +7,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from backend.infrastructure.llm.errors import LLMConnectionError
+from backend.infrastructure.llm.errors import LLMBackendError, LLMConnectionError
 from backend.infrastructure.llm.hermes_acp import (
     HermesACPBackend,
     HermesACPConnectionPool,
+    _PooledConnection,
     get_acp_pool,
     reset_acp_pool_for_tests,
 )
@@ -268,5 +269,174 @@ class TestPoolErrorHandling:
                 pool = get_acp_pool()
                 assert pool.stats()["connections"] == 0
                 assert mock_cm.__aexit__.await_count == 1
+
+        asyncio.run(run())
+
+
+class TestPoolConcurrency:
+    """Spawn must not hold the pool lock; closed pool rejects in-flight spawns."""
+
+    @staticmethod
+    def _fake_pooled(command, cwd):
+        process = MagicMock()
+        process.returncode = None  # subprocess still running
+        return _PooledConnection(
+            command=command,
+            cwd=cwd,
+            client=MagicMock(),
+            conn=MagicMock(),
+            transport_cm=MagicMock(),
+            process=process,
+        )
+
+    def test_spawn_does_not_block_other_acquires(self):
+        """A slow spawn must not hold the pool lock (latency contention)."""
+        pool = HermesACPConnectionPool(max_size=2, idle_ttl=60)
+
+        async def run():
+            spawn_started = asyncio.Event()
+            release_spawn = asyncio.Event()
+
+            async def slow_spawn(command, cwd):
+                if command == "hermes":
+                    spawn_started.set()
+                    await release_spawn.wait()
+                return self._fake_pooled(command, cwd)
+
+            with patch.object(pool, "_spawn", slow_spawn):
+                task1 = asyncio.create_task(pool.acquire("hermes", "/tmp"))
+                await spawn_started.wait()  # task1 mid-spawn, lock released
+                task2 = asyncio.create_task(pool.acquire("other", "/tmp"))
+                done, pending = await asyncio.wait({task2}, timeout=1)
+                assert task2 in done  # completed while task1 still spawning
+                for t in pending:
+                    t.cancel()
+                release_spawn.set()
+                c1 = await task1
+                c2 = task2.result()
+                await pool.release(c1)
+                await pool.release(c2)
+                await pool.close_all()
+
+        asyncio.run(run())
+
+    def test_acquire_after_close_destroys_spawned_conn(self):
+        """An in-flight spawn after close_all is destroyed, not leaked."""
+        fake_conn, mock_cm = _fake_spawn_stack()
+        pool = HermesACPConnectionPool(max_size=2, idle_ttl=60)
+
+        async def run():
+            spawn_started = asyncio.Event()
+            release_spawn = asyncio.Event()
+            original_spawn = pool._spawn
+
+            async def slow_spawn(command, cwd):
+                spawn_started.set()
+                await release_spawn.wait()
+                return await original_spawn(command, cwd)
+
+            with patch(
+                "backend.infrastructure.llm.hermes_acp.spawn_stdio_transport",
+                return_value=mock_cm,
+            ), patch(
+                "backend.infrastructure.llm.hermes_acp.connect_to_agent",
+                return_value=fake_conn,
+            ), patch.object(pool, "_spawn", slow_spawn):
+                task = asyncio.create_task(pool.acquire("hermes", "/tmp"))
+                await spawn_started.wait()
+                await pool.close_all()  # close while spawn in flight
+                release_spawn.set()
+                with pytest.raises(LLMBackendError):
+                    await task
+                assert pool.stats()["connections"] == 0
+                assert mock_cm.__aexit__.await_count == 1
+
+        asyncio.run(run())
+
+
+class TestPoolDynamicSettings:
+    """max_size / idle_ttl follow runtime settings changes."""
+
+    def test_settings_provider_reads_live_values(self):
+        """Live values are read from the provider, not the static ones."""
+
+        class FakeSettings:
+            hermes_acp_pool_size = 5
+            hermes_acp_pool_idle_ttl = 30.0
+
+        pool = HermesACPConnectionPool(
+            max_size=2, idle_ttl=120.0, settings_provider=lambda: FakeSettings()
+        )
+        assert pool._current_max_size() == 5
+        assert pool._current_idle_ttl() == 30.0
+        assert pool.stats()["max_size"] == 5
+        assert pool.stats()["idle_ttl"] == 30.0
+
+        # Runtime change is picked up on the next read.
+        FakeSettings.hermes_acp_pool_size = 8
+        FakeSettings.hermes_acp_pool_idle_ttl = 60.0
+        assert pool._current_max_size() == 8
+        assert pool.stats()["idle_ttl"] == 60.0
+
+    def test_capacity_uses_live_max_size(self):
+        """The capacity eviction respects the live max_size from settings."""
+        fake_conn, mock_cm = _fake_spawn_stack()
+
+        class FakeSettings:
+            hermes_acp_pool_size = 1
+            hermes_acp_pool_idle_ttl = 120.0
+
+        pool = HermesACPConnectionPool(
+            max_size=4, idle_ttl=120.0, settings_provider=lambda: FakeSettings()
+        )
+
+        async def run():
+            with patch(
+                "backend.infrastructure.llm.hermes_acp.spawn_stdio_transport",
+                return_value=mock_cm,
+            ), patch(
+                "backend.infrastructure.llm.hermes_acp.connect_to_agent",
+                return_value=fake_conn,
+            ):
+                c1 = await pool.acquire("hermes", "/tmp")
+                await pool.release(c1)
+                c1.healthy = False  # not reusable
+                c2 = await pool.acquire("hermes", "/tmp")
+                assert c1 is not c2
+                # Live max_size=1 → c1 evicted by the capacity branch.
+                assert mock_cm.__aexit__.await_count == 1
+                await pool.release(c2)
+                await pool.close_all()
+
+        asyncio.run(run())
+
+    def test_idle_ttl_uses_live_value(self):
+        """Eviction respects the live idle_ttl from settings."""
+        fake_conn, mock_cm = _fake_spawn_stack()
+
+        class FakeSettings:
+            hermes_acp_pool_size = 4
+            hermes_acp_pool_idle_ttl = 1.0
+
+        pool = HermesACPConnectionPool(
+            max_size=4, idle_ttl=120.0, settings_provider=lambda: FakeSettings()
+        )
+
+        async def run():
+            with patch(
+                "backend.infrastructure.llm.hermes_acp.spawn_stdio_transport",
+                return_value=mock_cm,
+            ), patch(
+                "backend.infrastructure.llm.hermes_acp.connect_to_agent",
+                return_value=fake_conn,
+            ):
+                c1 = await pool.acquire("hermes", "/tmp")
+                await pool.release(c1)
+                c1.last_used -= 5.0  # idle past the live TTL
+                c2 = await pool.acquire("hermes", "/tmp")
+                assert c1 is not c2
+                assert mock_cm.__aenter__.await_count == 2
+                await pool.release(c2)
+                await pool.close_all()
 
         asyncio.run(run())
