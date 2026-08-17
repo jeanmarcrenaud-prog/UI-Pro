@@ -101,10 +101,11 @@ Please provide a JSON array of actions to fulfill this request.
 # Singleton for TaskPlanner
 _task_planner: Optional[TaskPlanner] = None
 
-async def init_task_planner(model_name: str = 'local-model', base_url: str = settings.lmstudio_url.rstrip('/') + '/v1'):
+def init_task_planner(model_name: str = 'local-model', base_url: str = settings.lmstudio_url.rstrip('/') + '/v1'):
     global _task_planner
     _task_planner = TaskPlanner(model_name=model_name, base_url=base_url)
     return _task_planner
+
 
 def get_task_planner() -> TaskPlanner:
     global _task_planner

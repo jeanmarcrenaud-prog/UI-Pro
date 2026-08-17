@@ -81,14 +81,13 @@ class HermesMCPServer:
             self.llm_client = None
 
     def _init_intelligence(self):
-        import asyncio
         from backend.application.intelligence.task_planner import init_task_planner
         try:
             base_url = settings.hermes_llm_base_url or (settings.lmstudio_url.rstrip("/") + "/v1")
-            planner = asyncio.run(init_task_planner(
+            planner = init_task_planner(
                 model_name=settings.hermes_llm_model,
                 base_url=base_url,
-            ))
+            )
             init_intelligence_service(planner, None, self.connector_manager)
             self.intelligence_service = get_intelligence_service()
             logger.info("Hermes intelligence initialized with real TaskPlanner")
