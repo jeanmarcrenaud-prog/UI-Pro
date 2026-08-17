@@ -1,6 +1,6 @@
 # 🧭 ADR — Communication Hermes ↔ UI-Pro
 
-> **Date**: 2026-08-16 · **HEAD vérifié**: `c9923da` · **Statut**: ✅ Phases 0-4 terminées (ADR, événements unifiés, native tool calling, sessions/cancel, transport ACP direct)
+> **Date**: 2026-08-16 · **HEAD vérifié**: `c9923da` · **Statut**: ✅ Phases 0-5 terminées (ADR, événements unifiés, native tool calling, sessions/cancel, transport ACP direct, LangGraph bridge)
 
 ## Contexte
 
@@ -134,7 +134,7 @@ frontend `data: <token>`). Endpoints : `POST /conversation/cancel`,
 | **2** | Native tool calling (D1) | ✅ `a95c756`, `ffb5eca` |
 | **3** | Session / cancel (D6) | ✅ |
 | **4** | Transport abstraction (D5) | ✅ `hermes_acp.py` |
-| **5** | LangGraph bridge | ⏳ |
+| **5** | LangGraph bridge | ✅ `hermes_bridge.py` |
 | **6** | Health / metrics (D4) | ✅ `138c97d`, `34e34b9` |
 | **7** | Sécurité | ⏳ |
 
@@ -148,10 +148,23 @@ frontend `data: <token>`). Endpoints : `POST /conversation/cancel`,
 | `backend/infrastructure/llm/opendesign.py` | Client SSE Open Design |
 | `backend/transport/routers/hermes.py` | Router HTTP `/api/hermes/*` — sessions/cancel (Phase 3, D6) ✅ |
 | `backend/infrastructure/llm/factory.py` | Enregistrement `hermes_acp` backend (Phase 4) ✅ |
-| `backend/domain/settings.py` | `hermes_url`, `hermes_acp_command`, `backends["hermes"]`, `hermes_llm_*` (D3) |
+| `backend/domain/settings.py` | `hermes_url`, `hermes_acp_command`, `hermes_acp_provider`, `backends["hermes"]`, `hermes_llm_*` (D3) |
 | `backend/transport/routers/health.py` | `/health/deep` — sonde Hermes (D4) ✅ |
 | `frontend/components/settings/HermesSettings.tsx` | Carte Settings UI Hermes (D3) ✅ |
 | `frontend/components/settings/hooks/useHermesSettings.ts` | Hook carte Hermes (D3) ✅ |
 | `frontend/lib/events.ts` | EventEmitter — consommation tool calls (D2) |
 | `frontend/services/MessageHandler.ts` | Parse WS/SSE — tool calls Hermes (D2) |
 | `frontend/components/HermesView.tsx` | Chat Hermes — session_id, cancel, New conversation (Phase 3, D6) ✅ |
+| `backend/domain/core/langgraph/hermes_bridge.py` | LangGraph bridge — Hermes tools as LangGraph tools (Phase 5, D7) ✅ |
+
+### D7 — LangGraph bridge (Phase 5) ✅
+
+Le module `backend/domain/core/langgraph/hermes_bridge.py` expose les capacités agentiques de Hermes (lecture/écriture de fichiers, exécution d'intentions, statut OpenCode) sous forme d'outils LangGraph. Chaque outil est invoqué via le backend `HermesACPBackend` (Phase 4) qui parle le protocole ACP JSON-RPC 2.0 sur les flux stdio du subprocess `hermes acp`.
+
+Les outils exposés sont :
+- `hermes_read_file` — lecture de fichier
+- `hermes_write_file` — écriture/création de fichier
+- `hermes_execute_intent` — exécution d'une intention utilisateur via l'intelligence Hermes
+- `hermes_get_opencode_status` — statut du connecteur OpenCode
+
+Le paramètre `hermes_acp_provider` (settings.py) permet de router sélectivement les types de tâches (code, reasoning, general) vers Hermes ACP au lieu du provider LLM sélectionné par l'utilisateur. Exemple : `hermes_acp_provider="code,reasoning"`.
