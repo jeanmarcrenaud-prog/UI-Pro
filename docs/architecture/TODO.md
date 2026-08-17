@@ -53,15 +53,29 @@
 | 12 | Update ARCHITECTURE.md | ✅ |
 | 13 | Update requirements.txt | ✅ |
 
+### Intégration Hermes (2026-08)
+
+Phase par phase (ADR : docs/architecture/HERMES_INTEGRATION.md) — communication Hermes ↔ UI-Pro.
+
+| # | Tâche | Statut |
+|---|------|--------|
+| 0 | ADR + rôles | ✅ |
+| 1 | Événements unifiés (D2) | ✅ `40afc03`, `1cac012`, `b4276fc` |
+| 2 | Native tool calling (D1) | ✅ `a95c756`, `ffb5eca` |
+| 3 | Session / cancel (D6) | ✅ |
+| 4 | Transport ACP stdio direct (D5) | ✅ `hermes_acp.py` |
+| 5 | LangGraph bridge (D7) | ✅ `hermes_bridge.py`, `b9f28e8` |
+| 6 | Health / metrics (D4) | ✅ `138c97d`, `34e34b9` |
+| 7 | Sécurité | ⏳ |
+
 ---
 
 ## 🔧 EN COURS
 
 | # | Tâche | Priorité |
-|---|-----|---------|
-| 1 | Refactor HistoryView (trop long) | ✅ DONE |
-| 2 | Fix Minimap scroll (fixed) | ✅ DONE |
-| 3 | Add Status indicator to code | ✅ DONE |
+|---|------|----------|
+| 1 | Hermes Phase 7 — Sécurité (rate limiting, prompt injection) | 🟡 Moyenne |
+| 2 | E2E tests Playwright | 🟡 Moyenne |
 
 ---
 
@@ -202,5 +216,5 @@ pytest tests/test_execution.py -v
 
 ---
 
-**Dernière mise à jour**: 2026-05-12
-**Status**: Refactoring backend terminé ✅
+**Dernière mise à jour**: 2026-08-17
+**Status**: Refactoring backend ✅ · Monitoring ✅ · Intégration Hermes Phases 0-6 ✅ · Phase 7 (Sécurité) en cours ⏳
