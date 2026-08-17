@@ -198,7 +198,7 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     rate_limit_requests_per_minute: int = Field(default=60, ge=1, le=10000)
     rate_limit_requests_per_hour: int = Field(default=1000, ge=10, le=100000)
-    rate_limit_burst_size: int = Field(default=10, ge=1, le=100)
+    rate_limit_burst_size: int = Field(default=50, ge=1, le=100)
 
     # Memory persistence
     memory_persist_path: str = "data/memory.index"

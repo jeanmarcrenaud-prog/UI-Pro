@@ -9,7 +9,8 @@ from dataclasses import dataclass, field
 
 from typing import Optional
 
-from fastapi import HTTPException, Request
+from fastapi import Request
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 logger = logging.getLogger(__name__)
@@ -152,13 +153,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # Skip rate limiting for health checks
         if request.url.path in ["/health", "/docs", "/openapi.json", "/ws"]:
             return await call_next(request)
-
         result = self.limiter.check(request)
 
         if not result.allowed:
-            raise HTTPException(
+            return JSONResponse(
                 status_code=429,
-                detail="Rate limit exceeded. Please try again later.",
+                content={"detail": "Rate limit exceeded. Please try again later."},
                 headers={
                     "X-RateLimit-Limit": str(self.limiter.config.requests_per_minute),
                     "X-RateLimit-Remaining": "0",
