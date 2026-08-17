@@ -15,6 +15,16 @@ from backend.infrastructure.llm.models import ModelConfig
 # ── Fixtures ─────────────────────────────────────────────────────────
 
 
+@pytest.fixture(autouse=True)
+def _reset_acp_pool():
+    """Reset the module-level ACP pool singleton between tests."""
+    from backend.infrastructure.llm.hermes_acp import reset_acp_pool_for_tests
+
+    reset_acp_pool_for_tests()
+    yield
+    reset_acp_pool_for_tests()
+
+
 @pytest.fixture
 def acp_backend():
     """Create a HermesACPBackend with a dummy command."""
@@ -116,7 +126,7 @@ class TestAstream:
 
         async def run_test():
             chunks = []
-            async for chunk in acp_backend._run_acp("test prompt"):
+            async for chunk in acp_backend._run_acp_oneshot("test prompt"):
                 chunks.append(chunk)
             return chunks
 
@@ -157,7 +167,7 @@ class TestAstream:
         fake_conn.close = AsyncMock()
 
         async def run_test():
-            async for _ in acp_backend._run_acp("test prompt"):
+            async for _ in acp_backend._run_acp_oneshot("test prompt"):
                 pass
 
         with patch(
@@ -207,7 +217,7 @@ class TestStream:
             yield "Hello"
             yield " World"
 
-        with patch.object(acp_backend, "_run_acp", return_value=fake_async_gen()):
+        with patch.object(acp_backend, "_run_acp_oneshot", return_value=fake_async_gen()):
             chunks = list(acp_backend.stream("test"))
             assert chunks == ["Hello", " World"]
 
