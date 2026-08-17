@@ -106,6 +106,14 @@ class Settings(BaseSettings):
     # Override via env var HERMES_ACP_COMMAND. Defaults to "hermes" on PATH.
     hermes_acp_command: str = "hermes"
 
+    # Connection pool for the Hermes ACP backend (Phase 5.5). The pool keeps
+    # the ``hermes acp`` subprocess + initialize alive across prompts while
+    # each prompt still gets a fresh ACP session (new_session/close_session).
+    # Bounded per (command, cwd); idle connections are evicted after the TTL.
+    hermes_acp_pool_enabled: bool = True
+    hermes_acp_pool_size: int = Field(default=2, ge=1, le=16)
+    hermes_acp_pool_idle_ttl: float = Field(default=120.0, ge=1.0, le=86400.0)
+
     # Phase 5: When non-empty, the LangGraph orchestrator routes the listed task
     # types (comma-separated: code, reasoning, general) through the Hermes ACP
     # backend instead of the user-selected LLM provider. Example: "code,reasoning".

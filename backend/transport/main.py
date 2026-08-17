@@ -40,6 +40,12 @@ async def lifespan(app: FastAPI):
         await close_checkpointer()
     except Exception:
         logger.exception("[STOP] Checkpointer close failed")
+    try:
+        from backend.infrastructure.llm.hermes_acp import close_acp_pool
+
+        await close_acp_pool()
+    except Exception:
+        logger.exception("[STOP] ACP pool close failed")
 
 
 app = FastAPI(
