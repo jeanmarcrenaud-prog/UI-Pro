@@ -63,7 +63,6 @@ Please provide a JSON array of actions to fulfill this request.
                     {"role": "system", "content": self.system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                response_format={"type": "json_object"}, # Request JSON if model supports it
                 temperature=0.1
             )
             
