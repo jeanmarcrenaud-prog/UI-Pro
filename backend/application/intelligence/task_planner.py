@@ -73,7 +73,11 @@ Please provide a JSON array of actions to fulfill this request.
             data = json.loads(clean_content)
             
             # The prompt asks for a list of actions, but some models might return { "actions": [...] }
-            actions_data = data.get("actions", data.get("plan", data))
+            # or a bare JSON array. Handle both shapes.
+            if isinstance(data, list):
+                actions_data = data
+            else:
+                actions_data = data.get("actions", data.get("plan", data))
             if isinstance(actions_data, dict): # If it returned a single object instead of list
                 actions_data = [actions_data]
 
