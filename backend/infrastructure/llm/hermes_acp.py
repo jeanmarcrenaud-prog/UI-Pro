@@ -291,6 +291,19 @@ class HermesACPConnectionPool:
                 pass
         return self._idle_ttl
 
+    def _current_handshake_timeout(self) -> float:
+        """Live handshake timeout from settings (falls back to 30s)."""
+        if self._settings_provider is not None:
+            try:
+                s = self._settings_provider()
+                return max(
+                    1.0,
+                    float(getattr(s, "hermes_acp_handshake_timeout", 30.0)),
+                )
+            except Exception:
+                pass
+        return 30.0
+
     def _record_acquire(self, start: float) -> None:
         """Accumulate acquire latency (hit or miss) for the stats average."""
         self._acquire_ms_total += (time.monotonic() - start) * 1000.0
@@ -423,6 +436,7 @@ class HermesACPConnectionPool:
             raise LLMBackendError("agent-client-protocol is not installed")
 
         start = time.monotonic()
+        handshake = self._current_handshake_timeout()
         client = _HermesACPClient()
         cm = spawn_stdio_transport(
             command,
@@ -431,23 +445,45 @@ class HermesACPConnectionPool:
             cwd=cwd,
         )
         try:
-            reader, writer, process = await cm.__aenter__()
-        except Exception as e:
-            raise LLMConnectionError(f"hermes acp spawn failed: {e}") from e
-        conn = connect_to_agent(client, writer, reader)
-
-        try:
-            await conn.initialize(
-                PROTOCOL_VERSION,
-                ClientCapabilities(),
-                Implementation(name="ui-pro", title="UI-Pro", version="1.0.0"),
-            )
-        except Exception as e:
+            async with asyncio.timeout(handshake):
+                try:
+                    reader, writer, process = await cm.__aenter__()
+                except TimeoutError:
+                    raise
+                except Exception as e:
+                    raise LLMConnectionError(
+                        f"hermes acp spawn failed: {e}"
+                    ) from e
+                conn = connect_to_agent(client, writer, reader)
+                try:
+                    await conn.initialize(
+                        PROTOCOL_VERSION,
+                        ClientCapabilities(),
+                        Implementation(
+                            name="ui-pro", title="UI-Pro", version="1.0.0"
+                        ),
+                    )
+                except TimeoutError:
+                    raise
+                except Exception as e:
+                    raise LLMConnectionError(
+                        f"hermes acp initialize failed: {e}"
+                    ) from e
+        except TimeoutError as e:
             try:
                 await cm.__aexit__(None, None, None)
             except Exception:
                 pass
-            raise LLMConnectionError(f"hermes acp initialize failed: {e}") from e
+            raise LLMConnectionError(
+                f"hermes acp handshake timed out after {handshake}s"
+            ) from e
+        except Exception:
+            # Non-timeout failure: tear down the transport before propagating.
+            try:
+                await cm.__aexit__(None, None, None)
+            except Exception:
+                pass
+            raise
 
         self._spawn_ms_total += (time.monotonic() - start) * 1000.0
         self._spawn_count += 1
@@ -558,6 +594,38 @@ class HermesACPBackend(LLMBackend):
         except Exception:
             return True
 
+    def _prompt_timeout(self) -> float:
+        """Operation deadline for a full ACP turn.
+
+        Priority: explicit ``hermes_acp_prompt_timeout`` (>0) →
+        ``config.timeout`` → ``settings.llm_timeout``.
+        """
+        try:
+            from backend.domain.settings import settings
+
+            explicit = float(getattr(settings, "hermes_acp_prompt_timeout", 0.0))
+            if explicit > 0:
+                return explicit
+        except Exception:
+            pass
+        if self.config.timeout and self.config.timeout > 0:
+            return float(self.config.timeout)
+        try:
+            from backend.domain.settings import settings
+
+            return float(settings.llm_timeout)
+        except Exception:
+            return 900.0
+
+    def _handshake_timeout(self) -> float:
+        """Handshake deadline for spawn+initialize (settings, default 30s)."""
+        try:
+            from backend.domain.settings import settings
+
+            return float(getattr(settings, "hermes_acp_handshake_timeout", 30.0))
+        except Exception:
+            return 30.0
+
     # ── Async core (oneshot) ─────────────────────────────────────────
 
     async def _run_acp_oneshot(
@@ -569,85 +637,96 @@ class HermesACPBackend(LLMBackend):
 
         Lifecycle: spawn → initialize → new_session → prompt → close_session.
         The connection is torn down automatically by the ``async with`` on
-        ``spawn_stdio_transport``.
+        ``spawn_stdio_transport``.  The whole turn is bounded by the
+        operation timeout (config.timeout / llm_timeout).
         """
         client = _HermesACPClient()
         self._last_client = client  # exposed for testing
         cwd = kwargs.get("cwd") or os.getcwd()
+        timeout = self._prompt_timeout()
 
-        async with spawn_stdio_transport(
-            self._command,
-            "acp",
-            stderr=asyncio.subprocess.PIPE,
-            cwd=cwd,
-        ) as (reader, writer, process):
-            # connect_to_agent: input_stream = writer (agent stdin),
-            # output_stream = reader (agent stdout).
-            conn: ClientSideConnection = connect_to_agent(
-                client, writer, reader
-            )
-
-            try:
-                await conn.initialize(
-                    PROTOCOL_VERSION,
-                    ClientCapabilities(),
-                    Implementation(
-                        name="ui-pro", title="UI-Pro", version="1.0.0"
-                    ),
-                )
-            except RequestError as e:
-                raise LLMConnectionError(
-                    f"hermes acp initialize failed: {e}"
-                ) from e
-
-            try:
-                resp: NewSessionResponse = await conn.new_session(cwd=cwd)
-            except RequestError as e:
-                raise LLMConnectionError(
-                    f"hermes acp new_session failed: {e}"
-                ) from e
-
-            session_id = resp.session_id
-            client._session_id = session_id
-            message_id = str(uuid.uuid4())
-
-            prompt_task = asyncio.create_task(
-                conn.prompt([text_block(prompt)], session_id, message_id)  # type: ignore[arg-type]
-            )
-
-            # Drain the queue as text deltas arrive, racing against the
-            # prompt task which completes when the agent finishes its turn.
-            try:
-                while True:
-                    get_task = asyncio.create_task(client._queue.get())
-                    done, _ = await asyncio.wait(
-                        {prompt_task, get_task},
-                        return_when=asyncio.FIRST_COMPLETED,
+        try:
+            async with asyncio.timeout(timeout):
+                async with spawn_stdio_transport(
+                    self._command,
+                    "acp",
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=cwd,
+                ) as (reader, writer, process):
+                    # connect_to_agent: input_stream = writer (agent stdin),
+                    # output_stream = reader (agent stdout).
+                    conn: ClientSideConnection = connect_to_agent(
+                        client, writer, reader
                     )
-                    if get_task in done:
-                        text = get_task.result()
-                        if text:
-                            yield text
-                    else:
-                        get_task.cancel()
-                        await asyncio.gather(get_task, return_exceptions=True)
-                    if prompt_task in done:
-                        # Drain any remaining queued text before exiting.
-                        while not client._queue.empty():
-                            text = client._queue.get_nowait()
-                            if text:
-                                yield text
-                        break
-                # Propagate any exception raised by the agent.
-                await prompt_task
-            finally:
-                try:
-                    await conn.close_session(session_id)
-                except Exception:
-                    logger.debug(
-                        "close_session failed during cleanup",
-                        exc_info=True,
+
+                    try:
+                        await conn.initialize(
+                            PROTOCOL_VERSION,
+                            ClientCapabilities(),
+                            Implementation(
+                                name="ui-pro", title="UI-Pro", version="1.0.0"
+                            ),
+                        )
+                    except RequestError as e:
+                        raise LLMConnectionError(
+                            f"hermes acp initialize failed: {e}"
+                        ) from e
+
+                    try:
+                        resp: NewSessionResponse = await conn.new_session(cwd=cwd)
+                    except RequestError as e:
+                        raise LLMConnectionError(
+                            f"hermes acp new_session failed: {e}"
+                        ) from e
+
+                    session_id = resp.session_id
+                    client._session_id = session_id
+                    message_id = str(uuid.uuid4())
+
+                    prompt_task = asyncio.create_task(
+                        conn.prompt([text_block(prompt)], session_id, message_id)  # type: ignore[arg-type]
                     )
+
+                    # Drain the queue as text deltas arrive, racing against the
+                    # prompt task which completes when the agent finishes its turn.
+                    try:
+                        while True:
+                            get_task = asyncio.create_task(client._queue.get())
+                            done, _ = await asyncio.wait(
+                                {prompt_task, get_task},
+                                return_when=asyncio.FIRST_COMPLETED,
+                            )
+                            if get_task in done:
+                                text = get_task.result()
+                                if text:
+                                    yield text
+                            else:
+                                get_task.cancel()
+                                await asyncio.gather(get_task, return_exceptions=True)
+                            if prompt_task in done:
+                                # Drain any remaining queued text before exiting.
+                                while not client._queue.empty():
+                                    text = client._queue.get_nowait()
+                                    if text:
+                                        yield text
+                                break
+                        # Propagate any exception raised by the agent.
+                        await prompt_task
+                    finally:
+                        try:
+                            await asyncio.wait_for(
+                                conn.close_session(session_id), timeout=5.0
+                            )
+                        except Exception:
+                            logger.debug(
+                                "close_session failed during cleanup",
+                                exc_info=True,
+                            )
+        except TimeoutError as e:
+            logger.warning("ACP oneshot prompt timed out after %ss", timeout)
+            raise LLMConnectionError(
+                f"hermes acp prompt timed out after {timeout}s"
+            ) from e
 
     # ── Async core (pooled) ──────────────────────────────────────────
 
@@ -703,7 +782,9 @@ class HermesACPBackend(LLMBackend):
             raise
         finally:
             try:
-                await conn.close_session(session_id)
+                await asyncio.wait_for(
+                    conn.close_session(session_id), timeout=5.0
+                )
             except Exception:
                 logger.debug("close_session failed during cleanup", exc_info=True)
 
@@ -714,9 +795,19 @@ class HermesACPBackend(LLMBackend):
         pooled = await pool.acquire(self._command, cwd)
         ok = False
         try:
-            async for chunk in self._prompt_on_connection(pooled, prompt):
-                yield chunk
+            timeout = self._prompt_timeout()
+            async with asyncio.timeout(timeout):
+                async for chunk in self._prompt_on_connection(pooled, prompt):
+                    yield chunk
             ok = True
+        except TimeoutError as e:
+            pooled.healthy = False
+            logger.warning(
+                "ACP prompt timed out after %ss (discarding conn)", timeout
+            )
+            raise LLMConnectionError(
+                f"hermes acp prompt timed out after {timeout}s"
+            ) from e
         finally:
             await pool.release(pooled, discard=not ok)
 
@@ -817,7 +908,12 @@ class HermesACPBackend(LLMBackend):
                     finally:
                         await conn.close()
 
-            resp = asyncio.run(_probe())
+            resp = asyncio.run(
+                asyncio.wait_for(
+                    _probe(),
+                    timeout=min(10.0, self._handshake_timeout()),
+                )
+            )
             ms = round((time.monotonic() - start) * 1000, 1)
             agent_info = resp.agent_info
             result: dict[str, Any] = {

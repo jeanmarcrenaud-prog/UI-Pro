@@ -113,6 +113,13 @@ class Settings(BaseSettings):
     hermes_acp_pool_enabled: bool = True
     hermes_acp_pool_size: int = Field(default=2, ge=1, le=16)
     hermes_acp_pool_idle_ttl: float = Field(default=120.0, ge=1.0, le=86400.0)
+    # ACP timeouts: the pool only had an idle TTL — a hung ``hermes acp``
+    # subprocess would block the stream (and the LangGraph node) forever.
+    # handshake bounds spawn+initialize (short: it runs under the acquire
+    # lock); prompt bounds a full turn (0 = fall back to ModelConfig.timeout
+    # then llm_timeout).
+    hermes_acp_handshake_timeout: float = Field(default=30.0, ge=1.0, le=120.0)
+    hermes_acp_prompt_timeout: float = Field(default=0.0, ge=0.0, le=1800.0)
 
     # Phase 5: When non-empty, the LangGraph orchestrator routes the listed task
     # types (comma-separated: code, reasoning, general) through the Hermes ACP
