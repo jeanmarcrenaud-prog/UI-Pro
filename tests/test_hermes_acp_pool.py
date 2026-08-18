@@ -511,3 +511,129 @@ class TestPoolMetrics:
                 await pool.close_all()
 
         asyncio.run(run())
+
+
+class TestPoolTimeouts:
+    """P0: operation timeout (prompt) + handshake timeout (spawn)."""
+
+    def test_prompt_timeout_discards_connection(self):
+        """A prompt that never finishes → timeout → conn discarded."""
+        fake_conn, mock_cm = _fake_spawn_stack()
+        backend = HermesACPBackend(
+            ModelConfig(url="", model="hermes", timeout=2, backend="hermes_acp")
+        )
+
+        async def hang_prompt_on_connection(pooled, prompt):
+            yield "hello"
+            await asyncio.Event().wait()  # never completes
+
+        async def run():
+            with patch(
+                "backend.infrastructure.llm.hermes_acp.spawn_stdio_transport",
+                return_value=mock_cm,
+            ), patch(
+                "backend.infrastructure.llm.hermes_acp.connect_to_agent",
+                return_value=fake_conn,
+            ), patch.object(
+                backend, "_prompt_on_connection", hang_prompt_on_connection
+            ):
+                with pytest.raises(
+                    LLMConnectionError, match="timed out after 2.0s"
+                ):
+                    async for _ in backend._run_acp_pooled("test", "/tmp"):
+                        pass
+                pool = get_acp_pool()
+                assert pool.stats()["connections"] == 0
+                assert mock_cm.__aexit__.await_count == 1
+
+        asyncio.run(run())
+
+    def test_handshake_timeout_leaves_no_pool_entry(self):
+        """Slow initialize → handshake timeout → no pool entry."""
+        fake_conn, mock_cm = _fake_spawn_stack()
+
+        async def slow_initialize(*args, **kwargs):
+            await asyncio.sleep(5)
+
+        fake_conn.initialize = AsyncMock(side_effect=slow_initialize)
+
+        class FakeSettings:
+            hermes_acp_handshake_timeout = 0.1  # clamped to 1.0s
+
+        pool = HermesACPConnectionPool(
+            max_size=2, idle_ttl=60, settings_provider=lambda: FakeSettings()
+        )
+
+        async def run():
+            with patch(
+                "backend.infrastructure.llm.hermes_acp.spawn_stdio_transport",
+                return_value=mock_cm,
+            ), patch(
+                "backend.infrastructure.llm.hermes_acp.connect_to_agent",
+                return_value=fake_conn,
+            ):
+                with pytest.raises(
+                    LLMConnectionError, match="handshake timed out"
+                ):
+                    await pool.acquire("hermes", "/tmp")
+                assert pool.stats()["connections"] == 0
+                assert mock_cm.__aexit__.await_count == 1
+
+        asyncio.run(run())
+
+    def test_hit_path_under_large_timeout(self):
+        """Normal pooled prompt under a large timeout → reuse works."""
+        fake_conn, mock_cm = _fake_spawn_stack()
+        backend = HermesACPBackend(
+            ModelConfig(url="", model="hermes", timeout=30, backend="hermes_acp")
+        )
+
+        async def run():
+            with patch(
+                "backend.infrastructure.llm.hermes_acp.spawn_stdio_transport",
+                return_value=mock_cm,
+            ), patch(
+                "backend.infrastructure.llm.hermes_acp.connect_to_agent",
+                return_value=fake_conn,
+            ):
+                chunks1 = [
+                    c async for c in backend._run_acp_pooled("first", "/tmp")
+                ]
+                chunks2 = [
+                    c async for c in backend._run_acp_pooled("second", "/tmp")
+                ]
+                assert mock_cm.__aenter__.await_count == 1  # reused
+                pool = get_acp_pool()
+                assert pool.stats()["connections"] == 1
+                await pool.close_all()
+
+        asyncio.run(run())
+
+    def test_oneshot_prompt_timeout(self):
+        """Oneshot path: a hung prompt → timeout → transport closed."""
+        fake_conn, mock_cm = _fake_spawn_stack()
+
+        async def hang(*a, **k):
+            await asyncio.Event().wait()
+
+        fake_conn.prompt = AsyncMock(side_effect=hang)
+        backend = HermesACPBackend(
+            ModelConfig(url="", model="hermes", timeout=2, backend="hermes_acp")
+        )
+
+        async def run():
+            with patch(
+                "backend.infrastructure.llm.hermes_acp.spawn_stdio_transport",
+                return_value=mock_cm,
+            ), patch(
+                "backend.infrastructure.llm.hermes_acp.connect_to_agent",
+                return_value=fake_conn,
+            ):
+                with pytest.raises(
+                    LLMConnectionError, match="timed out after 2.0s"
+                ):
+                    async for _ in backend._run_acp_oneshot("test", cwd="/tmp"):
+                        pass
+                assert mock_cm.__aexit__.await_count == 1
+
+        asyncio.run(run())
