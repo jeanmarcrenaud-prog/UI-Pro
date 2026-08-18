@@ -208,7 +208,7 @@ def _validate_block(name: str, content: str, strict: bool = False) -> str:
         return content
 
 
-def extract_code_dict(response: str) -> dict[str, Any]:
+def extract_code_dict(response: str, language: str | None = None) -> dict[str, Any]:
     """Extraction multi-stratégie de ``{files: {"nom.py": "code"}}`` depuis une réponse LLM brute.
 
     Les 7 stratégies sont tentées **séquentiellement** — la première qui
@@ -223,7 +223,7 @@ def extract_code_dict(response: str) -> dict[str, Any]:
       4    Parsing JSON direct de la réponse        JSON ``{files: {}}``
       5    Objet JSON avec clé "files"              JSON ``{files: {}}``
       6    Détection de code Python nu              ``main.py``
-      7    *Fallback* — réponse brute en ``main.py`` ``main.py``
+      7    *Fallback* — réponse brute en ``main.<ext>`` ``main.<ext>``
     ====== ========================================= ==================
 
     Returns
@@ -231,6 +231,14 @@ def extract_code_dict(response: str) -> dict[str, Any]:
     dict
         Dictionnaire avec la clé ``"files"`` mappant les noms aux codes.
         Contient toujours une clé ``"steps"`` (liste vide par défaut).
+
+    Parameters
+    ----------
+    language
+        Langage détecté par le node (``html``, ``javascript``, …). Utilisé
+        par la stratégie 7 pour nommer le fichier de secours ``main.<ext>``
+        au lieu de ``main.py`` — évite qu'un fichier HTML soit validé
+        comme Python puis supprimé par la chaîne de salvage.
     """
     raw = response.strip()
 
@@ -275,8 +283,10 @@ def extract_code_dict(response: str) -> dict[str, Any]:
 
     # Fallback (stratégie 7) — réponse brute
     if code_dict is None:
-        code_dict = {"steps": [], "files": {"main.py": response_clean}}
-        logger.info("Fallback (stratégie 7): réponse brute en main.py (%d signes)", len(response_clean))
+        ext = LANG_EXTENSIONS.get(language or "", ".py").lstrip(".")
+        fname = f"main.{ext}"
+        code_dict = {"steps": [], "files": {fname: response_clean}}
+        logger.info("Fallback (stratégie 7): réponse brute en %s (%d signes)", fname, len(response_clean))
 
     # Ensure 'steps' key exists for downstream code that expects it
     if "steps" not in code_dict:

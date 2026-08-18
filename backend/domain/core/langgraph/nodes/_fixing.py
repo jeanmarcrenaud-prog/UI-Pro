@@ -156,7 +156,7 @@ async def fixing_node(state: AgentState) -> dict[str, Any]:
     from ..code_extractor import extract_code_dict
     from ..code_sanitizer import sanitize_files
 
-    code_data = extract_code_dict(full_response)
+    code_data = extract_code_dict(full_response, language=language)
     updates["code"] = code_data
 
     # Language enforcement: rename files with wrong extension to match
@@ -165,6 +165,12 @@ async def fixing_node(state: AgentState) -> dict[str, Any]:
     # requested, which breaks the executor chain.
     code_files = code_data.get("files", {})
     wrong_ext = (".ts", ".js", ".jsx", ".tsx", ".java", ".cpp", ".c", ".h", ".rs", ".go")
+    if language != "python":
+        # The extractor's fallback (stratégie 7) names the raw response
+        # main.py regardless of the detected language. Treat .py as wrong
+        # so HTML/CSS/JS content is renamed to the target extension instead
+        # of being validated as Python and dropped by the salvage chain.
+        wrong_ext = wrong_ext + (".py",)
     renamed: dict[str, str] = {}
     for fname in list(code_files.keys()):
         if fname.endswith(wrong_ext) and not fname.endswith(ext):

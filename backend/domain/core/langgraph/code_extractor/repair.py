@@ -85,14 +85,6 @@ def fix_code_by_language(name: str, content: str) -> str:
         lang = f"{ext} (generic)"
         result = fix_generic_content(content)
 
-    if result != content and len(content) > 50:
-        lang = f"{ext} (generic)"
-        result = fix_generic_content(content)
-        lang = "powershell"
-        result = fix_bracket_balance(content)
-    else:
-        lang = f"{ext} (generic)"
-        result = fix_generic_content(content)
 
     if result != content and len(content) > 50:
         delta = len(result) - len(content)
