@@ -354,6 +354,25 @@ class TestExtractCodeDict:
         assert "files" in result
         assert "main.py" in result["files"]  # fallback
 
+    def test_fallback_respects_detected_language(self):
+        """HTML content must be saved as main.html, not main.py, so it isn't
+        validated as Python and dropped by the salvage chain."""
+        response = (
+            "<!DOCTYPE html>\n<html>\n<head><title>Basket</title></head>\n"
+            "<body><canvas id='c' width='800' height='600'></canvas>\n"
+            "<script>const ctx = document.getElementById('c').getContext('2d');</script>\n"
+            "</body>\n</html>"
+        )
+        result = extract_code_dict(response, language="html")
+        assert "main.html" in result["files"]
+        assert "main.py" not in result["files"]
+        assert "<html>" in result["files"]["main.html"]
+
+    def test_fallback_defaults_to_main_py_without_language(self):
+        """Without a language hint, the fallback keeps main.py (backward compat)."""
+        result = extract_code_dict("Just some text")
+        assert "main.py" in result["files"]
+
     def test_unterminated_code_fence(self):
         response = (
             "## main.py\n"
