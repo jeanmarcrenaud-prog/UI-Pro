@@ -260,6 +260,14 @@ class HermesACPConnectionPool:
         self._closed = False
         # key -> list of connections
         self._buckets: dict[tuple[str, str], list[_PooledConnection]] = {}
+        # Metrics: hit/miss/discard counters + latency averages.
+        self._hits = 0
+        self._misses = 0
+        self._discards = 0
+        self._spawn_ms_total = 0.0
+        self._spawn_count = 0
+        self._acquire_ms_total = 0.0
+        self._acquire_count = 0
 
     def _current_max_size(self) -> int:
         """Live pool size from settings (falls back to the static value)."""
@@ -283,6 +291,10 @@ class HermesACPConnectionPool:
                 pass
         return self._idle_ttl
 
+    def _record_acquire(self, start: float) -> None:
+        """Accumulate acquire latency (hit or miss) for the stats average."""
+        self._acquire_ms_total += (time.monotonic() - start) * 1000.0
+        self._acquire_count += 1
     def stats(self) -> dict[str, Any]:
         total = busy = idle = 0
         for conns in self._buckets.values():
@@ -299,10 +311,24 @@ class HermesACPConnectionPool:
             "buckets": len(self._buckets),
             "max_size": self._current_max_size(),
             "idle_ttl": self._current_idle_ttl(),
+            "hits": self._hits,
+            "misses": self._misses,
+            "discards": self._discards,
+            "spawn_ms_avg": (
+                round(self._spawn_ms_total / self._spawn_count, 1)
+                if self._spawn_count
+                else 0.0
+            ),
+            "acquire_wait_ms_avg": (
+                round(self._acquire_ms_total / self._acquire_count, 1)
+                if self._acquire_count
+                else 0.0
+            ),
         }
 
     async def acquire(self, command: str, cwd: str) -> _PooledConnection:
         key = (command, cwd)
+        start = time.monotonic()
         async with self._lock:
             await self._evict_locked(key)
             bucket = self._buckets.setdefault(key, [])
@@ -323,6 +349,8 @@ class HermesACPConnectionPool:
                     conn.in_use = True
                     conn.client.reset_queue()
                     conn.touch()
+                    self._hits += 1
+                    self._record_acquire(start)
                     logger.debug(
                         "ACP pool hit command=%s cwd=%s prompts=%s",
                         command, cwd, conn.prompt_count,
@@ -350,6 +378,8 @@ class HermesACPConnectionPool:
                 raise LLMBackendError("ACP pool is closed")
             conn.in_use = True
             self._buckets.setdefault(key, []).append(conn)
+            self._misses += 1
+            self._record_acquire(start)
             logger.debug("ACP pool miss — spawned command=%s cwd=%s", command, cwd)
             return conn
 
@@ -363,6 +393,7 @@ class HermesACPConnectionPool:
                 if conn in bucket:
                     bucket.remove(conn)
                 await self._destroy(conn)
+                self._discards += 1
                 return
             conn.client.reset_queue()
 
@@ -391,6 +422,7 @@ class HermesACPConnectionPool:
         if not _ACP_AVAILABLE:
             raise LLMBackendError("agent-client-protocol is not installed")
 
+        start = time.monotonic()
         client = _HermesACPClient()
         cm = spawn_stdio_transport(
             command,
@@ -402,7 +434,6 @@ class HermesACPConnectionPool:
             reader, writer, process = await cm.__aenter__()
         except Exception as e:
             raise LLMConnectionError(f"hermes acp spawn failed: {e}") from e
-        conn = connect_to_agent(client, writer, reader)
         conn = connect_to_agent(client, writer, reader)
 
         try:
@@ -418,6 +449,8 @@ class HermesACPConnectionPool:
                 pass
             raise LLMConnectionError(f"hermes acp initialize failed: {e}") from e
 
+        self._spawn_ms_total += (time.monotonic() - start) * 1000.0
+        self._spawn_count += 1
         return _PooledConnection(
             command=command,
             cwd=cwd,

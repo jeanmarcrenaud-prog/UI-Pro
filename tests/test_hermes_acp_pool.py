@@ -440,3 +440,74 @@ class TestPoolDynamicSettings:
                 await pool.close_all()
 
         asyncio.run(run())
+
+
+class TestPoolMetrics:
+    """P0: single connect_to_agent; P2: hit/miss/discard + latency metrics."""
+
+    def test_spawn_calls_connect_to_agent_once(self):
+        """_spawn must create exactly one ACP connection (P0 regression)."""
+        fake_conn, mock_cm = _fake_spawn_stack()
+        pool = HermesACPConnectionPool(max_size=2, idle_ttl=60)
+
+        async def run():
+            with patch(
+                "backend.infrastructure.llm.hermes_acp.spawn_stdio_transport",
+                return_value=mock_cm,
+            ), patch(
+                "backend.infrastructure.llm.hermes_acp.connect_to_agent",
+                return_value=fake_conn,
+            ) as mock_connect:
+                conn = await pool._spawn("hermes", "/tmp")
+                assert mock_connect.call_count == 1
+                assert conn.conn is fake_conn
+                await pool.close_all()
+
+        asyncio.run(run())
+
+    def test_stats_tracks_hit_miss_discard_metrics(self):
+        """hits/misses/discards and latency averages are populated."""
+        fake_conn, mock_cm = _fake_spawn_stack()
+
+        async def slow_initialize(*args, **kwargs):
+            await asyncio.sleep(0.01)
+
+        fake_conn.initialize = AsyncMock(side_effect=slow_initialize)
+        pool = HermesACPConnectionPool(max_size=2, idle_ttl=60)
+
+        async def run():
+            with patch(
+                "backend.infrastructure.llm.hermes_acp.spawn_stdio_transport",
+                return_value=mock_cm,
+            ), patch(
+                "backend.infrastructure.llm.hermes_acp.connect_to_agent",
+                return_value=fake_conn,
+            ):
+                s = pool.stats()
+                assert s["hits"] == 0
+                assert s["misses"] == 0
+                assert s["discards"] == 0
+                assert s["spawn_ms_avg"] == 0.0
+                assert s["acquire_wait_ms_avg"] == 0.0
+
+                c1 = await pool.acquire("hermes", "/tmp")  # miss
+                s = pool.stats()
+                assert s["misses"] == 1
+                assert s["hits"] == 0
+                assert s["spawn_ms_avg"] > 0.0
+                assert s["acquire_wait_ms_avg"] >= 0.0
+
+                await pool.release(c1)
+                c2 = await pool.acquire("hermes", "/tmp")  # hit
+                assert c1 is c2
+                s = pool.stats()
+                assert s["hits"] == 1
+                assert s["misses"] == 1
+
+                await pool.release(c2, discard=True)  # discard
+                s = pool.stats()
+                assert s["discards"] == 1
+                assert s["connections"] == 0
+                await pool.close_all()
+
+        asyncio.run(run())
