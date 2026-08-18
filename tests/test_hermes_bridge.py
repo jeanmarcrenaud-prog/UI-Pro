@@ -185,6 +185,30 @@ class TestCallHermesTool:
                     )
                 )
 
+    def test_call_tool_propagates_cancellation(self, hermes_bridge):
+        """Cancellation must propagate and emit a failure event."""
+        mock_backend = MagicMock()
+
+        async def fake_astream(prompt, **kwargs):
+            yield  # make it an async generator
+            raise asyncio.CancelledError()
+
+        mock_backend.astream = fake_astream
+
+        with patch.object(
+            hermes_bridge, "_get_hermes_backend", return_value=mock_backend
+        ), patch.object(hermes_bridge, "emit_tool") as mock_emit:
+            with pytest.raises(asyncio.CancelledError):
+                asyncio.run(
+                    hermes_bridge.call_hermes_tool(
+                        "hermes_read_file", {"path": "main.py"}
+                    )
+                )
+            # A failure event is emitted so the Debug panel does not
+            # show a dangling success for the cancelled call.
+            mock_emit.assert_any_call(
+                "hermes_read_file", {"path": "main.py"}, "cancelled", success=False
+            )
 
 # ── Provider helpers ──────────────────────────────────────────────────
 

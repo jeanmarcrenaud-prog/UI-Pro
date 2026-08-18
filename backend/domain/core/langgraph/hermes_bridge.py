@@ -21,6 +21,7 @@ Usage::
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
@@ -204,6 +205,10 @@ async def call_hermes_tool(
         async for chunk in backend.astream(prompt, cwd=cwd):
             chunks.append(chunk)
         result = "".join(chunks)
+    except asyncio.CancelledError:
+        logger.warning("Hermes tool %s cancelled", tool_name)
+        emit_tool(tool_name, arguments, "cancelled", success=False)
+        raise
     except Exception as e:
         logger.error("Hermes tool %s failed: %s", tool_name, e)
         emit_tool(tool_name, arguments, str(e), success=False)
