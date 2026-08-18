@@ -64,6 +64,15 @@ class TestParseToolCallTag:
         assert func_name == "execute_intent"
         assert func_args == {"intent": "launch msedge"}
 
+    def test_parse_json_escaped_quote_keys(self):
+        """Should normalize escaped-quote keys (e.g. {\"intent\": \"...\"})."""
+        text = r'<|tool_call>call:execute_intent{"\"intent\"": "\"prendre une capture\""}<tool_call|>'
+        result = parse_tool_call_tag(text)
+        assert result is not None
+        func_name, func_args = result
+        assert func_name == "execute_intent"
+        assert func_args == {"intent": "prendre une capture"}
+
 
 class TestParseKV:
     """Tests for the _parse_kv helper function."""

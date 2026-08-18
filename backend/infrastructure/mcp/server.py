@@ -527,7 +527,17 @@ def parse_tool_call_tag(text: str):
         raw = "{" + m.group(2) + "}"
         # Try real JSON parse (with quoted keys)
         try:
-            return func_name, json.loads(raw)
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                # Models sometimes emit escaped quotes around keys
+                # (e.g. {\"intent\": \"...\"}) -> normalize them.
+                parsed = {
+                    str(k).strip('\"\''): (
+                        v.strip('\"\'') if isinstance(v, str) else v
+                    )
+                    for k, v in parsed.items()
+                }
+            return func_name, parsed
         except json.JSONDecodeError:
             pass
         # Fallback: key: value or "key": "value"
