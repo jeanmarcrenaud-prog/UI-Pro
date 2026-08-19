@@ -9,6 +9,7 @@ from backend.infrastructure.mcp.server import (
     parse_tool_call_tag,
     _parse_kv,
     _normalize_args,
+    _parse_arguments,
     build_followup_messages,
     get_server,
     _build_system_prompt,
@@ -124,6 +125,32 @@ class TestNormalizeArgs:
     def test_empty_args(self):
         """Empty dict passes through."""
         assert _normalize_args({}) == {}
+
+
+class TestParseArguments:
+    """Tests for the _parse_arguments helper function."""
+
+    def test_parses_json_string(self):
+        """Spec-compliant string arguments parse to a dict."""
+        result = _parse_arguments('{"intent": "launch calc.exe"}')
+        assert result == {"intent": "launch calc.exe"}
+
+    def test_accepts_dict_directly(self):
+        """Ollama-style backends may already return a dict."""
+        result = _parse_arguments({"intent": "launch calc.exe"})
+        assert result == {"intent": "launch calc.exe"}
+
+    def test_empty_string_yields_empty_dict(self):
+        """Empty arguments string must not crash."""
+        assert _parse_arguments("") == {}
+
+    def test_none_yields_empty_dict(self):
+        """None arguments must not crash."""
+        assert _parse_arguments(None) == {}
+
+    def test_invalid_json_yields_empty_dict(self):
+        """Invalid JSON must not crash the tool loop."""
+        assert _parse_arguments("not json") == {}
 
 class TestBuildFollowupMessages:
     """Tests for the build_followup_messages function."""
@@ -548,6 +575,62 @@ class TestHandleChatNativeTools:
         call_tool_mock.assert_called_once_with(
             "execute_intent", {"intent": "launch calc.exe"}
         )
+
+    def test_native_tool_call_dict_arguments(self):
+        """Ollama-style backends may send arguments as a dict, not a string."""
+        from backend.infrastructure.mcp.server import HermesMCPServer
+
+        llm = MagicMock()
+        tc = MagicMock()
+        tc.id = "call_d"
+        tc.type = "function"
+        tc.function.name = "read_file"
+        tc.function.arguments = {"path": "main.py"}
+        msg1 = MagicMock()
+        msg1.content = ""
+        msg1.tool_calls = [tc]
+        msg2 = MagicMock()
+        msg2.content = "Fichier lu."
+        msg2.tool_calls = None
+        llm.chat.completions.create.side_effect = [
+            self._mock_response(msg1),
+            self._mock_response(msg2),
+        ]
+
+        server, call_tool_mock = self._make_server(llm)
+        result = asyncio.run(server._handle_chat("lis main.py"))
+
+        assert result["content"] == "Fichier lu."
+        call_tool_mock.assert_called_once_with("read_file", {"path": "main.py"})
+
+    def test_missing_required_field_rejected(self):
+        """execute_intent without intent must return an error, not a silent no-op."""
+        from backend.infrastructure.mcp.server import HermesMCPServer
+
+        llm = MagicMock()
+        tc = MagicMock()
+        tc.id = "call_m"
+        tc.type = "function"
+        tc.function.name = "execute_intent"
+        tc.function.arguments = json.dumps({})
+        msg1 = MagicMock()
+        msg1.content = ""
+        msg1.tool_calls = [tc]
+        msg2 = MagicMock()
+        msg2.content = "Suite."
+        msg2.tool_calls = None
+        llm.chat.completions.create.side_effect = [
+            self._mock_response(msg1),
+            self._mock_response(msg2),
+        ]
+
+        server, call_tool_mock = self._make_server(llm)
+        result = asyncio.run(server._handle_chat("fais quelque chose"))
+
+        assert result["content"] == "Suite."
+        # call_tool must never be reached: the missing required field is
+        # rejected in _execute_tool_call before execution.
+        call_tool_mock.assert_not_called()
 
 
 async def _collect(agen):
