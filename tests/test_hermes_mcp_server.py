@@ -8,6 +8,7 @@ import pytest
 from backend.infrastructure.mcp.server import (
     parse_tool_call_tag,
     _parse_kv,
+    _normalize_args,
     build_followup_messages,
     get_server,
     _build_system_prompt,
@@ -101,6 +102,28 @@ class TestParseKV:
         result = _parse_kv("key1: val1, nodelimiter, key2: val2", sep=":")
         assert result == {"key1": "val1", "key2": "val2"}
 
+
+class TestNormalizeArgs:
+    """Tests for the _normalize_args helper function."""
+
+    def test_strips_quotes_from_keys_and_values(self):
+        """LM Studio models emit \"\"intent\"\" keys; they must be normalized."""
+        result = _normalize_args({'"intent"': '"launch calc.exe"'})
+        assert result == {"intent": "launch calc.exe"}
+
+    def test_plain_args_unchanged(self):
+        """Normal args must pass through untouched."""
+        result = _normalize_args({"path": "main.py", "count": 3})
+        assert result == {"path": "main.py", "count": 3}
+
+    def test_single_quotes_stripped(self):
+        """Single-quoted keys/values are normalized too."""
+        result = _normalize_args({"'intent'": "'launch calc.exe'"})
+        assert result == {"intent": "launch calc.exe"}
+
+    def test_empty_args(self):
+        """Empty dict passes through."""
+        assert _normalize_args({}) == {}
 
 class TestBuildFollowupMessages:
     """Tests for the build_followup_messages function."""
@@ -495,6 +518,36 @@ class TestHandleChatNativeTools:
 
         kwargs = llm.chat.completions.create.call_args.kwargs
         assert kwargs["timeout"] == settings.llm_timeout
+
+    def test_native_tool_call_quoted_keys_normalized(self):
+        """Regression: LM Studio emits \"\"intent\"\" keys; they must reach
+        call_tool normalized so execute_intent receives a non-empty intent."""
+        from backend.infrastructure.mcp.server import HermesMCPServer
+
+        llm = MagicMock()
+        tc = MagicMock()
+        tc.id = "call_q"
+        tc.type = "function"
+        tc.function.name = "execute_intent"
+        tc.function.arguments = json.dumps({'"intent"': '"launch calc.exe"'})
+        msg1 = MagicMock()
+        msg1.content = ""
+        msg1.tool_calls = [tc]
+        msg2 = MagicMock()
+        msg2.content = "Calculatrice lancée."
+        msg2.tool_calls = None
+        llm.chat.completions.create.side_effect = [
+            self._mock_response(msg1),
+            self._mock_response(msg2),
+        ]
+
+        server, call_tool_mock = self._make_server(llm)
+        result = asyncio.run(server._handle_chat("lance calc.exe"))
+
+        assert result["content"] == "Calculatrice lancée."
+        call_tool_mock.assert_called_once_with(
+            "execute_intent", {"intent": "launch calc.exe"}
+        )
 
 
 async def _collect(agen):
