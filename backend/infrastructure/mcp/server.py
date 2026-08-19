@@ -24,6 +24,20 @@ logger = logging.getLogger(__name__)
 MAX_TOOL_ROUNDS = 5  # bounded tool-calling loop (native + tag fallback)
 
 
+def _normalize_args(func_args: Dict[str, Any]) -> Dict[str, Any]:
+    """Strip literal quotes from keys/values some models emit.
+
+    LM Studio models sometimes produce tool-call arguments like
+    {"\"intent\"": "\"launch calc.exe\""} instead of {"intent": "launch calc.exe"}.
+    Normalizing here covers every tool-call path (native + tag protocol).
+    """
+    return {
+        str(k).strip('\"\''): (
+            v.strip('\"\'') if isinstance(v, str) else v
+        )
+        for k, v in func_args.items()
+    }
+
 # ─── Shared Prompts ───────────────────────────────────
 
 _SYSTEM_PROMPT_BASE = (
@@ -125,6 +139,7 @@ class HermesMCPServer:
         self, func_name: str, func_args: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Execute a tool and emit EventBus events for frontend visibility."""
+        func_args = _normalize_args(func_args)
         logger.info("Hermes executing tool: %s(%s)", func_name, func_args)
         try:
             result = await self.call_tool(func_name, func_args)
