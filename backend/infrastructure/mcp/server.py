@@ -138,7 +138,12 @@ class HermesMCPServer:
     async def _execute_tool_call(
         self, func_name: str, func_args: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Execute a tool and emit EventBus events for frontend visibility."""
+        """Execute a tool and emit EventBus events for frontend visibility.
+
+        Gatekeeper for tool-call arguments: every path (native tool_calls,
+        tag protocol, streaming) funnels through here, so argument
+        normalization lives in this single place.
+        """
         func_args = _normalize_args(func_args)
         logger.info("Hermes executing tool: %s(%s)", func_name, func_args)
         try:
