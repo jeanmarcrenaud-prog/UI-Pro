@@ -24,6 +24,22 @@ logger = logging.getLogger(__name__)
 MAX_TOOL_ROUNDS = 5  # bounded tool-calling loop (native + tag fallback)
 
 
+def _parse_arguments(raw: Any) -> Dict[str, Any]:
+    """Parse tool-call arguments, accepting either a JSON string or a dict.
+
+    OpenAI's spec says ``function.arguments`` is a JSON string, but some local
+    backends (e.g. Ollama) already return a dict. Invalid JSON is logged and
+    yields an empty dict instead of crashing the tool loop.
+    """
+    if isinstance(raw, dict):
+        return raw
+    try:
+        return json.loads(raw or "{}")
+    except json.JSONDecodeError:
+        logger.warning("Invalid JSON in tool arguments: %r", raw)
+        return {}
+
+
 def _normalize_args(func_args: Dict[str, Any]) -> Dict[str, Any]:
     """Strip literal quotes from keys/values some models emit.
 
@@ -146,6 +162,19 @@ class HermesMCPServer:
         """
         func_args = _normalize_args(func_args)
         logger.info("Hermes executing tool: %s(%s)", func_name, func_args)
+
+        # Light schema validation: reject calls missing required fields
+        # instead of silently no-oping (e.g. execute_intent without intent).
+        schema = next(
+            (t for t in self.list_tools() if t["name"] == func_name), None
+        )
+        required = (schema or {}).get("input_schema", {}).get("required", [])
+        missing = [k for k in required if k not in func_args]
+        if missing:
+            msg = f"Erreur : arguments manquants pour {func_name}: {missing}"
+            logger.warning("%s (reçus: %s)", msg, func_args)
+            emit_tool(func_name, func_args, msg, success=False)
+            return {"content": msg}
         try:
             result = await self.call_tool(func_name, func_args)
             emit_tool(func_name, func_args, result.get("content", ""), success=True)
@@ -318,10 +347,7 @@ class HermesMCPServer:
                         )
                         for tc in tool_calls:
                             func_name = tc["function"]["name"]
-                            try:
-                                func_args = json.loads(tc["function"]["arguments"] or "{}")
-                            except json.JSONDecodeError:
-                                func_args = {}
+                            func_args = _parse_arguments(tc["function"]["arguments"])
                             result = await self._execute_tool_call(func_name, func_args)
                             messages.append(
                                 {
@@ -441,10 +467,7 @@ class HermesMCPServer:
                     )
                     for entry in tool_calls.values():
                         yield "\n\n[tool: {}\n\n".format(entry["name"])
-                        try:
-                            func_args = json.loads(entry["arguments"] or "{}")
-                        except json.JSONDecodeError:
-                            func_args = {}
+                        func_args = _parse_arguments(entry["arguments"])
                         result = await self._execute_tool_call(entry["name"], func_args)
                         yield "\n```json\n{}\n```\n\n".format(
                             json.dumps(result.get("content", ""), ensure_ascii=False)
