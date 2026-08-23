@@ -35,16 +35,25 @@ class IntelligenceService:
                 logger.info(f"Delegating to OpenCode: {step.task}")
                 delegated = await self.delegate_to_opencode(step.task, current_state)
                 actions.extend(delegated)
-            elif isinstance(step, HermesAction):
-                action_result = self.executor.execute_action(step.action_type, step.params)
-                if action_result.get("status") == "success":
+            elif isinstance(step, (HermesAction, Action)):
+                if self.executor is None:
+                    logger.warning(f"Skipping action {step.action_type}: no executor available")
                     actions.append(Action(
                         action_type=step.action_type,
-                        params=step.params,
-                        status="success"
+                        params=getattr(step, "params", {}),
+                        status="skipped",
+                        message="No executor available"
                     ))
                 else:
-                    logger.error(f"Failed: {step.action_type}: {action_result.get('message')}")
+                    action_result = self.executor.execute_action(step.action_type, step.params)
+                    if action_result.get("status") == "success":
+                        actions.append(Action(
+                            action_type=step.action_type,
+                            params=step.params,
+                            status="success"
+                        ))
+                    else:
+                        logger.error(f"Failed: {step.action_type}: {action_result.get('message')}")
             else:
                 logger.warning(f"Unknown action type: {type(step).__name__}")
 

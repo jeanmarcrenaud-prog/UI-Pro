@@ -112,15 +112,17 @@ class HermesMCPServer:
 
     def _init_intelligence(self):
         from backend.application.intelligence.task_planner import init_task_planner
+        from backend.domain.core.action_executor import ActionExecutor
         try:
             base_url = settings.hermes_llm_base_url or (settings.lmstudio_url.rstrip("/") + "/v1")
             planner = init_task_planner(
                 model_name=settings.hermes_llm_model,
                 base_url=base_url,
             )
-            init_intelligence_service(planner, None, self.connector_manager)
+            executor = ActionExecutor(self.editor_service, self.filesystem_service)
+            init_intelligence_service(planner, executor, self.connector_manager)
             self.intelligence_service = get_intelligence_service()
-            logger.info("Hermes intelligence initialized with real TaskPlanner")
+            logger.info("Hermes intelligence initialized with real TaskPlanner + ActionExecutor")
         except Exception as e:
             logger.warning(f"Failed to init real intelligence: {e}, using fallback")
             init_intelligence_service(get_task_planner(), None, self.connector_manager)
