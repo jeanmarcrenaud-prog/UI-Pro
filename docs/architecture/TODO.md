@@ -68,6 +68,18 @@ Phase par phase (ADR : docs/architecture/HERMES_INTEGRATION.md) — communicatio
 | 6 | Health / metrics (D4) | ✅ `138c97d`, `34e34b9` |
 | 7 | Sécurité | ⏳ |
 
+### ActionExecutor — Mutations réelles (2026-08-23)
+
+| # | Tâche | Statut |
+|---|-------|--------|
+| 1 | Brancher ActionExecutor dans l'init MCP (`server.py::_init_intelligence`) | ✅ `8dab11c` |
+| 2 | `process_user_intent` gère `Action` en plus de `HermesAction` ; échecs visibles dans la liste retournée | ✅ `8dab11c`, `b371ea2` |
+| 3 | Mutations réelles : insert_code, delete_code, open_file, move_cursor, rename_file (disque + state_store) | ✅ `1ae47cc` |
+| 4 | Handler write_file (création/écrasement fichier via FilesystemService) | ✅ |
+| 5 | Suite de tests complète (tests/test_action_executor.py, 25 tests mutations réelles) | ✅ `1ae47cc` |
+| 6 | Réparation tests/verify_mcp_flow.py (mock async + HermesAction + flux executor) | ✅ |
+
+> Notes : `_as_dict()` normalise dataclass/dict pour l'état éditeur. Pas de sync UI live du store (le frontend n'est pas encore poussé). Prérequis insert/delete : active_file + cursor initialisés.
 ---
 
 ## 🔧 EN COURS

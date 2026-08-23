@@ -53,6 +53,8 @@ class ActionExecutor:
             return self._handle_open_file(params.get("path", ""), state)
         elif action_type == "rename_file":
             return self._handle_rename_file(params, state)
+        elif action_type == "write_file":
+            return self._handle_write_file(params, state)
         else:
             logger.warning(f"Action type {action_type} is not yet implemented.")
             return {
@@ -306,3 +308,28 @@ class ActionExecutor:
                 "status": "error",
                 "message": "Failed to rename file"
             }
+
+    def _handle_write_file(self, params: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
+        """Crée ou écrase un fichier via le FilesystemService (mutation réelle)."""
+        path = params.get("path")
+        content = params.get("content", "")
+
+        if not path:
+            return {"status": "error", "message": "Path is required"}
+
+        success = self.filesystem_service.write_file(path, content)
+        if not success:
+            return {"status": "error", "message": f"Failed to write file {path}"}
+
+        # Si le fichier écrit est le fichier actif, synchroniser le store
+        current_state = self.editor_service.state_store.get_state()
+        if current_state.active_file and current_state.active_file.path == path:
+            self.editor_service.state_store.update(
+                active_file=ActiveFile(path=path, content=content)
+            )
+
+        return {
+            "status": "success",
+            "action": "write_file",
+            "params": {"path": path}
+        }
