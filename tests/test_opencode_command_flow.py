@@ -9,9 +9,14 @@ from backend.infrastructure.opencode_connector.manager import OpenCodeConnectorM
 
 
 class MockEditorService:
+    def __init__(self):
+        self.state_store = MagicMock()
     def get_current_state(self):
-        return {"cursor": {"line": 5, "column": 0}, "selection": None}
-
+        return {
+            "active_file": {"path": "test.py", "content": "line1\nline2\nline3\nline4\n"},
+            "cursor": {"line": 5, "column": 0},
+            "selection": None
+        }
 
 class TestOpenCodeIntegration(unittest.TestCase):
     def setUp(self):

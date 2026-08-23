@@ -1,234 +1,341 @@
 """
-Tests unitaires pour ActionExecutor (domaine Hermes).
+Tests unitaires pour ActionExecutor — mutations locales réelles.
 
-Couvre tous les handlers d'actions locales :
-  - insert_code
-  - delete_code
-  - move_cursor
-  - run_terminal_command   (lancement réel non bloquant via subprocess.Popen)
-  - open_file
-  - rename_file
-
-Et les chemins d'erreur (état manquant, params manquants, commande vide,
-échec de lancement, action inconnue).
+Couvre :
+  - insert_code / delete_code  → écriture fichier + curseur
+  - move_cursor / open_file    → state_store
+  - rename_file                → rename disque + sync active_file
+  - run_terminal_command       → Popen non bloquant
+  - chemins d'erreur
 """
 
+from __future__ import annotations
+
 import os
-import unittest
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from backend.domain.core.action_executor import ActionExecutor
-from backend.domain.core.filesystem_service import FileContent
+from backend.domain.core.editor_service import EditorService
+from backend.domain.core.editor_state import EditorStateStore
+from backend.domain.core.filesystem_service import FileContent, FilesystemService
+from backend.domain.core.models import ActiveFile, Cursor, Selection
 
 
-def _state_with(cursor=None, selection=None):
-    """Construit un state dict comme celui renvoyé par EditorService.get_current_state."""
-    return {
-        "active_file": None,
-        "cursor": cursor,
-        "selection": selection,
-        "diagnostics": [],
-        "terminal_output": "",
-        "git_status": "clean",
-    }
+# ── Fixtures ──────────────────────────────────────────────────────────────
 
 
-class TestActionExecutorInsertCode(unittest.TestCase):
-    def setUp(self):
-        self.editor_service = MagicMock()
-        self.filesystem_service = MagicMock()
-        self.executor = ActionExecutor(self.editor_service, self.filesystem_service)
+@pytest.fixture
+def workspace(tmp_path):
+    """Répertoire workspace isolé pour chaque test."""
+    root = tmp_path / "workspace"
+    root.mkdir()
+    return root
 
-    def test_insert_code_success(self):
-        self.editor_service.get_current_state.return_value = _state_with(
-            cursor={"line": 10, "column": 5}
+
+@pytest.fixture
+def fs(workspace):
+    return FilesystemService(root_dir=str(workspace))
+
+
+@pytest.fixture
+def store():
+    return EditorStateStore()
+
+
+@pytest.fixture
+def editor(store, fs):
+    return EditorService(state_store=store, filesystem_service=fs)
+
+
+@pytest.fixture
+def executor(editor, fs):
+    return ActionExecutor(editor_service=editor, filesystem_service=fs)
+
+
+def _write(fs: FilesystemService, path: str, content: str) -> None:
+    assert fs.write_file(path, content) is True
+
+
+def _seed_active(store: EditorStateStore, path: str, content: str, line: int = 1, col: int = 0):
+    store.update(
+        active_file=ActiveFile(path=path, content=content),
+        cursor=Cursor(line=line, column=col),
+        selection=None,
+    )
+
+
+# ── open_file ──────────────────────────────────────────────────────────────
+
+
+class TestOpenFile:
+    def test_open_file_success(self, executor, fs, store, workspace):
+        _write(fs, "main.py", "print('hello')\n")
+        result = executor.execute_action("open_file", {"path": "main.py"})
+
+        assert result["status"] == "success"
+        assert result["action"] == "open_file"
+        assert result["params"]["path"] == "main.py"
+
+        state = store.get_state()
+        assert state.active_file is not None
+        assert state.active_file.path == "main.py"
+        assert state.cursor is not None
+        assert state.cursor.line == 1
+        assert state.cursor.column == 0
+        assert state.selection is None
+
+    def test_open_file_not_found(self, executor):
+        result = executor.execute_action("open_file", {"path": "missing.py"})
+        assert result["status"] == "error"
+        assert "missing.py" in result["message"]
+
+    def test_open_file_empty_path(self, executor, store):
+        # besoin d'un state non-None
+        result = executor.execute_action("open_file", {"path": ""})
+        assert result["status"] == "error"
+        assert "path" in result["message"].lower()
+
+
+# ── move_cursor ────────────────────────────────────────────────────────────
+
+
+class TestMoveCursor:
+    def test_move_cursor_success(self, executor, store):
+        result = executor.execute_action("move_cursor", {"line": 42, "column": 7})
+        assert result["status"] == "success"
+        assert result["params"]["line"] == 42
+        assert result["params"]["col"] == 7
+
+        cursor = store.get_state().cursor
+        assert cursor is not None
+        assert cursor.line == 42
+        assert cursor.column == 7
+
+    def test_move_cursor_accepts_col_alias(self, executor, store):
+        result = executor.execute_action("move_cursor", {"line": 3, "col": 1})
+        assert result["status"] == "success"
+        assert store.get_state().cursor.column == 1
+
+    def test_move_cursor_missing_params(self, executor):
+        result = executor.execute_action("move_cursor", {"line": 1})
+        assert result["status"] == "error"
+
+    def test_move_cursor_invalid_position(self, executor):
+        result = executor.execute_action("move_cursor", {"line": 0, "column": 0})
+        assert result["status"] == "error"
+
+
+# ── insert_code ────────────────────────────────────────────────────────────
+
+
+class TestInsertCode:
+    def test_insert_mid_line(self, executor, fs, store):
+        _write(fs, "a.py", "hello world\n")
+        _seed_active(store, "a.py", "hello world\n", line=1, col=6)
+
+        result = executor.execute_action("insert_code", {"content": "XX"})
+        assert result["status"] == "success"
+
+        data = fs.read_file("a.py")
+        assert data is not None
+        assert data.content == "hello XXworld\n"
+
+        cursor = store.get_state().cursor
+        assert cursor.line == 1
+        assert cursor.column == 8  # 6 + len("XX")
+
+    def test_insert_multiline(self, executor, fs, store):
+        _write(fs, "b.py", "line1\nline2\n")
+        _seed_active(store, "b.py", "line1\nline2\n", line=1, col=5)
+
+        result = executor.execute_action("insert_code", {"content": "\nINSERTED"})
+        assert result["status"] == "success"
+
+        data = fs.read_file("b.py")
+        assert "INSERTED" in data.content
+
+        cursor = store.get_state().cursor
+        assert cursor.line == 2  # advanced after multi-line insert
+
+    def test_insert_no_active_file(self, executor, store):
+        store.update(cursor=Cursor(line=1, column=0), active_file=None)
+        result = executor.execute_action("insert_code", {"content": "x"})
+        assert result["status"] == "error"
+        assert "active file" in result["message"].lower()
+
+    def test_insert_no_cursor(self, executor, fs, store):
+        _write(fs, "c.py", "abc\n")
+        store.update(active_file=ActiveFile(path="c.py", content="abc\n"), cursor=None)
+        result = executor.execute_action("insert_code", {"content": "x"})
+        assert result["status"] == "error"
+        assert "cursor" in result["message"].lower()
+
+    def test_insert_empty_file(self, executor, fs, store):
+        _write(fs, "empty.py", "")
+        _seed_active(store, "empty.py", "", line=1, col=0)
+
+        result = executor.execute_action("insert_code", {"content": "first"})
+        assert result["status"] == "success"
+        assert fs.read_file("empty.py").content == "first"
+
+
+# ── delete_code ────────────────────────────────────────────────────────────
+
+
+class TestDeleteCode:
+    def test_delete_same_line(self, executor, fs, store):
+        _write(fs, "d.py", "abcdef\n")
+        store.update(
+            active_file=ActiveFile(path="d.py", content="abcdef\n"),
+            cursor=Cursor(line=1, column=0),
+            selection=Selection(start_line=1, start_col=2, end_line=1, end_col=5),
         )
-        result = self.executor.execute_action("insert_code", {"content": "print('hi')"})
-        self.assertEqual(result["status"], "success")
-        self.assertEqual(result["action"], "insert_code")
-        self.assertEqual(result["params"]["content"], "print('hi')")
-        self.assertEqual(result["params"]["line"], 10)
-        self.assertEqual(result["params"]["col"], 5)
 
-    def test_insert_code_no_cursor(self):
-        self.editor_service.get_current_state.return_value = _state_with(cursor=None)
-        result = self.executor.execute_action("insert_code", {"content": "x"})
-        self.assertEqual(result["status"], "error")
-        self.assertIn("cursor", result["message"].lower())
+        result = executor.execute_action("delete_code", {})
+        assert result["status"] == "success"
 
+        data = fs.read_file("d.py")
+        assert data.content == "abf\n"
 
-class TestActionExecutorDeleteCode(unittest.TestCase):
-    def setUp(self):
-        self.editor_service = MagicMock()
-        self.filesystem_service = MagicMock()
-        self.executor = ActionExecutor(self.editor_service, self.filesystem_service)
+        state = store.get_state()
+        assert state.selection is None
+        assert state.cursor.line == 1
+        assert state.cursor.column == 2
 
-    def test_delete_code_success(self):
-        self.editor_service.get_current_state.return_value = _state_with(
-            selection={"start_line": 1, "start_col": 0, "end_line": 3, "end_col": 10}
+    def test_delete_multi_line(self, executor, fs, store):
+        _write(fs, "e.py", "aaa\nbbb\nccc\n")
+        store.update(
+            active_file=ActiveFile(path="e.py", content="aaa\nbbb\nccc\n"),
+            cursor=Cursor(line=1, column=0),
+            selection=Selection(start_line=1, start_col=1, end_line=3, end_col=1),
         )
-        result = self.executor.execute_action("delete_code", {})
-        self.assertEqual(result["status"], "success")
-        self.assertEqual(result["action"], "delete_code")
-        self.assertEqual(result["params"]["start_line"], 1)
-        self.assertEqual(result["params"]["end_line"], 3)
 
-    def test_delete_code_no_selection(self):
-        self.editor_service.get_current_state.return_value = _state_with(selection=None)
-        result = self.executor.execute_action("delete_code", {})
-        self.assertEqual(result["status"], "error")
-        self.assertIn("selection", result["message"].lower())
+        result = executor.execute_action("delete_code", {})
+        assert result["status"] == "success"
 
+        data = fs.read_file("e.py")
+        # 'a' + 'cc\n'  (from start_col=1 of line1 through end_col=1 of line3)
+        assert "bbb" not in data.content
 
-class TestActionExecutorMoveCursor(unittest.TestCase):
-    def setUp(self):
-        self.editor_service = MagicMock()
-        self.filesystem_service = MagicMock()
-        self.executor = ActionExecutor(self.editor_service, self.filesystem_service)
+    def test_delete_no_selection(self, executor, fs, store):
+        _write(fs, "f.py", "x\n")
+        _seed_active(store, "f.py", "x\n")
+        result = executor.execute_action("delete_code", {})
+        assert result["status"] == "error"
+        assert "selection" in result["message"].lower()
 
-    def test_move_cursor_success(self):
-        self.editor_service.get_current_state.return_value = _state_with()
-        result = self.executor.execute_action("move_cursor", {"line": 42, "column": 7})
-        self.assertEqual(result["status"], "success")
-        self.assertEqual(result["action"], "move_cursor")
-        self.assertEqual(result["params"]["line"], 42)
-        self.assertEqual(result["params"]["col"], 7)
-
-    def test_move_cursor_missing_params(self):
-        self.editor_service.get_current_state.return_value = _state_with()
-        result = self.executor.execute_action("move_cursor", {"line": 1})
-        self.assertEqual(result["status"], "error")
-        self.assertIn("line", result["message"].lower())
+    def test_delete_no_active_file(self, executor, store):
+        store.update(
+            selection=Selection(start_line=1, start_col=0, end_line=1, end_col=1),
+            active_file=None,
+        )
+        result = executor.execute_action("delete_code", {})
+        assert result["status"] == "error"
+        assert "active file" in result["message"].lower()
 
 
-class TestActionExecutorRunTerminalCommand(unittest.TestCase):
-    """Tests du handler run_terminal_command — lancement réel non bloquant."""
+# ── rename_file ────────────────────────────────────────────────────────────
 
-    def setUp(self):
-        self.editor_service = MagicMock()
-        self.filesystem_service = MagicMock()
-        self.filesystem_service.root_dir = "/tmp/workspace"
-        self.executor = ActionExecutor(self.editor_service, self.filesystem_service)
-        # L'état éditeur est requis par execute_action avant d'appeler le handler
-        self.editor_service.get_current_state.return_value = _state_with()
 
-    def test_run_terminal_command_launches_process(self):
-        """La commande est réellement lancée via subprocess.Popen (non bloquant)."""
-        mock_proc = MagicMock()
-        mock_proc.pid = 12345
+class TestRenameFile:
+    def test_rename_success(self, executor, fs, store, workspace):
+        _write(fs, "old.py", "data\n")
+        _seed_active(store, "old.py", "data\n")
+
+        result = executor.execute_action(
+            "rename_file", {"current_path": "old.py", "new_name": "new.py"}
+        )
+        assert result["status"] == "success"
+        assert result["params"]["new_path"].endswith("new.py")
+
+        assert fs.read_file("old.py") is None
+        assert fs.read_file("new.py") is not None
+        assert store.get_state().active_file.path == "new.py"
+
+    def test_rename_missing_params(self, executor):
+        result = executor.execute_action("rename_file", {"current_path": "a.py"})
+        assert result["status"] == "error"
+
+    def test_rename_failure(self, executor, fs):
+        # source does not exist
+        result = executor.execute_action(
+            "rename_file", {"current_path": "ghost.py", "new_name": "x.py"}
+        )
+        assert result["status"] == "error"
+
+
+# ── run_terminal_command ───────────────────────────────────────────────────
+
+
+class TestRunTerminalCommand:
+    def test_launches_process(self, executor, fs):
+        mock_proc = MagicMock(pid=12345)
         with patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
-            result = self.executor.execute_action(
-                "run_terminal_command", {"command": "notepad"}
+            result = executor.execute_action(
+                "run_terminal_command", {"command": "echo hi"}
             )
 
-        self.assertEqual(result["status"], "success")
-        self.assertEqual(result["action"], "run_terminal_command")
-        self.assertEqual(result["params"]["command"], "notepad")
-        self.assertEqual(result["params"]["pid"], 12345)
-
-        # Popen a bien été appelé (pas seulement un dict retourné)
+        assert result["status"] == "success"
+        assert result["params"]["pid"] == 12345
         mock_popen.assert_called_once()
-        call_kwargs = mock_popen.call_args
-        self.assertEqual(call_kwargs.args[0], "notepad")
-        self.assertTrue(call_kwargs.kwargs["shell"])
-        self.assertEqual(call_kwargs.kwargs["cwd"], "/tmp/workspace")
-        # Non bloquant : on ne doit jamais appeler wait()/communicate()
+        assert mock_popen.call_args.kwargs["shell"] is True
+        assert mock_popen.call_args.kwargs["cwd"] == fs.root_dir
         mock_proc.wait.assert_not_called()
-        mock_proc.communicate.assert_not_called()
 
-    def test_run_terminal_command_empty(self):
-        result = self.executor.execute_action("run_terminal_command", {"command": ""})
-        self.assertEqual(result["status"], "error")
-        self.assertIn("command", result["message"].lower())
+    def test_empty_command(self, executor):
+        result = executor.execute_action("run_terminal_command", {"command": ""})
+        assert result["status"] == "error"
 
-    def test_run_terminal_command_launch_failure(self):
-        """Si Popen lève une exception, on retourne une erreur (pas de crash)."""
-        with patch("subprocess.Popen", side_effect=OSError("command not found")):
-            result = self.executor.execute_action(
-                "run_terminal_command", {"command": "nonexistent_cmd_xyz"}
+    def test_launch_failure(self, executor):
+        with patch("subprocess.Popen", side_effect=OSError("not found")):
+            result = executor.execute_action(
+                "run_terminal_command", {"command": "nope"}
             )
-        self.assertEqual(result["status"], "error")
-        self.assertEqual(result["status"], "error")
-        self.assertIn("Failed to run command", result["message"])
-
-    def test_run_terminal_command_uses_filesystem_root_dir(self):
-        """Le cwd est celui du filesystem_service.root_dir."""
-        mock_proc = MagicMock()
-        mock_proc.pid = 99
-        self.filesystem_service.root_dir = "/custom/root"
-        with patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
-            self.executor.execute_action("run_terminal_command", {"command": "echo hi"})
-        self.assertEqual(mock_popen.call_args.kwargs["cwd"], "/custom/root")
+        assert result["status"] == "error"
+        assert "Failed to run command" in result["message"]
 
 
-class TestActionExecutorOpenFile(unittest.TestCase):
-    def setUp(self):
-        self.editor_service = MagicMock()
-        self.filesystem_service = MagicMock()
-        self.executor = ActionExecutor(self.editor_service, self.filesystem_service)
-        self.editor_service.get_current_state.return_value = _state_with()
-
-    def test_open_file_success(self):
-        self.filesystem_service.read_file.return_value = FileContent(
-            path="main.py", content="print('hello')", last_modified=None, size=14
-        )
-        result = self.executor.execute_action("open_file", {"path": "main.py"})
-        self.assertEqual(result["status"], "success")
-        self.assertEqual(result["action"], "open_file")
-        self.assertEqual(result["params"]["path"], "main.py")
-
-    def test_open_file_not_found(self):
-        self.filesystem_service.read_file.return_value = None
-        result = self.executor.execute_action("open_file", {"path": "missing.py"})
-        self.assertEqual(result["status"], "error")
-        self.assertIn("missing.py", result["message"])
+# ── edge cases ─────────────────────────────────────────────────────────────
 
 
-class TestActionExecutorRenameFile(unittest.TestCase):
-    def setUp(self):
-        self.editor_service = MagicMock()
-        self.filesystem_service = MagicMock()
-        self.executor = ActionExecutor(self.editor_service, self.filesystem_service)
-        self.editor_service.get_current_state.return_value = _state_with()
-
-    def test_rename_file_success(self):
-        self.filesystem_service.rename_file.return_value = True
-        result = self.executor.execute_action(
-            "rename_file", {"current_path": "old.py", "new_name": "new.py"}
-        )
-        self.assertEqual(result["status"], "success")
-        self.assertEqual(result["action"], "rename_file")
-        self.assertEqual(result["params"]["current_path"], "./old.py")
-        self.assertEqual(result["params"]["new_path"], ".\\new.py")
-
-    def test_rename_file_failure(self):
-        self.filesystem_service.rename_file.return_value = False
-        result = self.executor.execute_action(
-            "rename_file", {"current_path": "old.py", "new_name": "new.py"}
-        )
-        self.assertEqual(result["status"], "error")
-        self.assertIn("rename", result["message"].lower())
-
-
-class TestActionExecutorEdgeCases(unittest.TestCase):
-    def setUp(self):
-        self.editor_service = MagicMock()
-        self.filesystem_service = MagicMock()
-        self.executor = ActionExecutor(self.editor_service, self.filesystem_service)
-
+class TestEdgeCases:
     def test_no_editor_state(self):
-        """Sans état d'éditeur, toutes les actions locaux échouent proprement."""
-        self.editor_service.get_current_state.return_value = None
-        result = self.executor.execute_action("insert_code", {"content": "x"})
-        self.assertEqual(result["status"], "error")
-        self.assertIn("editor state", result["message"].lower())
+        editor = MagicMock()
+        editor.get_current_state.return_value = None
+        fs = MagicMock()
+        executor = ActionExecutor(editor, fs)
+        result = executor.execute_action("insert_code", {"content": "x"})
+        assert result["status"] == "error"
+        assert "editor state" in result["message"].lower()
 
-    def test_unknown_action_type(self):
-        self.editor_service.get_current_state.return_value = _state_with()
-        result = self.executor.execute_action("nonexistent_action", {})
-        self.assertEqual(result["status"], "error")
-        self.assertIn("not implemented", result["message"].lower())
+    def test_unknown_action(self, executor):
+        result = executor.execute_action("nonexistent_action", {})
+        assert result["status"] == "error"
+        assert "not implemented" in result["message"].lower()
 
 
-if __name__ == "__main__":
-    unittest.main()
+# ── integration flow ───────────────────────────────────────────────────────
+
+
+class TestMutationFlow:
+    """open → move → insert → delete — flux bout-en-bout sur disque réel."""
+
+    def test_open_move_insert_delete(self, executor, fs, store):
+        _write(fs, "flow.py", "ABCDEF\n")
+
+        assert executor.execute_action("open_file", {"path": "flow.py"})["status"] == "success"
+        assert executor.execute_action("move_cursor", {"line": 1, "column": 3})["status"] == "success"
+        assert executor.execute_action("insert_code", {"content": "XYZ"})["status"] == "success"
+
+        content = fs.read_file("flow.py").content
+        assert content == "ABCXYZDEF\n"
+
+        # select "XYZ" (cols 3..6) and delete
+        store.update(
+            selection=Selection(start_line=1, start_col=3, end_line=1, end_col=6)
+        )
+        assert executor.execute_action("delete_code", {})["status"] == "success"
+        assert fs.read_file("flow.py").content == "ABCDEF\n"
