@@ -25,10 +25,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import shutil
+import tempfile
 import time
 import uuid
 from collections.abc import AsyncGenerator, Iterator
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable
 
 from backend.infrastructure.llm.base import LLMBackend
@@ -339,7 +342,7 @@ class HermesACPConnectionPool:
             ),
         }
 
-    async def acquire(self, command: str, cwd: str) -> _PooledConnection:
+    async def acquire(self, command: str, cwd: str, env: dict[str, str] | None = None) -> _PooledConnection:
         key = (command, cwd)
         start = time.monotonic()
         async with self._lock:
@@ -383,7 +386,7 @@ class HermesACPConnectionPool:
 
         # Spawn outside the lock: subprocess start + initialize round-trip
         # can take hundreds of ms and must not block other acquires.
-        conn = await self._spawn(command, cwd)
+        conn = await self._spawn(command, cwd, env)
 
         async with self._lock:
             if self._closed:
@@ -431,7 +434,7 @@ class HermesACPConnectionPool:
                 keep.append(conn)
         self._buckets[key] = keep
 
-    async def _spawn(self, command: str, cwd: str) -> _PooledConnection:
+    async def _spawn(self, command: str, cwd: str, env: dict[str, str] | None = None) -> _PooledConnection:
         if not _ACP_AVAILABLE:
             raise LLMBackendError("agent-client-protocol is not installed")
 
@@ -443,6 +446,7 @@ class HermesACPConnectionPool:
             "acp",
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
+            env=env,
         )
         try:
             async with asyncio.timeout(handshake):
@@ -565,8 +569,7 @@ class HermesACPBackend(LLMBackend):
             )
         self._command = self._resolve_command()
         self._last_client: _HermesACPClient | None = None
-
-    # ── Configuration ────────────────────────────────────────────────
+        self._hermes_temp_dir: str | None = None
 
     def _resolve_command(self) -> str:
         """Resolve the ``hermes acp`` executable path.
@@ -585,6 +588,67 @@ class HermesACPBackend(LLMBackend):
         except Exception:
             return "hermes"
 
+    def _get_hermes_home_env(self) -> dict[str, str] | None:
+        """Get environment variables for the Hermes ACP subprocess.
+
+        Creates a temporary Hermes home directory with config.yaml and .env
+        based on UI-Pro settings (hermes_llm_base_url, hermes_llm_model).
+        Returns a dict with HERMES_HOME set to the temporary directory,
+        or None if no custom configuration is needed.
+        """
+        try:
+            from backend.domain.settings import settings
+        except Exception:
+            return None
+
+        # Only create custom config if UI-Pro has Hermes LLM settings
+        base_url = getattr(settings, "hermes_llm_base_url", "") or ""
+        model = getattr(settings, "hermes_llm_model", "") or ""
+        if not base_url and not model:
+            return None
+
+        # Create temporary Hermes home directory
+        temp_dir = tempfile.mkdtemp(prefix="hermes-acp-")
+        hermes_home = Path(temp_dir)
+
+        # Create config.yaml
+        config_yaml = hermes_home / "config.yaml"
+        config_content = []
+        if base_url:
+            config_content.append(f"model:\n  provider: custom\n  base_url: {base_url}")
+            if model:
+                config_content[-1] += f"\n  default: {model}"
+        elif model:
+            config_content.append(f"model:\n  default: {model}")
+        config_yaml.write_text("\n".join(config_content) + "\n", encoding="utf-8")
+
+        # Create .env with any API keys from settings
+        env_file = hermes_home / ".env"
+        env_lines = []
+        # Add any relevant API keys from environment
+        for key in ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "GOOGLE_API_KEY", "GEMINI_API_KEY"]:
+            value = os.environ.get(key)
+            if value:
+                env_lines.append(f"{key}={value}")
+        if env_lines:
+            env_file.write_text("\n".join(env_lines) + "\n", encoding="utf-8")
+
+        # Return environment with HERMES_HOME set
+        env = os.environ.copy()
+        env["HERMES_HOME"] = str(hermes_home)
+        # Store temp dir for cleanup
+        self._hermes_temp_dir = temp_dir
+        return env
+
+    def _cleanup_hermes_temp_dir(self) -> None:
+        """Clean up temporary Hermes home directory."""
+        temp_dir = getattr(self, "_hermes_temp_dir", None)
+        if temp_dir and os.path.exists(temp_dir):
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception:
+                logger.debug("Failed to clean up Hermes temp dir: %s", temp_dir, exc_info=True)
+        self._hermes_temp_dir = None
     def _pool_enabled(self) -> bool:
         """Whether the async path should use the connection pool."""
         try:
@@ -645,6 +709,9 @@ class HermesACPBackend(LLMBackend):
         cwd = kwargs.get("cwd") or os.getcwd()
         timeout = self._prompt_timeout()
 
+        # Get custom Hermes home environment with UI-Pro LLM settings
+        hermes_env = self._get_hermes_home_env()
+
         try:
             async with asyncio.timeout(timeout):
                 async with spawn_stdio_transport(
@@ -652,6 +719,7 @@ class HermesACPBackend(LLMBackend):
                     "acp",
                     stderr=asyncio.subprocess.PIPE,
                     cwd=cwd,
+                    env=hermes_env,
                 ) as (reader, writer, process):
                     # connect_to_agent: input_stream = writer (agent stdin),
                     # output_stream = reader (agent stdout).
@@ -792,7 +860,9 @@ class HermesACPBackend(LLMBackend):
         self, prompt: str, cwd: str
     ) -> AsyncGenerator[str, None]:
         pool = get_acp_pool()
-        pooled = await pool.acquire(self._command, cwd)
+        # Get custom Hermes home environment with UI-Pro LLM settings
+        hermes_env = self._get_hermes_home_env()
+        pooled = await pool.acquire(self._command, cwd, hermes_env)
         ok = False
         try:
             timeout = self._prompt_timeout()
@@ -886,11 +956,14 @@ class HermesACPBackend(LLMBackend):
         start = time.monotonic()
         try:
             async def _probe() -> InitializeResponse:
+                # Get custom Hermes home environment with UI-Pro LLM settings
+                hermes_env = self._get_hermes_home_env()
                 async with spawn_stdio_transport(
                     self._command,
                     "acp",
                     stderr=asyncio.subprocess.PIPE,
                     cwd=os.getcwd(),
+                    env=hermes_env,
                 ) as (reader, writer, process):
                     conn = connect_to_agent(
                         _HermesACPClient(), writer, reader
@@ -907,7 +980,6 @@ class HermesACPBackend(LLMBackend):
                         )
                     finally:
                         await conn.close()
-
             resp = asyncio.run(
                 asyncio.wait_for(
                     _probe(),
@@ -939,6 +1011,9 @@ class HermesACPBackend(LLMBackend):
                 "agent_version": None,
                 "error": str(e),
             }
+        finally:
+            # Clean up temp directory created by _get_hermes_home_env
+            self._cleanup_hermes_temp_dir()
 
     def list_models(self) -> list[dict[str, Any]]:
         """Return the Hermes agent as a single model entry.
@@ -947,6 +1022,18 @@ class HermesACPBackend(LLMBackend):
         from UI-Pro's perspective there is one "model": ``hermes``.
         """
         return [{"name": "hermes", "available": True}]
+
+    def close(self) -> None:
+        """Clean up temporary Hermes home directory."""
+        self._cleanup_hermes_temp_dir()
+
+    def __del__(self) -> None:
+        """Ensure temp directory is cleaned up on garbage collection."""
+        try:
+            self._cleanup_hermes_temp_dir()
+        except Exception:
+            pass
+
 
 
 __all__ = [
