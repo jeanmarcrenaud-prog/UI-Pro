@@ -54,6 +54,12 @@ class IntelligenceService:
                         ))
                     else:
                         logger.error(f"Failed: {step.action_type}: {action_result.get('message')}")
+                        actions.append(Action(
+                            action_type=step.action_type,
+                            params=step.params,
+                            status="error",
+                            message=action_result.get("message")
+                        ))
             else:
                 logger.warning(f"Unknown action type: {type(step).__name__}")
 
