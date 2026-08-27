@@ -297,7 +297,7 @@ class TestPoolConcurrency:
             spawn_started = asyncio.Event()
             release_spawn = asyncio.Event()
 
-            async def slow_spawn(command, cwd):
+            async def slow_spawn(command, cwd, env=None):
                 if command == "hermes":
                     spawn_started.set()
                     await release_spawn.wait()
@@ -330,10 +330,10 @@ class TestPoolConcurrency:
             release_spawn = asyncio.Event()
             original_spawn = pool._spawn
 
-            async def slow_spawn(command, cwd):
+            async def slow_spawn(command, cwd, env=None):
                 spawn_started.set()
                 await release_spawn.wait()
-                return await original_spawn(command, cwd)
+                return await original_spawn(command, cwd, env)
 
             with patch(
                 "backend.infrastructure.llm.hermes_acp.spawn_stdio_transport",
