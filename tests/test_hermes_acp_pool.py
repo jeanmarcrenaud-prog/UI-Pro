@@ -636,4 +636,79 @@ class TestPoolTimeouts:
                         pass
                 assert mock_cm.__aexit__.await_count == 1
 
+
+class TestPoolEnvPropagation:
+    """env must reach spawn_stdio_transport (regression for the mock-arg bug)."""
+
+    def test_env_reaches_spawn_stdio_transport(self):
+        """acquire(env=...) forwards env verbatim to the transport."""
+        fake_conn, mock_cm = _fake_spawn_stack()
+        pool = HermesACPConnectionPool(max_size=2, idle_ttl=60)
+        env = {"HERMES_HOME": "/tmp/fake-home"}
+
+        async def run():
+            with patch(
+                "backend.infrastructure.llm.hermes_acp.spawn_stdio_transport"
+            ) as mock_spawn:
+                mock_spawn.return_value = mock_cm
+                with patch(
+                    "backend.infrastructure.llm.hermes_acp.connect_to_agent",
+                    return_value=fake_conn,
+                ):
+                    c = await pool.acquire("hermes", "/tmp", env)
+            args, kwargs = mock_spawn.call_args
+            assert args[0] == "hermes"  # command positional
+            assert kwargs["cwd"] == "/tmp"
+            assert kwargs["env"] is env
+            await c.release if False else None  # noqa: B018 — keep pool closed below
+
+        asyncio.run(run())
+        with patch(
+            "backend.infrastructure.llm.hermes_acp.spawn_stdio_transport",
+            return_value=mock_cm,
+        ), patch(
+            "backend.infrastructure.llm.hermes_acp.connect_to_agent",
+            return_value=fake_conn,
+        ):
+            pass  # pool is a plain instance; nothing to close beyond the test
+
+    def test_env_default_none_reaches_spawn(self):
+        """acquire() without env still passes env=None explicitly."""
+        fake_conn, mock_cm = _fake_spawn_stack()
+        pool = HermesACPConnectionPool(max_size=2, idle_ttl=60)
+
+        async def run():
+            with patch(
+                "backend.infrastructure.llm.hermes_acp.spawn_stdio_transport"
+            ) as mock_spawn:
+                mock_spawn.return_value = mock_cm
+                with patch(
+                    "backend.infrastructure.llm.hermes_acp.connect_to_agent",
+                    return_value=fake_conn,
+                ):
+                    c = await pool.acquire("hermes", "/tmp")
+            assert mock_spawn.call_args.kwargs["env"] is None
+
+        asyncio.run(run())
+
+    def test_reuse_ignores_new_env(self):
+        """Cache key is (command, cwd): a fresh env does not respawn."""
+        fake_conn, mock_cm = _fake_spawn_stack()
+        pool = HermesACPConnectionPool(max_size=2, idle_ttl=60)
+
+        async def run():
+            with patch(
+                "backend.infrastructure.llm.hermes_acp.spawn_stdio_transport",
+                return_value=mock_cm,
+            ), patch(
+                "backend.infrastructure.llm.hermes_acp.connect_to_agent",
+                return_value=fake_conn,
+            ):
+                c1 = await pool.acquire("hermes", "/tmp", {"A": "1"})
+                await pool.release(c1)
+                c2 = await pool.acquire("hermes", "/tmp", {"B": "2"})
+                assert c1 is c2  # reused, not respawned with new env
+
+        asyncio.run(run())
+
         asyncio.run(run())

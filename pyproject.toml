@@ -172,9 +172,3 @@ omit = [
     "*/tests/*",
     "*/__init__.py",
 ]
-
-[tool.coverage.report]
-exclude_patterns = [
-    "*/tests/*",
-    "*/__init__.py",
-]
