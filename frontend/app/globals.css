@@ -446,6 +446,27 @@ pre[class*="language-"] {
   @apply bg-slate-950/80 border-l border-slate-700 backdrop-blur-md;
 }
 
+/* Titre d'accueil : dégradé animé violet → cyan */
+.uipro-gradient-text {
+  background: linear-gradient(
+    90deg,
+    #a78bfa 0%,
+    #c084fc 35%,
+    #67e8f9 70%,
+    #a78bfa 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: uipro-gradient-shift 6s linear infinite;
+}
+
+@keyframes uipro-gradient-shift {
+  0% { background-position: 0% center; }
+  100% { background-position: 200% center; }
+}
+
 .canvas-progress {
   @apply h-1.5 bg-slate-800 rounded-full overflow-hidden;
 }
