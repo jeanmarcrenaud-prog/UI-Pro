@@ -74,3 +74,5 @@ frontend/e2e/screenshots/
 packages/prompts/dist/
 packages/prompts/src/ui_pro_prompts.egg-info/
 *.egg-info/
+# Scratch / QA probe work
+_scratch/
