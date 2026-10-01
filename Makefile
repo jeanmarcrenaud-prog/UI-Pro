@@ -1,6 +1,6 @@
 # Makefile - Commandes standardisées pour UI-Pro
 
-.PHONY: help install lint typecheck test test-cov clean run run-api run-ui check
+.PHONY: help install lint typecheck test test-cov clean run run-api run-ui check setup compose-up
 
 help:
 	@echo "UI-Pro Commands"
@@ -47,3 +47,13 @@ run-ui:
 
 check: lint typecheck test
 	@echo "All checks passed!"
+
+# ─── One-command setup (Phase 1) ──────────────────────────────────────
+setup: ## Create .env from example, install deps, run quality checks
+	@if [ ! -f .env ]; then cp .env.example .env && echo "Created .env — edit it to point at your LLM backend."; fi
+	pip install -r requirements.txt
+	cd frontend && npm ci
+	make check
+
+compose-up: ## Build and start the full stack (API + UI) via Docker Compose
+	docker compose up --build

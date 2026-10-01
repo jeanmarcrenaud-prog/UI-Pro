@@ -1,6 +1,10 @@
 /** @type {import('next').NextConfig} */
 const path = require('path')
 
+// API target for rewrites. Local dev: http://localhost:8000 (default).
+// Docker compose: set to the `api` service name via env var.
+const apiTarget = process.env.API_PROXY_URL || 'http://localhost:8000'
+
 const nextConfig = {
   reactStrictMode: true,
   allowedDevOrigins: ['192.168.0.113'],
@@ -11,15 +15,15 @@ const nextConfig = {
     return [
       {
         source: '/api/:path*',
-        destination: 'http://localhost:8000/api/:path*',
+        destination: `${apiTarget}/api/:path*`,
       },
       {
         source: '/health',
-        destination: 'http://localhost:8000/health',
+        destination: `${apiTarget}/health`,
       },
       {
         source: '/ws/:path*',
-        destination: 'http://localhost:8000/ws/:path*',
+        destination: `${apiTarget}/ws/:path*`,
       },
     ]
   },

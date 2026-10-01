@@ -1,0 +1,54 @@
+# UI-Pro — one-command local stack for dev-solo + GPU
+#
+# Usage:
+#   cp .env.example .env    # then set your LLM backend URL (OLLAMA_URL / LMSTUDIO_URL)
+#   docker compose up --build
+#
+# The API container reaches your host's Ollama/LM Studio via
+# http://host.docker.internal:<port> (set in .env).
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file: .env
+    extra_hosts:
+      # Windows/macOS: resolves to the host machine (Linux: use --net=host)
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # The agent reads/writes your project here — mount it for real work.
+      - ./workspace:/app/workspace
+      # FAISS memory + checkpoints persist across restarts.
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
+
+  ui:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    # NEXT_PUBLIC_* are baked at build time; rewrites run server-side and
+    # proxy /api, /health and /ws to the API container via API_PROXY_URL.
+    environment:
+      - NEXT_PUBLIC_API_URL=
+      - API_PROXY_URL=http://api:8000
+
+  sandbox:
+    image: python:3.12-slim
+    command: ["tail", "-f", "/dev/null"]
+    volumes:
+      # Same workspace as the API: generated code runs against your files.
+      - ./workspace:/app/workspace
+    working_dir: /app/workspace
