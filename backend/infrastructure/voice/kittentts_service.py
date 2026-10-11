@@ -146,8 +146,12 @@ class KittenTTS2Service:
         return voices[0]
 
     # ── Synthèse ────────────────────────────────────────────────
-    def synthesize(self, text: str) -> Optional[np.ndarray]:
-        """Génère un array mono à 22050 Hz, ou ``None`` si indisponible."""
+    def synthesize(self, text: str, voice: Optional[str] = None) -> Optional[np.ndarray]:
+        """Génère un array mono à 22050 Hz, ou ``None`` si indisponible.
+
+        Si ``voice`` est fournie (ex : dropdown frontend), elle est utilisée ;
+        sinon la voix FR auto-détectée est conservée.
+        """
         if not text:
             return None
 
@@ -156,11 +160,15 @@ class KittenTTS2Service:
             return None
 
         try:
-            if self._voice is None:
-                self._voice = self.select_french_voice()
-
-            kwargs = {"voice": self._voice} if self._voice else {}
-            audio = model.generate(text, **kwargs)
+            # Choix de voix : celle demandée si elle figure dans les voix du
+            # modèle (ex : dropdown frontend), sinon la FR auto-détectée.
+            voices = self.available_voices()
+            if voice and voices and voice in voices:
+                v = voice
+            else:
+                v = self.select_french_voice()
+            self._voice = v
+            audio = model.generate(text, **({"voice": v} if v else {}))
             audio = np.asarray(audio)
 
             sr = self.sample_rate

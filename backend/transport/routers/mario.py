@@ -66,6 +66,16 @@ def _get_mario() -> MarioServices:
     services = MarioServices(available=False)
 
     if not _ensure_mario_path():
+        # Projet externe `src/` absent : brancher le fallback local KittenTTS 2
+        # (CPU, lazy-loadé) au lieu de laisser `tts=None`.
+        try:
+            from backend.infrastructure.voice.mario_adapter import MarioTTSAdapter
+
+            services.tts = MarioTTSAdapter()
+            services.available = True
+            logger.info("Mario TTS: fallback local KittenTTS 2 activé")
+        except Exception as e:
+            logger.warning("Fallback KittenTTS 2 indisponible : %s", e)
         _mario = services
         return _mario
 
@@ -259,23 +269,15 @@ async def text_to_speech(request: TTSRequest):
     if not request.text or not request.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
+    out_path = tempfile.mktemp(suffix=".wav")
     try:
-        # Create a temp output path for the audio
-        out_path = tempfile.mktemp(suffix=".wav")
-
-        # Use the TTS adapter to generate audio file
-        # Piper's say() plays audio; for file generation we need
-        # to use the lower-level TextToSpeech directly
-        from src.models.text_to_speech import TextToSpeech
-
-        tts = TextToSpeech()
-        tts.load_voice(request.voice)
-
-        # Generate audio to file
+        # Génère le fichier via le moteur TTS local (adaptateur KittenTTS 2) :
+        # synthesize_array() retourne un array mono à 22050 Hz.
         import soundfile as sf
-        import numpy as np
 
-        audio_data = tts.synthesize(request.text)
+        audio_data = mario.tts.synthesize_array(request.text, request.voice)
+        if audio_data is None:
+            raise HTTPException(status_code=503, detail="TTS not available")
         sf.write(out_path, audio_data, 22050)
 
         # Read and return the audio file
@@ -292,6 +294,8 @@ async def text_to_speech(request: TTSRequest):
                 "Content-Length": str(len(audio_bytes)),
             },
         )
+    except HTTPException:
+        raise
     except ImportError as e:
         logger.error("TTS import failed: %s", e)
         raise HTTPException(
@@ -324,7 +328,7 @@ async def tts_play(request: TTSRequest):
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
     try:
-        success = mario.tts.speak(request.text)
+        success = mario.tts.speak(request.text, request.voice)
         if not success:
             raise HTTPException(status_code=500, detail="TTS playback failed")
         return {"success": True, "text": request.text[:100]}

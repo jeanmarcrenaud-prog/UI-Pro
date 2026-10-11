@@ -61,19 +61,26 @@ class MarioTTSAdapter:
         return list(voices) if voices else list(_FALLBACK_VOICES)
 
     # ── Synthèse ────────────────────────────────────────────────
-    def synthesize_array(self, text: str) -> Optional[np.ndarray]:
-        """Génère un array mono à 22050 Hz, ou ``None`` si indisponible."""
+    def synthesize_array(self, text: str, voice: Optional[str] = None) -> Optional[np.ndarray]:
+        """Génère un array mono à 22050 Hz (voix FR par défaut), ou ``None``.
+
+        Si ``voice`` est fournie (ex : dropdown frontend), elle est utilisée ;
+        sinon la voix FR auto-détectée est conservée.
+        """
         if not text:
             return None
         try:
-            return self._service.synthesize(text)
+            return self._service.synthesize(text, voice=voice)
         except Exception as e:  # pragma: no cover - défensif
             logger.error("Synthèse KittenTTS 2 échouée : %s", e)
             return None
 
-    def speak(self, text: str) -> bool:
-        """Synthétise puis joue l'audio si possible. Retourne ``False`` sinon."""
-        audio = self.synthesize_array(text)
+    def speak(self, text: str, voice: Optional[str] = None) -> bool:
+        """Synthétise (voix FR par défaut) puis joue l'audio si possible.
+
+        Retourne ``False`` sans jamais lever d'exception.
+        """
+        audio = self.synthesize_array(text, voice=voice)
         if audio is None:
             return False
         return self._play(audio)

@@ -282,7 +282,7 @@ class TestMarioTTSPlay:
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
-        mock_tts.speak.assert_called_once_with("Bonjour le monde")
+        mock_tts.speak.assert_called_once_with("Bonjour le monde", "fr_FR-siwis-medium")
 
     def test_tts_play_empty_text_fails(self, client, mock_mario_available):
         """TTS play with empty text returns 400."""
