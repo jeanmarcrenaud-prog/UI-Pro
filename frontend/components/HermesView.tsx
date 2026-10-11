@@ -6,6 +6,7 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { useI18n } from '@/lib/i18n'
 import { API_CONFIG } from '@/lib/config'
 import { motion } from 'framer-motion'
+import { HermesConfigModal, type HermesConfigReport } from './agent/HermesConfigModal'
 
 
 // ─── Types ──────────────────────────────────────
@@ -32,6 +33,22 @@ async function fetchStatus(): Promise<HermesStatus> {
   } catch (e: any) {
     throw new Error(e.message?.includes('fetch') ? 'Backend API not running. Start with: python run.py --api' : e.message)
   }
+}
+
+async function fetchConfig(): Promise<HermesConfigReport> {
+  const res = await fetch(`${API_BASE}/config`)
+  if (!res.ok) throw new Error(`Hermes config error (${res.status})`)
+  return res.json()
+}
+
+async function applyHermesConfig(body: { base_url?: string; model?: string }): Promise<HermesConfigReport> {
+  const res = await fetch(`${API_BASE}/config`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(`Hermes config update failed (${res.status})`)
+  return res.json()
 }
 
 async function sendConversationStream(
@@ -98,6 +115,12 @@ export function HermesView() {
   const [chatConnecting, setChatConnecting] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
 
+  // Config readiness banner state
+  const [configReport, setConfigReport] = useState<HermesConfigReport | null>(null)
+  const [showConfigModal, setShowConfigModal] = useState(false)
+  const [applyingConfig, setApplyingConfig] = useState(false)
+  const [configError, setConfigError] = useState<string | null>(null)
+
   const chatEndRef = useRef<HTMLDivElement>(null)
 
   // Fetch status on mount
@@ -113,6 +136,19 @@ export function HermesView() {
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [])
+
+  // Fetch Hermes config readiness on mount (non-fatal: banner stays hidden)
+  useEffect(() => {
+    let cancelled = false
+    fetchConfig()
+      .then((r) => {
+        if (!cancelled) setConfigReport(r)
+      })
+      .catch(() => {
+        /* non-fatal — banner simply stays hidden */
       })
     return () => { cancelled = true }
   }, [])
@@ -169,6 +205,23 @@ export function HermesView() {
     setMessages([])
     setSessionId(null)
   }, [])
+
+  const handleApplyConfig = useCallback(
+    async ({ base_url, model }: { base_url?: string; model?: string }) => {
+      setApplyingConfig(true)
+      setConfigError(null)
+      try {
+        const updated = await applyHermesConfig({ base_url, model })
+        setConfigReport(updated)
+        setShowConfigModal(false)
+      } catch (e: any) {
+        setConfigError(e.message)
+      } finally {
+        setApplyingConfig(false)
+      }
+    },
+    [],
+  )
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -232,6 +285,41 @@ export function HermesView() {
       transition={{ duration: 0.35, ease: [0.23, 1, 0.32, 1] }}
       className="flex-1 p-6 sm:p-8 overflow-y-auto"
     >
+      {/* Hermes config readiness banner */}
+      {configReport && (
+        <div className="mb-6">
+          {configReport.configured && configReport.llm_reachable && !configReport.needs_install ? (
+            <div className="flex items-center gap-2 text-xs px-3 py-2 rounded-xl border border-emerald-500/20 bg-emerald-500/5 text-emerald-400">
+              <span>✅</span>
+              <span>Hermes prêt · model: {configReport.model}</span>
+            </div>
+          ) : (
+            <div className="flex items-start gap-3 p-3 rounded-xl border border-amber-500/30 bg-amber-500/5">
+              <span className="text-lg">⚠️</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-[var(--text-primary)]">{configReport.message}</p>
+                {configReport.recommended_model && (
+                  <p className="text-xs text-[var(--text-muted)] mt-1">
+                    Modèle recommandé :{' '}
+                    <span className="font-medium">{configReport.recommended_model}</span>
+                    {configReport.backend !== 'none' ? ` · backend : ${configReport.backend}` : ''}
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={() => {
+                  setConfigError(null)
+                  setShowConfigModal(true)
+                }}
+                className="shrink-0 px-4 py-1.5 rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white text-xs font-medium hover:from-violet-700 hover:to-fuchsia-700 transition-all"
+              >
+                Corriger
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Header */}
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-2">
@@ -353,6 +441,15 @@ export function HermesView() {
           </div>
       </div>
       </div>
+      <HermesConfigModal
+        isOpen={showConfigModal}
+        report={configReport}
+        applying={applyingConfig}
+        error={configError}
+        onClose={() => setShowConfigModal(false)}
+        onApply={handleApplyConfig}
+      />
+
     </motion.div>
   )
 }

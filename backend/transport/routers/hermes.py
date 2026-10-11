@@ -8,6 +8,7 @@ as FastAPI endpoints within UI-Pro.
 from __future__ import annotations
 
 import logging
+import asyncio
 import uuid
 from typing import Any
 
@@ -19,6 +20,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/hermes", tags=["hermes"])
 
 from backend.infrastructure.mcp.server import get_server
+from backend.infrastructure.llm.hermes_config import evaluate_hermes_config
+from backend.domain.settings import get_settings
 
 
 # ─── Models ─────────────────────────────────────
@@ -61,6 +64,26 @@ async def get_status() -> dict:
         "available": True,
         "tools": get_server().list_tools(),
     }
+
+
+class HermesConfigRequest(BaseModel):
+    base_url: str | None = None
+    model: str | None = None
+
+
+@router.get("/config")
+async def get_hermes_config() -> dict:
+    """Readiness report for the Hermes-agent config (read-only)."""
+    settings = get_settings()
+    return await asyncio.to_thread(evaluate_hermes_config, settings)
+
+
+@router.post("/config")
+async def update_hermes_config(req: HermesConfigRequest) -> dict:
+    """Apply a validated Hermes config change, then return the fresh report."""
+    settings = get_settings()
+    settings.set_hermes_llm_config(base_url=req.base_url, model=req.model)
+    return await asyncio.to_thread(evaluate_hermes_config, settings)
 
 
 @router.post("/conversation", response_model=ConversationResponse)
