@@ -19,6 +19,7 @@ from dataclasses import dataclass
 
 from fastapi import APIRouter, File, Form, UploadFile, HTTPException
 from pydantic import BaseModel
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -82,20 +83,21 @@ def _get_mario() -> MarioServices:
     try:
         from src.config.config import config as mario_config
         from src.models.settings import Settings
-        from src.services.tts_service import TTSService
         from src.services.llm_service import LLMService
 
         services.config = mario_config
         services.settings = Settings.from_config(mario_config)
 
-        # TTS — optional, may fail if Piper not installed
+        # TTS — toujours KittenTTS 2 local (CPU, fonctionnel). Le Piper externe
+        # de Mario nécessite pyaudio et n'expose pas de synthèse en array.
         try:
-            services.tts = TTSService.create_with_piper(
-                mario_config.DEFAULT_VOICE
-            )
-            logger.info("Mario TTS initialized")
+            from backend.infrastructure.voice.mario_adapter import MarioTTSAdapter
+
+            services.tts = MarioTTSAdapter()
+            services.available = True
+            logger.info("Mario TTS branché sur KittenTTS 2 (CPU local)")
         except Exception as e:
-            logger.warning("Mario TTS unavailable: %s", e)
+            logger.warning("Fallback KittenTTS 2 indisponible : %s", e)
 
         # LLM — auto-detect Ollama / LM Studio / simulation
         try:
@@ -154,6 +156,50 @@ class StatusResponse(BaseModel):
 # ──────────────────────────────────────────────
 
 
+# ──────────────────────────────────────────────
+# TSS unification : KittenTTS 2 adaptateur OU Piper externe
+# ──────────────────────────────────────────────
+
+def _tss_synthesize_array(tss, text: str, voice: Optional[str] = None) -> Optional[np.ndarray]:
+    """Retourne un array mono à 22050 Hz ou ``None`` quel que soit le moteur TSS.
+
+    * KittenTTS 2 (adaptateur local) : ``synthesize_array(text, voice)`` —
+      voix paramétrable (dropdown).
+    * Piper externe (mario src/) : ``synthesize() -> numpy @ 22050 Hz`` —
+      la voix est déjà préchargée par le moteur ; on resample pour garantir
+      le contrat 22050 Hz. Ne jamais lever d'exception.
+    """
+    try:
+        if hasattr(tss, "synthesize_array"):
+            return tss.synthesize_array(text, voice)
+        if hasattr(tss, "synthesize"):
+            audio = tss.synthesize(text)
+            if audio is None:
+                return None
+            from backend.infrastructure.voice.audio_utils import resample_to_22050
+
+            return resample_to_22050(audio, 22050)
+        return None
+    except Exception as e:  # pragma: no cover - défensif
+        logger.error("Synthèse TTS échouée : %s", e)
+        return None
+
+
+def _tss_speak(tss, text: str, voice: Optional[str] = None) -> bool:
+    """Joue l'audio via le moteur TSS. ``bool`` sans jamais lever d'exception.
+
+    * KittenTTS 2 (adaptateur local) : lecture audio via sounddevice.
+    * Piper externe (mario src/) : lecture audio via pyaudio.
+    """
+    try:
+        if hasattr(tss, "synthesize_array"):
+            return bool(tss.speak(text, voice))
+        if hasattr(tss, "speak"):
+            return bool(tss.speak(text))  # Piper: signature 1-arg
+        return _tss_synthesize_array(tss, text, voice) is not None
+    except Exception as e:  # pragma: no cover - défensif
+        logger.error("Lecture TTS échouée : %s", e)
+        return False
 @router.get("/health")
 async def mario_health():
     """Quick health check for Mario integration."""
@@ -275,7 +321,7 @@ async def text_to_speech(request: TTSRequest):
         # synthesize_array() retourne un array mono à 22050 Hz.
         import soundfile as sf
 
-        audio_data = mario.tts.synthesize_array(request.text, request.voice)
+        audio_data = _tss_synthesize_array(mario.tts, request.text, request.voice)
         if audio_data is None:
             raise HTTPException(status_code=503, detail="TTS not available")
         sf.write(out_path, audio_data, 22050)
@@ -328,7 +374,7 @@ async def tts_play(request: TTSRequest):
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
     try:
-        success = mario.tts.speak(request.text, request.voice)
+        success = _tss_speak(mario.tts, request.text, request.voice)
         if not success:
             raise HTTPException(status_code=500, detail="TTS playback failed")
         return {"success": True, "text": request.text[:100]}
