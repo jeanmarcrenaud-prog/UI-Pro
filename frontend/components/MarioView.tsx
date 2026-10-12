@@ -50,13 +50,20 @@ async function sendConversation(message: string, temperature = 0.7): Promise<str
   return data.response
 }
 
-async function speakText(text: string): Promise<boolean> {
+async function speakText(text: string, voice?: string): Promise<boolean> {
   const res = await fetch(`${API_BASE}/tts/play`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify(voice ? { text, voice } : { text }),
   })
   return res.ok
+}
+
+async function fetchVoices(): Promise<string[]> {
+  const res = await fetch(`${API_BASE}/voices`)
+  if (!res.ok) throw new Error('Failed to fetch voices')
+  const data = await res.json()
+  return Array.isArray(data.voices) ? data.voices : []
 }
 
 async function transcribeAudio(file: File): Promise<string> {
@@ -93,6 +100,8 @@ export function MarioView() {
   const [ttsText, setTtsText] = useState('')
   const [ttsLoading, setTtsLoading] = useState(false)
   const [ttsMessage, setTtsMessage] = useState<string | null>(null)
+  const [voices, setVoices] = useState<string[]>([])
+  const [selectedVoice, setSelectedVoice] = useState('')
 
   // STT state
   const [sttFile, setSttFile] = useState<File | null>(null)
@@ -114,6 +123,21 @@ export function MarioView() {
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [])
+
+  // Fetch available TTS voices on mount
+  useEffect(() => {
+    let cancelled = false
+    fetchVoices()
+      .then((list) => {
+        if (cancelled) return
+        setVoices(list)
+        setSelectedVoice((prev) => prev || list[0] || '')
+      })
+      .catch(() => {
+        if (!cancelled) setVoices([])
       })
     return () => { cancelled = true }
   }, [])
@@ -152,14 +176,14 @@ export function MarioView() {
     setTtsMessage(null)
 
     try {
-      const ok = await speakText(text)
+      const ok = await speakText(text, selectedVoice || undefined)
       setTtsMessage(ok ? '🔊 Mario a parlé !' : '❌ Échec de la synthèse vocale')
     } catch (e: any) {
       setTtsMessage(`❌ ${e.message}`)
     } finally {
       setTtsLoading(false)
     }
-  }, [ttsText, ttsLoading])
+  }, [ttsText, ttsLoading, selectedVoice])
 
   const handleTranscribe = useCallback(async () => {
     if (!sttFile || sttLoading) return
@@ -354,6 +378,20 @@ export function MarioView() {
               </h3>
               <StatusBadge label="" active={!!status?.tts} size="sm" />
             </div>
+            <select
+              value={selectedVoice}
+              onChange={(e) => setSelectedVoice(e.target.value)}
+              disabled={!status?.tts || voices.length === 0}
+              className="mb-3 w-full px-4 py-2.5 rounded-xl bg-[var(--surface-secondary)] border border-[var(--border-subtle)] text-sm text-[var(--text-primary)] outline-none focus:ring-2 focus:ring-violet-500/30 transition-all disabled:opacity-40"
+            >
+              {voices.length === 0 ? (
+                <option value="">Aucune voix</option>
+              ) : (
+                voices.map((v) => (
+                  <option key={v} value={v}>{v}</option>
+                ))
+              )}
+            </select>
 
             <textarea
               value={ttsText}
