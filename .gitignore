@@ -76,3 +76,7 @@ packages/prompts/src/ui_pro_prompts.egg-info/
 *.egg-info/
 # Scratch / QA probe work
 _scratch/
+
+# TTS generated audio cache (regenerated at runtime, never commit)
+voice_cache/
+*.wav
