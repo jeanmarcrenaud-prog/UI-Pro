@@ -41,7 +41,7 @@ export function HermesSettings() {
             type="text"
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            placeholder="google/gemma-4-12b-qat"
+            placeholder="(vide = config Hermes)"
             className="w-full bg-[#172033] border border-slate-600 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-violet-500 transition-colors"
           />
           <p className="text-[9px] text-slate-600 mt-0.5">{t.settings.hermesModelHelp}</p>

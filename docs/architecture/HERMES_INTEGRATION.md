@@ -22,7 +22,7 @@ aujourd'hui, avec des conventions différentes et aucune visibilité croisée.
 ### 1. HermesMCPServer — `backend/infrastructure/mcp/server.py`
 
 - Client LLM OpenAI-compat : `HERMES_LLM_BASE_URL` (défaut `settings.lmstudio_url + "/v1"`),
-  `HERMES_LLM_API_KEY` ("lm-studio"), `HERMES_LLM_MODEL` ("google/gemma-4-12b-qat") — **env vars, pas exposées dans Settings UI**.
+  `HERMES_LLM_API_KEY` ("lm-studio"), `HERMES_LLM_MODEL` (vide par défaut → résolu depuis la config Hermes).
 - 5 outils : `execute_intent`, `get_opencode_status`, `read_file`, `write_file`, `chat`.
 - **Tool calling par tags textuels** : `<|tool_call>call:TOOL_NAME{json}<tool_call|>`
   parsé par regex (`parse_tool_call_tag`, l.293) — **pas de native tool calling**.

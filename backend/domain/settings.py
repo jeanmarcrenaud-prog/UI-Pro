@@ -98,10 +98,12 @@ class Settings(BaseSettings):
     # (backend/infrastructure/mcp/server.py) reads these at construction
     # (first get_server() call) to build its OpenAI client and TaskPlanner.
     # Exposed in the Settings UI and reported by the /health/deep Hermes
-    # probe (ADR D4). An empty base_url falls back to LM Studio's /v1
-    # endpoint, preserving the pre-D3 behavior.
+    # probe (ADR D4). When both are empty, the effective model/endpoint is
+    # resolved from the real Hermes agent config (hermes_home.py) instead of
+    # any hardcoded default; an empty base_url still falls back to LM
+    # Studio's /v1 for the in-process OpenAI client.
     hermes_llm_base_url: str = ""
-    hermes_llm_model: str = "google/gemma-4-12b-qat"
+    hermes_llm_model: str = ""
     # Path to the ``hermes acp`` executable (Phase 4 direct ACP transport).
     # Override via env var HERMES_ACP_COMMAND. Defaults to "hermes" on PATH.
     hermes_acp_command: str = "hermes"

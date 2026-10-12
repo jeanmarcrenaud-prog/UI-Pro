@@ -12,14 +12,14 @@ jest.mock('framer-motion', () => ({
 const readyReport: HermesConfigReport = {
   configured: true,
   base_url: 'http://127.0.0.1:1234/v1',
-  model: 'google/gemma-4-12b-qat',
+  model: 'bonsai-2-27b-pq2_0-crack',
   backend: 'lmstudio',
   llm_reachable: true,
   available_models: ['aura-4b'],
   recommended_model: 'aura-4b',
   gpu_headroom_ok: true,
   needs_install: false,
-  message: 'Hermes prêt · model: google/gemma-4-12b-qat',
+  message: 'Hermes prêt · model: bonsai-2-27b-pq2_0-crack',
 }
 
 const warningReport: HermesConfigReport = {
@@ -56,7 +56,7 @@ describe('HermesConfigModal', () => {
     )
     expect(screen.getByText(readyReport.message)).toBeInTheDocument()
     expect(screen.getByDisplayValue('http://127.0.0.1:1234/v1')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('google/gemma-4-12b-qat')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('bonsai-2-27b-pq2_0-crack')).toBeInTheDocument()
   })
 
   it('renders warning state and applies the recommended model', () => {

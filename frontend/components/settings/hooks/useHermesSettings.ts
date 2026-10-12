@@ -9,7 +9,7 @@ import type { SettingsMessage } from '../types'
 // save button.
 export function useHermesSettings() {
   const [baseUrl, setBaseUrl] = useState('')
-  const [model, setModel] = useState('google/gemma-4-12b-qat')
+  const [model, setModel] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [message, setMessage] = useState<SettingsMessage | null>(null)
 

@@ -61,7 +61,7 @@ graph TD
 |- Interface avec OpenCode en mode **headless** via `backend/infrastructure/opencode_connector/manager.py`.
 - Se connecte à un serveur OpenCode via **WebSocket** (`websockets.connect`) — le client est créé paresseusement par `get_client()`.
 - Si la connexion échoue, le manager reste actif en mode *fallback* (`run_task` retourne `ERROR: ...` au lieu de lever une exception).
-|- Modèle par défaut : `lmstudio/google/gemma-4-12b-qat` (131072 tokens de contexte).
+- Modèle résolu depuis la config Hermes de l'utilisateur (`HERMES_HOME/config.yaml`) ; une surcharge ui-pro explicite l'emporte (131072 tokens de contexte).
 - Communique via WebSocket en JSON :
   - `type: \"text\"` → réponse texte de l'agent.
   - `type: \"step_finish\"` → étape terminée avec succès.

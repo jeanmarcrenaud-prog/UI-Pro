@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import BaseModel
 
 from backend.domain.settings import settings
+from backend.infrastructure.llm.hermes_home import resolve_effective_hermes_llm
 
 logger = logging.getLogger(__name__)
 
@@ -55,10 +56,11 @@ def _check_hermes_agent() -> dict[str, Any]:
     from backend.infrastructure.mcp.server import get_server_state
 
     state = get_server_state()
-    configured_base_url = settings.hermes_llm_base_url or (
+    effective_model, effective_base = resolve_effective_hermes_llm(settings)
+    configured_base_url = effective_base or (
         settings.lmstudio_url.rstrip("/") + "/v1"
     )
-    configured_model = settings.hermes_llm_model
+    configured_model = effective_model
 
     if state["llm_client_ready"]:
         status = "available"
@@ -592,7 +594,7 @@ async def get_all_settings():
         "node_routing_enabled": settings.get_node_routing_enabled(),
         "llm_enable_thinking": settings.get_llm_enable_thinking(),
         "hermes_llm_base_url": _get_setting("hermes_llm_base_url", ""),
-        "hermes_llm_model": _get_setting("hermes_llm_model", "google/gemma-4-12b-qat"),
+        "hermes_llm_model": _get_setting("hermes_llm_model", ""),
         "presets": {
             preset_id: {
                 "id": preset.id,

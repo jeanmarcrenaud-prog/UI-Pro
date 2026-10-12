@@ -16,6 +16,8 @@ import logging
 import re
 from typing import Any
 
+from backend.infrastructure.llm.hermes_home import resolve_effective_hermes_llm
+
 logger = logging.getLogger(__name__)
 
 # Short probe deadline (spec: "timeout 3s").
@@ -128,8 +130,7 @@ def evaluate_hermes_config(settings: Any) -> dict[str, Any]:
 
     Pure/report-only: never writes settings, never loads a GPU model.
     """
-    raw_base = (getattr(settings, "hermes_llm_base_url", "") or "").strip()
-    model = (getattr(settings, "hermes_llm_model", "") or "").strip()
+    model, raw_base = resolve_effective_hermes_llm(settings)
     configured = bool(raw_base) and bool(model)
 
     lm_url = (getattr(settings, "lmstudio_url", "") or "http://localhost:1234").rstrip("/")

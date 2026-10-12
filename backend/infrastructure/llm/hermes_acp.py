@@ -40,6 +40,7 @@ from backend.infrastructure.llm.errors import (
     LLMConnectionError,
 )
 from backend.infrastructure.llm.models import ModelConfig
+from backend.infrastructure.llm.hermes_home import LEGACY_DEFAULT_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -601,9 +602,16 @@ class HermesACPBackend(LLMBackend):
         except Exception:
             return None
 
-        # Only create custom config if UI-Pro has Hermes LLM settings
-        base_url = getattr(settings, "hermes_llm_base_url", "") or ""
-        model = getattr(settings, "hermes_llm_model", "") or ""
+        # Only create a custom (temporary) Hermes home when UI-Pro has an
+        # EXPLICIT override. Otherwise return None so ``hermes acp`` uses the
+        # user's real config.yaml (%LOCALAPPDATA%\hermes\config.yaml) instead
+        # of a generated one that would clobber it.
+        base_url = (getattr(settings, "hermes_llm_base_url", "") or "").strip()
+        model = (getattr(settings, "hermes_llm_model", "") or "").strip()
+        # Treat the legacy hardcoded default as "unset" (unless a base URL was
+        # also set) so a stale .env never masks the real Hermes config.
+        if model == LEGACY_DEFAULT_MODEL and not base_url:
+            model = ""
         if not base_url and not model:
             return None
 

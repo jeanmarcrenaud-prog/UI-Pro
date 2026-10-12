@@ -18,6 +18,7 @@ from backend.application.intelligence.task_planner import get_task_planner
 from backend.infrastructure.opencode_connector.manager import OpenCodeConnectorManager
 from backend.domain.settings import settings
 from backend.domain.core.events import emit_tool
+from backend.infrastructure.llm.hermes_home import resolve_effective_hermes_llm
 
 logger = logging.getLogger(__name__)
 
@@ -100,12 +101,13 @@ class HermesMCPServer:
     def _init_llm_client(self):
         import os
         try:
-            base_url = settings.hermes_llm_base_url or (settings.lmstudio_url.rstrip("/") + "/v1")
+            model, resolved_base = resolve_effective_hermes_llm(settings)
+            base_url = resolved_base or (settings.lmstudio_url.rstrip("/") + "/v1")
             self.llm_client = OpenAI(
                 base_url=base_url,
                 api_key=os.environ.get("HERMES_LLM_API_KEY", "lm-studio"),
             )
-            self.llm_model = settings.hermes_llm_model
+            self.llm_model = model
         except Exception as e:
             logger.warning(f"Failed to init LLM client: {e}")
             self.llm_client = None
@@ -114,9 +116,10 @@ class HermesMCPServer:
         from backend.application.intelligence.task_planner import init_task_planner
         from backend.domain.core.action_executor import ActionExecutor
         try:
-            base_url = settings.hermes_llm_base_url or (settings.lmstudio_url.rstrip("/") + "/v1")
+            model, resolved_base = resolve_effective_hermes_llm(settings)
+            base_url = resolved_base or (settings.lmstudio_url.rstrip("/") + "/v1")
             planner = init_task_planner(
-                model_name=settings.hermes_llm_model,
+                model_name=model,
                 base_url=base_url,
             )
             executor = ActionExecutor(self.editor_service, self.filesystem_service)

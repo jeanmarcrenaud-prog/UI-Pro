@@ -450,8 +450,8 @@ class TestHermesLLMConfig:
 
     The MCP server (backend/infrastructure/mcp/server.py) reads these at
     construction (first get_server() call) to build its OpenAI client and
-    TaskPlanner. Defaults preserve the pre-D3 behavior: empty base_url
-    falls back to LM Studio /v1, model defaults to google/gemma-4-12b-qat.
+    TaskPlanner. Defaults are empty: when unset, the effective model/endpoint
+    is resolved from the real Hermes agent config (hermes_home.py).
     """
 
     def _fresh(self, monkeypatch):
@@ -464,10 +464,10 @@ class TestHermesLLMConfig:
         return Settings()
 
     def test_defaults(self, monkeypatch):
-        """Empty base_url + gemma default model when nothing is set."""
+        """Both fields default to empty when nothing is set (no hardcoded model)."""
         s = self._fresh(monkeypatch)
         assert s.hermes_llm_base_url == ""
-        assert s.hermes_llm_model == "google/gemma-4-12b-qat"
+        assert s.hermes_llm_model == ""
 
     def test_env_override(self, monkeypatch):
         """HERMES_LLM_BASE_URL / HERMES_LLM_MODEL map to the fields."""

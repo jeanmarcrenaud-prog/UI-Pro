@@ -9,8 +9,10 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from unittest.mock import patch
+import pytest
 
 from backend.infrastructure.llm import hermes_config
+from backend.infrastructure.llm import hermes_home
 
 _REQUIRED_KEYS = {
     "configured",
@@ -29,19 +31,26 @@ _REQUIRED_KEYS = {
 def _settings(**overrides):
     base = dict(
         hermes_llm_base_url="",
-        hermes_llm_model="google/gemma-4-12b-qat",
+        hermes_llm_model="",
         lmstudio_url="http://127.0.0.1:1234",
         ollama_url="http://127.0.0.1:11434",
     )
     base.update(overrides)
     return SimpleNamespace(**base)
+@pytest.fixture(autouse=True)
+def _no_real_hermes_config(monkeypatch):
+    """Hermetic: never read the developer's real Hermes config.yaml."""
+    monkeypatch.setattr(hermes_home, "read_hermes_agent_config", lambda: {})
 
 
 class TestEvaluateHermesConfig:
     def test_lmstudio_reachable_lists_models(self):
         """LM Studio up: probe hits /v1/models, report is ready and picks the
         lightest model, flagging the heavy 27B model as no headroom."""
-        settings = _settings(hermes_llm_base_url="http://127.0.0.1:1234/v1")
+        settings = _settings(
+            hermes_llm_base_url="http://127.0.0.1:1234/v1",
+            hermes_llm_model="aura-4b",
+        )
 
         captured = {}
 
