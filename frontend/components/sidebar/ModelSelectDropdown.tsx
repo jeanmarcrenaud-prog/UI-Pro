@@ -29,12 +29,14 @@ export function ModelSelectDropdown({
   isLoading,
   availableModels,
   selectedModel,
-  onModelChange
+  onModelChange,
+  hermesHealthy = false
 }: {
   isLoading: boolean
   availableModels: ModelInfo[]
   selectedModel: string
   onModelChange: (model: string) => void
+  hermesHealthy?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -100,6 +102,12 @@ export function ModelSelectDropdown({
               "
             >
               <span className="flex items-center gap-2 min-w-0">
+                {selected?.provider === 'hermes' && (
+                  <span
+                    className={`w-2 h-2 rounded-full shrink-0 ${hermesHealthy ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]' : 'bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.6)]'}`}
+                    title={hermesHealthy ? 'Hermes online' : 'Hermes offline'}
+                  />
+                )}
                 {selected?.isLoaded && (
                   <span
                     className="relative flex w-2 h-2 shrink-0"
@@ -169,7 +177,16 @@ export function ModelSelectDropdown({
                         `}
                       >
                         <span className="relative flex w-2.5 h-2.5 shrink-0">
-                          {model.isLoaded ? (
+                          {model.provider === 'hermes' ? (
+                            hermesHealthy ? (
+                              <>
+                                <span className="absolute inset-0 rounded-full bg-emerald-400 animate-ping opacity-50" />
+                                <span className="relative w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]" />
+                              </>
+                            ) : (
+                              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.7)]" />
+                            )
+                          ) : model.isLoaded ? (
                             <>
                               <span className="absolute inset-0 rounded-full bg-emerald-400 animate-ping opacity-50" />
                               <span className="relative w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]" />
@@ -181,6 +198,11 @@ export function ModelSelectDropdown({
                         <span className="flex-1 min-w-0 truncate">
                           {model.name}
                         </span>
+                        {model.provider === 'hermes' && (
+                          <span className={`text-[10px] font-semibold uppercase tracking-wide shrink-0 ${hermesHealthy ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {hermesHealthy ? 'online' : 'offline'}
+                          </span>
+                        )}
                         {model.isLoaded && (
                           <span className="text-[10px] text-emerald-400 font-semibold uppercase tracking-wide shrink-0">
                             {model.sizeVramGb ? `${model.sizeVramGb}GB` : 'VRAM'}

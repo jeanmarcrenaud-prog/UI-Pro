@@ -23,12 +23,17 @@ logger = logging.getLogger(__name__)
 
 # ── Per-node token counting for Agent Canvas ─────────────────────────────
 
+# ── Hermes recentering ───────────────────────────────────────────────
+# Default brain du pipeline LangGraph. "hermes" = backend Hermes ACP,
+# fallback automatique vers Ollama si Hermes non sain (voir llm_wrapper._resolved).
+_DEFAULT_PIPELINE_PROVIDER = "hermes"
+
 _node_token_counts: dict[str, int] = {}
 """Module-level dict tracking approximate token counts per node.
 
 Each node function stores ``len(response)`` (character-based token
 approximation) after its LLM call.  ``@_timed_node`` reads and clears
-the entry in its ``finally`` block so the count is included in the
+    the entry in its ``finally`` block so the count is included in the
 completion event sent to the frontend Agent Canvas.
 """
 
@@ -216,8 +221,16 @@ def _get_user_message(state: AgentState) -> str:
 
 
 def _get_model_info(state: AgentState) -> tuple[str, str]:
+    """Return the (model, provider) selected by the user.
+
+    Default provider is ``_DEFAULT_PIPELINE_PROVIDER`` (Hermes).  The
+    router then falls back to Ollama when Hermes is not healthy, so
+    existing Ollama-only setups keep working without reconfiguring."""
     metadata = state.get("metadata", {})
-    return (metadata or {}).get("model", ""), (metadata or {}).get("provider", "ollama")
+    return (
+        (metadata or {}).get("model", ""),
+        (metadata or {}).get("provider", _DEFAULT_PIPELINE_PROVIDER),
+    )
 
 
 def _clean_plan(plan: PlanData | None) -> dict[str, Any]:

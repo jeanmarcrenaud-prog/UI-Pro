@@ -299,7 +299,7 @@ class TestGetModelInfo:
     def test_no_metadata_returns_empty_strings(self):
         model, provider = _get_model_info({})
         assert model == ""
-        assert provider == "ollama"
+        assert provider == "hermes"
 
 
 class TestNodeTokenCounts:

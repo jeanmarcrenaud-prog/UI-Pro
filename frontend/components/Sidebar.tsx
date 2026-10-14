@@ -9,6 +9,7 @@ import { useUIStore } from '@/lib/stores/uiStore'
 import { useChatStore } from '@/lib/stores/chatStore'
 import { useI18n } from '@/lib/i18n'
 import { modelDiscovery } from '@/services/modelDiscovery'
+import { API_CONFIG } from '@/lib/config'
 import { events } from '@/lib/events'
 import { motion } from 'framer-motion'
 import { ModelSelectDropdown } from './sidebar/ModelSelectDropdown'
@@ -35,6 +36,13 @@ interface SidebarProps {
 import type { Translations } from '@/lib/i18n'
 import type { ModelInfo } from './sidebar/ModelSelectDropdown'
 
+// Synthetic Hermes (copilot) entry - always available, health-gated at runtime.
+const HERMES_MODEL: ModelInfo = {
+  id: 'hermes',
+  name: 'Hermes (copilot)',
+  provider: 'hermes',
+}
+
 const getNavigationTabs = (t: Translations) => [
   { id: 'chat', label: t.sidebar.chat, icon: '💬', shortcut: 'Alt+1' },
   { id: 'history', label: t.sidebar.history, icon: '📜', shortcut: 'Alt+2' },
@@ -56,6 +64,7 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
 
   const [isLoadingModels, setIsLoadingModels] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [hermesHealthy, setHermesHealthy] = useState(false)
 
   // Discover models on mount
   const { setAvailableModels } = useUIStore()
@@ -67,7 +76,7 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
       try {
         const models = await modelDiscovery.discover()
         // Update store with discovered models including rich metadata
-        if (isMounted && models.length > 0) {
+        if (isMounted) {
           const mappedModels: ModelInfo[] = models.map(m => ({
             id: m.id,
             name: m.name,
@@ -84,10 +93,11 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
             isLoaded: m.isLoaded,
             sizeVramGb: m.sizeVramGb,
           }))
-          setAvailableModels(mappedModels)
+          setAvailableModels([HERMES_MODEL, ...mappedModels.filter(m => m.id !== 'hermes')])
         }
       } catch (error) {
         console.error('Failed to discover models:', error)
+        if (isMounted) setAvailableModels([HERMES_MODEL])
       } finally {
         if (isMounted) {
           setIsLoadingModels(false)
@@ -108,7 +118,7 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
     // Listen for model discovery events to update store
     const handleModelsDiscovered = (data: { models: Array<Record<string, unknown>> }) => {
       if (data.models && data.models.length > 0) {
-        setAvailableModels(data.models.map(m => ({
+        setAvailableModels([HERMES_MODEL, ...data.models.map(m => ({
           id: m.name as string,
           name: m.name as string,
           provider: m.provider as 'ollama' | 'lmstudio' | 'lemonade',
@@ -123,7 +133,7 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
           capabilities: m.capabilities as string[] | undefined,
           isLoaded: m.isLoaded as boolean | undefined,
           sizeVramGb: m.sizeVramGb as number | undefined,
-        })))
+        })).filter(m => m.id !== 'hermes')])
       }
     }
     events.on('modelsDiscovered', handleModelsDiscovered)
@@ -138,6 +148,27 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
       events.off('modelsDiscovered', handleModelsDiscovered)
     }
   }, [setAvailableModels])
+
+  // Poll Hermes health for the provider badge
+  useEffect(() => {
+    let cancelled = false
+    const checkHermes = async () => {
+      try {
+        const res = await fetch(`${API_CONFIG.apiUrl}/api/hermes/status`)
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const data: { available?: boolean } = await res.json()
+        if (!cancelled) setHermesHealthy(data?.available === true)
+      } catch {
+        if (!cancelled) setHermesHealthy(false)
+      }
+    }
+    checkHermes()
+    const id = setInterval(checkHermes, 60_000)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
+  }, [])
 
   return (
     <motion.aside
@@ -221,6 +252,7 @@ export function Sidebar({ activeTab, onTabChange, onNewChat }: SidebarProps) {
           availableModels={availableModels}
           selectedModel={selectedModel}
           onModelChange={setSelectedModel}
+          hermesHealthy={hermesHealthy}
         />
         <button
           onClick={() => {

@@ -6,6 +6,7 @@ import asyncio
 import logging
 import time
 from collections.abc import AsyncIterator
+from concurrent.futures import ThreadPoolExecutor
 
 from backend.domain.settings import settings
 from backend.infrastructure.llm.errors import LLMBackendError
@@ -25,6 +26,55 @@ def _exponential_backoff(attempt: int, base_delay: float = 1.0, max_delay: float
     return delay
 
 logger = logging.getLogger(__name__)
+
+
+# ── Hermes recentering: health cache for the ACP backend ───────────────────
+_hermes_healthy_cache: dict[str, float | bool] = {}
+_HERMES_HEALTH_CACHE_TTL = 60.0  # seconds
+
+# ``HermesACPBackend.health_check`` is a *sync* method that internally calls
+# ``asyncio.run``.  ``_resolved`` runs on the event-loop thread (async
+# ``generate`` / ``stream_generate`` / ``run_node``), so the probe must run in
+# a dedicated worker thread — otherwise ``asyncio.run`` raises RuntimeError and
+# Hermes would always look unhealthy.
+_hermes_probe_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="hermes-health")
+
+
+def _hermes_healthy() -> bool:
+    """Probe the Hermes ACP backend (cached ~60 s) and report its health.
+
+    Returns ``True`` when the ``hermes acp`` subprocess is reachable and a
+    full ``initialize`` round-trip succeeds, ``False`` otherwise.  The probe
+    is cheap to cache because each node of the pipeline re-enters
+    ``_resolved()`` many times per single run; without the cache we would
+    pay one spawn+initialize (3–5 s) per token.
+
+    When the probe fails (subprocess absent, timed out, or Hermes not
+    configured), the caller falls back to Ollama so existing setups keep
+    working without reconfiguring."""
+    now = time.monotonic()
+    ts = _hermes_healthy_cache.get("ts")
+    if isinstance(ts, float) and now - ts < _HERMES_HEALTH_CACHE_TTL:
+        return bool(_hermes_healthy_cache.get("value", False))
+
+    try:
+        from backend.infrastructure.llm.factory import get_backend
+
+        # Build a Hermes ACP backend (uses the user's real config.yaml when
+        # settings.hermes_llm_base_url/model are empty, so we don't clobber).
+        backend = get_backend("hermes_acp")
+        # health_check() calls asyncio.run() internally, which raises
+        # RuntimeError when invoked from the event-loop thread (the normal
+        # path: _resolved() is called from async generate/stream_generate/
+        # run_node).  Probe in a worker thread with a hard deadline instead.
+        result = _hermes_probe_pool.submit(backend.health_check).result(timeout=5.0)
+    except Exception:  # pragma: no cover — probe must never crash the pipeline
+        result = {"status": "error", "error": ""}
+
+    healthy = bool(result.get("status") == "ok")
+    _hermes_healthy_cache["ts"] = now
+    _hermes_healthy_cache["value"] = healthy
+    return healthy
 
 
 def _resolve_provider_for_model(model_name: str) -> str | None:
@@ -101,9 +151,21 @@ class LLMWrapper:
 
         force_model wins over user_model. Empty force_model keeps the
         legacy "user_model wins" behavior.
+
+        Hermes recentering: when the user selected a Hermes provider and the
+        Hermes ACP backend is healthy, route to ``hermes_acp`` (the model is
+        chosen by Hermes itself).  Otherwise fall back to the user's provider
+        (e.g. Ollama) so existing setups keep working.
         """
         if self.force_model:
             return self.force_model, self.force_provider
+        from .hermes_bridge import is_hermes_provider
+
+        if is_hermes_provider(self.user_provider):
+            # Hermes recentering: user chose a Hermes provider.  Route to the
+            # ACP backend (model chosen by Hermes) only when it is healthy;
+            # otherwise fall back to Ollama so existing setups keep working.
+            return (self.user_model or ""), "hermes_acp" if _hermes_healthy() else "ollama"
         return self.user_model, self.user_provider
 
     async def generate(
