@@ -50,13 +50,16 @@ async function sendConversation(message: string, temperature = 0.7): Promise<str
   return data.response
 }
 
-async function speakText(text: string, voice?: string): Promise<boolean> {
-  const res = await fetch(`${API_BASE}/tts/play`, {
+async function synthesizeSpeech(text: string, voice?: string): Promise<Blob | null> {
+  const res = await fetch(`${API_BASE}/tss`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(voice ? { text, voice } : { text }),
   })
-  return res.ok
+  if (!res.ok) return null
+  const blob = await res.blob()
+  if (blob.type.startsWith('audio/')) return blob
+  return null
 }
 
 async function fetchVoices(): Promise<string[]> {
@@ -103,6 +106,12 @@ export function MarioView() {
   const [voices, setVoices] = useState<string[]>([])
   const [selectedVoice, setSelectedVoice] = useState('')
 
+  // Lecture client-side (synthèse jouée dans le navigateur)
+  const [ttsPlaying, setTtsPlaying] = useState(false)
+  const [audioLoaded, setAudioLoaded] = useState(false)
+  const audioUrlRef = useRef<string | null>(null)
+  const audioElementRef = useRef<HTMLAudioElement | null>(null)
+
   // STT state
   const [sttFile, setSttFile] = useState<File | null>(null)
   const [sttLoading, setSttLoading] = useState(false)
@@ -147,6 +156,13 @@ export function MarioView() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [chatMessages])
 
+  // Cleanup : libère l'URL blob audio quand la voix a fini ou le composant part
+  useEffect(() => {
+    return () => {
+      if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current)
+    }
+  }, [])
+
   const handleSendChat = useCallback(async () => {
     const msg = chatInput.trim()
     if (!msg || chatLoading) return
@@ -168,18 +184,57 @@ export function MarioView() {
     }
   }, [chatInput, chatLoading])
 
-  const handleSpeak = useCallback(async () => {
+  const handleTogglePlay = useCallback(async () => {
+    const element = audioElementRef.current
+
+    // Si on a déjà un WAV chargé, on toggle play/pause
+    if (element) {
+      if (element.paused) {
+        await element.play()
+        setTtsPlaying(true)
+      } else {
+        element.pause()
+        setTtsPlaying(false)
+      }
+      return
+    }
+
     const text = ttsText.trim()
     if (!text || ttsLoading) return
 
+    // Synthèse : le backend retourne un WAV (bytes), on joue côté client
     setTtsLoading(true)
     setTtsMessage(null)
 
     try {
-      const ok = await speakText(text, selectedVoice || undefined)
-      setTtsMessage(ok ? '🔊 Mario a parlé !' : '❌ Échec de la synthèse vocale')
+      const blob = await synthesizeSpeech(text, selectedVoice || undefined)
+      if (!blob) {
+        setTtsMessage('❌ Échec de la synthèse vocale')
+        return
+      }
+
+      // URL object (reusable pour stop / cleanup)
+      const url = URL.createObjectURL(blob)
+      audioUrlRef.current = url
+
+      const el = new Audio()
+      el.src = url
+      el.onended = () => {
+        setTtsPlaying(false)
+        if (audioElementRef.current === el) {
+          audioElementRef.current = null
+          if (url) URL.revokeObjectURL(url)
+        }
+      }
+
+      audioElementRef.current = el
+      setAudioLoaded(true)
+      await el.play()
+      setTtsLoading(false)
+      setTtsPlaying(true)
+      setTtsMessage('🔊 Mario parle...')
     } catch (e: any) {
-      setTtsMessage(`❌ ${e.message}`)
+      setTtsMessage(`❌ ${e.message || 'Échec de la synthèse vocale'}`)
     } finally {
       setTtsLoading(false)
     }
@@ -401,13 +456,41 @@ export function MarioView() {
               className="w-full px-4 py-3 rounded-xl bg-[var(--surface-secondary)] border border-[var(--border-subtle)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/50 outline-none focus:ring-2 focus:ring-violet-500/30 transition-all resize-none"
             />
 
-            <button
-              onClick={handleSpeak}
-              disabled={ttsLoading || !ttsText.trim() || !status?.tts}
-              className="mt-3 w-full px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white text-sm font-medium disabled:opacity-40 hover:from-emerald-700 hover:to-teal-700 transition-all"
-            >
-              {ttsLoading ? '🔊 Mario parle...' : '🔊 Faire parler Mario'}
-            </button>
+            {/* Boutons lecture client-side */}
+            <div className="flex gap-2 mt-3">
+              <button
+                onClick={handleTogglePlay}
+                disabled={ttsLoading || (!status?.tts && !audioLoaded)}
+                className={`${
+                  audioLoaded
+                    ? ttsPlaying
+                      ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600'
+                      : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700'
+                    : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700'
+                } flex-1 px-5 py-2.5 rounded-xl text-white text-sm font-medium disabled:opacity-40 transition-all`}
+              >
+                {ttsLoading ? '🔊 Synthèse...' : audioLoaded && ttsPlaying ? '⏸️ Pause' : audioLoaded ? '▶️ Reprendre' : '🔊 Faire parler Mario'}
+              </button>
+
+              <button
+                onClick={() => {
+                  const el = audioElementRef.current
+                  if (el) {
+                    el.pause()
+                    el.currentTime = 0
+                  }
+                  setTtsPlaying(false)
+                  setAudioLoaded(false)
+                  audioElementRef.current = null
+                  if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current)
+                  audioUrlRef.current = null
+                }}
+                disabled={ttsLoading || !audioLoaded}
+                className="px-4 py-2.5 rounded-xl bg-[var(--surface-secondary)] border border-[var(--border-subtle)] text-[var(--text-primary)] text-sm font-medium hover:bg-[var(--surface-tertiary)] transition-all"
+              >
+                ⏹️ Stop
+              </button>
+            </div>
 
             {ttsMessage && (
               <p className="mt-2 text-xs text-[var(--text-muted)]">{ttsMessage}</p>
