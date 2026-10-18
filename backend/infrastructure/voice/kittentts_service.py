@@ -15,6 +15,13 @@ Contrat public :
 
 from __future__ import annotations
 
+import builtins
+import io
+import logging
+import threading
+from contextlib import contextmanager
+from typing import List, Optional
+
 import logging
 import threading
 from typing import List, Optional
@@ -47,6 +54,36 @@ _FRENCH_VOICE_HINTS = (
     "claire",
     "colette",
 )
+
+
+@contextmanager
+def _force_utf8_reads():
+    """Force UTF-8 pendant la lecture des fichiers du modèle.
+
+    Windows (cp1252) : kittenml lit ses fichiers de modèle avec l'encodage
+    locale → `'charmap' codec can't decode byte 0x9d` au chargement.
+    """
+    original_open = builtins.open
+
+    def _open_utf8(file, mode="r", *args, **kwargs):
+        if "b" not in mode:
+            args = list(args)
+            # encoding = 4e positionnel de open() (file, mode, buffering, encoding…)
+            if len(args) >= 2:
+                if args[1] is None:
+                    args[1] = "utf-8"
+            elif kwargs.get("encoding") is None:
+                kwargs["encoding"] = "utf-8"
+            return original_open(file, mode, *args, **kwargs)
+        return original_open(file, mode, *args, **kwargs)
+
+    builtins.open = _open_utf8
+    io.open = _open_utf8
+    try:
+        yield
+    finally:
+        builtins.open = original_open
+        io.open = original_open
 
 
 class KittenTTS2Service:
@@ -83,7 +120,8 @@ class KittenTTS2Service:
                 return None
 
             try:
-                model = KittenTTS(self.model_id, weights=self.weights)
+                with _force_utf8_reads():
+                    model = KittenTTS(self.model_id, weights=self.weights)
                 self._force_cpu(model)
                 self._model = model
                 logger.info(
