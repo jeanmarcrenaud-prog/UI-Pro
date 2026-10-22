@@ -4,15 +4,15 @@
 #NR|"""
 #BT|
 #HM|import logging
-#QV|from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager
 #XW|
-#PR|from fastapi import FastAPI
+from fastapi import FastAPI
 #HH|from fastapi.middleware.cors import CORSMiddleware
-#TJ|
-#QY|from backend.transport.routers import chat, execute, health, logs, templates, ws, mcp
-#KR|from backend.transport.routers.hermes import router as hermes_router
-#YP|from backend.transport.routers.mario import router as mario_router
-#RJ|
+
+from backend.transport.routers import chat, execute, health, logs, templates, ws, mcp
+from backend.transport.routers.hermes import router as hermes_router
+from backend.transport.routers.mario import router as mario_router
+
 #JW|logger = logging.getLogger("api")
 #HX|
 #KS|
@@ -48,11 +48,11 @@
 #KV|        logger.exception("[STOP] ACP pool close failed")
 #BN|
 #QW|
-#SS|app = FastAPI(
-#WW|    title="UI-Pro",
-#RJ|    description="AI Agent Orchestration Platform",
-#PY|    version="1.0.0",
-#WQ|)
+app = FastAPI(
+    title="UI-Pro",
+    description="AI Agent Orchestration Platform",
+    version="1.0.0",
+)
 #WH|
 #KR|from backend.domain.settings import get_settings
 #QH|
@@ -104,15 +104,15 @@
 #VS|
 #HT|
 #TS|
-#SH|app.include_router(health.router)
-#XB|app.include_router(chat.router)
-#VJ|app.include_router(execute.router)
-#QW|app.include_router(ws.router)
-#MZ|app.include_router(logs.router)
-#RK|app.include_router(mario_router)
-#XB|app.include_router(mcp.router)
-#ZH|app.include_router(hermes_router)
-#XB|app.include_router(templates.router)
+app.include_router(health.router)
+app.include_router(chat.router)
+app.include_router(execute.router)
+app.include_router(ws.router)
+app.include_router(logs.router)
+app.include_router(mario_router)
+app.include_router(mcp.router)
+app.include_router(hermes_router)
+app.include_router(templates.router)
 #BK|
 #BQ|
 #XN|if __name__ == "__main__":
