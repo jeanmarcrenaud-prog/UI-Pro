@@ -314,10 +314,25 @@ class Settings(BaseSettings):
             cfg["timeout"] = self.llm_timeout
 
         if self.llm_timeout < 120:
+
+
             logger.warning(
                 f"llm_timeout={self.llm_timeout}s is too short for larger models, "
                 f"recommended >= 120s. Adjust .env or use Settings UI."
             )
+
+        # Empêche Lemonade de se charger si LM Studio est déjà configuré
+        _lmstudio_configured = self.lmstudio_url and self.lmstudio_url.strip()
+        _lemonade_configured = self.lemonade_url and self.lemonade_url.strip()
+        if _lmstudio_configured and _lemonade_configured:
+            if "lemonade" in self.backends:
+                self.backends["lemonade"]["enabled"] = False
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(
+                    "Lemonade désactivée par défaut au profit de LM Studio "
+                    "(les deux sont configurés dans les settings)."
+                )
 
     # Runtime only (excluded from init)
     runtime_overrides: dict[str, Any] = Field(
