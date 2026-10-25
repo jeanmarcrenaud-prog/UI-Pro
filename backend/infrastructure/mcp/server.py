@@ -259,6 +259,8 @@ class HermesMCPServer:
 
     async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         if tool_name == "execute_intent":
+            if not settings.hermes_execute_intent_enabled:
+                return {"content": "execute_intent is disabled for security (Phase 7). Enable via settings."}
             state = self.state_store.get_state()
             actions = await self.intelligence_service.process_user_intent(
                 arguments.get("intent", ""), state

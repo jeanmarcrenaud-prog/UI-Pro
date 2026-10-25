@@ -136,7 +136,7 @@ frontend `data: <token>`). Endpoints : `POST /conversation/cancel`,
 | **4** | Transport abstraction (D5) | ✅ `hermes_acp.py` |
 | **5** | LangGraph bridge | ✅ `hermes_bridge.py` |
 | **6** | Health / metrics (D4) | ✅ `138c97d`, `34e34b9` |
-| **7** | Sécurité | ⏳ |
+**7** | Sécurité | ✅
 
 ## Fichiers concernés
 

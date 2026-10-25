@@ -104,9 +104,12 @@ class Settings(BaseSettings):
     # Studio's /v1 for the in-process OpenAI client.
     hermes_llm_base_url: str = ""
     hermes_llm_model: str = ""
+    hermes_auto_approve_permissions: bool = False
+    hermes_allowed_permission_ids: list[str] = Field(default_factory=list)
     # Path to the ``hermes acp`` executable (Phase 4 direct ACP transport).
     # Override via env var HERMES_ACP_COMMAND. Defaults to "hermes" on PATH.
     hermes_acp_command: str = "hermes"
+    hermes_execute_intent_enabled: bool = False
 
     # Connection pool for the Hermes ACP backend (Phase 5.5). The pool keeps
     # the ``hermes acp`` subprocess + initialize alive across prompts while
@@ -327,8 +330,6 @@ class Settings(BaseSettings):
         if _lmstudio_configured and _lemonade_configured:
             if "lemonade" in self.backends:
                 self.backends["lemonade"]["enabled"] = False
-                import logging
-                logger = logging.getLogger(__name__)
                 logger.info(
                     "Lemonade désactivée par défaut au profit de LM Studio "
                     "(les deux sont configurés dans les settings)."

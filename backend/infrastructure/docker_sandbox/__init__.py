@@ -179,7 +179,7 @@ class DockerSandbox:
             )
             stdout, _ = await result.communicate()
             return bool(stdout.strip())
-        except:
+        except Exception:
             return False
 
 

@@ -125,17 +125,34 @@ class _HermesACPClient:
         tool_call: Any,
         **kwargs: Any,
     ) -> RequestPermissionResponse:
-        """Auto-approve the first permission option (no human in the loop)."""
-        if options:
+        """Policy-controlled permission (Phase 7)."""
+        from backend.domain.settings import settings
+
+        if not options:
+            return RequestPermissionResponse(outcome=DeniedOutcome(outcome="cancelled"))
+
+        # Mode développement uniquement
+        if settings.hermes_auto_approve_permissions:
             return RequestPermissionResponse(
-                outcome=AllowedOutcome(
-                    option_id=options[0].option_id, outcome="selected"
-                )
+                outcome=AllowedOutcome(option_id=options[0].option_id, outcome="selected")
             )
-        # No options offered — deny gracefully.
-        return RequestPermissionResponse(
-            outcome=DeniedOutcome(outcome="cancelled")
+
+        # Allowlist explicite
+        allowed = set(settings.hermes_allowed_permission_ids or [])
+        for opt in options:
+            opt_id = getattr(opt, "option_id", None) or str(opt)
+            if opt_id in allowed:
+                logger.info("Hermes permission allowed by policy: %s", opt_id)
+                return RequestPermissionResponse(
+                    outcome=AllowedOutcome(option_id=opt_id, outcome="selected")
+                )
+
+        logger.warning(
+            "Hermes permission denied (not in allowlist): options=%s tool=%s",
+            [getattr(o, "option_id", o) for o in options],
+            getattr(tool_call, "name", tool_call),
         )
+        return RequestPermissionResponse(outcome=DeniedOutcome(outcome="cancelled"))
 
     # ── Unsupported client methods ───────────────────────────────────
 
