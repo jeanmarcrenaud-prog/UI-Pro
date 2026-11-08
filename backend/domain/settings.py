@@ -91,6 +91,12 @@ class Settings(BaseSettings):
     lemonade_url: str = "http://localhost:13305"
     llamacpp_url: str = "http://localhost:8080"
     lmstudio_url: str = "http://localhost:1234"
+    # Chemin vers l'exécutable LM Studio (Windows). Quand défini, Hermes tente
+    # de lancer LM Studio automatiquement s'il n'est pas joignable sur lmstudio_url.
+    # Exemple : r"C:\Users\johns\AppData\Local\Programs\LM Studio\lmstudio.exe"
+    lmstudio_exe_path: str = ""
+    # Tenter de lancer LM Studio automatiquement si injoignable.
+    lmstudio_auto_start: bool = True
     opendesign_url: str = "http://localhost:7456"
     hermes_url: str = "http://localhost:7456"
 
@@ -104,6 +110,7 @@ class Settings(BaseSettings):
     # Studio's /v1 for the in-process OpenAI client.
     hermes_llm_base_url: str = ""
     hermes_llm_model: str = ""
+    hermes_llm_api_key: str = "lm-studio"
     hermes_auto_approve_permissions: bool = False
     hermes_allowed_permission_ids: list[str] = Field(default_factory=list)
     # Path to the ``hermes acp`` executable (Phase 4 direct ACP transport).

@@ -1,7 +1,11 @@
 import logging
 import json
 import re
-import uuid
+import os
+import socket
+import subprocess
+import time
+from urllib.parse import urlparse
 from typing import List, Dict, Any
 from openai import OpenAI
 from openai.types.chat import (
@@ -98,14 +102,81 @@ class HermesMCPServer:
         self.llm_client: OpenAI | None = None
         self._init_llm_client()
 
+    def _ensure_lmstudio_running(self, base_url: str) -> None:
+        """Lance LM Studio automatiquement s'il n'est pas joignable.
+
+        Ne fait rien si l'URL cible n'est pas une URL locale de type LM Studio
+        (ex. NVIDIA API distante) ou si le port répond déjà.
+        """
+        if not settings.lmstudio_auto_start:
+            return
+
+        value = (base_url or "").lower()
+        if "nvidia" in value:
+            return  # API distante, pas de lancement local possible
+
+        try:
+            parsed = urlparse(base_url if "://" in base_url else "http://" + base_url)
+        except Exception:
+            return
+
+        host = parsed.hostname or "127.0.0.1"
+        port = parsed.port or 1234
+
+        def _reachable() -> bool:
+            try:
+                with socket.create_connection((host, port), timeout=2.0):
+                    return True
+            except OSError:
+                return False
+
+        if _reachable():
+            return  # Déjà lancé
+
+        exe_path = settings.lmstudio_exe_path or ""
+        if not exe_path:
+            logger.warning(
+                "LM Studio injoignable sur %s:%s et LMSTUDIO_EXE_PATH non configuré. "
+                "Définissez HERMES_LMSTUDIO_EXE_PATH ou lmstudio_exe_path dans .env",
+                host, port,
+            )
+            return
+
+        if not os.path.exists(exe_path):
+            logger.warning("LMSTUDIO_EXE_PATH introuvable: %s", exe_path)
+            return
+
+        logger.info("Lancement automatique de LM Studio: %s", exe_path)
+        try:
+            subprocess.Popen(
+                [exe_path],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except Exception as e:
+            logger.warning("Impossible de lancer LM Studio: %s", e)
+            return
+
+        # Attendre que le port réponde (max 60 s)
+        for _ in range(60):
+            time.sleep(1)
+            if _reachable():
+                logger.info("LM Studio démarré et joignable sur %s:%s", host, port)
+                return
+        logger.warning("LM Studio n'est pas devenu joignable après 60 s")
+
     def _init_llm_client(self):
-        import os
         try:
             model, resolved_base = resolve_effective_hermes_llm(settings)
             base_url = resolved_base or (settings.lmstudio_url.rstrip("/") + "/v1")
+
+            # S'assurer que LM Studio est lancé avant de créer le client OpenAI
+            self._ensure_lmstudio_running(base_url)
+
             self.llm_client = OpenAI(
                 base_url=base_url,
-                api_key=os.environ.get("HERMES_LLM_API_KEY", "lm-studio"),
+                api_key=settings.hermes_llm_api_key,
             )
             self.llm_model = model
         except Exception as e:
@@ -273,16 +344,22 @@ class HermesMCPServer:
 
         elif tool_name == "read_file":
             path = arguments.get("path", "")
-            file_data = self.filesystem_service.read_file(path)
-            if file_data:
-                return {"content": file_data.content}
-            return {"content": f"Erreur : Fichier {path} non trouve."}
+            try:
+                file_data = self.filesystem_service.read_file(path)
+                if file_data:
+                    return {"content": file_data.content}
+                return {"content": f"Erreur : Fichier {path} non trouvé."}
+            except PermissionError as e:
+                return {"content": f"Erreur sécurité : {e}"}
 
         elif tool_name == "write_file":
             path = arguments.get("path", "")
             content = arguments.get("content", "")
-            success = self.filesystem_service.write_file(path, content)
-            return {"content": "Succes" if success else "Echec de l'ecriture."}
+            try:
+                success = self.filesystem_service.write_file(path, content)
+                return {"content": "Succès" if success else "Échec de l'écriture."}
+            except PermissionError as e:
+                return {"content": f"Erreur sécurité : {e}"}
 
         elif tool_name == "chat":
             return await self._handle_chat(
